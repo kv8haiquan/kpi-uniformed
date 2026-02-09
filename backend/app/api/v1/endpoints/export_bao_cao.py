@@ -1,0 +1,739 @@
+"""
+app/api/v1/endpoints/export_bao_cao.py
+======================================
+API Endpoints xuất báo cáo DOCX/PDF cho hệ thống KPI.
+
+Endpoints:
+1. GET /export/ca-nhan/thang/{thang}/nam/{nam}          - Xuất Mẫu 01 + 02 (cá nhân)
+2. GET /export/don-vi/thang/{thang}/nam/{nam}            - Xuất Mẫu 03 (đơn vị)
+3. GET /export/tong-hop/thang/{thang}/nam/{nam}          - Xuất Mẫu 03 toàn Chi cục (CCT/PCCT)
+
+Output: DOCX hoặc PDF (query param ?format=docx|pdf)
+
+Phiên bản: 1.0.0 (02/02/2026)
+"""
+
+import io
+import logging
+import subprocess
+import tempfile
+import traceback
+import calendar
+from datetime import datetime, date
+from decimal import Decimal
+from pathlib import Path
+from typing import Optional, List
+from uuid import UUID
+
+logger = logging.getLogger(__name__)
+
+from fastapi import APIRouter, HTTPException, status, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select, func, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.api.deps import DatabaseDep, ActiveUserDep
+from app.models.user_org import CongChuc, DonVi, VaiTro, CapBacVaiTro
+from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
+from app.models.kpi_assessment import DanhGiaThang, TieuChiChung, TieuChiChungDanhGia
+from app.models.bao_cao_xep_loai import (
+    BaoCaoXepLoai, ChiTietXepLoai, TrangThaiBaoCao
+)
+from app.schemas.common import error_response
+
+
+router = APIRouter()
+
+
+# =============================================================================
+# HELPER: CONVERT DOCX -> PDF VIA LIBREOFFICE
+# =============================================================================
+
+def convert_docx_to_pdf(docx_bytes: bytes) -> bytes:
+    """
+    Convert DOCX bytes sang PDF bytes sử dụng LibreOffice headless.
+    
+    Raises:
+        HTTPException nếu LibreOffice không khả dụng hoặc convert lỗi.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        docx_path = Path(tmpdir) / "report.docx"
+        docx_path.write_bytes(docx_bytes)
+        
+        try:
+            result = subprocess.run(
+                [
+                    "libreoffice", "--headless", "--convert-to", "pdf",
+                    "--outdir", tmpdir, str(docx_path)
+                ],
+                capture_output=True, text=True, timeout=60
+            )
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=500,
+                detail=error_response(
+                    code="SYS_010",
+                    message="LibreOffice chưa được cài đặt trên server. Vui lòng xuất DOCX."
+                )
+            )
+        except subprocess.TimeoutExpired:
+            raise HTTPException(
+                status_code=500,
+                detail=error_response(
+                    code="SYS_011",
+                    message="Chuyển đổi PDF quá thời gian cho phép."
+                )
+            )
+        
+        pdf_path = Path(tmpdir) / "report.pdf"
+        if not pdf_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail=error_response(
+                    code="SYS_012",
+                    message="Không thể tạo file PDF. Vui lòng xuất DOCX."
+                )
+            )
+        
+        return pdf_path.read_bytes()
+
+
+# =============================================================================
+# HELPER: STREAMING RESPONSE
+# =============================================================================
+
+def make_file_response(
+    file_bytes: bytes,
+    filename: str,
+    fmt: str = "docx"
+) -> StreamingResponse:
+    """Tạo StreamingResponse cho file download."""
+    if fmt == "pdf":
+        media_type = "application/pdf"
+        filename = filename.replace(".docx", ".pdf")
+    else:
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        }
+    )
+
+
+# =============================================================================
+# HELPER: KIỂM TRA QUYỀN
+# =============================================================================
+
+def _get_cap_bac(user: CongChuc) -> Optional[str]:
+    """Lấy cấp bậc vai trò."""
+    if not user.vai_tro:
+        return None
+    return user.vai_tro.cap_bac
+
+
+def _is_lanh_dao_chi_cuc(user: CongChuc) -> bool:
+    """CCT hoặc PCCT."""
+    cap_bac = _get_cap_bac(user)
+    return cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+
+
+def _is_lanh_dao_don_vi(user: CongChuc) -> bool:
+    """ĐT hoặc Phó ĐT."""
+    cap_bac = _get_cap_bac(user)
+    return cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+
+
+# =============================================================================
+# HELPER: LẤY DỮ LIỆU
+# =============================================================================
+
+async def _get_danh_gia_thang(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> Optional[DanhGiaThang]:
+    """Lấy đánh giá tháng (tiêu chí chung) của 1 CC."""
+    stmt = (
+        select(DanhGiaThang)
+        .options(
+            selectinload(DanhGiaThang.tieu_chi_chungs)
+            .selectinload(TieuChiChungDanhGia.tieu_chi)
+        )
+        .where(
+            DanhGiaThang.cong_chuc_id == cong_chuc_id,
+            DanhGiaThang.thang == thang,
+            DanhGiaThang.nam == nam,
+            DanhGiaThang.is_deleted == False,
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def _get_ke_khai_list(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> list:
+    """Lấy danh sách kê khai đã duyệt của 1 CC."""
+    stmt = (
+        select(KeKhaiCongViec)
+        .options(
+            selectinload(KeKhaiCongViec.danh_muc_sp),
+            selectinload(KeKhaiCongViec.cap_do),
+        )
+        .where(
+            KeKhaiCongViec.cong_chuc_id == cong_chuc_id,
+            KeKhaiCongViec.thang == thang,
+            KeKhaiCongViec.nam == nam,
+            KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
+            KeKhaiCongViec.is_deleted == False,
+        )
+        .order_by(KeKhaiCongViec.created_at)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def _get_tieu_chi_chung_list(db: AsyncSession) -> list:
+    """Lấy danh sách tiêu chí chung (master data)."""
+    stmt = (
+        select(TieuChiChung)
+        .where(TieuChiChung.is_active == True)
+        .order_by(TieuChiChung.thu_tu)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def _get_bao_cao_don_vi(
+    db: AsyncSession, don_vi_id: UUID, thang: int, nam: int
+) -> Optional[BaoCaoXepLoai]:
+    """Lấy báo cáo xếp loại đơn vị kèm chi tiết."""
+    stmt = (
+        select(BaoCaoXepLoai)
+        .options(
+            selectinload(BaoCaoXepLoai.don_vi),
+            selectinload(BaoCaoXepLoai.nguoi_lap),
+            selectinload(BaoCaoXepLoai.nguoi_phe_duyet),
+            selectinload(BaoCaoXepLoai.chi_tiets).selectinload(ChiTietXepLoai.cong_chuc),
+        )
+        .where(
+            BaoCaoXepLoai.don_vi_id == don_vi_id,
+            BaoCaoXepLoai.thang == thang,
+            BaoCaoXepLoai.nam == nam,
+            BaoCaoXepLoai.is_deleted == False,
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def _get_all_bao_cao(
+    db: AsyncSession, thang: int, nam: int
+) -> list:
+    """Lấy tất cả báo cáo xếp loại toàn Chi cục."""
+    stmt = (
+        select(BaoCaoXepLoai)
+        .options(
+            selectinload(BaoCaoXepLoai.don_vi),
+            selectinload(BaoCaoXepLoai.nguoi_lap),
+            selectinload(BaoCaoXepLoai.chi_tiets).selectinload(ChiTietXepLoai.cong_chuc),
+        )
+        .where(
+            BaoCaoXepLoai.thang == thang,
+            BaoCaoXepLoai.nam == nam,
+            BaoCaoXepLoai.is_deleted == False,
+        )
+        .order_by(BaoCaoXepLoai.don_vi_id)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+# =============================================================================
+# HELPER: BUILD DATA DICTS CHO DOCX GENERATOR
+# =============================================================================
+
+def _get_xep_loai_cuoi_cung(chi_tiet: Optional[ChiTietXepLoai]) -> str:
+    """
+    Lấy xếp loại cuối cùng của chi tiết xếp loại.
+    Ưu tiên: xep_loai_quyet_dinh > xep_loai_de_xuat > xep_loai_he_thong
+    """
+    if not chi_tiet:
+        return "E"
+    return (
+        chi_tiet.xep_loai_quyet_dinh 
+        or chi_tiet.xep_loai_de_xuat 
+        or chi_tiet.xep_loai_he_thong 
+        or "E"
+    )
+
+
+def _build_mau01_data(
+    user: CongChuc,
+    thang: int, nam: int,
+    danh_gia: Optional[DanhGiaThang],
+    chi_tiet_xep_loai: Optional[ChiTietXepLoai],
+) -> dict:
+    """Build data dict cho Mẫu 01 - Phiếu theo dõi đánh giá."""
+    # Tiêu chí chung chi tiết
+    tieu_chi_items = []
+    if danh_gia and hasattr(danh_gia, 'tieu_chi_chungs') and danh_gia.tieu_chi_chungs:
+        for tc_dg in danh_gia.tieu_chi_chungs:
+            tc = tc_dg.tieu_chi  # TieuChiChung master record
+            tieu_chi_items.append({
+                "ten": tc.ten_tieu_chi if tc else "",
+                "diem_toi_da": float(tc.diem_toi_da) if tc else 0,
+                "diem_tu_cham": float(tc_dg.diem_tu_cham) if tc_dg.diem_tu_cham else 0,
+                "diem_lanh_dao": float(tc_dg.diem_phe_duyet) if tc_dg.diem_phe_duyet else 0,
+            })
+    
+    diem_tcc = float(chi_tiet_xep_loai.diem_tieu_chi_chung) if chi_tiet_xep_loai else 0
+    diem_kpi = float(chi_tiet_xep_loai.diem_kpi) if chi_tiet_xep_loai else 0
+    diem_tong = float(chi_tiet_xep_loai.diem_tong) if chi_tiet_xep_loai else 0
+    
+    return {
+        "ho_ten": user.ho_ten,
+        "chuc_vu": user.chuc_vu or "",
+        "don_vi": user.don_vi.ten_don_vi if user.don_vi else "",
+        "thang": thang,
+        "nam": nam,
+        "tieu_chi_items": tieu_chi_items,
+        "diem_tieu_chi_chung": diem_tcc,
+        "diem_kpi": diem_kpi,
+        "diem_tong": diem_tong,
+        "xep_loai": _get_xep_loai_cuoi_cung(chi_tiet_xep_loai),
+    }
+
+
+def _build_mau02_data(
+    user: CongChuc,
+    thang: int, nam: int,
+    ke_khais: list,
+    chi_tiet_xep_loai: Optional[ChiTietXepLoai],
+) -> dict:
+    """Build data dict cho Mẫu 02 - Bảng kê công việc cá nhân."""
+    cong_viec_items = []
+    tong_sp_quy_doi = Decimal("0")
+    tong_sp_cl = Decimal("0")
+    tong_sp_td = Decimal("0")
+    
+    for kk in ke_khais:
+        sp_qd = kk.so_sp_goc_quy_doi or Decimal("0")
+        sp_cl = kk.so_sp_chat_luong or Decimal("0")
+        sp_td = kk.so_sp_tien_do or Decimal("0")
+        
+        tong_sp_quy_doi += sp_qd
+        tong_sp_cl += sp_cl
+        tong_sp_td += sp_td
+        
+        cong_viec_items.append({
+            "ten_cong_viec": kk.danh_muc_sp.ten_cong_viec if kk.danh_muc_sp else "",
+            "cap_do": kk.cap_do.ma_cap_do if kk.cap_do else "",
+            "so_luong": kk.so_luong,
+            "sp_quy_doi": float(sp_qd),
+            "tu_dg_tien_do": kk.tu_danh_gia_tien_do or 0,
+            "tu_dg_chat_luong": kk.tu_danh_gia_chat_luong or 0,
+            "so_loi_tien_do": kk.so_loi_tien_do or 0,
+            "so_loi_chat_luong": kk.so_loi_chat_luong or 0,
+            "sp_chat_luong": float(sp_cl),
+            "sp_tien_do": float(sp_td),
+        })
+    
+    so_ngay_lv = float(chi_tiet_xep_loai.so_ngay_lam_viec or 0) if chi_tiet_xep_loai else 0
+    so_ngay_nghi = float(chi_tiet_xep_loai.so_ngay_nghi or 0) if chi_tiet_xep_loai else 0
+    diem_tcc = float(chi_tiet_xep_loai.diem_tieu_chi_chung) if chi_tiet_xep_loai else 0
+    diem_kpi = float(chi_tiet_xep_loai.diem_kpi) if chi_tiet_xep_loai else 0
+    diem_tong = float(chi_tiet_xep_loai.diem_tong) if chi_tiet_xep_loai else 0
+    
+    return {
+        "ho_ten": user.ho_ten,
+        "chuc_vu": user.chuc_vu or "",
+        "don_vi": user.don_vi.ten_don_vi if user.don_vi else "",
+        "thang": thang,
+        "nam": nam,
+        "so_ngay_lam_viec": so_ngay_lv,
+        "so_ngay_nghi": so_ngay_nghi,
+        "cong_viec_items": cong_viec_items,
+        "tong_sp_quy_doi": float(tong_sp_quy_doi),
+        "tong_sp_chat_luong": float(tong_sp_cl),
+        "tong_sp_tien_do": float(tong_sp_td),
+        "target_sp": so_ngay_lv * 96,
+        "diem_tieu_chi_chung": diem_tcc,
+        "diem_kpi": diem_kpi,
+        "diem_tong": diem_tong,
+        "xep_loai": _get_xep_loai_cuoi_cung(chi_tiet_xep_loai),
+    }
+
+
+def _build_mau03_data(
+    bao_caos: list,
+    thang: int, nam: int,
+    don_vi_name: str = "",
+    is_toan_chi_cuc: bool = False,
+) -> dict:
+    """Build data dict cho Mẫu 03 - Bảng tổng hợp xếp loại."""
+    rows = []
+    stt = 0
+    
+    for bc in bao_caos:
+        don_vi_ten = bc.don_vi.ten_don_vi if bc.don_vi else ""
+        
+        if bc.chi_tiets:
+            for ct in bc.chi_tiets:
+                stt += 1
+                xep_loai_cuoi = ct.xep_loai_quyet_dinh or ct.xep_loai_de_xuat or ct.xep_loai_he_thong
+                
+                rows.append({
+                    "stt": stt,
+                    "ho_ten": ct.cong_chuc.ho_ten if ct.cong_chuc else "",
+                    "don_vi": don_vi_ten,
+                    "chuc_vu": ct.cong_chuc.chuc_vu if ct.cong_chuc else "",
+                    "so_ngay_lv": float(ct.so_ngay_lam_viec or 0),
+                    "so_ngay_nghi": float(ct.so_ngay_nghi or 0),
+                    "diem_tcc": float(ct.diem_tieu_chi_chung or 0),
+                    "diem_kpi": float(ct.diem_kpi or 0),
+                    "diem_tong": float(ct.diem_tong or 0),
+                    "xep_loai_he_thong": ct.xep_loai_he_thong or "",
+                    "xep_loai_de_xuat": ct.xep_loai_de_xuat or "",
+                    "xep_loai_quyet_dinh": ct.xep_loai_quyet_dinh or "",
+                    "xep_loai_cuoi": xep_loai_cuoi,
+                    "ghi_chu": ct.ghi_chu or "",
+                })
+    
+    title = "BẢNG TỔNG HỢP KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC"
+    if is_toan_chi_cuc:
+        subtitle = f"Toàn Chi cục - Tháng {thang}/{nam}"
+    else:
+        subtitle = f"{don_vi_name} - Tháng {thang}/{nam}"
+    
+    # Thống kê
+    tong = len(rows)
+    so_a = sum(1 for r in rows if r["xep_loai_cuoi"] == "A")
+    so_b = sum(1 for r in rows if r["xep_loai_cuoi"] == "B")
+    so_c = sum(1 for r in rows if r["xep_loai_cuoi"] == "C")
+    so_d = sum(1 for r in rows if r["xep_loai_cuoi"] == "D")
+    so_e = sum(1 for r in rows if r["xep_loai_cuoi"] == "E")
+    
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        "thang": thang,
+        "nam": nam,
+        "don_vi_name": don_vi_name,
+        "is_toan_chi_cuc": is_toan_chi_cuc,
+        "rows": rows,
+        "thong_ke": {
+            "tong": tong,
+            "A": so_a, "B": so_b, "C": so_c, "D": so_d, "E": so_e,
+        },
+    }
+
+
+# =============================================================================
+# HELPER: TÌM CHI TIẾT XẾP LOẠI CỦA 1 CC
+# =============================================================================
+
+async def _find_chi_tiet_xep_loai(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+) -> Optional[ChiTietXepLoai]:
+    """Tìm chi tiết xếp loại của 1 CC trong tháng."""
+    stmt = (
+        select(ChiTietXepLoai)
+        .join(BaoCaoXepLoai)
+        .where(
+            ChiTietXepLoai.cong_chuc_id == cong_chuc_id,
+            BaoCaoXepLoai.thang == thang,
+            BaoCaoXepLoai.nam == nam,
+            BaoCaoXepLoai.is_deleted == False,
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+# =============================================================================
+# 1. EXPORT CÁ NHÂN (Mẫu 01 + 02)
+# =============================================================================
+
+@router.get("/ca-nhan/thang/{thang}/nam/{nam}")
+async def export_ca_nhan(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int,
+    nam: int,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+    cong_chuc_id: Optional[UUID] = Query(None, description="ID CC cần xuất (LĐ xuất cho nhân viên)"),
+):
+    """
+    Xuất báo cáo cá nhân: Mẫu 01 + Mẫu 02 trong 1 file DOCX.
+    
+    - CC thường: Xuất cho chính mình
+    - Lãnh đạo (ĐT/PCCT/CCT): Có thể xuất cho CC thuộc đơn vị (truyền cong_chuc_id)
+    
+    Query params:
+    - format: docx | pdf (default: docx)
+    - cong_chuc_id: UUID (optional, LĐ xuất cho CC khác)
+    """
+    # Validate
+    if thang < 1 or thang > 12:
+        raise HTTPException(400, detail=error_response("VAL_001", "Tháng phải từ 1-12"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+    
+    # Xác định CC cần xuất
+    target_user = current_user
+    if cong_chuc_id and cong_chuc_id != current_user.id:
+        # Kiểm tra quyền: phải là LĐ đơn vị hoặc LĐ chi cục
+        if not (_is_lanh_dao_don_vi(current_user) or _is_lanh_dao_chi_cuc(current_user)):
+            raise HTTPException(403, detail=error_response(
+                "PERM_003", "Bạn không có quyền xuất báo cáo cho người khác"
+            ))
+        
+        # Load target user
+        stmt = (
+            select(CongChuc)
+            .options(selectinload(CongChuc.don_vi), selectinload(CongChuc.vai_tro))
+            .where(CongChuc.id == cong_chuc_id, CongChuc.is_deleted == False)
+        )
+        result = await db.execute(stmt)
+        target_user = result.scalar_one_or_none()
+        if not target_user:
+            raise HTTPException(404, detail=error_response("BIZ_001", "Không tìm thấy công chức"))
+        
+        # ĐT/Phó ĐT chỉ được xuất cho CC cùng đơn vị
+        if _is_lanh_dao_don_vi(current_user) and target_user.don_vi_id != current_user.don_vi_id:
+            raise HTTPException(403, detail=error_response(
+                "PERM_004", "Bạn chỉ được xuất báo cáo cho CC trong đơn vị mình"
+            ))
+    else:
+        # Load đầy đủ relationships cho current_user
+        stmt = (
+            select(CongChuc)
+            .options(selectinload(CongChuc.don_vi), selectinload(CongChuc.vai_tro))
+            .where(CongChuc.id == current_user.id)
+        )
+        result = await db.execute(stmt)
+        target_user = result.scalar_one_or_none() or current_user
+    
+    # Lấy dữ liệu
+    danh_gia = await _get_danh_gia_thang(db, target_user.id, thang, nam)
+    ke_khais = await _get_ke_khai_list(db, target_user.id, thang, nam)
+    chi_tiet_xl = await _find_chi_tiet_xep_loai(db, target_user.id, thang, nam)
+    
+    # Build data
+    mau01_data = _build_mau01_data(target_user, thang, nam, danh_gia, chi_tiet_xl)
+    mau02_data = _build_mau02_data(target_user, thang, nam, ke_khais, chi_tiet_xl)
+    
+    # Generate DOCX via Node.js script
+    import json
+    combined_data = {
+        "mau01": mau01_data,
+        "mau02": mau02_data,
+    }
+    
+    # Gọi Node.js generator
+    docx_bytes = await _generate_docx("ca-nhan", combined_data)
+    
+    # Convert nếu cần PDF
+    if format == "pdf":
+        docx_bytes = convert_docx_to_pdf(docx_bytes)
+    
+    filename = f"BaoCao_CaNhan_{target_user.ma_cc}_{thang:02d}_{nam}.{format}"
+    return make_file_response(docx_bytes, filename, format)
+
+
+# =============================================================================
+# 2. EXPORT ĐƠN VỊ (Mẫu 03)
+# =============================================================================
+
+@router.get("/don-vi/thang/{thang}/nam/{nam}")
+async def export_don_vi(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int,
+    nam: int,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+    don_vi_id: Optional[UUID] = Query(None, description="ID đơn vị (CCT/PCCT chọn đơn vị)"),
+):
+    """
+    Xuất Mẫu 03 - Bảng tổng hợp xếp loại đơn vị.
+    
+    - ĐT/Phó ĐT: Chỉ xuất đơn vị mình
+    - PCCT/CCT: Chọn đơn vị bất kỳ
+    """
+    if thang < 1 or thang > 12:
+        raise HTTPException(400, detail=error_response("VAL_001", "Tháng phải từ 1-12"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+    
+    # Xác định đơn vị
+    target_don_vi_id = don_vi_id or current_user.don_vi_id
+    
+    # Kiểm tra quyền
+    cap_bac = _get_cap_bac(current_user)
+    if cap_bac not in [
+        CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI,
+        CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG,
+    ]:
+        raise HTTPException(403, detail=error_response(
+            "PERM_003", "Bạn không có quyền xuất báo cáo đơn vị"
+        ))
+    
+    # ĐT/Phó ĐT: chỉ được xuất đơn vị mình
+    if _is_lanh_dao_don_vi(current_user) and target_don_vi_id != current_user.don_vi_id:
+        raise HTTPException(403, detail=error_response(
+            "PERM_004", "Bạn chỉ được xuất báo cáo đơn vị mình"
+        ))
+    
+    # Lấy báo cáo
+    bao_cao = await _get_bao_cao_don_vi(db, target_don_vi_id, thang, nam)
+    if not bao_cao:
+        raise HTTPException(404, detail=error_response(
+            "BIZ_002", f"Chưa có báo cáo xếp loại tháng {thang}/{nam} cho đơn vị này"
+        ))
+    
+    try:
+        don_vi_name = bao_cao.don_vi.ten_don_vi if bao_cao.don_vi else ""
+        mau03_data = _build_mau03_data([bao_cao], thang, nam, don_vi_name, is_toan_chi_cuc=False)
+        
+        # Generate DOCX
+        docx_bytes = await _generate_docx("don-vi", mau03_data)
+        
+        if format == "pdf":
+            docx_bytes = convert_docx_to_pdf(docx_bytes)
+        
+        filename = f"BaoCao_DonVi_{thang:02d}_{nam}.{format}"
+        return make_file_response(docx_bytes, filename, format)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[EXPORT] export_don_vi error: {traceback.format_exc()}")
+        raise HTTPException(500, detail=error_response(
+            "SYS_099", f"Lỗi xuất báo cáo: {str(e)[:200]}"
+        ))
+
+
+# =============================================================================
+# 3. EXPORT TOÀN CHI CỤC (Mẫu 03 tổng hợp)
+# =============================================================================
+
+@router.get("/tong-hop/thang/{thang}/nam/{nam}")
+async def export_tong_hop(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int,
+    nam: int,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+):
+    """
+    Xuất Mẫu 03 tổng hợp toàn Chi cục.
+    
+    Quyền: Chỉ CCT và PCCT.
+    """
+    if thang < 1 or thang > 12:
+        raise HTTPException(400, detail=error_response("VAL_001", "Tháng phải từ 1-12"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+    
+    if not _is_lanh_dao_chi_cuc(current_user):
+        raise HTTPException(403, detail=error_response(
+            "PERM_003", "Chỉ CCT và Phó CCT mới được xuất báo cáo tổng hợp toàn Chi cục"
+        ))
+    
+    bao_caos = await _get_all_bao_cao(db, thang, nam)
+    if not bao_caos:
+        raise HTTPException(404, detail=error_response(
+            "BIZ_003", f"Chưa có báo cáo xếp loại tháng {thang}/{nam}"
+        ))
+    
+    mau03_data = _build_mau03_data(
+        bao_caos, thang, nam,
+        don_vi_name="Chi cục Hải quan Khu vực VIII",
+        is_toan_chi_cuc=True,
+    )
+    
+    docx_bytes = await _generate_docx("tong-hop", mau03_data)
+    
+    if format == "pdf":
+        docx_bytes = convert_docx_to_pdf(docx_bytes)
+    
+    filename = f"BaoCao_TongHop_ChiCuc_{thang:02d}_{nam}.{format}"
+    return make_file_response(docx_bytes, filename, format)
+
+
+# =============================================================================
+# HELPER: GỌI NODE.JS SCRIPT TẠO DOCX
+# =============================================================================
+
+async def _generate_docx(report_type: str, data: dict) -> bytes:
+    """
+    Gọi Node.js script để generate DOCX file.
+    
+    Args:
+        report_type: "ca-nhan" | "don-vi" | "tong-hop"
+        data: Dict dữ liệu cho template
+    
+    Returns:
+        bytes: Nội dung file DOCX
+    """
+    import json
+    
+    # Đường dẫn tới script generator
+    script_dir = Path(__file__).parent.parent.parent.parent / "scripts" / "docx_generator"
+    script_path = script_dir / "generate.js"
+    
+    logger.error(f"[EXPORT] _generate_docx: script_path={script_path}, exists={script_path.exists()}, resolved={script_path.resolve()}")
+    
+    if not script_path.exists():
+        raise HTTPException(500, detail=error_response(
+            "SYS_020", f"Script tạo DOCX chưa được cài đặt trên server. Path: {script_path}"
+        ))
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Ghi data JSON
+        data_path = Path(tmpdir) / "data.json"
+        with open(data_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, default=str)
+        
+        output_path = Path(tmpdir) / "output.docx"
+        
+        try:
+            cmd = ["node", str(script_path), report_type, str(data_path), str(output_path)]
+            logger.error(f"[EXPORT] Running: {' '.join(cmd)}")
+            logger.error(f"[EXPORT] CWD: {script_dir}")
+            result = subprocess.run(
+                cmd,
+                capture_output=True, text=True, timeout=30,
+                cwd=str(script_dir),
+            )
+            logger.error(f"[EXPORT] returncode={result.returncode}, stdout={result.stdout[:200]}, stderr={result.stderr[:200]}")
+        except subprocess.TimeoutExpired:
+            raise HTTPException(500, detail=error_response(
+                "SYS_021", "Tạo DOCX quá thời gian cho phép"
+            ))
+        
+        # Node.js có thể exit với code != 0 (ví dụ SIGABRT) nhưng vẫn tạo file OK
+        # Ưu tiên kiểm tra file output tồn tại
+        if output_path.exists() and output_path.stat().st_size > 0:
+            logger.error(f"[EXPORT] DOCX created OK: {output_path.stat().st_size} bytes (returncode={result.returncode})")
+            return output_path.read_bytes()
+        
+        # Nếu file không tồn tại VÀ returncode != 0 → lỗi thật
+        if result.returncode != 0:
+            raise HTTPException(500, detail=error_response(
+                "SYS_022",
+                f"Lỗi tạo DOCX: {result.stderr[:200] if result.stderr else 'Unknown error'}"
+            ))
+        
+        if not output_path.exists():
+            raise HTTPException(500, detail=error_response(
+                "SYS_023", "File DOCX không được tạo thành công"
+            ))
+        
+        return output_path.read_bytes()

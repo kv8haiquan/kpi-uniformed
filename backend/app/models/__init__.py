@@ -1,0 +1,201 @@
+"""
+app/models/__init__.py
+======================
+Export tất cả SQLAlchemy models.
+
+QUAN TRỌNG: File này import từ các file models đã có sẵn trong project.
+Không được viết lại models ở đây.
+
+Phiên bản: 2.5.0 (26/01/2026)
+- Thêm TieuChiChung (Master Data)
+- Thêm TrangThaiTieuChi, LoaiLogicTieuChi enums
+- Thêm helper functions từ kpi_assessment
+"""
+
+# Base classes
+from app.models.base import (
+    Base,
+    BaseModel,
+    BaseModelWithSoftDelete,
+    BaseModelFull,
+    TimestampMixin,
+    SoftDeleteMixin,
+    AuditMixin,
+    UUIDPrimaryKeyMixin,
+)
+
+# User & Organization
+from app.models.user_org import (
+    # Enums
+    LoaiDonVi,
+    CapBacVaiTro,
+    GioiTinh,
+    # Models
+    DonVi,
+    VaiTro,
+    CongChuc,
+)
+
+# Task Catalog
+from app.models.task_catalog import (
+    SpCongViecChuan,
+    CapDoPhucTap,
+    DanhMucSpCongViec,
+)
+
+# KPI Submission
+from app.models.kpi_submission import (
+    # Enums
+    TrangThaiKeKhai,
+    TrangThaiPheDuyet,
+    # Models
+    KeKhaiCongViec,
+    PheDuyetSp,
+)
+
+# KPI Assessment (v2.5.0 - Full exports)
+from app.models.kpi_assessment import (
+    # Enums
+    MucXepLoai,
+    TrangThaiDanhGia,
+    TrangThaiTieuChi,
+    LoaiLogicTieuChi,
+    # Models
+    DanhGiaThang,
+    TieuChiChung,           # ⭐ Master Data: Danh mục tiêu chí chung
+    TieuChiChungDanhGia,    # Kết quả đánh giá tiêu chí chung
+    LanhDaoChiSo,
+    # Helper Constants & Functions
+    DIEM_TOI_DA_TIEU_CHI,
+    get_diem_toi_da,
+    tinh_diem_tu_is_achieved,
+)
+
+# Leader KPI (v2.5 - 27/01/2026)
+from app.models.leader_kpi import (
+    # Enums
+    TrangThaiHoanThanh,
+    # Models
+    KeKhaiLanhDao,
+    DanhGiaDDE,
+)
+
+# Bao cao xep loai
+from app.models.bao_cao_xep_loai import (
+    BaoCaoXepLoai,
+    ChiTietXepLoai,
+)
+
+# Leave Management (v2.3 - 25/01/2026)
+from app.models.leave import (
+    # Enums
+    LoaiNghi,
+    TrangThaiNghi,
+    # Models
+    DangKyNghi,
+)
+
+# Audit Log
+from app.models.audit_log import (
+    AuditAction,
+    AuditLog,
+)
+
+from app.models.lich_su_dieu_chinh import (
+    LoaiDoiTuongDieuChinh,
+    LichSuDieuChinh,
+)
+
+__all__ = [
+    # ==========================================================================
+    # BASE CLASSES
+    # ==========================================================================
+    "Base",
+    "BaseModel",
+    "BaseModelWithSoftDelete",
+    "BaseModelFull",
+    "TimestampMixin",
+    "SoftDeleteMixin",
+    "AuditMixin",
+    "UUIDPrimaryKeyMixin",
+    
+    # ==========================================================================
+    # USER & ORGANIZATION
+    # ==========================================================================
+    # Enums
+    "LoaiDonVi",
+    "CapBacVaiTro",
+    "GioiTinh",
+    # Models
+    "DonVi",
+    "VaiTro",
+    "CongChuc",
+    
+    # ==========================================================================
+    # TASK CATALOG
+    # ==========================================================================
+    "SpCongViecChuan",
+    "CapDoPhucTap",
+    "DanhMucSpCongViec",
+    
+    # ==========================================================================
+    # KPI SUBMISSION
+    # ==========================================================================
+    # Enums
+    "TrangThaiKeKhai",
+    "TrangThaiPheDuyet",
+    # Models
+    "KeKhaiCongViec",
+    "PheDuyetSp",
+    
+    # ==========================================================================
+    # KPI ASSESSMENT (v2.5.0)
+    # ==========================================================================
+    # Enums
+    "MucXepLoai",
+    "TrangThaiDanhGia",
+    "TrangThaiTieuChi",
+    "LoaiLogicTieuChi",
+    # Models
+    "DanhGiaThang",
+    "TieuChiChung",             # ⭐ Master Data
+    "TieuChiChungDanhGia",
+    "LanhDaoChiSo",
+    # Helper Constants & Functions
+    "DIEM_TOI_DA_TIEU_CHI",
+    "get_diem_toi_da",
+    "tinh_diem_tu_is_achieved",
+    
+    # ==========================================================================
+    # LEAVE MANAGEMENT (v2.3)
+    # ==========================================================================
+    # Enums
+    "LoaiNghi",
+    "TrangThaiNghi",
+    # Models
+    "DangKyNghi",
+    
+    # ==========================================================================
+    # AUDIT LOG
+    # ==========================================================================
+    "AuditAction",
+    "AuditLog",
+    # ==========================================================================
+    # LEADER KPI (v2.5)
+    # ==========================================================================
+    "TrangThaiHoanThanh",
+    "KeKhaiLanhDao",
+    "DanhGiaDDE",
+    
+    # ==========================================================================
+    # BAO CAO XEP LOAI
+    # ==========================================================================
+    "BaoCaoXepLoai",
+    "ChiTietXepLoai",
+
+    # ==========================================================================
+    # LICH SU DIEU CHINH
+    # ==========================================================================    
+    "LoaiDoiTuongDieuChinh",
+    "LichSuDieuChinh",
+]

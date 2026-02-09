@@ -1,0 +1,449 @@
+/**
+ * src/app/globals.css
+ * ===================
+ * Global CSS styles với Tailwind CSS v4.
+ */
+
+ @import "tailwindcss";
+
+ /* =============================================================================
+    THEME CONFIGURATION - Tailwind CSS v4
+    ============================================================================= */
+ 
+ @theme {
+   /* Custom fonts */
+   --font-sans: var(--font-inter), system-ui, sans-serif;
+ 
+   /* Primary blue (màu chủ đạo Hải quan) */
+   --color-primary-50: #eff6ff;
+   --color-primary-100: #dbeafe;
+   --color-primary-200: #bfdbfe;
+   --color-primary-300: #93c5fd;
+   --color-primary-400: #60a5fa;
+   --color-primary-500: #3b82f6;
+   --color-primary-600: #2563eb;
+   --color-primary-700: #1d4ed8;
+   --color-primary-800: #1e40af;
+   --color-primary-900: #1e3a8a;
+   --color-primary-950: #172554;
+ 
+   /* Xếp loại colors */
+   --color-xep-loai-A: #16a34a;
+   --color-xep-loai-B: #2563eb;
+   --color-xep-loai-C: #ca8a04;
+   --color-xep-loai-D: #dc2626;
+ 
+   /* Custom spacing */
+   --spacing-18: 4.5rem;
+   --spacing-88: 22rem;
+ 
+   /* Custom border radius */
+   --radius-4xl: 2rem;
+ 
+   /* Custom animations */
+   --animate-fade-in: fade-in 0.2s ease-in-out;
+   --animate-slide-up: slide-up 0.3s ease-out;
+   --animate-slide-down: slide-down 0.3s ease-out;
+ 
+   /* Keyframes */
+   @keyframes fade-in {
+     from {
+       opacity: 0;
+     }
+     to {
+       opacity: 1;
+     }
+   }
+ 
+   @keyframes slide-up {
+     from {
+       opacity: 0;
+       transform: translateY(10px);
+     }
+     to {
+       opacity: 1;
+       transform: translateY(0);
+     }
+   }
+ 
+   @keyframes slide-down {
+     from {
+       opacity: 0;
+       transform: translateY(-10px);
+     }
+     to {
+       opacity: 1;
+       transform: translateY(0);
+     }
+   }
+ }
+ 
+ /* =============================================================================
+    BASE LAYER - Custom base styles
+    ============================================================================= */
+ 
+ @layer base {
+   /* Custom focus styles */
+   *:focus-visible {
+     outline-width: 2px;
+     outline-offset: 2px;
+     outline-color: #3b82f6;
+   }
+ 
+   /* Smooth scrolling */
+   html {
+     scroll-behavior: smooth;
+   }
+ 
+   /* Better text rendering */
+   body {
+     color: #111827;
+     background-color: #f9fafb;
+     text-rendering: optimizeLegibility;
+     -webkit-font-smoothing: antialiased;
+     -moz-osx-font-smoothing: grayscale;
+   }
+ 
+   /* Remove default button styles */
+   button {
+     cursor: pointer;
+   }
+ 
+   /* Links */
+   a {
+     color: #2563eb;
+     transition: color 0.15s ease;
+   }
+ 
+   a:hover {
+     color: #1d4ed8;
+   }
+ 
+   /* Headings */
+   h1,
+   h2,
+   h3,
+   h4,
+   h5,
+   h6 {
+     font-weight: 600;
+     color: #111827;
+   }
+ }
+ 
+ /* =============================================================================
+    COMPONENTS LAYER - Reusable component styles
+    ============================================================================= */
+ 
+ @layer components {
+   /* Button base */
+   .btn {
+     display: inline-flex;
+     align-items: center;
+     justify-content: center;
+     padding: 0.5rem 1rem;
+     font-weight: 500;
+     border-radius: 0.375rem;
+     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+     transition: all 0.15s ease;
+   }
+ 
+   .btn:focus {
+     outline: none;
+     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+   }
+ 
+   .btn:disabled {
+     opacity: 0.5;
+     cursor: not-allowed;
+   }
+ 
+   /* Button variants */
+   .btn-primary {
+     background-color: #2563eb;
+     color: white;
+   }
+ 
+   .btn-primary:hover:not(:disabled) {
+     background-color: #1d4ed8;
+   }
+ 
+   .btn-primary:focus {
+     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+   }
+ 
+   .btn-secondary {
+     background-color: #f3f4f6;
+     color: #374151;
+   }
+ 
+   .btn-secondary:hover:not(:disabled) {
+     background-color: #e5e7eb;
+   }
+ 
+   .btn-secondary:focus {
+     box-shadow: 0 0 0 2px rgba(107, 114, 128, 0.3);
+   }
+ 
+   .btn-danger {
+     background-color: #dc2626;
+     color: white;
+   }
+ 
+   .btn-danger:hover:not(:disabled) {
+     background-color: #b91c1c;
+   }
+ 
+   .btn-danger:focus {
+     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3);
+   }
+ 
+   .btn-success {
+     background-color: #16a34a;
+     color: white;
+   }
+ 
+   .btn-success:hover:not(:disabled) {
+     background-color: #15803d;
+   }
+ 
+   .btn-success:focus {
+     box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+   }
+ 
+   .btn-outline {
+     background-color: white;
+     color: #374151;
+     border: 1px solid #d1d5db;
+   }
+ 
+   .btn-outline:hover:not(:disabled) {
+     background-color: #f9fafb;
+   }
+ 
+   .btn-outline:focus {
+     box-shadow: 0 0 0 2px rgba(107, 114, 128, 0.3);
+   }
+ 
+   /* Form inputs */
+   .input {
+     display: block;
+     width: 100%;
+     padding: 0.5rem 0.75rem;
+     border: 1px solid #d1d5db;
+     border-radius: 0.375rem;
+     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+     transition: border-color 0.15s ease, box-shadow 0.15s ease;
+   }
+ 
+   .input::placeholder {
+     color: #9ca3af;
+   }
+ 
+   .input:focus {
+     outline: none;
+     border-color: #3b82f6;
+     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+   }
+ 
+   .input:disabled {
+     background-color: #f3f4f6;
+     cursor: not-allowed;
+   }
+ 
+   .input-error {
+     border-color: #fca5a5;
+   }
+ 
+   .input-error:focus {
+     border-color: #ef4444;
+     box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+   }
+ 
+   /* Labels */
+   .label {
+     display: block;
+     font-size: 0.875rem;
+     font-weight: 500;
+     color: #374151;
+     margin-bottom: 0.25rem;
+   }
+ 
+   /* Form error text */
+   .error-text {
+     font-size: 0.875rem;
+     color: #ef4444;
+     margin-top: 0.25rem;
+   }
+ 
+   /* Cards */
+   .card {
+     background-color: white;
+     border-radius: 0.5rem;
+     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+     border: 1px solid #e5e7eb;
+   }
+ 
+   .card-header {
+     padding: 0.75rem 1rem;
+     border-bottom: 1px solid #e5e7eb;
+     background-color: #f9fafb;
+     border-top-left-radius: 0.5rem;
+     border-top-right-radius: 0.5rem;
+   }
+ 
+   .card-body {
+     padding: 1rem;
+   }
+ 
+   .card-footer {
+     padding: 0.75rem 1rem;
+     border-top: 1px solid #e5e7eb;
+     background-color: #f9fafb;
+     border-bottom-left-radius: 0.5rem;
+     border-bottom-right-radius: 0.5rem;
+   }
+ 
+   /* Tables */
+   .table {
+     width: 100%;
+     border-collapse: separate;
+     border-spacing: 0;
+   }
+ 
+   .table thead {
+     background-color: #f9fafb;
+   }
+ 
+   .table th {
+     padding: 0.75rem 1rem;
+     text-align: left;
+     font-size: 0.75rem;
+     font-weight: 600;
+     color: #4b5563;
+     text-transform: uppercase;
+     letter-spacing: 0.05em;
+   }
+ 
+   .table td {
+     padding: 0.75rem 1rem;
+     font-size: 0.875rem;
+     color: #111827;
+     white-space: nowrap;
+     border-bottom: 1px solid #e5e7eb;
+   }
+ 
+   .table tbody tr {
+     transition: background-color 0.15s ease;
+   }
+ 
+   .table tbody tr:hover {
+     background-color: #f9fafb;
+   }
+ 
+   /* Badge base */
+   .badge {
+     display: inline-flex;
+     align-items: center;
+     padding: 0.125rem 0.625rem;
+     border-radius: 9999px;
+     font-size: 0.75rem;
+     font-weight: 500;
+   }
+ 
+   /* Badge variants */
+   .badge-blue {
+     background-color: #dbeafe;
+     color: #1e40af;
+   }
+ 
+   .badge-green {
+     background-color: #dcfce7;
+     color: #166534;
+   }
+ 
+   .badge-yellow {
+     background-color: #fef9c3;
+     color: #854d0e;
+   }
+ 
+   .badge-red {
+     background-color: #fee2e2;
+     color: #991b1b;
+   }
+ 
+   .badge-gray {
+     background-color: #f3f4f6;
+     color: #1f2937;
+   }
+ 
+   /* Xếp loại badges */
+   .badge-xep-loai-A {
+     background-color: #dcfce7;
+     color: #166534;
+     border: 1px solid #bbf7d0;
+   }
+ 
+   .badge-xep-loai-B {
+     background-color: #dbeafe;
+     color: #1e40af;
+     border: 1px solid #bfdbfe;
+   }
+ 
+   .badge-xep-loai-C {
+     background-color: #fef9c3;
+     color: #854d0e;
+     border: 1px solid #fef08a;
+   }
+ 
+   .badge-xep-loai-D {
+     background-color: #fee2e2;
+     color: #991b1b;
+     border: 1px solid #fecaca;
+   }
+ }
+ 
+ /* =============================================================================
+    UTILITIES LAYER - Custom utilities
+    ============================================================================= */
+ 
+ @layer utilities {
+   /* Text utilities */
+   .text-balance {
+     text-wrap: balance;
+   }
+ 
+   /* Scrollbar utilities */
+   .scrollbar-thin {
+     scrollbar-width: thin;
+   }
+ 
+   .scrollbar-hide {
+     scrollbar-width: none;
+   }
+ 
+   .scrollbar-hide::-webkit-scrollbar {
+     display: none;
+   }
+ }
+ 
+ /* =============================================================================
+    PRINT STYLES
+    ============================================================================= */
+ 
+ @media print {
+   .no-print {
+     display: none !important;
+   }
+ 
+   body {
+     background-color: white;
+     color: black;
+   }
+ 
+   .card {
+     box-shadow: none;
+     border: 1px solid #d1d5db;
+   }
+ }
+ 

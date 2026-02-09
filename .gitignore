@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Node.js
+node_modules/
+.next/
+out/
+
+# Environment files (KHÔNG push lên GitHub)
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Backup files
+*.sql.gz
+*.sql
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1487 @@
+"""
+app/api/v1/endpoints/nghi_phep.py
+=================================
+API Endpoints cho Quản lý Nghỉ phép (Leave Management).
+
+Đặc thù nghiệp vụ Hải quan:
+- Công chức làm việc theo CA/KÍP, KHÔNG nghỉ cố định T7/CN
+- CC phải đăng ký NGHI_TUAN trên hệ thống cho ngày nghỉ tuần
+- Công thức KPI: SP_được_giao = (Ngày_dương_lịch - Ngày_nghỉ_đã_duyệt) × 96
+
+Endpoints:
+- GET /nghi-phep/nguoi-phe-duyet: Lấy DS người phê duyệt phù hợp
+- GET /nghi-phep: DS đơn nghỉ của bản thân
+- GET /nghi-phep/{id}: Chi tiết đơn nghỉ
+- POST /nghi-phep: Tạo đơn nghỉ đơn lẻ
+- POST /nghi-phep/bulk: Đăng ký nghỉ tuần hàng loạt
+- PUT /nghi-phep/{id}: Cập nhật đơn
+- DELETE /nghi-phep/{id}: Xóa/Hủy đơn
+- GET /nghi-phep/cho-phe-duyet: DS chờ tôi phê duyệt
+- POST /nghi-phep/{id}/phe-duyet: Phê duyệt
+- POST /nghi-phep/{id}/tu-choi: Từ chối
+- GET /nghi-phep/thong-ke: Thống kê cá nhân
+- GET /nghi-phep/thong-ke/don-vi/{don_vi_id}: Thống kê đơn vị
+
+Phiên bản: 1.1 (26/01/2026) - Cải tiến auto-assign approver
+"""
+
+import calendar
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Optional, List
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import select, func, and_, or_, case
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.api.deps import DatabaseDep, ActiveUserDep
+from app.models.leave import DangKyNghi, LoaiNghi, TrangThaiNghi
+from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro, DonVi
+from app.schemas.common import (
+    success_response,
+    error_response,
+)
+from app.schemas.leave import (
+    LoaiNghiEnum,
+    TrangThaiNghiEnum,
+    NghiPhepCreate,
+    NghiPhepBulkCreate,
+    NghiPhepUpdate,
+    PheDuyetNghiPhepRequest,
+    TuChoiNghiPhepRequest,
+    NghiPhepResponse,
+    NghiPhepBulkResponse,
+    CongChucNghiPhepBrief,
+    ThongKeNghiPhepLoai,
+    ThongKeNghiPhepThang,
+    ThongKeNghiPhepCaNhan,
+    ThongKeNghiPhepDonVi,
+    ThongKeNghiPhepTongHop,
+    ThongKeNghiPhepCC,
+    TongNgayNghiThangResponse,
+)
+
+
+router = APIRouter()
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def build_nghi_phep_response(nghi: DangKyNghi) -> dict:
+    """
+    Chuyển đổi DangKyNghi model thành response dict.
+    """
+    # Thông tin người đăng ký
+    cong_chuc_data = None
+    if nghi.cong_chuc:
+        cc = nghi.cong_chuc
+        cong_chuc_data = {
+            "id": cc.id,
+            "ma_cc": cc.ma_cc,
+            "ho_ten": cc.ho_ten,
+            "chuc_vu": cc.chuc_vu,
+            "don_vi_ten": cc.don_vi.ten_don_vi if cc.don_vi else None,
+        }
+    
+    # Thông tin người phê duyệt
+    nguoi_phe_duyet_data = None
+    if nghi.nguoi_phe_duyet:
+        npd = nghi.nguoi_phe_duyet
+        nguoi_phe_duyet_data = {
+            "id": npd.id,
+            "ma_cc": npd.ma_cc,
+            "ho_ten": npd.ho_ten,
+            "chuc_vu": npd.chuc_vu,
+            "don_vi_ten": npd.don_vi.ten_don_vi if npd.don_vi else None,
+        }
+    
+    return {
+        "id": nghi.id,
+        "cong_chuc_id": nghi.cong_chuc_id,
+        "cong_chuc": cong_chuc_data,
+        "loai_nghi": nghi.loai_nghi.value,
+        "loai_nghi_ten": nghi.loai_nghi_ten,
+        "tu_ngay": nghi.tu_ngay,
+        "den_ngay": nghi.den_ngay,
+        "so_ngay": float(nghi.so_ngay),
+        "ly_do": nghi.ly_do,
+        "tai_lieu_dinh_kem": nghi.tai_lieu_dinh_kem,
+        "nguoi_phe_duyet_id": nghi.nguoi_phe_duyet_id,
+        "nguoi_phe_duyet": nguoi_phe_duyet_data,
+        "trang_thai": nghi.trang_thai.value,
+        "trang_thai_ten": nghi.trang_thai_ten,
+        "ly_do_tu_choi": nghi.ly_do_tu_choi,
+        "ngay_phe_duyet": nghi.ngay_phe_duyet.isoformat() if nghi.ngay_phe_duyet else None,
+        "ghi_chu_phe_duyet": nghi.ghi_chu_phe_duyet,
+        "thang_ap_dung": nghi.thang_ap_dung,
+        "nam_ap_dung": nghi.nam_ap_dung,
+        "da_tinh_kpi": nghi.da_tinh_kpi,
+        "created_at": nghi.created_at.isoformat() if nghi.created_at else None,
+        "updated_at": nghi.updated_at.isoformat() if nghi.updated_at else None,
+    }
+
+
+async def auto_assign_thang_ap_dung(nghi: DangKyNghi) -> None:
+    """
+    Tự động gán thang_ap_dung và nam_ap_dung dựa trên tu_ngay.
+    Nếu nghỉ qua nhiều tháng, lấy tháng của tu_ngay.
+    """
+    if nghi.tu_ngay:
+        nghi.thang_ap_dung = nghi.tu_ngay.month
+        nghi.nam_ap_dung = nghi.tu_ngay.year
+
+
+# =============================================================================
+# SMART AUTO-ASSIGN APPROVER - LOGIC MỚI v1.1
+# =============================================================================
+
+async def find_approver(
+    db: AsyncSession,
+    user: CongChuc,
+) -> Optional[CongChuc]:
+    """
+    🔄 TÌM NGƯỜI PHÊ DUYỆT TỰ ĐỘNG dựa trên cấp bậc và đơn vị của user.
+    
+    Quy tắc nghiệp vụ:
+    ┌─────────────────────────────────────────────────────────────────┐
+    │  User là ai?       │  Người duyệt tự động là?                  │
+    ├────────────────────┼────────────────────────────────────────────┤
+    │  CCT               │  Tự phê duyệt (trả về chính mình)         │
+    │  PCCT              │  CCT                                       │
+    │  TDV               │  CCT                                       │
+    │  PDV               │  TDV cùng đơn vị → nếu không có → CCT     │
+    │  CC                │  TDV cùng đơn vị → nếu không có → CCT     │
+    │  Khác              │  TDV cùng đơn vị → nếu không có → CCT     │
+    └─────────────────────────────────────────────────────────────────┘
+    
+    Returns:
+        CongChuc: Người phê duyệt phù hợp
+        None: Nếu không tìm được ai (trường hợp hiếm)
+    """
+    # Lấy cấp bậc của user
+    user_cap_bac = None
+    if user.vai_tro:
+        user_cap_bac = user.vai_tro.cap_bac
+    
+    # -------------------------------------------------------------------------
+    # CASE 1: CCT → Tự phê duyệt
+    # -------------------------------------------------------------------------
+    if user_cap_bac == CapBacVaiTro.CHI_CUC_TRUONG:
+        return user  # Trả về chính user
+    
+    # -------------------------------------------------------------------------
+    # CASE 2: PCCT hoặc TDV → Tìm CCT
+    # -------------------------------------------------------------------------
+    if user_cap_bac in [CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.TRUONG_DON_VI]:
+        stmt = (
+            select(CongChuc)
+            .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id)
+            .where(CongChuc.is_deleted == False)
+            .where(CongChuc.is_active == True)
+            .where(VaiTro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG)
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        cct = result.scalar_one_or_none()
+        return cct  # Có thể None nếu không có CCT (hiếm)
+    
+    # -------------------------------------------------------------------------
+    # CASE 3: PDV, CC, hoặc role khác → Tìm TDV cùng đơn vị, fallback CCT
+    # -------------------------------------------------------------------------
+    
+    # Bước 3.1: Tìm Trưởng đơn vị (TDV) cùng don_vi_id
+    stmt_tdv = (
+        select(CongChuc)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id)
+        .where(CongChuc.is_deleted == False)
+        .where(CongChuc.is_active == True)
+        .where(CongChuc.don_vi_id == user.don_vi_id)  # Cùng đơn vị
+        .where(VaiTro.cap_bac == CapBacVaiTro.TRUONG_DON_VI)
+        .limit(1)
+    )
+    result_tdv = await db.execute(stmt_tdv)
+    truong_don_vi = result_tdv.scalar_one_or_none()
+    
+    if truong_don_vi:
+        # Tìm thấy TDV cùng đơn vị
+        return truong_don_vi
+    
+    # Bước 3.2: Không có TDV → Fallback tìm CCT
+    stmt_cct = (
+        select(CongChuc)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id)
+        .where(CongChuc.is_deleted == False)
+        .where(CongChuc.is_active == True)
+        .where(VaiTro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG)
+        .limit(1)
+    )
+    result_cct = await db.execute(stmt_cct)
+    cct = result_cct.scalar_one_or_none()
+    
+    return cct  # Có thể None nếu không có CCT
+
+
+async def get_approver_list_for_user(
+    db: AsyncSession,
+    current_user: CongChuc,
+) -> List[CongChuc]:
+    """
+    Lấy DANH SÁCH người phê duyệt để hiển thị cho user chọn (dropdown).
+    Khác với find_approver (trả về 1 người), hàm này trả về DANH SÁCH.
+    
+    Logic:
+    - Admin → Tất cả Lãnh đạo
+    - CCT → Danh sách rỗng (tự phê duyệt)
+    - PCCT/TDV → Các CCT
+    - PDV → Các TDV cùng đơn vị
+    - CC → Các TDV cùng đơn vị (thay đổi: không chọn PDV nữa)
+    """
+    user_cap_bac = None
+    is_admin = False
+    
+    if current_user.vai_tro:
+        user_cap_bac = current_user.vai_tro.cap_bac
+        is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) or False
+    
+    # Admin → Tất cả Lãnh đạo
+    if is_admin:
+        stmt = (
+            select(CongChuc)
+            .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id)
+            .where(CongChuc.is_deleted == False)
+            .where(CongChuc.is_active == True)
+            .where(VaiTro.is_lanh_dao == True)
+            .order_by(VaiTro.cap_bac, CongChuc.ho_ten)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+    
+    # CCT → Tự phê duyệt (không cần chọn)
+    if user_cap_bac == CapBacVaiTro.CHI_CUC_TRUONG:
+        return []
+    
+    # Phó CCT / Trưởng ĐV → Danh sách CCT
+    if user_cap_bac in [CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.TRUONG_DON_VI]:
+        stmt = (
+            select(CongChuc)
+            .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id)
+            .where(CongChuc.is_deleted == False)
+            .where(CongChuc.is_active == True)
+            .where(VaiTro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+    
+    # Phó ĐV / CC / Khác → Danh sách TDV cùng đơn vị
+    stmt = (
+        select(CongChuc)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id)
+        .where(CongChuc.is_deleted == False)
+        .where(CongChuc.is_active == True)
+        .where(CongChuc.don_vi_id == current_user.don_vi_id)
+        .where(VaiTro.cap_bac == CapBacVaiTro.TRUONG_DON_VI)
+    )
+    result = await db.execute(stmt)
+    tdv_list = list(result.scalars().all())
+    
+    # Nếu đơn vị không có TDV → fallback CCT
+    if not tdv_list:
+        stmt_cct = (
+            select(CongChuc)
+            .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id)
+            .where(CongChuc.is_deleted == False)
+            .where(CongChuc.is_active == True)
+            .where(VaiTro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG)
+        )
+        result_cct = await db.execute(stmt_cct)
+        return list(result_cct.scalars().all())
+    
+    return tdv_list
+
+
+# =============================================================================
+# GET NGUOI PHE DUYET (Đặt trước các route có path variable)
+# =============================================================================
+
+@router.get("/nguoi-phe-duyet")
+async def get_nguoi_phe_duyet(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """
+    Lấy danh sách người phê duyệt phù hợp với cấp bậc của user.
+    
+    Luồng phê duyệt nghỉ phép (v1.1):
+    - CC/PDV → Trưởng ĐV cùng đơn vị
+    - TDV → CCT
+    - Phó CCT → CCT
+    - CCT → Tự phê duyệt
+    """
+    user_cap_bac = None
+    is_admin = False
+    
+    if current_user.vai_tro:
+        user_cap_bac = current_user.vai_tro.cap_bac
+        is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) or False
+    
+    # CCT tự phê duyệt
+    if user_cap_bac == CapBacVaiTro.CHI_CUC_TRUONG:
+        return success_response(
+            data={
+                "message": "Chi cục trưởng tự phê duyệt đơn nghỉ phép",
+                "nguoi_phe_duyet": [],
+                "auto_approve": True,
+            },
+            message="Chi cục trưởng tự phê duyệt"
+        )
+    
+    approvers = await get_approver_list_for_user(db, current_user)
+    
+    return success_response(
+        data={
+            "nguoi_phe_duyet": [
+                {
+                    "id": cc.id,
+                    "ma_cc": cc.ma_cc,
+                    "ho_ten": cc.ho_ten,
+                    "chuc_vu": cc.chuc_vu,
+                    "don_vi_ten": cc.don_vi.ten_don_vi if cc.don_vi else None,
+                    "cap_bac": cc.vai_tro.cap_bac.value if cc.vai_tro else None,
+                }
+                for cc in approvers
+            ],
+            "auto_approve": False,
+        },
+        message=f"Danh sách {len(approvers)} người có thể phê duyệt"
+    )
+
+
+@router.get("/cho-phe-duyet")
+async def get_danh_sach_cho_phe_duyet(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> dict:
+    """
+    Lấy danh sách đơn nghỉ phép đang chờ tôi phê duyệt.
+    
+    Dành cho: Lãnh đạo (TDV, PDV, PCCT, CCT)
+    """
+    if not current_user.is_lanh_dao:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="PERM_001", message="Chỉ Lãnh đạo mới có đơn cần phê duyệt")
+        )
+    
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.nguoi_phe_duyet_id == current_user.id)
+        .where(DangKyNghi.trang_thai == TrangThaiNghi.CHO_PHE_DUYET)
+        .order_by(DangKyNghi.created_at.desc())
+    )
+    
+    count_stmt = (
+        select(func.count(DangKyNghi.id))
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.nguoi_phe_duyet_id == current_user.id)
+        .where(DangKyNghi.trang_thai == TrangThaiNghi.CHO_PHE_DUYET)
+    )
+    
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+    
+    offset = (page - 1) * page_size
+    stmt = stmt.offset(offset).limit(page_size)
+    
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+    
+    return success_response(
+        data={
+            "items": [build_nghi_phep_response(n) for n in items],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size,
+            }
+        },
+        message=f"Có {total} đơn đang chờ phê duyệt"
+    )
+
+
+@router.get("/thong-ke")
+async def get_thong_ke_ca_nhan(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    nam: int = Query(..., description="Năm thống kê"),
+) -> dict:
+    """
+    Thống kê nghỉ phép cá nhân theo năm.
+    
+    Bao gồm:
+    - Tổng ngày nghỉ theo loại
+    - Phép năm còn lại
+    - Chi tiết theo tháng
+    """
+    # Query tổng theo loại (chỉ đã duyệt)
+    stmt_tong = (
+        select(
+            DangKyNghi.loai_nghi,
+            func.sum(DangKyNghi.so_ngay).label("tong_ngay")
+        )
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == current_user.id)
+        .where(DangKyNghi.nam_ap_dung == nam)
+        .where(DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET)
+        .group_by(DangKyNghi.loai_nghi)
+    )
+    result_tong = await db.execute(stmt_tong)
+    rows = result_tong.all()
+    
+    # Build chi tiết
+    chi_tiet = {
+        "nghi_tuan": Decimal("0"),
+        "phep_nam": Decimal("0"),
+        "nghi_le": Decimal("0"),
+        "nghi_om": Decimal("0"),
+        "thai_san": Decimal("0"),
+        "viec_rieng": Decimal("0"),
+        "khong_luong": Decimal("0"),
+        "nghi_bu": Decimal("0"),
+        "khac": Decimal("0"),
+    }
+    
+    loai_mapping = {
+        LoaiNghi.NGHI_TUAN: "nghi_tuan",
+        LoaiNghi.PHEP_NAM: "phep_nam",
+        LoaiNghi.NGHI_LE: "nghi_le",
+        LoaiNghi.NGHI_OM: "nghi_om",
+        LoaiNghi.THAI_SAN: "thai_san",
+        LoaiNghi.VIEC_RIENG: "viec_rieng",
+        LoaiNghi.KHONG_LUONG: "khong_luong",
+        LoaiNghi.NGHI_BU: "nghi_bu",
+        LoaiNghi.KHAC: "khac",
+    }
+    
+    tong_ngay_nghi = Decimal("0")
+    for row in rows:
+        key = loai_mapping.get(row.loai_nghi)
+        if key and row.tong_ngay:
+            chi_tiet[key] = Decimal(str(row.tong_ngay))
+            tong_ngay_nghi += Decimal(str(row.tong_ngay))
+    
+    # Tính phép năm còn lại (giả sử 12 ngày/năm)
+    phep_nam_quota = 12
+    chi_tiet["phep_nam_con_lai"] = phep_nam_quota - chi_tiet["phep_nam"]
+    
+    # Query theo tháng
+    stmt_thang = (
+        select(
+            DangKyNghi.thang_ap_dung,
+            func.sum(case(
+                (DangKyNghi.loai_nghi == LoaiNghi.NGHI_TUAN, DangKyNghi.so_ngay),
+                else_=Decimal("0")
+            )).label("nghi_tuan"),
+            func.sum(case(
+                (DangKyNghi.loai_nghi != LoaiNghi.NGHI_TUAN, DangKyNghi.so_ngay),
+                else_=Decimal("0")
+            )).label("nghi_khac"),
+            func.sum(DangKyNghi.so_ngay).label("tong")
+        )
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == current_user.id)
+        .where(DangKyNghi.nam_ap_dung == nam)
+        .where(DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET)
+        .group_by(DangKyNghi.thang_ap_dung)
+        .order_by(DangKyNghi.thang_ap_dung)
+    )
+    result_thang = await db.execute(stmt_thang)
+    rows_thang = result_thang.all()
+    
+    theo_thang = [
+        {
+            "thang": row.thang_ap_dung,
+            "nam": nam,
+            "nghi_tuan": float(row.nghi_tuan or 0),
+            "nghi_khac": float(row.nghi_khac or 0),
+            "tong": float(row.tong or 0),
+        }
+        for row in rows_thang
+    ]
+    
+    return success_response(
+        data={
+            "cong_chuc_id": current_user.id,
+            "nam": nam,
+            "tong_ngay_nghi": float(tong_ngay_nghi),
+            "chi_tiet": {k: float(v) if v else None for k, v in chi_tiet.items()},
+            "theo_thang": theo_thang,
+        },
+        message=f"Thống kê nghỉ phép năm {nam}"
+    )
+
+
+@router.get("/thong-ke/don-vi/{don_vi_id}")
+async def get_thong_ke_don_vi(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    don_vi_id: UUID,
+    thang: int = Query(..., ge=1, le=12, description="Tháng thống kê"),
+    nam: int = Query(..., description="Năm thống kê"),
+) -> dict:
+    """
+    Thống kê nghỉ phép theo đơn vị.
+    
+    Dành cho: Trưởng/Phó đơn vị, Lãnh đạo Chi cục
+    """
+    # Kiểm tra quyền
+    user_cap_bac = None
+    if current_user.vai_tro:
+        user_cap_bac = current_user.vai_tro.cap_bac
+    
+    # Phải là lãnh đạo hoặc cùng đơn vị
+    is_lanh_dao_chi_cuc = user_cap_bac in [
+        CapBacVaiTro.CHI_CUC_TRUONG,
+        CapBacVaiTro.PHO_CHI_CUC_TRUONG,
+    ]
+    is_lanh_dao_don_vi = (
+        current_user.don_vi_id == don_vi_id and 
+        current_user.is_lanh_dao
+    )
+    
+    if not (is_lanh_dao_chi_cuc or is_lanh_dao_don_vi):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PERM_001",
+                message="Không có quyền xem thống kê đơn vị này"
+            )
+        )
+    
+    # Lấy thông tin đơn vị
+    don_vi_result = await db.execute(
+        select(DonVi).where(DonVi.id == don_vi_id).where(DonVi.is_deleted == False)
+    )
+    don_vi = don_vi_result.scalar_one_or_none()
+    if not don_vi:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Đơn vị không tồn tại")
+        )
+    
+    # Query tổng hợp đơn
+    stmt_tong_hop = (
+        select(
+            func.count(DangKyNghi.id).label("tong_don"),
+            func.sum(case(
+                (DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET, 1),
+                else_=0
+            )).label("da_phe_duyet"),
+            func.sum(case(
+                (DangKyNghi.trang_thai == TrangThaiNghi.CHO_PHE_DUYET, 1),
+                else_=0
+            )).label("cho_phe_duyet"),
+            func.sum(case(
+                (DangKyNghi.trang_thai == TrangThaiNghi.TU_CHOI, 1),
+                else_=0
+            )).label("tu_choi"),
+            func.sum(case(
+                (DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET, DangKyNghi.so_ngay),
+                else_=Decimal("0")
+            )).label("tong_ngay_nghi"),
+        )
+        .join(CongChuc, DangKyNghi.cong_chuc_id == CongChuc.id)
+        .where(DangKyNghi.is_deleted == False)
+        .where(CongChuc.don_vi_id == don_vi_id)
+        .where(DangKyNghi.thang_ap_dung == thang)
+        .where(DangKyNghi.nam_ap_dung == nam)
+    )
+    result_tong_hop = await db.execute(stmt_tong_hop)
+    row_tong_hop = result_tong_hop.one()
+    
+    tong_hop = {
+        "tong_don": row_tong_hop.tong_don or 0,
+        "da_phe_duyet": row_tong_hop.da_phe_duyet or 0,
+        "cho_phe_duyet": row_tong_hop.cho_phe_duyet or 0,
+        "tu_choi": row_tong_hop.tu_choi or 0,
+        "tong_ngay_nghi": float(row_tong_hop.tong_ngay_nghi or 0),
+    }
+    
+    # Query theo loại (chỉ đã duyệt)
+    stmt_theo_loai = (
+        select(
+            DangKyNghi.loai_nghi,
+            func.sum(DangKyNghi.so_ngay).label("tong_ngay")
+        )
+        .join(CongChuc, DangKyNghi.cong_chuc_id == CongChuc.id)
+        .where(DangKyNghi.is_deleted == False)
+        .where(CongChuc.don_vi_id == don_vi_id)
+        .where(DangKyNghi.thang_ap_dung == thang)
+        .where(DangKyNghi.nam_ap_dung == nam)
+        .where(DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET)
+        .group_by(DangKyNghi.loai_nghi)
+    )
+    result_theo_loai = await db.execute(stmt_theo_loai)
+    rows_theo_loai = result_theo_loai.all()
+    
+    theo_loai = {
+        "nghi_tuan": 0, "phep_nam": 0, "nghi_le": 0,
+        "nghi_om": 0, "thai_san": 0, "viec_rieng": 0,
+        "khong_luong": 0, "nghi_bu": 0, "khac": 0,
+    }
+    loai_mapping = {
+        LoaiNghi.NGHI_TUAN: "nghi_tuan",
+        LoaiNghi.PHEP_NAM: "phep_nam",
+        LoaiNghi.NGHI_LE: "nghi_le",
+        LoaiNghi.NGHI_OM: "nghi_om",
+        LoaiNghi.THAI_SAN: "thai_san",
+        LoaiNghi.VIEC_RIENG: "viec_rieng",
+        LoaiNghi.KHONG_LUONG: "khong_luong",
+        LoaiNghi.NGHI_BU: "nghi_bu",
+        LoaiNghi.KHAC: "khac",
+    }
+    for row in rows_theo_loai:
+        key = loai_mapping.get(row.loai_nghi)
+        if key:
+            theo_loai[key] = float(row.tong_ngay or 0)
+    
+    # Query danh sách CC trong đơn vị
+    stmt_ds_cc = (
+        select(
+            CongChuc.id,
+            CongChuc.ho_ten,
+            func.sum(case(
+                (DangKyNghi.loai_nghi == LoaiNghi.NGHI_TUAN, DangKyNghi.so_ngay),
+                else_=Decimal("0")
+            )).label("nghi_tuan"),
+            func.sum(case(
+                (DangKyNghi.loai_nghi != LoaiNghi.NGHI_TUAN, DangKyNghi.so_ngay),
+                else_=Decimal("0")
+            )).label("nghi_khac"),
+            func.sum(DangKyNghi.so_ngay).label("tong"),
+        )
+        .outerjoin(
+            DangKyNghi,
+            and_(
+                DangKyNghi.cong_chuc_id == CongChuc.id,
+                DangKyNghi.is_deleted == False,
+                DangKyNghi.thang_ap_dung == thang,
+                DangKyNghi.nam_ap_dung == nam,
+                DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET,
+            )
+        )
+        .where(CongChuc.don_vi_id == don_vi_id)
+        .where(CongChuc.is_deleted == False)
+        .where(CongChuc.is_active == True)
+        .group_by(CongChuc.id, CongChuc.ho_ten)
+        .order_by(CongChuc.ho_ten)
+    )
+    result_ds_cc = await db.execute(stmt_ds_cc)
+    rows_ds_cc = result_ds_cc.all()
+    
+    danh_sach_cc = [
+        {
+            "cong_chuc_id": row.id,
+            "ho_ten": row.ho_ten,
+            "nghi_tuan": float(row.nghi_tuan or 0),
+            "nghi_khac": float(row.nghi_khac or 0),
+            "tong_ngay_nghi": float(row.tong or 0),
+            "con_phep_nam": None,
+        }
+        for row in rows_ds_cc
+    ]
+    
+    return success_response(
+        data={
+            "don_vi_id": don_vi_id,
+            "don_vi_ten": don_vi.ten_don_vi,
+            "thang": thang,
+            "nam": nam,
+            "tong_hop": tong_hop,
+            "theo_loai": theo_loai,
+            "danh_sach_cc": danh_sach_cc,
+        },
+        message=f"Thống kê nghỉ phép đơn vị {don_vi.ten_don_vi} tháng {thang}/{nam}"
+    )
+
+@router.get("/tong-ngay-nghi")
+async def get_tong_ngay_nghi_thang(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int = Query(..., ge=1, le=12, description="Tháng (1-12)"),
+    nam: int = Query(..., ge=2020, le=2100, description="Năm"),
+) -> dict:
+    """
+    Lấy tổng ngày nghỉ đã duyệt trong tháng của CC hiện tại.
+    Dùng cho Dashboard tính KPI.
+    """
+    result = await tinh_tong_ngay_nghi_thang(db, current_user.id, thang, nam)
+    
+    return success_response(
+        data=TongNgayNghiThangResponse(
+            cong_chuc_id=str(result["cong_chuc_id"]),
+            thang=result["thang"],
+            nam=result["nam"],
+            tong_ngay_nghi=float(result["tong_ngay_nghi"]),
+            chi_tiet={k: float(v) for k, v in result["chi_tiet"].items()},
+            so_ngay_trong_thang=result["so_ngay_trong_thang"],
+            so_ngay_lam_viec=float(result["so_ngay_lam_viec"]),
+            sp_duoc_giao=float(result["sp_duoc_giao"]),
+        ),
+        message=f"Tổng ngày nghỉ tháng {thang}/{nam}"
+    )
+
+# =============================================================================
+# CRUD ENDPOINTS
+# =============================================================================
+
+@router.get("")
+async def get_danh_sach_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    page: int = Query(1, ge=1, description="Số trang"),
+    page_size: int = Query(20, ge=1, le=100, description="Số item/trang"),
+    loai_nghi: Optional[LoaiNghiEnum] = Query(None, description="Lọc theo loại nghỉ"),
+    trang_thai: Optional[TrangThaiNghiEnum] = Query(None, description="Lọc theo trạng thái"),
+    thang: Optional[int] = Query(None, ge=1, le=12, description="Lọc theo tháng"),
+    nam: Optional[int] = Query(None, description="Lọc theo năm"),
+) -> dict:
+    """
+    Lấy danh sách đơn nghỉ phép của bản thân.
+    """
+    # Base query
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == current_user.id)
+    )
+    
+    count_stmt = (
+        select(func.count(DangKyNghi.id))
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == current_user.id)
+    )
+    
+    # Filters
+    if loai_nghi:
+        stmt = stmt.where(DangKyNghi.loai_nghi == LoaiNghi(loai_nghi.value))
+        count_stmt = count_stmt.where(DangKyNghi.loai_nghi == LoaiNghi(loai_nghi.value))
+    
+    if trang_thai:
+        stmt = stmt.where(DangKyNghi.trang_thai == TrangThaiNghi(trang_thai.value))
+        count_stmt = count_stmt.where(DangKyNghi.trang_thai == TrangThaiNghi(trang_thai.value))
+    
+    if thang:
+        stmt = stmt.where(DangKyNghi.thang_ap_dung == thang)
+        count_stmt = count_stmt.where(DangKyNghi.thang_ap_dung == thang)
+    
+    if nam:
+        stmt = stmt.where(DangKyNghi.nam_ap_dung == nam)
+        count_stmt = count_stmt.where(DangKyNghi.nam_ap_dung == nam)
+    
+    # Order và pagination
+    stmt = stmt.order_by(DangKyNghi.created_at.desc())
+    
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+    
+    offset = (page - 1) * page_size
+    stmt = stmt.offset(offset).limit(page_size)
+    
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+    
+    return success_response(
+        data={
+            "items": [build_nghi_phep_response(n) for n in items],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size,
+            }
+        },
+        message=f"Danh sách {total} đơn nghỉ phép"
+    )
+
+
+@router.get("/{nghi_phep_id}")
+async def get_chi_tiet_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    nghi_phep_id: UUID,
+) -> dict:
+    """
+    Lấy chi tiết một đơn nghỉ phép.
+    
+    Quyền xem:
+    - Chủ đơn
+    - Người phê duyệt
+    - Lãnh đạo Chi cục
+    """
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.id == nghi_phep_id)
+        .where(DangKyNghi.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    nghi_phep = result.scalar_one_or_none()
+    
+    if not nghi_phep:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Đơn nghỉ phép không tồn tại")
+        )
+    
+    # Kiểm tra quyền xem
+    is_owner = nghi_phep.cong_chuc_id == current_user.id
+    is_approver = nghi_phep.nguoi_phe_duyet_id == current_user.id
+    
+    user_cap_bac = None
+    is_admin = False
+    if current_user.vai_tro:
+        user_cap_bac = current_user.vai_tro.cap_bac
+        is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) or False
+    
+    is_lanh_dao_chi_cuc = user_cap_bac in [
+        CapBacVaiTro.CHI_CUC_TRUONG,
+        CapBacVaiTro.PHO_CHI_CUC_TRUONG,
+    ]
+    
+    if not (is_owner or is_approver or is_lanh_dao_chi_cuc or is_admin):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="PERM_001", message="Không có quyền xem đơn nghỉ phép này")
+        )
+    
+    return success_response(
+        data=build_nghi_phep_response(nghi_phep),
+        message="Chi tiết đơn nghỉ phép"
+    )
+
+
+@router.post("")
+async def tao_don_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    payload: NghiPhepCreate,
+) -> dict:
+    """
+    Tạo đơn nghỉ phép đơn lẻ.
+    
+    🔄 AUTO-ASSIGN APPROVER (v1.1):
+    Nếu không chọn người duyệt, hệ thống tự động xác định:
+    - CC/PDV → Trưởng ĐV cùng đơn vị
+    - TDV → CCT
+    - CCT → Tự phê duyệt
+    
+    Validate:
+    - den_ngay >= tu_ngay
+    - so_ngay > 0
+    - Không trùng ngày nghỉ đã có
+    """
+    # Kiểm tra trùng ngày
+    stmt_trung = (
+        select(DangKyNghi)
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == current_user.id)
+        .where(DangKyNghi.trang_thai.in_([TrangThaiNghi.CHO_PHE_DUYET, TrangThaiNghi.DA_PHE_DUYET]))
+        .where(
+            or_(
+                and_(
+                    DangKyNghi.tu_ngay <= payload.tu_ngay,
+                    DangKyNghi.den_ngay >= payload.tu_ngay,
+                ),
+                and_(
+                    DangKyNghi.tu_ngay <= payload.den_ngay,
+                    DangKyNghi.den_ngay >= payload.den_ngay,
+                ),
+                and_(
+                    DangKyNghi.tu_ngay >= payload.tu_ngay,
+                    DangKyNghi.den_ngay <= payload.den_ngay,
+                ),
+            )
+        )
+    )
+    result_trung = await db.execute(stmt_trung)
+    don_trung = result_trung.scalar_one_or_none()
+    
+    if don_trung:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="LEAVE_005",
+                message=f"Trùng ngày nghỉ với đơn đã có (từ {don_trung.tu_ngay} đến {don_trung.den_ngay})"
+            )
+        )
+    
+    # =========================================================================
+    # 🔄 AUTO-ASSIGN NGƯỜI PHÊ DUYỆT (Logic mới v1.1)
+    # =========================================================================
+    nguoi_phe_duyet_id = payload.nguoi_phe_duyet_id
+    
+    if not nguoi_phe_duyet_id:
+        # Gọi hàm find_approver để tìm người duyệt tự động
+        approver = await find_approver(db, current_user)
+        if approver:
+            nguoi_phe_duyet_id = approver.id
+        # Nếu không tìm được ai (hiếm), nguoi_phe_duyet_id vẫn là None
+    
+    # Tạo đơn
+    nghi_phep = DangKyNghi(
+        cong_chuc_id=current_user.id,
+        loai_nghi=LoaiNghi(payload.loai_nghi.value),
+        tu_ngay=payload.tu_ngay,
+        den_ngay=payload.den_ngay,
+        so_ngay=payload.so_ngay,
+        ly_do=payload.ly_do,
+        tai_lieu_dinh_kem=payload.tai_lieu_dinh_kem,
+        nguoi_phe_duyet_id=nguoi_phe_duyet_id,
+        trang_thai=TrangThaiNghi.CHO_PHE_DUYET,
+    )
+    
+    # Auto-assign tháng/năm áp dụng
+    await auto_assign_thang_ap_dung(nghi_phep)
+    
+    db.add(nghi_phep)
+    await db.flush()
+    await db.refresh(nghi_phep)
+    
+    # Load relationships
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.id == nghi_phep.id)
+    )
+    result = await db.execute(stmt)
+    nghi_phep = result.scalar_one()
+    
+    return success_response(
+        data=build_nghi_phep_response(nghi_phep),
+        message="Tạo đơn nghỉ phép thành công"
+    )
+
+
+@router.post("/bulk")
+async def tao_don_nghi_phep_bulk(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    payload: NghiPhepBulkCreate,
+) -> dict:
+    """
+    Đăng ký nghỉ nhiều ngày cùng lúc (hàng loạt).
+    
+    Đặc biệt hữu ích cho NGHI_TUAN - đăng ký nghỉ tuần cả tháng.
+    
+    🔄 AUTO-ASSIGN APPROVER (v1.1):
+    Nếu không chọn người duyệt, hệ thống tự động xác định.
+    
+    Response format (NghiPhepBulkResponse):
+    {
+        "success": true,
+        "tong_don_tao": 4,
+        "danh_sach_id": ["uuid1", "uuid2", ...],
+        "ngay_da_ton_tai": ["2026-01-18", ...],
+        "nguoi_phe_duyet_id": "uuid-approver",
+        "message": "Đã tạo 4 đơn nghỉ phép"
+    }
+    
+    Logic:
+    - Loop qua danh_sach_ngay
+    - Tạo từng record DangKyNghi với so_ngay=1
+    - Skip các ngày đã có đơn → đưa vào ngay_da_ton_tai
+    """
+    # =========================================================================
+    # 🔄 AUTO-ASSIGN NGƯỜI PHÊ DUYỆT (Logic mới v1.1)
+    # =========================================================================
+    nguoi_phe_duyet_id = payload.nguoi_phe_duyet_id
+    
+    if not nguoi_phe_duyet_id:
+        # Gọi hàm find_approver để tìm người duyệt tự động
+        approver = await find_approver(db, current_user)
+        if approver:
+            nguoi_phe_duyet_id = approver.id
+    
+    # =========================================================================
+    # KIỂM TRA NGÀY ĐÃ TỒN TẠI
+    # =========================================================================
+    stmt_da_co = (
+        select(DangKyNghi.tu_ngay)
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == current_user.id)
+        .where(DangKyNghi.trang_thai.in_([TrangThaiNghi.CHO_PHE_DUYET, TrangThaiNghi.DA_PHE_DUYET]))
+        .where(DangKyNghi.tu_ngay.in_(payload.danh_sach_ngay))
+        .where(DangKyNghi.so_ngay == Decimal("1"))  # Chỉ check các đơn 1 ngày
+    )
+    result_da_co = await db.execute(stmt_da_co)
+    ngay_da_co_set = set(row[0] for row in result_da_co.all())
+    
+    # Chuyển sang list date để trả về cho Frontend
+    ngay_da_ton_tai: List[date] = sorted(list(ngay_da_co_set))
+    
+    # Lọc các ngày chưa có đơn
+    ngay_moi = [d for d in payload.danh_sach_ngay if d not in ngay_da_co_set]
+    
+    # =========================================================================
+    # TRƯỜNG HỢP: TẤT CẢ NGÀY ĐỀU ĐÃ TỒN TẠI
+    # =========================================================================
+    if not ngay_moi:
+        return success_response(
+            data={
+                "success": True,
+                "tong_don_tao": 0,
+                "danh_sach_id": [],
+                "ngay_da_ton_tai": ngay_da_ton_tai,
+                "nguoi_phe_duyet_id": nguoi_phe_duyet_id,
+                "message": "Tất cả các ngày đã có đơn nghỉ trước đó"
+            },
+            message="Không có ngày mới để tạo đơn"
+        )
+    
+    # =========================================================================
+    # TẠO ĐƠN CHO TỪNG NGÀY MỚI
+    # =========================================================================
+    danh_sach_id: List[UUID] = []
+    
+    for ngay in ngay_moi:
+        nghi_phep = DangKyNghi(
+            cong_chuc_id=current_user.id,
+            loai_nghi=LoaiNghi(payload.loai_nghi.value),
+            tu_ngay=ngay,
+            den_ngay=ngay,
+            so_ngay=Decimal("1"),
+            ly_do=payload.ly_do,
+            nguoi_phe_duyet_id=nguoi_phe_duyet_id,
+            trang_thai=TrangThaiNghi.CHO_PHE_DUYET,
+            thang_ap_dung=ngay.month,
+            nam_ap_dung=ngay.year,
+        )
+        db.add(nghi_phep)
+        await db.flush()
+        danh_sach_id.append(nghi_phep.id)
+    
+    # =========================================================================
+    # RESPONSE - ĐÚNG FORMAT NghiPhepBulkResponse
+    # =========================================================================
+    tong_don_tao = len(danh_sach_id)
+    
+    # Build message chi tiết
+    if ngay_da_ton_tai:
+        message = f"Đã tạo {tong_don_tao} đơn nghỉ phép. {len(ngay_da_ton_tai)} ngày đã có đơn trước đó."
+    else:
+        message = f"Đã tạo {tong_don_tao} đơn nghỉ phép thành công."
+    
+    return success_response(
+        data={
+            "success": True,
+            "tong_don_tao": tong_don_tao,
+            "danh_sach_id": danh_sach_id,
+            "ngay_da_ton_tai": ngay_da_ton_tai,
+            "nguoi_phe_duyet_id": nguoi_phe_duyet_id,
+            "message": message
+        },
+        message=message
+    )
+
+
+@router.put("/{nghi_phep_id}")
+async def cap_nhat_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    nghi_phep_id: UUID,
+    payload: NghiPhepUpdate,
+) -> dict:
+    """
+    Cập nhật đơn nghỉ phép.
+    
+    Điều kiện:
+    - Chỉ chủ đơn mới được sửa
+    - Chỉ đơn CHO_PHE_DUYET hoặc TU_CHOI mới được sửa
+    """
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.id == nghi_phep_id)
+        .where(DangKyNghi.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    nghi_phep = result.scalar_one_or_none()
+    
+    if not nghi_phep:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Đơn nghỉ phép không tồn tại")
+        )
+    
+    # Kiểm tra quyền
+    if nghi_phep.cong_chuc_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="PERM_001", message="Không có quyền sửa đơn này")
+        )
+    
+    # Kiểm tra trạng thái
+    if nghi_phep.trang_thai not in [TrangThaiNghi.CHO_PHE_DUYET, TrangThaiNghi.TU_CHOI]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="BIZ_001",
+                message=f"Không thể sửa đơn ở trạng thái {nghi_phep.trang_thai_ten}"
+            )
+        )
+    
+    # Cập nhật các field
+    if payload.loai_nghi is not None:
+        nghi_phep.loai_nghi = LoaiNghi(payload.loai_nghi.value)
+    
+    if payload.tu_ngay is not None:
+        nghi_phep.tu_ngay = payload.tu_ngay
+        nghi_phep.thang_ap_dung = payload.tu_ngay.month
+        nghi_phep.nam_ap_dung = payload.tu_ngay.year
+    
+    if payload.den_ngay is not None:
+        nghi_phep.den_ngay = payload.den_ngay
+    
+    if payload.so_ngay is not None:
+        nghi_phep.so_ngay = payload.so_ngay
+    
+    if payload.ly_do is not None:
+        nghi_phep.ly_do = payload.ly_do
+    
+    if payload.tai_lieu_dinh_kem is not None:
+        nghi_phep.tai_lieu_dinh_kem = payload.tai_lieu_dinh_kem
+    
+    # Nếu đơn bị từ chối, khi sửa sẽ quay lại CHO_PHE_DUYET
+    if nghi_phep.trang_thai == TrangThaiNghi.TU_CHOI:
+        nghi_phep.trang_thai = TrangThaiNghi.CHO_PHE_DUYET
+        nghi_phep.ly_do_tu_choi = None
+        nghi_phep.ngay_phe_duyet = None
+    
+    await db.flush()
+    await db.refresh(nghi_phep)
+    
+    return success_response(
+        data=build_nghi_phep_response(nghi_phep),
+        message="Cập nhật đơn nghỉ phép thành công"
+    )
+
+
+@router.delete("/{nghi_phep_id}")
+async def xoa_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    nghi_phep_id: UUID,
+) -> dict:
+    """
+    Xóa/Hủy đơn nghỉ phép.
+    
+    Điều kiện:
+    - Chỉ chủ đơn mới được xóa
+    - Không xóa đơn DA_PHE_DUYET (đã tác động đến KPI)
+    """
+    stmt = (
+        select(DangKyNghi)
+        .where(DangKyNghi.id == nghi_phep_id)
+        .where(DangKyNghi.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    nghi_phep = result.scalar_one_or_none()
+    
+    if not nghi_phep:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Đơn nghỉ phép không tồn tại")
+        )
+    
+    # Kiểm tra quyền
+    if nghi_phep.cong_chuc_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="PERM_001", message="Không có quyền xóa đơn này")
+        )
+    
+    # Không cho xóa đơn đã duyệt
+    if nghi_phep.trang_thai == TrangThaiNghi.DA_PHE_DUYET:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="BIZ_002",
+                message="Không thể xóa đơn đã phê duyệt. Vui lòng liên hệ Lãnh đạo."
+            )
+        )
+    
+    # Soft delete
+    nghi_phep.is_deleted = True
+    nghi_phep.trang_thai = TrangThaiNghi.HUY
+    
+    return success_response(
+        data={"id": nghi_phep_id},
+        message="Đã hủy đơn nghỉ phép"
+    )
+
+
+# =============================================================================
+# PHÊ DUYỆT / TỪ CHỐI
+# =============================================================================
+
+@router.post("/{nghi_phep_id}/phe-duyet")
+async def phe_duyet_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    nghi_phep_id: UUID,
+    payload: PheDuyetNghiPhepRequest,
+) -> dict:
+    """
+    Phê duyệt đơn nghỉ phép.
+    
+    Chỉ người được chọn phê duyệt mới có quyền.
+    """
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.id == nghi_phep_id)
+        .where(DangKyNghi.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    nghi_phep = result.scalar_one_or_none()
+    
+    if not nghi_phep:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Đơn nghỉ phép không tồn tại")
+        )
+    
+    # Kiểm tra quyền phê duyệt
+    is_approver = nghi_phep.nguoi_phe_duyet_id == current_user.id
+    # CCT tự phê duyệt
+    is_self_approve = (
+        nghi_phep.cong_chuc_id == current_user.id and
+        current_user.vai_tro and
+        current_user.vai_tro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
+    )
+    
+    if not (is_approver or is_self_approve):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="PERM_002", message="Bạn không phải người phê duyệt đơn này")
+        )
+    
+    # Kiểm tra trạng thái
+    if nghi_phep.trang_thai != TrangThaiNghi.CHO_PHE_DUYET:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="BIZ_001",
+                message=f"Đơn đang ở trạng thái {nghi_phep.trang_thai_ten}, không thể phê duyệt"
+            )
+        )
+    
+    # Cập nhật
+    nghi_phep.trang_thai = TrangThaiNghi.DA_PHE_DUYET
+    nghi_phep.ngay_phe_duyet = datetime.now()
+    nghi_phep.ghi_chu_phe_duyet = payload.ghi_chu
+    
+    await db.flush()
+    await db.refresh(nghi_phep)
+    
+    return success_response(
+        data=build_nghi_phep_response(nghi_phep),
+        message="Đã phê duyệt đơn nghỉ phép"
+    )
+
+
+@router.post("/{nghi_phep_id}/tu-choi")
+async def tu_choi_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    nghi_phep_id: UUID,
+    payload: TuChoiNghiPhepRequest,
+) -> dict:
+    """
+    Từ chối đơn nghỉ phép.
+    
+    Bắt buộc phải có lý do từ chối.
+    """
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.id == nghi_phep_id)
+        .where(DangKyNghi.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    nghi_phep = result.scalar_one_or_none()
+    
+    if not nghi_phep:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Đơn nghỉ phép không tồn tại")
+        )
+    
+    # Kiểm tra quyền
+    is_approver = nghi_phep.nguoi_phe_duyet_id == current_user.id
+    
+    if not is_approver:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="PERM_002", message="Bạn không phải người phê duyệt đơn này")
+        )
+    
+    # Kiểm tra trạng thái
+    if nghi_phep.trang_thai != TrangThaiNghi.CHO_PHE_DUYET:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="BIZ_001",
+                message=f"Đơn đang ở trạng thái {nghi_phep.trang_thai_ten}, không thể từ chối"
+            )
+        )
+    
+    # Cập nhật
+    nghi_phep.trang_thai = TrangThaiNghi.TU_CHOI
+    nghi_phep.ngay_phe_duyet = datetime.now()
+    nghi_phep.ly_do_tu_choi = payload.ly_do_tu_choi
+    
+    await db.flush()
+    await db.refresh(nghi_phep)
+    
+    return success_response(
+        data=build_nghi_phep_response(nghi_phep),
+        message="Đã từ chối đơn nghỉ phép"
+    )
+
+
+# =============================================================================
+# HELPER FUNCTION cho tính KPI (Export để dùng trong danh_gia.py)
+# =============================================================================
+
+async def tinh_tong_ngay_nghi_thang(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+) -> dict:
+    """
+    Tính tổng ngày nghỉ đã duyệt trong tháng của 1 CC.
+    
+    Dùng cho công thức KPI:
+    SP_được_giao = (Ngày_dương_lịch - Tổng_nghỉ_đã_duyệt) × 96
+    
+    ⚠️ QUAN TRỌNG: KHÔNG tự động trừ T7/CN!
+    Chỉ trừ các ngày nghỉ CC đã đăng ký và được duyệt.
+    
+    Returns:
+        dict: {
+            "tong_ngay_nghi": Decimal,
+            "chi_tiet": {
+                "nghi_tuan": Decimal,
+                "phep_nam": Decimal,
+                ...
+            },
+            "so_ngay_trong_thang": int,
+            "so_ngay_lam_viec": Decimal,
+            "sp_duoc_giao": Decimal,
+        }
+    """
+    # Query tổng theo loại
+    stmt = (
+        select(
+            DangKyNghi.loai_nghi,
+            func.sum(DangKyNghi.so_ngay).label("tong_ngay")
+        )
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == cong_chuc_id)
+        .where(DangKyNghi.thang_ap_dung == thang)
+        .where(DangKyNghi.nam_ap_dung == nam)
+        .where(DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET)
+        .group_by(DangKyNghi.loai_nghi)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    # Build chi tiết
+    chi_tiet = {
+        "nghi_tuan": Decimal("0"),
+        "phep_nam": Decimal("0"),
+        "nghi_le": Decimal("0"),
+        "nghi_om": Decimal("0"),
+        "thai_san": Decimal("0"),
+        "viec_rieng": Decimal("0"),
+        "khong_luong": Decimal("0"),
+        "nghi_bu": Decimal("0"),
+        "khac": Decimal("0"),
+    }
+    
+    loai_mapping = {
+        LoaiNghi.NGHI_TUAN: "nghi_tuan",
+        LoaiNghi.PHEP_NAM: "phep_nam",
+        LoaiNghi.NGHI_LE: "nghi_le",
+        LoaiNghi.NGHI_OM: "nghi_om",
+        LoaiNghi.THAI_SAN: "thai_san",
+        LoaiNghi.VIEC_RIENG: "viec_rieng",
+        LoaiNghi.KHONG_LUONG: "khong_luong",
+        LoaiNghi.NGHI_BU: "nghi_bu",
+        LoaiNghi.KHAC: "khac",
+    }
+    
+    tong_ngay_nghi = Decimal("0")
+    for row in rows:
+        key = loai_mapping.get(row.loai_nghi)
+        if key and row.tong_ngay:
+            chi_tiet[key] = Decimal(str(row.tong_ngay))
+            tong_ngay_nghi += Decimal(str(row.tong_ngay))
+    
+    # Tính số ngày trong tháng (dương lịch)
+    so_ngay_trong_thang = calendar.monthrange(nam, thang)[1]
+    
+    # Tính số ngày làm việc = Ngày dương lịch - Tổng nghỉ đã duyệt
+    # ⚠️ KHÔNG tự động trừ T7/CN!
+    so_ngay_lam_viec = Decimal(str(so_ngay_trong_thang)) - tong_ngay_nghi
+    if so_ngay_lam_viec < 0:
+        so_ngay_lam_viec = Decimal("0")
+    
+    # Tính SP được giao = Ngày làm việc × 96
+    sp_per_ngay = Decimal("96")
+    sp_duoc_giao = so_ngay_lam_viec * sp_per_ngay
+    
+    return {
+        "cong_chuc_id": cong_chuc_id,
+        "thang": thang,
+        "nam": nam,
+        "tong_ngay_nghi": tong_ngay_nghi,
+        "chi_tiet": chi_tiet,
+        "so_ngay_trong_thang": so_ngay_trong_thang,
+        "so_ngay_lam_viec": so_ngay_lam_viec,
+        "sp_duoc_giao": sp_duoc_giao,
+    }

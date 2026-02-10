@@ -38,6 +38,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -687,6 +688,110 @@ async def get_tong_ngay_nghi_thang(
     return success_response(data=result)
 
 
+# =============================================================================
+# GET NGHỈ PHÉP CỦA CÔNG CHỨC (Lãnh đạo/Admin xem nghỉ phép CC khác)
+# =============================================================================
+
+@router.get("/cong-chuc/{cong_chuc_id}")
+async def get_nghi_phep_cong_chuc(
+    cong_chuc_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: Optional[int] = Query(None, ge=1, le=12, description="Filter theo tháng áp dụng"),
+    nam: Optional[int] = Query(None, ge=2020, le=2100, description="Filter theo năm áp dụng"),
+    trang_thai: Optional[str] = Query(None, description="Filter: CHO_PHE_DUYET, DA_PHE_DUYET, TU_CHOI"),
+    loai_nghi: Optional[str] = Query(None, description="Filter theo loại nghỉ"),
+) -> dict:
+    """
+    Lấy danh sách đơn nghỉ phép của một công chức cụ thể.
+    
+    **Mục đích:** Dùng trong modal "Chi tiết công chức" của Báo cáo xếp loại,
+    cho phép Đội trưởng/CCT xem chi tiết nghỉ phép của CC.
+    
+    **Quyền truy cập:**
+    - Lãnh đạo đơn vị (TDV, PDV): Chỉ xem CC cùng đơn vị
+    - Chi cục trưởng (CCT), Phó CCT: Xem tất cả CC
+    - Admin: Xem tất cả CC
+    """
+    # =========================================================================
+    # 1. Kiểm tra quyền
+    # =========================================================================
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    
+    is_cct_or_pcct = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    is_lanh_dao_don_vi = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+    
+    if not (is_admin or is_cct_or_pcct or is_lanh_dao_don_vi):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PERM_001",
+                message="Chỉ Lãnh đạo hoặc Admin mới được xem nghỉ phép của công chức khác"
+            )
+        )
+    
+    # =========================================================================
+    # 2. Kiểm tra công chức tồn tại
+    # =========================================================================
+    cc_stmt = (
+        select(CongChuc)
+        .where(CongChuc.id == cong_chuc_id)
+        .where(CongChuc.is_deleted == False)
+    )
+    cc_result = await db.execute(cc_stmt)
+    cong_chuc = cc_result.scalar_one_or_none()
+    
+    if not cong_chuc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Không tìm thấy công chức")
+        )
+    
+    # =========================================================================
+    # 3. Kiểm tra cùng đơn vị (nếu là lãnh đạo đơn vị)
+    # =========================================================================
+    if is_lanh_dao_don_vi and not is_admin and not is_cct_or_pcct:
+        if cong_chuc.don_vi_id != current_user.don_vi_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_response(
+                    code="PERM_002",
+                    message="Lãnh đạo đơn vị chỉ được xem nghỉ phép của CC cùng đơn vị"
+                )
+            )
+    
+    # =========================================================================
+    # 4. Query đơn nghỉ phép
+    # =========================================================================
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.is_deleted == False)
+        .where(DangKyNghi.cong_chuc_id == cong_chuc_id)
+    )
+    
+    if thang:
+        stmt = stmt.where(DangKyNghi.thang_ap_dung == thang)
+    if nam:
+        stmt = stmt.where(DangKyNghi.nam_ap_dung == nam)
+    if trang_thai:
+        stmt = stmt.where(DangKyNghi.trang_thai == TrangThaiNghi(trang_thai))
+    if loai_nghi:
+        stmt = stmt.where(DangKyNghi.loai_nghi == LoaiNghi(loai_nghi))
+    
+    stmt = stmt.order_by(DangKyNghi.tu_ngay.desc())
+    
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+    
+    data = [build_nghi_phep_response(item) for item in items]
+    
+    return success_response(data=data)
+
 
 # GET DANH SÁCH NGHỈ PHÉP CỦA BẢN THÂN
 # =============================================================================
@@ -1297,7 +1402,121 @@ async def tu_choi_nghi_phep(
 
 
 # =============================================================================
+# TRẢ LẠI ĐƠN NGHỈ ĐÃ DUYỆT - v3.2
+# =============================================================================
 
+class TraLaiNghiPhepRequest(BaseModel):
+    """Schema request trả lại đơn nghỉ đã duyệt."""
+    ly_do: str = Field(..., min_length=1, max_length=500, description="Lý do trả lại")
+
+
+@router.post("/{nghi_phep_id}/tra-lai")
+async def tra_lai_nghi_phep(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    nghi_phep_id: UUID,
+    payload: TraLaiNghiPhepRequest,
+) -> dict:
+    """
+    Trả lại đơn nghỉ phép đã duyệt - v3.2.
+    
+    Dùng khi lãnh đạo duyệt nhầm, cần hoàn tác.
+    Đơn sẽ quay về trạng thái CHO_PHE_DUYET để CC chỉnh sửa hoặc gửi lại.
+    
+    Quyền:
+    - Người đã phê duyệt (nguoi_phe_duyet)
+    - Chi cục trưởng (CCT)
+    
+    Ràng buộc:
+    - Chỉ trả lại đơn có trạng thái DA_PHE_DUYET
+    - Không trả lại đơn đã bị khóa
+    - Không trả lại đơn đã tính KPI
+    """
+    stmt = (
+        select(DangKyNghi)
+        .options(
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
+            selectinload(DangKyNghi.nguoi_phe_duyet),
+        )
+        .where(DangKyNghi.id == nghi_phep_id)
+        .where(DangKyNghi.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    nghi_phep = result.scalar_one_or_none()
+    
+    if not nghi_phep:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Đơn nghỉ phép không tồn tại")
+        )
+    
+    # Kiểm tra đã bị khóa chưa
+    if nghi_phep.is_khoa:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="BIZ_002",
+                message="Dữ liệu đã bị khóa, không thể trả lại"
+            )
+        )
+    
+    # Kiểm tra trạng thái - chỉ trả lại đơn DA_PHE_DUYET
+    if nghi_phep.trang_thai != TrangThaiNghi.DA_PHE_DUYET:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="BIZ_001",
+                message=f"Chỉ có thể trả lại đơn đã phê duyệt. Trạng thái hiện tại: {nghi_phep.trang_thai.value}"
+            )
+        )
+    
+    # Kiểm tra đã tính KPI chưa
+    if nghi_phep.da_tinh_kpi:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="BIZ_003",
+                message="Đơn nghỉ đã được tính vào KPI, không thể trả lại. Vui lòng liên hệ quản trị viên."
+            )
+        )
+    
+    # Kiểm tra quyền trả lại
+    cap_bac_current = None
+    if current_user.vai_tro:
+        cap_bac_current = current_user.vai_tro.cap_bac
+    
+    can_tra_lai = False
+    
+    # Người đã phê duyệt có quyền trả lại
+    if nghi_phep.nguoi_phe_duyet_id == current_user.id:
+        can_tra_lai = True
+    
+    # CCT có quyền trả lại tất cả
+    if cap_bac_current == CapBacVaiTro.CHI_CUC_TRUONG:
+        can_tra_lai = True
+    
+    if not can_tra_lai:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PERM_002",
+                message="Bạn không có quyền trả lại đơn này"
+            )
+        )
+    
+    # ===== Thực hiện trả lại =====
+    nghi_phep.trang_thai = TrangThaiNghi.CHO_PHE_DUYET
+    nghi_phep.ngay_phe_duyet = None
+    nghi_phep.ghi_chu_phe_duyet = f"[TRẢ LẠI] {payload.ly_do}"
+    
+    await db.flush()
+    await db.refresh(nghi_phep)
+    
+    return success_response(
+        data=build_nghi_phep_response(nghi_phep),
+        message="Đã trả lại đơn nghỉ phép về trạng thái chờ phê duyệt"
+    )
 
 
 # =============================================================================

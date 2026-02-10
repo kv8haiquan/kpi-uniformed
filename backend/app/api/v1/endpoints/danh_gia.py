@@ -1300,6 +1300,162 @@ async def tu_choi_tieu_chi_chung(
     )
 
 
+# =============================================================================
+# v3.6: TRẢ LẠI TIÊU CHÍ ĐÃ DUYỆT
+# =============================================================================
+
+from pydantic import BaseModel as _BaseModel, Field as _Field
+
+
+class TraLaiTieuChiRequest(_BaseModel):
+    """Schema request trả lại tiêu chí đã duyệt."""
+    ly_do: str = _Field(..., min_length=1, max_length=500, description="Lý do trả lại")
+
+
+@router.post("/{danh_gia_thang_id}/tra-lai-tieu-chi")
+async def tra_lai_tieu_chi_da_duyet(
+    db: DatabaseDep, current_user: ActiveUserDep,
+    danh_gia_thang_id: UUID, payload: TraLaiTieuChiRequest
+) -> dict:
+    """
+    Trả lại tiêu chí chung đã phê duyệt - v3.6.
+    
+    Dùng khi lãnh đạo phê duyệt nhầm, cần hoàn tác.
+    Tiêu chí sẽ quay về trạng thái NHAP để CC chỉnh sửa và gửi lại.
+    
+    Quyền:
+    - Người đã phê duyệt cấp 1 (nguoi_phe_duyet_tc_cap1)
+    - Người đã phê duyệt cấp 2 (nguoi_phe_duyet_tc_cap2)
+    - Chi cục trưởng (CCT)
+    
+    Reset logic:
+    - Reset trang_thai_tc → NHAP
+    - Reset phê duyệt cấp 1 + cấp 2
+    - Reset điểm tiêu chí chung + từng tiêu chí con
+    - Lưu lý do trả lại vào ly_do_tu_choi_tc với prefix [TRẢ LẠI]
+    """
+    stmt = select(DanhGiaThang).options(
+        selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
+        selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.vai_tro),
+        selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
+    ).where(DanhGiaThang.id == danh_gia_thang_id, DanhGiaThang.is_deleted == False)
+    
+    danh_gia = (await db.execute(stmt)).scalar_one_or_none()
+    if not danh_gia:
+        raise HTTPException(
+            status_code=404,
+            detail=error_response(code="NOT_FOUND", message="Không tìm thấy đánh giá")
+        )
+    
+    # Kiểm tra khóa dữ liệu
+    if danh_gia.is_khoa:
+        raise HTTPException(
+            status_code=400,
+            detail=error_response(code="BIZ_002", message="Dữ liệu đã bị khóa, không thể trả lại")
+        )
+    
+    # Kiểm tra trạng thái - chỉ trả lại khi DA_PHE_DUYET
+    if danh_gia.trang_thai_tc != TrangThaiTieuChi.DA_PHE_DUYET:
+        raise HTTPException(
+            status_code=400,
+            detail=error_response(
+                code="BIZ_001",
+                message=f"Chỉ có thể trả lại tiêu chí đã phê duyệt. "
+                        f"Trạng thái hiện tại: {danh_gia.trang_thai_tc.value if danh_gia.trang_thai_tc else 'N/A'}"
+            )
+        )
+    
+    # Kiểm tra quyền trả lại
+    cap_bac_current = None
+    if current_user.vai_tro:
+        cap_bac_current = current_user.vai_tro.cap_bac
+    
+    can_tra_lai = False
+    
+    # Người đã phê duyệt cấp 1
+    if (danh_gia.nguoi_phe_duyet_tc_cap1_id and 
+        danh_gia.nguoi_phe_duyet_tc_cap1_id == current_user.id):
+        can_tra_lai = True
+    
+    # Người đã phê duyệt cấp 2
+    if (danh_gia.nguoi_phe_duyet_tc_cap2_id and 
+        danh_gia.nguoi_phe_duyet_tc_cap2_id == current_user.id):
+        can_tra_lai = True
+    
+    # CCT luôn có quyền
+    if cap_bac_current == CapBacVaiTro.CHI_CUC_TRUONG:
+        can_tra_lai = True
+    
+    if not can_tra_lai:
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_002", message="Bạn không có quyền trả lại đơn này")
+        )
+    
+    now = datetime.now()
+    
+    # =========================================================================
+    # RESET TOÀN BỘ VỀ NHẬP (giống tu-choi nhưng từ DA_PHE_DUYET)
+    # =========================================================================
+    
+    # Reset từng tiêu chí con
+    for tc in danh_gia.tieu_chi_chungs:
+        tc.trang_thai = TrangThaiTieuChi.NHAP
+        tc.is_achieved_ld = None
+        tc.diem_phe_duyet = None
+        tc.ly_do_dieu_chinh = None
+        tc.ngay_phe_duyet = None
+        tc.ghi_chu_ld = None
+    
+    # Reset trạng thái tổng
+    danh_gia.trang_thai_tc = TrangThaiTieuChi.NHAP
+    
+    # Reset phê duyệt cấp 1
+    danh_gia.nguoi_phe_duyet_tc_cap1_id = None
+    danh_gia.ngay_phe_duyet_tc_cap1 = None
+    danh_gia.diem_tc_cap1 = None
+    
+    # Reset phê duyệt cấp 2
+    danh_gia.nguoi_phe_duyet_tc_cap2_id = None
+    danh_gia.ngay_phe_duyet_tc_cap2 = None
+    danh_gia.diem_tc_cap2 = None
+    
+    # Reset điểm tổng
+    danh_gia.diem_tieu_chi_chung = None
+    
+    # Lưu thông tin trả lại (dùng chung fields từ chối, thêm prefix)
+    danh_gia.ly_do_tu_choi_tc = f"[TRẢ LẠI] {payload.ly_do}"
+    danh_gia.nguoi_tu_choi_tc_id = current_user.id
+    danh_gia.ngay_tu_choi_tc = now
+    
+    await db.flush()
+    
+    # Label người trả lại
+    cap_labels = {
+        CapBacVaiTro.PHO_DON_VI: "Phó ĐT",
+        CapBacVaiTro.TRUONG_DON_VI: "Đội trưởng",
+        CapBacVaiTro.CHI_CUC_TRUONG: "Chi cục trưởng",
+        CapBacVaiTro.PHO_CHI_CUC_TRUONG: "Phó Chi cục trưởng",
+    }
+    cap_label = cap_labels.get(cap_bac_current, "Lãnh đạo")
+    ho_ten_cc = danh_gia.cong_chuc.ho_ten if danh_gia.cong_chuc else "N/A"
+    
+    return success_response(
+        data={
+            "danh_gia_thang_id": str(danh_gia.id),
+            "trang_thai_moi": "NHAP",
+            "ly_do_tra_lai": payload.ly_do,
+            "nguoi_tra_lai": current_user.ho_ten,
+            "cap_bac": cap_label,
+            "ngay_tra_lai": now.isoformat(),
+        },
+        message=f"{cap_label} đã trả lại tiêu chí của {ho_ten_cc}. "
+                f"Đơn đã chuyển về trạng thái Nháp để CC kê khai lại."
+    )
+
+
 @router.post("/phe-duyet-tieu-chi-bulk")
 async def phe_duyet_tieu_chi_bulk(
     db: DatabaseDep, current_user: ActiveUserDep, payload: PheDuyetTieuChiBulkRequest
@@ -1409,6 +1565,158 @@ async def phe_duyet_tieu_chi_bulk(
         ),
         message=f"Phê duyệt hàng loạt thành công ({len(processed_ids)} bản)"
     )
+
+
+# =============================================================================
+# XEM TIÊU CHÍ CHUNG CỦA CÔNG CHỨC (Lãnh đạo/Admin)
+# =============================================================================
+
+@router.get("/tieu-chi/cong-chuc/{cong_chuc_id}/thang/{thang}/nam/{nam}")
+async def get_tieu_chi_cong_chuc(
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """
+    Xem tiêu chí chung của một công chức cụ thể.
+    
+    **Mục đích:** Dùng trong modal "Chi tiết công chức" của Báo cáo xếp loại,
+    cho phép Đội trưởng/CCT xem chi tiết tiêu chí chung của CC.
+    
+    **Quyền truy cập:**
+    - Lãnh đạo đơn vị (TDV, PDV): Chỉ xem CC cùng đơn vị
+    - Chi cục trưởng (CCT), Phó CCT: Xem tất cả CC
+    - Admin: Xem tất cả CC
+    
+    **Response:** Giống GET /tieu-chi/thang/{thang}/nam/{nam} nhưng cho CC khác.
+    Trả về danh sách tiêu chí (10 mục), tổng hợp nhóm (nhom_1, nhom_2, nhom_3),
+    trạng thái phê duyệt.
+    """
+    if thang < 1 or thang > 12:
+        raise HTTPException(status_code=400, detail=error_response(code="VAL_003", message="Tháng phải từ 1-12"))
+    
+    # =========================================================================
+    # 1. Kiểm tra quyền
+    # =========================================================================
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    
+    is_cct_or_pcct = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    is_lanh_dao_don_vi = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+    
+    if not (is_admin or is_cct_or_pcct or is_lanh_dao_don_vi):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PERM_001",
+                message="Chỉ Lãnh đạo hoặc Admin mới được xem tiêu chí của công chức khác"
+            )
+        )
+    
+    # =========================================================================
+    # 2. Kiểm tra công chức tồn tại
+    # =========================================================================
+    cc_stmt = (
+        select(CongChuc)
+        .where(CongChuc.id == cong_chuc_id)
+        .where(CongChuc.is_deleted == False)
+    )
+    cc_result = await db.execute(cc_stmt)
+    cong_chuc = cc_result.scalar_one_or_none()
+    
+    if not cong_chuc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="NOT_FOUND", message="Không tìm thấy công chức")
+        )
+    
+    # =========================================================================
+    # 3. Kiểm tra cùng đơn vị (nếu là lãnh đạo đơn vị)
+    # =========================================================================
+    if is_lanh_dao_don_vi and not is_admin and not is_cct_or_pcct:
+        if cong_chuc.don_vi_id != current_user.don_vi_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_response(
+                    code="PERM_002",
+                    message="Lãnh đạo đơn vị chỉ được xem tiêu chí của CC cùng đơn vị"
+                )
+            )
+    
+    # =========================================================================
+    # 4. Tính số ngày làm việc
+    # =========================================================================
+    so_ngay_thang = calendar.monthrange(nam, thang)[1]
+    so_ngay_nghi = 0  # TODO: Tích hợp module nghỉ phép
+    so_ngay_lv = so_ngay_thang - so_ngay_nghi
+    target_kpi = so_ngay_lv * 96
+    
+    # =========================================================================
+    # 5. Query đánh giá tháng
+    # =========================================================================
+    stmt = select(DanhGiaThang).options(
+        selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+        selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.nguoi_phe_duyet),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
+    ).where(
+        DanhGiaThang.cong_chuc_id == cong_chuc_id,
+        DanhGiaThang.thang == thang, DanhGiaThang.nam == nam,
+        DanhGiaThang.is_deleted == False
+    )
+    result = await db.execute(stmt)
+    danh_gia = result.scalar_one_or_none()
+    
+    # =========================================================================
+    # VIRTUAL RECORD - Chưa có dữ liệu
+    # =========================================================================
+    if not danh_gia or not danh_gia.tieu_chi_chungs:
+        tieu_chi = [build_virtual_tieu_chi_response(m) for m in ["1.1", "1.2", "2.1", "2.2", "2.3", "2.4", "3.1", "3.2", "3.3", "3.4"]]
+        return success_response(
+            data=DanhGiaThangTieuChiResponse(
+                danh_gia_thang_id=danh_gia.id if danh_gia else None,
+                cong_chuc_id=cong_chuc_id, thang=thang, nam=nam,
+                is_new_record=True,
+                so_ngay_trong_thang=so_ngay_thang, so_ngay_nghi_phep=so_ngay_nghi,
+                so_ngay_lam_viec=so_ngay_lv, target_kpi=float(target_kpi),
+                trang_thai=TrangThaiTieuChiEnum.CHUA_DANH_GIA,
+                trang_thai_danh_gia_thang=TrangThaiDanhGiaThangEnum.CHUA_DANH_GIA,
+                tong_hop=build_virtual_tong_hop(),
+                tieu_chi=tieu_chi,
+            ),
+            message="Chưa có dữ liệu tiêu chí. Hiển thị giá trị mặc định."
+        )
+    
+    # =========================================================================
+    # EXISTING RECORD
+    # =========================================================================
+    tc_responses = [build_tieu_chi_response(tc, danh_gia.id) for tc in danh_gia.tieu_chi_chungs]
+    any_approved = any(tc.trang_thai == TrangThaiTieuChi.DA_PHE_DUYET for tc in danh_gia.tieu_chi_chungs)
+    tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=any_approved)
+    
+    first_tc = danh_gia.tieu_chi_chungs[0] if danh_gia.tieu_chi_chungs else None
+    trang_thai_tc = TrangThaiTieuChiEnum(first_tc.trang_thai.value) if first_tc else TrangThaiTieuChiEnum.NHAP
+    
+    # v2.6: Thêm thông tin phê duyệt 2 cấp
+    response_data = DanhGiaThangTieuChiResponse(
+        danh_gia_thang_id=danh_gia.id, cong_chuc_id=cong_chuc_id,
+        thang=thang, nam=nam, is_new_record=False,
+        so_ngay_trong_thang=so_ngay_thang,
+        so_ngay_nghi_phep=danh_gia.so_ngay_nghi_phep or 0,
+        so_ngay_lam_viec=danh_gia.so_ngay_lam_viec or so_ngay_lv,
+        target_kpi=float((danh_gia.so_ngay_lam_viec or so_ngay_lv) * 96),
+        trang_thai=trang_thai_tc,
+        trang_thai_danh_gia_thang=TrangThaiDanhGiaThangEnum(danh_gia.trang_thai.value),
+        tong_hop=tong_hop, tieu_chi=tc_responses,
+        nguoi_phe_duyet_id=first_tc.nguoi_phe_duyet_id if first_tc else None,
+        nguoi_phe_duyet_ten=first_tc.nguoi_phe_duyet.ho_ten if first_tc and first_tc.nguoi_phe_duyet else None,
+        ngay_gui=first_tc.ngay_gui if first_tc else None,
+        ngay_phe_duyet=first_tc.ngay_phe_duyet if first_tc else None,
+    )
+    
+    return success_response(data=response_data, message="Lấy tiêu chí chung thành công")
 
 
 @router.get("/kpi/thang/{thang}/nam/{nam}")

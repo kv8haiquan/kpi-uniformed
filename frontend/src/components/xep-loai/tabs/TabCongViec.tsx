@@ -281,6 +281,15 @@ const congViecApi = {
     await apiClient.post(`/ke-khai-lanh-dao/${keKhaiId}/phe-duyet`, payload);
   },
 
+  // ===================== TRẢ LẠI ĐÃ DUYỆT =====================
+  async traLaiCC(keKhaiId: string, lyDo: string): Promise<void> {
+    await apiClient.post(`/phe-duyet/${keKhaiId}/tra-lai`, { ly_do: lyDo });
+  },
+
+  async traLaiLD(keKhaiId: string, lyDo: string): Promise<void> {
+    await apiClient.post(`/ke-khai-lanh-dao/${keKhaiId}/tra-lai`, { ly_do: lyDo });
+  },
+
   // ===================== UNIFIED =====================
   async getAllPending(params: { thang?: number; nam?: number }): Promise<IKeKhai[]> {
     const [ccData, ldData] = await Promise.all([
@@ -419,6 +428,11 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
   // Modal bulk
   const [bulkModalAction, setBulkModalAction] = useState<'approve' | 'reject' | null>(null);
   const [bulkGhiChu, setBulkGhiChu] = useState('');
+
+  // Modal trả lại đã duyệt
+  const [traLaiItem, setTraLaiItem] = useState<IKeKhai | null>(null);
+  const [traLaiLyDo, setTraLaiLyDo] = useState('');
+  const [isTraLai, setIsTraLai] = useState(false);
   
   // Inline edit
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -666,6 +680,32 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
       alert(error.message || 'Có lỗi xảy ra');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // ===== TRẢ LẠI ĐÃ DUYỆT =====
+  const handleTraLai = (item: IKeKhai) => {
+    setTraLaiItem(item);
+    setTraLaiLyDo('');
+  };
+
+  const handleSubmitTraLai = async () => {
+    if (!traLaiItem || !traLaiLyDo.trim()) return;
+    setIsTraLai(true);
+    try {
+      if (traLaiItem.source === 'CC') {
+        await congViecApi.traLaiCC(traLaiItem.id, traLaiLyDo);
+      } else {
+        await congViecApi.traLaiLD(traLaiItem.id, traLaiLyDo);
+      }
+      await refreshAll();
+      setTraLaiItem(null);
+      setTraLaiLyDo('');
+    } catch (err) {
+      const error = err as Error;
+      alert(error.message || 'Có lỗi xảy ra khi trả lại');
+    } finally {
+      setIsTraLai(false);
     }
   };
 
@@ -1150,9 +1190,20 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
                               </button>
                             </>
                           ) : isApproved ? (
-                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
-                              Đã duyệt
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-700">
+                                Đã duyệt
+                              </span>
+                              {canApprove && (
+                                <button
+                                  onClick={() => handleTraLai(item)}
+                                  className="px-2 py-1 text-xs font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded transition-colors"
+                                  title="Trả lại kê khai đã duyệt nhầm"
+                                >
+                                  ↩ Trả lại
+                                </button>
+                              )}
+                            </div>
                           ) : isRejected ? (
                             <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-700">
                               Từ chối
@@ -1406,6 +1457,48 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
                 {isProcessing ? 'Đang xử lý...' : bulkModalAction === 'approve' 
                   ? `Phê duyệt ${selectedIds.size} công việc` 
                   : `Từ chối ${selectedIds.size} công việc`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Trả lại đã duyệt */}
+      {traLaiItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-orange-700">↩ Trả lại kê khai đã duyệt</h3>
+              <button onClick={() => setTraLaiItem(null)} className="p-1 text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-800">
+                ⚠️ Kê khai <strong>{traLaiItem.ho_ten}</strong> sẽ được chuyển về trạng thái <strong>Nháp</strong>.
+                Các giá trị phê duyệt (số lỗi, SP) sẽ bị xóa.
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lý do trả lại <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={traLaiLyDo}
+                  onChange={(e) => setTraLaiLyDo(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Nhập lý do trả lại..."
+                  required
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setTraLaiItem(null)} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Hủy</button>
+              <button
+                onClick={handleSubmitTraLai}
+                disabled={isTraLai || !traLaiLyDo.trim()}
+                className="px-4 py-2 text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isTraLai ? 'Đang xử lý...' : 'Xác nhận trả lại'}
               </button>
             </div>
           </div>

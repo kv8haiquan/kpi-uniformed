@@ -653,3 +653,59 @@ async def get_lich_su_ke_khai_lanh_dao(
         "data": data,
         "pagination": Pagination.create(page=page, page_size=page_size, total_items=total).model_dump(),
     }
+
+
+# =============================================================================
+# GET KE KHAI LANH DAO THEO CONG CHUC (Lãnh đạo cấp trên xem)
+# =============================================================================
+
+@router.get("/cong-chuc/{cong_chuc_id}")
+async def get_ke_khai_ld_cong_chuc(
+    cong_chuc_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: Optional[int] = Query(None, ge=1, le=12),
+    nam: Optional[int] = Query(None, ge=2025),
+) -> dict:
+    """
+    Xem kê khai công việc lãnh đạo của một CC cụ thể.
+    Dùng trong modal Chi tiết CC của Báo cáo xếp loại.
+    
+    Quyền: Lãnh đạo cấp trên hoặc Admin.
+    """
+    # Kiểm tra quyền
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    is_cct = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    is_tdv = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+    
+    if not (is_admin or is_cct or is_tdv):
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_001", message="Không có quyền xem kê khai của lãnh đạo khác"
+        ))
+    
+    # Query
+    stmt = (
+        select(KeKhaiLanhDao)
+        .options(
+            selectinload(KeKhaiLanhDao.cong_chuc),
+            selectinload(KeKhaiLanhDao.nguoi_phe_duyet),
+        )
+        .where(
+            KeKhaiLanhDao.cong_chuc_id == cong_chuc_id,
+            KeKhaiLanhDao.is_deleted == False,
+        )
+    )
+    if thang:
+        stmt = stmt.where(KeKhaiLanhDao.thang == thang)
+    if nam:
+        stmt = stmt.where(KeKhaiLanhDao.nam == nam)
+    
+    stmt = stmt.order_by(KeKhaiLanhDao.created_at.desc())
+    
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+    
+    data = [build_ke_khai_response(kk, include_cong_chuc=True) for kk in items]
+    
+    return success_response(data=data)

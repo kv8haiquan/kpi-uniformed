@@ -28,6 +28,14 @@ from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro
 from app.schemas.common import success_response, error_response, Pagination
 from app.schemas.leader_kpi import DanhGiaDDECreate, GuiDuyetDDERequest, PheDuyetDDERequest
 
+from pydantic import BaseModel, Field
+
+
+class TraLaiDDERequest(BaseModel):
+    """Yêu cầu trả lại đánh giá d,đ,e đã phê duyệt."""
+    ly_do: str = Field(..., min_length=1, max_length=500, description="Lý do trả lại (bắt buộc)")
+
+
 router = APIRouter()
 
 
@@ -350,6 +358,46 @@ async def phe_duyet_dde(
     await db.refresh(dde)  # QUAN TRỌNG
     return success_response(data=build_dde_response(dde), message=message)
 
+
+# =============================================================================
+# POST - Trả lại đánh giá d, đ, e đã phê duyệt (MỚI v3.0.0)
+# =============================================================================
+
+@router.post("/dde/{dde_id}/tra-lai")
+async def tra_lai_dde(
+    db: DatabaseDep, current_user: ActiveUserDep,
+    dde_id: UUID, payload: TraLaiDDERequest,
+) -> dict:
+    """Trả lại đánh giá d, đ, e đã phê duyệt về trạng thái NHAP."""
+    stmt = select(DanhGiaDDE).where(DanhGiaDDE.id == dde_id)
+    dde = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not dde:
+        raise HTTPException(status_code=404, detail=error_response(code="NOT_FOUND", message="Không tìm thấy"))
+    
+    if dde.trang_thai != TrangThaiDDE.DA_PHE_DUYET.value:
+        raise HTTPException(status_code=400, detail=error_response(
+            code="INVALID_STATE", message=f"Chỉ trả lại được ở trạng thái DA_PHE_DUYET (hiện tại: {dde.trang_thai})"
+        ))
+    
+    is_cct = current_user.vai_tro and current_user.vai_tro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    if dde.nguoi_phe_duyet_id != current_user.id and not is_cct and not is_admin:
+        raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Không có quyền trả lại"))
+    
+    dde.trang_thai = TrangThaiDDE.NHAP.value
+    dde.y_kien_phe_duyet = f"[TRẢ LẠI] {payload.ly_do}"
+    dde.d_phe_duyet = None
+    dde.dd_phe_duyet = None
+    dde.e_phe_duyet = None
+    dde.ngay_phe_duyet = None
+    
+    await db.flush()
+    await db.refresh(dde)
+    
+    return success_response(data=build_dde_response(dde), message="Đã trả lại đánh giá d,đ,e")
+
+
 @router.get(
     "/dde/lich-su",
     summary="Lấy lịch sử phê duyệt đánh giá d,đ,e",
@@ -422,3 +470,53 @@ async def get_lich_su_danh_gia_dde(
         "data": data,
         "pagination": Pagination.create(page=page, page_size=page_size, total_items=total).model_dump(),
     }
+
+
+# =============================================================================
+# GET DDE THEO CONG CHUC (Lãnh đạo cấp trên xem)
+# =============================================================================
+
+@router.get("/dde/cong-chuc/{cong_chuc_id}/thang/{thang}/nam/{nam}")
+async def get_dde_cong_chuc(
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """
+    Xem đánh giá d, đ, e của một lãnh đạo cụ thể.
+    Dùng trong modal Chi tiết CC của Báo cáo xếp loại.
+    
+    Quyền: Lãnh đạo cấp trên hoặc Admin.
+    """
+    # Kiểm tra quyền
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    is_cct = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    is_tdv = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+    
+    if not (is_admin or is_cct or is_tdv):
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_001", message="Không có quyền xem đánh giá d,đ,e của lãnh đạo khác"
+        ))
+    
+    # Query - LƯU Ý: DanhGiaDDE KHÔNG có is_deleted (kế thừa BaseModel, không phải BaseModelWithSoftDelete)
+    stmt = (
+        select(DanhGiaDDE)
+        .options(
+            selectinload(DanhGiaDDE.cong_chuc),
+        )
+        .where(
+            DanhGiaDDE.cong_chuc_id == cong_chuc_id,
+            DanhGiaDDE.thang == thang,
+            DanhGiaDDE.nam == nam,
+        )
+    )
+    result = await db.execute(stmt)
+    dde = result.scalar_one_or_none()
+    
+    if not dde:
+        return success_response(data=None, message="Chưa có đánh giá d,đ,e cho tháng này")
+    
+    return success_response(data=build_dde_response(dde))

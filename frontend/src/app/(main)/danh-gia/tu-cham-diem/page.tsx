@@ -495,11 +495,27 @@ export default function TuChamDiemPage() {
                     <textarea
                       placeholder="Nhập minh chứng thành tích..."
                       value={ghiChu[tc.ma_tieu_chi] || ''}
-                      onChange={(e) => handleGhiChuChange(tc.ma_tieu_chi, e.target.value)}
+                      onChange={(e) => {
+                        if (e.target.value.length <= 2000) {
+                          handleGhiChuChange(tc.ma_tieu_chi, e.target.value);
+                        }
+                      }}
                       disabled={isDisabled}
                       rows={2}
-                      className="w-full border border-amber-300 rounded-md px-3 py-2 text-sm focus:ring-amber-500 focus:border-amber-500"
+                      maxLength={2000}
+                      className={`w-full border rounded-md px-3 py-2 text-sm focus:ring-amber-500 focus:border-amber-500 ${
+                        (ghiChu[tc.ma_tieu_chi]?.length || 0) > 1800 ? 'border-red-300' : 'border-amber-300'
+                      }`}
                     />
+                    <div className="flex justify-end mt-1">
+                      <span className={`text-xs ${
+                        (ghiChu[tc.ma_tieu_chi]?.length || 0) > 1800 
+                          ? 'text-red-500 font-medium' 
+                          : 'text-gray-400'
+                      }`}>
+                        {ghiChu[tc.ma_tieu_chi]?.length || 0}/2000
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>

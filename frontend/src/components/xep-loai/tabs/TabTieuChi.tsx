@@ -261,6 +261,16 @@ const tieuChiApi = {
   }): Promise<void> {
     await apiClient.post('/danh-gia/phe-duyet-tieu-chi-bulk', payload);
   },
+
+  /**
+   * POST /danh-gia/{id}/tra-lai-tieu-chi
+   * Trả lại tiêu chí đã duyệt về trạng thái Nháp
+   */
+  async traLai(danhGiaThangId: string, lyDo: string): Promise<void> {
+    await apiClient.post(`/danh-gia/${danhGiaThangId}/tra-lai-tieu-chi`, {
+      ly_do: lyDo,
+    });
+  },
 };
 
 // =============================================================================
@@ -273,12 +283,13 @@ interface TieuChiRowProps {
   onSelect: (id: string, selected: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onTraLai: (item: ITieuChiItem) => void;
   onViewDetail: (id: string) => void;
   canApprove: boolean;
   currentUserId?: string;
 }
 
-function TieuChiRow({ item, isSelected, onSelect, onApprove, onReject, onViewDetail, canApprove, currentUserId }: TieuChiRowProps) {
+function TieuChiRow({ item, isSelected, onSelect, onApprove, onReject, onTraLai, onViewDetail, canApprove, currentUserId }: TieuChiRowProps) {
   // ⭐ v3.5: Detect status
   const trangThaiTC = item.trang_thai_tc || item.trang_thai_tieu_chi || item.trang_thai;
   const capHienTai = item.cap_phe_duyet_hien_tai;
@@ -314,7 +325,20 @@ function TieuChiRow({ item, isSelected, onSelect, onApprove, onReject, onViewDet
 
   // Status badge
   const getStatusBadge = () => {
-    if (isApproved) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">Đã duyệt</span>;
+    if (isApproved) return (
+      <div className="flex items-center gap-1">
+        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">Đã duyệt</span>
+        {canApprove && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onTraLai(item); }}
+            className="px-1.5 py-0.5 text-xs font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded transition-colors"
+            title="Trả lại tiêu chí đã duyệt nhầm"
+          >
+            ↩ Trả lại
+          </button>
+        )}
+      </div>
+    );
     if (isRejected) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">Từ chối</span>;
     if (trangThaiTC === 'NHAP' && item.ly_do_tu_choi_tc) return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-orange-100 text-orange-700">Cần chấm lại</span>;
     if (isPending) {
@@ -500,6 +524,11 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
   const [lyDoTuChoi, setLyDoTuChoi] = useState('');
   const [ghiChuPheDuyet, setGhiChuPheDuyet] = useState('');
   const [chiTietData, setChiTietData] = useState<ITieuChiChiTiet[]>([]);
+
+  // Modal trả lại đã duyệt
+  const [traLaiItem, setTraLaiItem] = useState<ITieuChiItem | null>(null);
+  const [traLaiLyDo, setTraLaiLyDo] = useState('');
+  const [isTraLai, setIsTraLai] = useState(false);
   // State cho điều chỉnh điểm khi phê duyệt
   const [dieuChinhDiem, setDieuChinhDiem] = useState<Record<string, boolean>>({});
   // ✅ v3.4: Lý do điều chỉnh per tiêu chí
@@ -716,6 +745,28 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
       alert(errorMsg);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // ===== TRẢ LẠI ĐÃ DUYỆT =====
+  const handleTraLai = (item: ITieuChiItem) => {
+    setTraLaiItem(item);
+    setTraLaiLyDo('');
+  };
+
+  const handleSubmitTraLai = async () => {
+    if (!traLaiItem || !traLaiLyDo.trim()) return;
+    setIsTraLai(true);
+    try {
+      await tieuChiApi.traLai(traLaiItem.danh_gia_thang_id, traLaiLyDo);
+      await refreshAll();
+      setTraLaiItem(null);
+      setTraLaiLyDo('');
+    } catch (err) {
+      const error = err as Error;
+      alert(error.message || 'Có lỗi xảy ra khi trả lại');
+    } finally {
+      setIsTraLai(false);
     }
   };
 
@@ -1016,6 +1067,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                     onSelect={handleSelect}
                     onApprove={handleApprove}
                     onReject={handleReject}
+                    onTraLai={handleTraLai}
                     onViewDetail={handleViewDetail}
                     canApprove={canApprove}
                     currentUserId={currentUserId}
@@ -1334,6 +1386,48 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                 className={`px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 ${modalAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
               >
                 {isProcessing ? 'Đang xử lý...' : modalAction === 'approve' ? 'Phê duyệt' : 'Từ chối'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Trả lại tiêu chí đã duyệt */}
+      {traLaiItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-orange-700">↩ Trả lại tiêu chí đã duyệt</h3>
+              <button onClick={() => setTraLaiItem(null)} className="p-1 text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-800">
+                ⚠️ Tiêu chí chung của <strong>{traLaiItem.ho_ten}</strong> (tháng {traLaiItem.thang}/{traLaiItem.nam}) sẽ được chuyển về trạng thái <strong>Nháp</strong>.
+                Toàn bộ điểm phê duyệt (cấp 1 + cấp 2) sẽ bị xóa.
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lý do trả lại <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={traLaiLyDo}
+                  onChange={(e) => setTraLaiLyDo(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Nhập lý do trả lại..."
+                  required
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setTraLaiItem(null)} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Hủy</button>
+              <button
+                onClick={handleSubmitTraLai}
+                disabled={isTraLai || !traLaiLyDo.trim()}
+                className="px-4 py-2 text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isTraLai ? 'Đang xử lý...' : 'Xác nhận trả lại'}
               </button>
             </div>
           </div>

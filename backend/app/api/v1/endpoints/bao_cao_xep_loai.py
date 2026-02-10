@@ -43,6 +43,13 @@ from app.schemas.bao_cao_xep_loai import (
     PheDuyetBaoCaoRequest, get_trang_thai_ten
 )
 
+from pydantic import BaseModel, Field
+
+
+class TraLaiBaoCaoRequest(BaseModel):
+    """Yêu cầu trả lại báo cáo xếp loại đã phê duyệt."""
+    ly_do: str = Field(..., min_length=1, max_length=500, description="Lý do trả lại (bắt buộc)")
+
 
 router = APIRouter()
 
@@ -454,6 +461,7 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
         # Cập nhật hoặc tạo chi tiết
         if cc.id in existing_map:
             ct = existing_map[cc.id]
+            ct.is_lanh_dao = is_lanh_dao  # v1.4: đảm bảo is_lanh_dao luôn đúng
             ct.diem_tieu_chi_chung = ket_qua.diem_tieu_chi_chung
             ct.diem_kpi = ket_qua.diem_kpi
             ct.diem_tong = ket_qua.diem_tong
@@ -472,6 +480,7 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
             ct = ChiTietXepLoai(
                 bao_cao_id=bao_cao.id,
                 cong_chuc_id=cc.id,
+                is_lanh_dao=is_lanh_dao,  # v1.4
                 diem_tieu_chi_chung=ket_qua.diem_tieu_chi_chung,
                 diem_kpi=ket_qua.diem_kpi,
                 diem_tong=ket_qua.diem_tong,
@@ -751,6 +760,61 @@ async def get_bao_cao_full(db: AsyncSession, bao_cao_id: UUID) -> Optional[BaoCa
     return result.scalar_one_or_none()
 
 
+async def enrich_chi_tiet_with_cv_c3(
+    db: AsyncSession,
+    response_data: dict,
+    thang: int,
+    nam: int,
+) -> None:
+    """
+    Bổ sung so_cv_c3_plus (số công việc C3+) cho từng chi_tiet trong response.
+    
+    Batch-query tất cả kê khai ĐÃ DUYỆT trong tháng, group by cong_chuc_id,
+    đếm những kê khai có cap_do.ma_cap_do IN ('C3', 'C4', 'C5').
+    
+    v1.4 (10/02/2026): Thêm để hỗ trợ lãnh đạo đề xuất xếp loại.
+    """
+    from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
+    from app.models.task_catalog import CapDoPhucTap
+    
+    chi_tiet_list = response_data.get("chi_tiet", [])
+    if not chi_tiet_list:
+        return
+    
+    # Lấy tất cả cong_chuc_id từ chi_tiet
+    cc_ids = [ct["cong_chuc_id"] for ct in chi_tiet_list if ct.get("cong_chuc_id")]
+    if not cc_ids:
+        return
+    
+    # Batch query: đếm kê khai C3+ cho tất cả CC trong 1 query
+    stmt = (
+        select(
+            KeKhaiCongViec.cong_chuc_id,
+            func.count(KeKhaiCongViec.id).label("so_cv_c3_plus"),
+        )
+        .join(CapDoPhucTap, KeKhaiCongViec.cap_do_id == CapDoPhucTap.id)
+        .where(
+            KeKhaiCongViec.cong_chuc_id.in_(cc_ids),
+            KeKhaiCongViec.thang == thang,
+            KeKhaiCongViec.nam == nam,
+            KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
+            KeKhaiCongViec.is_deleted == False,
+            CapDoPhucTap.ma_cap_do.in_(["C3", "C4", "C5"]),
+        )
+        .group_by(KeKhaiCongViec.cong_chuc_id)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    # Build map: cong_chuc_id → count
+    c3_map = {str(row.cong_chuc_id): row.so_cv_c3_plus for row in rows}
+    
+    # Inject vào từng chi_tiet
+    for ct in chi_tiet_list:
+        cc_id = str(ct.get("cong_chuc_id", ""))
+        ct["so_cv_c3_plus"] = c3_map.get(cc_id, 0)
+
+
 # =============================================================================
 # 1. GET /don-vi/thang/{thang}/nam/{nam} - Lấy/Tạo báo cáo đơn vị
 # =============================================================================
@@ -860,6 +924,9 @@ async def get_bao_cao_don_vi(
     response_data["can_edit"] = can_edit
     response_data["can_approve"] = can_approve
     response_data["is_auto_calculated"] = True
+    
+    # v1.4: Bổ sung số CV C3+ cho từng CC
+    await enrich_chi_tiet_with_cv_c3(db, response_data, thang, nam)
     
     return success_response(
         data=response_data,
@@ -1172,6 +1239,9 @@ async def get_bao_cao_chi_tiet(
     response_data["can_edit"] = check_can_edit_bao_cao(current_user)
     response_data["can_approve"] = check_can_approve_bao_cao(current_user)
     
+    # v1.4: Bổ sung số CV C3+ cho từng CC
+    await enrich_chi_tiet_with_cv_c3(db, response_data, bao_cao.thang, bao_cao.nam)
+    
     return success_response(
         data=response_data,
         message="Lấy chi tiết báo cáo thành công"
@@ -1330,6 +1400,60 @@ async def phe_duyet_bao_cao(
             "so_cc_bi_tu_choi": so_cc_bi_tu_choi,
         },
         message=message
+    )
+
+
+# =============================================================================
+# 7b. POST /{id}/tra-lai - CCT trả lại báo cáo đã phê duyệt (MỚI v3.0.0)
+# =============================================================================
+
+@router.post("/{bao_cao_id}/tra-lai")
+async def tra_lai_bao_cao(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    bao_cao_id: UUID,
+    payload: TraLaiBaoCaoRequest,
+) -> dict:
+    """
+    CCT trả lại báo cáo xếp loại đã phê duyệt.
+    Chuyển DA_PHE_DUYET → CHO_PHE_DUYET để Đội trưởng điều chỉnh lại.
+    """
+    if not check_is_chi_cuc_truong(current_user):
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_003", message="Chỉ Chi cục trưởng mới có quyền trả lại báo cáo"
+        ))
+    
+    bao_cao = await get_bao_cao_full(db, bao_cao_id)
+    
+    if not bao_cao:
+        raise HTTPException(status_code=404, detail=error_response(
+            code="NOT_FOUND", message="Không tìm thấy báo cáo"
+        ))
+    
+    if bao_cao.trang_thai != TrangThaiBaoCao.DA_PHE_DUYET.value:
+        raise HTTPException(status_code=400, detail=error_response(
+            code="INVALID_STATE", message="Chỉ trả lại được khi báo cáo ở trạng thái DA_PHE_DUYET"
+        ))
+    
+    # Trả lại về CHO_PHE_DUYET (ĐT xem lại và sửa)
+    bao_cao.trang_thai = TrangThaiBaoCao.CHO_PHE_DUYET.value
+    bao_cao.y_kien_phe_duyet = f"[TRẢ LẠI] {payload.ly_do}"
+    bao_cao.ngay_phe_duyet = None
+    
+    # Reset xep_loai_quyet_dinh của tất cả chi tiết
+    for ct in bao_cao.chi_tiets:
+        ct.xep_loai_quyet_dinh = None
+        ct.ly_do_dieu_chinh_cct = None
+    
+    await db.flush()
+    
+    return success_response(
+        data={
+            "id": str(bao_cao.id),
+            "trang_thai_moi": "CHO_PHE_DUYET",
+            "ly_do": payload.ly_do,
+        },
+        message="Đã trả lại báo cáo. Đội trưởng có thể điều chỉnh lại."
     )
 
 

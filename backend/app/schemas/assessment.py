@@ -104,8 +104,8 @@ class TieuChiItemInput(BaseModel):
     )
     ghi_chu_cc: Optional[str] = Field(
         default=None,
-        max_length=500,
-        description="Ghi chú của CC khi tự đánh giá (nếu có)"
+        max_length=2000,
+        description="Ghi chú/minh chứng của CC khi tự đánh giá (tối đa 2000 ký tự)"
     )
 
 

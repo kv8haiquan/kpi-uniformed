@@ -1410,3 +1410,148 @@ async def gui_duyet_ke_khai(
         },
         message="Đã gửi kê khai đi phê duyệt thành công"
     )
+
+
+# =============================================================================
+# GET KE KHAI CUA CONG CHUC (Lãnh đạo/Admin xem kê khai CC khác)
+# =============================================================================
+
+@router.get(
+    "/cong-chuc/{cong_chuc_id}",
+    summary="Xem kê khai của công chức (dành cho Lãnh đạo/Admin)",
+    description="""
+    Lấy danh sách kê khai công việc của một công chức cụ thể.
+    
+    **Mục đích:** Dùng trong modal "Chi tiết công chức" của Báo cáo xếp loại,
+    cho phép Đội trưởng/CCT xem chi tiết kê khai của CC trong đơn vị.
+    
+    **Quyền truy cập:**
+    - Lãnh đạo đơn vị (TDV, PDV): Chỉ xem CC cùng đơn vị
+    - Chi cục trưởng (CCT), Phó CCT: Xem tất cả CC
+    - Admin: Xem tất cả CC
+    
+    **Filter options:**
+    - `thang`: Lọc theo tháng (1-12)
+    - `nam`: Lọc theo năm
+    - `trang_thai`: Lọc theo trạng thái (mặc định: DA_PHE_DUYET)
+    
+    **Response:** Danh sách kê khai kèm thông tin danh mục SP, cấp độ.
+    """,
+    response_model=DataResponse[List[dict]],
+    responses={
+        403: {"description": "Không có quyền xem"},
+        404: {"description": "Không tìm thấy công chức"},
+    }
+)
+async def get_ke_khai_cong_chuc(
+    cong_chuc_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: Optional[int] = Query(default=None, ge=1, le=12, description="Filter theo tháng"),
+    nam: Optional[int] = Query(default=None, ge=2025, description="Filter theo năm"),
+    trang_thai: Optional[str] = Query(
+        default=None,
+        pattern="^(NHAP|CHO_PHE_DUYET|DA_PHE_DUYET|TU_CHOI|HUY)$",
+        description="Filter theo trạng thái (mặc định: tất cả)"
+    ),
+) -> dict:
+    """
+    Lấy danh sách kê khai của một công chức cụ thể.
+    Dành cho Lãnh đạo/Admin xem trong Báo cáo xếp loại.
+    """
+    # =========================================================================
+    # 1. Kiểm tra quyền truy cập
+    # =========================================================================
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    
+    is_cct_or_pcct = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    is_lanh_dao_don_vi = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+    
+    if not (is_admin or is_cct_or_pcct or is_lanh_dao_don_vi):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_001",
+                    "message": "Chỉ Lãnh đạo hoặc Admin mới được xem kê khai của công chức khác"
+                }
+            }
+        )
+    
+    # =========================================================================
+    # 2. Kiểm tra công chức tồn tại
+    # =========================================================================
+    cc_stmt = (
+        select(CongChuc)
+        .where(CongChuc.id == cong_chuc_id)
+        .where(CongChuc.is_deleted == False)
+    )
+    cc_result = await db.execute(cc_stmt)
+    cong_chuc = cc_result.scalar_one_or_none()
+    
+    if not cong_chuc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Không tìm thấy công chức"
+                }
+            }
+        )
+    
+    # =========================================================================
+    # 3. Kiểm tra cùng đơn vị (nếu là lãnh đạo đơn vị)
+    # =========================================================================
+    if is_lanh_dao_don_vi and not is_admin and not is_cct_or_pcct:
+        if cong_chuc.don_vi_id != current_user.don_vi_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "PERM_002",
+                        "message": "Lãnh đạo đơn vị chỉ được xem kê khai của CC cùng đơn vị"
+                    }
+                }
+            )
+    
+    # =========================================================================
+    # 4. Query kê khai
+    # =========================================================================
+    base_query = (
+        select(KeKhaiCongViec)
+        .options(
+            selectinload(KeKhaiCongViec.cong_chuc),
+            selectinload(KeKhaiCongViec.danh_muc_sp).selectinload(DanhMucSpCongViec.sp_chuan),
+            selectinload(KeKhaiCongViec.cap_do),
+            selectinload(KeKhaiCongViec.nguoi_phe_duyet),
+        )
+        .where(KeKhaiCongViec.cong_chuc_id == cong_chuc_id)
+        .where(KeKhaiCongViec.is_deleted == False)
+    )
+    
+    # Apply filters
+    if thang:
+        base_query = base_query.where(KeKhaiCongViec.thang == thang)
+    if nam:
+        base_query = base_query.where(KeKhaiCongViec.nam == nam)
+    if trang_thai:
+        base_query = base_query.where(KeKhaiCongViec.trang_thai == TrangThaiKeKhai(trang_thai))
+    
+    base_query = base_query.order_by(KeKhaiCongViec.created_at.desc())
+    
+    # Execute
+    result = await db.execute(base_query)
+    ke_khai_list = result.scalars().all()
+    
+    # Convert to response
+    data = [ke_khai_to_response(kk) for kk in ke_khai_list]
+    
+    return success_response(
+        data=data,
+        message=f"Danh sách kê khai của {cong_chuc.ho_ten} ({len(data)} bản ghi)"
+    )

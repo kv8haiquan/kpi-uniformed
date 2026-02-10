@@ -163,6 +163,13 @@ const nghiPhepApi = {
   async tuChoi(nghiPhepId: string, payload: { ly_do_tu_choi: string }): Promise<void> {
     await apiClient.post(`/nghi-phep/${nghiPhepId}/tu-choi`, payload);
   },
+
+  /**
+   * POST /nghi-phep/{nghi_phep_id}/tra-lai
+   */
+  async traLai(nghiPhepId: string, lyDo: string): Promise<void> {
+    await apiClient.post(`/nghi-phep/${nghiPhepId}/tra-lai`, { ly_do: lyDo });
+  },
 };
 
 // =============================================================================
@@ -175,10 +182,11 @@ interface NghiPhepCardProps {
   onSelect: (id: string, selected: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onTraLai: (item: INghiPhepItem) => void;
   canApprove: boolean;
 }
 
-function NghiPhepCard({ item, isSelected, onSelect, onApprove, onReject, canApprove }: NghiPhepCardProps) {
+function NghiPhepCard({ item, isSelected, onSelect, onApprove, onReject, onTraLai, canApprove }: NghiPhepCardProps) {
   const isPending = item.trang_thai === 'CHO_PHE_DUYET';
   const isApproved = item.trang_thai === 'DA_PHE_DUYET';
   const isRejected = item.trang_thai === 'TU_CHOI';
@@ -258,6 +266,18 @@ function NghiPhepCard({ item, isSelected, onSelect, onApprove, onReject, canAppr
                 className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
               >
                 Từ chối
+              </button>
+            </div>
+          )}
+
+          {/* Nút trả lại - chỉ hiện khi đã duyệt */}
+          {canApprove && isApproved && (
+            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+              <button
+                onClick={() => onTraLai(item)}
+                className="flex-1 px-3 py-1.5 text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
+              >
+                ↩ Trả lại đã duyệt
               </button>
             </div>
           )}
@@ -388,6 +408,32 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
       setSelectedItem(item);
       setModalAction('reject');
       setLyDo('');
+    }
+  };
+
+  // ===== TRẢ LẠI ĐÃ DUYỆT =====
+  const [traLaiItem, setTraLaiItem] = useState<INghiPhepItem | null>(null);
+  const [traLaiLyDo, setTraLaiLyDo] = useState('');
+  const [isTraLai, setIsTraLai] = useState(false);
+
+  const handleTraLai = (item: INghiPhepItem) => {
+    setTraLaiItem(item);
+    setTraLaiLyDo('');
+  };
+
+  const handleSubmitTraLai = async () => {
+    if (!traLaiItem || !traLaiLyDo.trim()) return;
+    setIsTraLai(true);
+    try {
+      await nghiPhepApi.traLai(traLaiItem.id, traLaiLyDo);
+      await refreshAll();
+      setTraLaiItem(null);
+      setTraLaiLyDo('');
+    } catch (err) {
+      const error = err as Error;
+      alert(error.message || 'Có lỗi xảy ra khi trả lại');
+    } finally {
+      setIsTraLai(false);
     }
   };
 
@@ -549,6 +595,7 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
               onSelect={handleSelect}
               onApprove={handleApprove}
               onReject={handleReject}
+              onTraLai={handleTraLai}
               canApprove={canApprove}
             />
           ))}
@@ -618,6 +665,47 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
                 className={`px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 ${modalAction === 'approve' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
               >
                 {isProcessing ? 'Đang xử lý...' : modalAction === 'approve' ? 'Phê duyệt' : 'Từ chối'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Trả lại nghỉ phép đã duyệt */}
+      {traLaiItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-orange-700">↩ Trả lại đơn nghỉ đã duyệt</h3>
+              <button onClick={() => setTraLaiItem(null)} className="p-1 text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-800">
+                ⚠️ Đơn nghỉ phép của <strong>{traLaiItem.cong_chuc?.ho_ten || 'N/A'}</strong> ({traLaiItem.so_ngay} ngày) sẽ được chuyển về trạng thái <strong>Chờ phê duyệt</strong>.
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lý do trả lại <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={traLaiLyDo}
+                  onChange={(e) => setTraLaiLyDo(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Nhập lý do trả lại..."
+                  required
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
+              <button onClick={() => setTraLaiItem(null)} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Hủy</button>
+              <button
+                onClick={handleSubmitTraLai}
+                disabled={isTraLai || !traLaiLyDo.trim()}
+                className="px-4 py-2 text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {isTraLai ? 'Đang xử lý...' : 'Xác nhận trả lại'}
               </button>
             </div>
           </div>

@@ -50,6 +50,8 @@ from app.schemas.common import (
     success_response,
     error_response,
 )
+from pydantic import BaseModel, Field
+
 from app.schemas.kpi_assessment import (
     PheDuyetAction,
     PheDuyetRequest,
@@ -58,6 +60,21 @@ from app.schemas.kpi_assessment import (
     KeKhaiPendingResponse,
     CongChucPendingInfo,
 )
+
+
+# =============================================================================
+# SCHEMAS MỚI - TRẢ LẠI KÊ KHAI ĐÃ PHÊ DUYỆT
+# =============================================================================
+
+class TraLaiRequest(BaseModel):
+    """Yêu cầu trả lại kê khai đã phê duyệt."""
+    ly_do: str = Field(..., min_length=1, max_length=500, description="Lý do trả lại (bắt buộc)")
+
+
+class TraLaiBulkRequest(BaseModel):
+    """Yêu cầu trả lại nhiều kê khai đã phê duyệt."""
+    ke_khai_ids: List[UUID] = Field(..., min_length=1, description="Danh sách ID kê khai")
+    ly_do: str = Field(..., min_length=1, max_length=500, description="Lý do trả lại")
 
 
 router = APIRouter()
@@ -751,6 +768,197 @@ async def xu_ly_phe_duyet_don_le(
         },
         message=f"Đã {action_text} kê khai thành công"
     )
+
+
+# =============================================================================
+# TRẢ LẠI KÊ KHAI ĐÃ PHÊ DUYỆT (MỚI v3.0.0)
+# =============================================================================
+
+@router.post(
+    "/{ke_khai_id}/tra-lai",
+    summary="Trả lại kê khai đã phê duyệt",
+    description="""
+    Trả lại kê khai đã phê duyệt nhầm về trạng thái NHAP.
+    
+    **Logic:**
+    - Chuyển trạng thái: DA_PHE_DUYET → NHAP
+    - Reset các giá trị đã chốt: so_loi_chat_luong, so_loi_tien_do, so_sp_chat_luong, so_sp_tien_do
+    - Lưu lý do trả lại vào y_kien_lanh_dao
+    - Chỉ người đã phê duyệt (nguoi_phe_duyet_id) hoặc Admin mới được trả lại
+    
+    **Quyền truy cập:** Lãnh đạo đã phê duyệt hoặc Admin.
+    """,
+    response_model=DataResponse[dict],
+)
+async def tra_lai_ke_khai(
+    ke_khai_id: UUID,
+    payload: TraLaiRequest,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """Trả lại kê khai đã phê duyệt."""
+    # Kiểm tra quyền cơ bản
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    is_lanh_dao = current_user.is_lanh_dao or False
+    
+    if not (is_admin or is_lanh_dao):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_003",
+                    "message": "Chỉ Lãnh đạo mới có quyền trả lại kê khai."
+                }
+            }
+        )
+    
+    # Lấy kê khai
+    stmt = (
+        select(KeKhaiCongViec)
+        .options(selectinload(KeKhaiCongViec.cong_chuc))
+        .where(KeKhaiCongViec.id == ke_khai_id)
+        .where(KeKhaiCongViec.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    ke_khai = result.scalar_one_or_none()
+    
+    if not ke_khai:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "success": False,
+                "error": {"code": "NOT_FOUND", "message": "Không tìm thấy bản kê khai"}
+            }
+        )
+    
+    # Kiểm tra trạng thái: chỉ trả lại được khi DA_PHE_DUYET
+    if ke_khai.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "INVALID_STATE",
+                    "message": f"Chỉ trả lại được kê khai ở trạng thái ĐÃ PHÊ DUYỆT (hiện tại: {ke_khai.trang_thai.value})"
+                }
+            }
+        )
+    
+    # Kiểm tra quyền: phải là người đã phê duyệt hoặc Admin
+    if not is_admin and ke_khai.nguoi_phe_duyet_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_003",
+                    "message": "Bạn không phải người đã phê duyệt kê khai này"
+                }
+            }
+        )
+    
+    # === TRẢ LẠI ===
+    ke_khai.trang_thai = TrangThaiKeKhai.NHAP
+    ke_khai.y_kien_lanh_dao = f"[TRẢ LẠI] {payload.ly_do}"
+    
+    # Reset các giá trị đã chốt
+    ke_khai.so_loi_chat_luong = None
+    ke_khai.so_loi_tien_do = None
+    ke_khai.so_sp_chat_luong = None
+    ke_khai.so_sp_tien_do = None
+    
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"success": False, "error": {"code": "DB_ERROR", "message": f"Lỗi: {str(e)}"}}
+        )
+    
+    return success_response(
+        data={
+            "ke_khai_id": str(ke_khai_id),
+            "trang_thai_moi": "NHAP",
+            "ly_do": payload.ly_do,
+        },
+        message="Đã trả lại kê khai thành công. Công chức có thể sửa và gửi lại."
+    )
+
+
+@router.post(
+    "/tra-lai-bulk",
+    summary="Trả lại nhiều kê khai đã phê duyệt",
+    description="Trả lại hàng loạt kê khai đã phê duyệt nhầm về trạng thái NHAP.",
+    response_model=DataResponse[dict],
+)
+async def tra_lai_ke_khai_bulk(
+    payload: TraLaiBulkRequest,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """Trả lại nhiều kê khai đã phê duyệt."""
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    is_lanh_dao = current_user.is_lanh_dao or False
+    
+    if not (is_admin or is_lanh_dao):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"success": False, "error": {"code": "PERM_003", "message": "Chỉ Lãnh đạo"}}
+        )
+    
+    stmt = (
+        select(KeKhaiCongViec)
+        .where(KeKhaiCongViec.id.in_(payload.ke_khai_ids))
+        .where(KeKhaiCongViec.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    ke_khai_list = result.scalars().all()
+    
+    processed_ids = []
+    errors = []
+    
+    for kk in ke_khai_list:
+        if kk.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET:
+            errors.append(f"KK {kk.id}: không ở trạng thái DA_PHE_DUYET")
+            continue
+        if not is_admin and kk.nguoi_phe_duyet_id != current_user.id:
+            errors.append(f"KK {kk.id}: không phải người phê duyệt")
+            continue
+        
+        kk.trang_thai = TrangThaiKeKhai.NHAP
+        kk.y_kien_lanh_dao = f"[TRẢ LẠI] {payload.ly_do}"
+        kk.so_loi_chat_luong = None
+        kk.so_loi_tien_do = None
+        kk.so_sp_chat_luong = None
+        kk.so_sp_tien_do = None
+        processed_ids.append(kk.id)
+    
+    if not processed_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"success": False, "error": {"code": "PROCESS_FAILED", "message": "Không trả lại được bài nào", "details": errors}}
+        )
+    
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"success": False, "error": {"code": "DB_ERROR", "message": str(e)}}
+        )
+    
+    response_data = {
+        "processed_count": len(processed_ids),
+        "ke_khai_ids": processed_ids,
+        "trang_thai_moi": "NHAP",
+    }
+    if errors:
+        response_data["warnings"] = errors
+    
+    return success_response(data=response_data, message=f"Đã trả lại {len(processed_ids)} kê khai")
 
 
 # =============================================================================

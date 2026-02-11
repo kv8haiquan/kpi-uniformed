@@ -159,7 +159,7 @@ export default function TuChamDiemPage() {
     // Previous month: OK if day <= 10 (business rule: trước ngày 10 tháng sau)
     let prevMonth = todayMonth === 1 ? 12 : todayMonth - 1;
     let prevYear = todayMonth === 1 ? todayYear - 1 : todayYear;
-    if (selectedThang === prevMonth && selectedNam === prevYear && todayDay <= 10) return false;
+    if (selectedThang === prevMonth && selectedNam === prevYear && todayDay <= 30) return false;
     
     // All other months: deadline passed
     return true;

@@ -6,10 +6,11 @@ API Endpoints xuất báo cáo DOCX/PDF cho hệ thống KPI.
 Endpoints:
 1. GET /export/ca-nhan/thang/{thang}/nam/{nam}          - Xuất Mẫu 01 + 02 (cá nhân)
 2. GET /export/don-vi/thang/{thang}/nam/{nam}            - Xuất Mẫu 03 (đơn vị)
-3. GET /export/tong-hop/thang/{thang}/nam/{nam}          - Xuất Mẫu 03 toàn Chi cục (CCT/PCCT)
+3. GET /export/tong-hop/thang/{thang}/nam/{nam}          - Xuất Mẫu 04 toàn Chi cục (CCT/PCCT)
 
 Output: DOCX hoặc PDF (query param ?format=docx|pdf)
 
+Phiên bản: 1.1.0 (11/02/2026) - Thêm Mẫu 04 cho tổng hợp toàn Chi cục
 Phiên bản: 1.0.0 (02/02/2026)
 """
 
@@ -256,21 +257,6 @@ async def _get_all_bao_cao(
 # HELPER: BUILD DATA DICTS CHO DOCX GENERATOR
 # =============================================================================
 
-def _get_xep_loai_cuoi_cung(chi_tiet: Optional[ChiTietXepLoai]) -> str:
-    """
-    Lấy xếp loại cuối cùng của chi tiết xếp loại.
-    Ưu tiên: xep_loai_quyet_dinh > xep_loai_de_xuat > xep_loai_he_thong
-    """
-    if not chi_tiet:
-        return "E"
-    return (
-        chi_tiet.xep_loai_quyet_dinh 
-        or chi_tiet.xep_loai_de_xuat 
-        or chi_tiet.xep_loai_he_thong 
-        or "E"
-    )
-
-
 def _build_mau01_data(
     user: CongChuc,
     thang: int, nam: int,
@@ -304,7 +290,7 @@ def _build_mau01_data(
         "diem_tieu_chi_chung": diem_tcc,
         "diem_kpi": diem_kpi,
         "diem_tong": diem_tong,
-        "xep_loai": _get_xep_loai_cuoi_cung(chi_tiet_xep_loai),
+        "xep_loai": chi_tiet_xep_loai.xep_loai_cuoi_cung if chi_tiet_xep_loai else "E",
     }
 
 
@@ -364,7 +350,7 @@ def _build_mau02_data(
         "diem_tieu_chi_chung": diem_tcc,
         "diem_kpi": diem_kpi,
         "diem_tong": diem_tong,
-        "xep_loai": _get_xep_loai_cuoi_cung(chi_tiet_xep_loai),
+        "xep_loai": chi_tiet_xep_loai.xep_loai_cuoi_cung if chi_tiet_xep_loai else "E",
     }
 
 
@@ -429,6 +415,94 @@ def _build_mau03_data(
             "tong": tong,
             "A": so_a, "B": so_b, "C": so_c, "D": so_d, "E": so_e,
         },
+    }
+
+
+def _build_mau04_data(
+    bao_caos: list,
+    thang: int, nam: int,
+) -> dict:
+    """
+    Build data dict cho Mẫu 04 - DANH SÁCH PHÊ DUYỆT KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC.
+    
+    Mẫu 04 bao gồm:
+    - Bảng danh sách toàn bộ công chức với: STT, Mã CC, Họ tên, Năm sinh, Chức vụ, Đơn vị, Điểm, Xếp loại, Ghi chú
+    - Bảng tổng hợp: Mức xếp loại | Số lượng | Tỷ lệ %
+    - Bảng vinh danh: Top 5 công chức có điểm cao nhất (loại A)
+    """
+    rows = []
+    stt = 0
+    
+    for bc in bao_caos:
+        don_vi_ten = bc.don_vi.ten_don_vi if bc.don_vi else ""
+        
+        if bc.chi_tiets:
+            for ct in bc.chi_tiets:
+                stt += 1
+                xep_loai_cuoi = ct.xep_loai_quyet_dinh or ct.xep_loai_de_xuat or ct.xep_loai_he_thong
+                
+                # Lấy năm sinh từ ngày sinh
+                nam_sinh = ""
+                if ct.cong_chuc and ct.cong_chuc.ngay_sinh:
+                    nam_sinh = ct.cong_chuc.ngay_sinh.year if hasattr(ct.cong_chuc.ngay_sinh, 'year') else str(ct.cong_chuc.ngay_sinh)[:4]
+                
+                rows.append({
+                    "stt": stt,
+                    "ma_cc": ct.cong_chuc.ma_cc if ct.cong_chuc else "",
+                    "ho_ten": ct.cong_chuc.ho_ten if ct.cong_chuc else "",
+                    "nam_sinh": nam_sinh,
+                    "chuc_vu": ct.cong_chuc.chuc_vu if ct.cong_chuc else "",
+                    "don_vi": don_vi_ten,
+                    "diem_tong": float(ct.diem_tong or 0),
+                    "xep_loai": xep_loai_cuoi,
+                    "ghi_chu": ct.ghi_chu or "",
+                })
+    
+    # Thống kê
+    tong = len(rows)
+    so_a = sum(1 for r in rows if r["xep_loai"] == "A")
+    so_b = sum(1 for r in rows if r["xep_loai"] == "B")
+    so_c = sum(1 for r in rows if r["xep_loai"] == "C")
+    so_d = sum(1 for r in rows if r["xep_loai"] == "D")
+    so_e = sum(1 for r in rows if r["xep_loai"] == "E")
+    
+    # Tính tỷ lệ phần trăm
+    def calc_pct(count):
+        return round(count * 100 / tong, 1) if tong > 0 else 0
+    
+    thong_ke = [
+        {"muc": "A", "so_luong": so_a, "ty_le": calc_pct(so_a)},
+        {"muc": "B", "so_luong": so_b, "ty_le": calc_pct(so_b)},
+        {"muc": "C", "so_luong": so_c, "ty_le": calc_pct(so_c)},
+        {"muc": "D", "so_luong": so_d, "ty_le": calc_pct(so_d)},
+        {"muc": "E", "so_luong": so_e, "ty_le": calc_pct(so_e)},
+    ]
+    
+    # Top công chức xuất sắc (loại A, sắp theo điểm giảm dần)
+    top_xuat_sac = sorted(
+        [r for r in rows if r["xep_loai"] == "A"],
+        key=lambda x: x["diem_tong"],
+        reverse=True
+    )[:5]  # Top 5
+    
+    vinh_danh = []
+    for i, r in enumerate(top_xuat_sac, 1):
+        vinh_danh.append({
+            "stt": i,
+            "ho_ten": r["ho_ten"],
+            "don_vi": r["don_vi"],
+            "diem": r["diem_tong"],
+        })
+    
+    return {
+        "title": "DANH SÁCH PHÊ DUYỆT KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC",
+        "subtitle": f"Tháng {thang} năm {nam}",
+        "thang": thang,
+        "nam": nam,
+        "rows": rows,
+        "thong_ke": thong_ke,
+        "vinh_danh": vinh_danh,
+        "tong_cong_chuc": tong,
     }
 
 
@@ -632,7 +706,7 @@ async def export_tong_hop(
     format: str = Query("docx", regex="^(docx|pdf)$"),
 ):
     """
-    Xuất Mẫu 03 tổng hợp toàn Chi cục.
+    Xuất Mẫu 04 - Danh sách phê duyệt kết quả xếp loại chất lượng công chức toàn Chi cục.
     
     Quyền: Chỉ CCT và PCCT.
     """
@@ -652,18 +726,15 @@ async def export_tong_hop(
             "BIZ_003", f"Chưa có báo cáo xếp loại tháng {thang}/{nam}"
         ))
     
-    mau03_data = _build_mau03_data(
-        bao_caos, thang, nam,
-        don_vi_name="Chi cục Hải quan Khu vực VIII",
-        is_toan_chi_cuc=True,
-    )
+    # Sử dụng Mẫu 04 thay vì Mẫu 03
+    mau04_data = _build_mau04_data(bao_caos, thang, nam)
     
-    docx_bytes = await _generate_docx("tong-hop", mau03_data)
+    docx_bytes = await _generate_docx("tong-hop", mau04_data)
     
     if format == "pdf":
         docx_bytes = convert_docx_to_pdf(docx_bytes)
     
-    filename = f"BaoCao_TongHop_ChiCuc_{thang:02d}_{nam}.{format}"
+    filename = f"Mau04_DanhSach_XepLoai_ChiCuc_{thang:02d}_{nam}.{format}"
     return make_file_response(docx_bytes, filename, format)
 
 

@@ -7,9 +7,11 @@
  * - Xem thống kê xếp loại theo tháng/năm
  * - Bảng tổng hợp theo đơn vị
  * - Bảng số liệu chi tiết (không có biểu đồ)
+ * - Xuất báo cáo Mẫu 04 (danh sách phê duyệt kết quả xếp loại)
  * 
  * Quyền: Chi cục trưởng, Phó Chi cục trưởng
  * 
+ * Version: 1.1.0 (11/02/2026) - Thêm nút xuất báo cáo Mẫu 04
  * Version: 1.0.0 (28/01/2026)
  */
 
@@ -19,6 +21,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { baoCaoXepLoaiService } from '@/services/bao-cao-xep-loai.service';
+import ExportButton, { ExportFormat } from '@/components/common/ExportButton';
+import { exportService } from '@/services/export.service';
 import {
   IThongKeXepLoai,
   TrangThaiBaoCao,
@@ -334,6 +338,21 @@ export default function ThongKeXepLoaiPage() {
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
+            
+            {/* Nút xuất báo cáo Mẫu 04 */}
+            {thongKe && (
+              <ExportButton
+                label="Xuất báo cáo"
+                size="sm"
+                onExport={async (format: ExportFormat) => {
+                  await exportService.exportTongHop({
+                    thang: selectedThang,
+                    nam: selectedNam,
+                    format,
+                  });
+                }}
+              />
+            )}
           </div>
         </div>
       </header>

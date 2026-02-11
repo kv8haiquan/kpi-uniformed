@@ -87,7 +87,7 @@ def kiem_tra_thoi_han_tu_danh_gia(thang: int, nam: int) -> bool:
         return True
     prev_month = 12 if today.month == 1 else today.month - 1
     prev_year = today.year - 1 if today.month == 1 else today.year
-    if thang == prev_month and nam == prev_year and today.day <= 10:
+    if thang == prev_month and nam == prev_year and today.day <= 30:
         return True
     return False
 

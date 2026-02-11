@@ -863,8 +863,8 @@ async def tra_lai_ke_khai(
     ke_khai.y_kien_lanh_dao = f"[TRẢ LẠI] {payload.ly_do}"
     
     # Reset các giá trị đã chốt
-    ke_khai.so_loi_chat_luong = None
-    ke_khai.so_loi_tien_do = None
+    ke_khai.so_loi_chat_luong = 0
+    ke_khai.so_loi_tien_do = 0
     ke_khai.so_sp_chat_luong = None
     ke_khai.so_sp_tien_do = None
     
@@ -929,8 +929,8 @@ async def tra_lai_ke_khai_bulk(
         
         kk.trang_thai = TrangThaiKeKhai.NHAP
         kk.y_kien_lanh_dao = f"[TRẢ LẠI] {payload.ly_do}"
-        kk.so_loi_chat_luong = None
-        kk.so_loi_tien_do = None
+        kk.so_loi_chat_luong = 0
+        kk.so_loi_tien_do = 0
         kk.so_sp_chat_luong = None
         kk.so_sp_tien_do = None
         processed_ids.append(kk.id)

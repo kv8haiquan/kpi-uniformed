@@ -6,8 +6,9 @@
  * Endpoints:
  * - GET /export/ca-nhan/thang/{thang}/nam/{nam}     → Mẫu 01 + 02
  * - GET /export/don-vi/thang/{thang}/nam/{nam}       → Mẫu 03 đơn vị
- * - GET /export/tong-hop/thang/{thang}/nam/{nam}     → Mẫu 03 toàn Chi cục
+ * - GET /export/tong-hop/thang/{thang}/nam/{nam}     → Mẫu 04 toàn Chi cục
  * 
+ * Version: 1.1.0 (11/02/2026) - Mẫu 04 cho tổng hợp toàn Chi cục
  * Version: 1.0.0 (02/02/2026)
  */
 
@@ -124,7 +125,8 @@ class ExportService {
   }
 
   /**
-   * Xuất báo cáo tổng hợp toàn Chi cục (Mẫu 03).
+   * Xuất báo cáo tổng hợp toàn Chi cục (Mẫu 04).
+   * Danh sách phê duyệt kết quả xếp loại chất lượng công chức.
    * Quyền: Chỉ CCT và PCCT.
    */
   async exportTongHop(options: IExportOptions): Promise<void> {
@@ -136,7 +138,7 @@ class ExportService {
         { params: { format }, responseType: 'blob' }
       );
       
-      const fallback = `BaoCao_TongHop_${thang.toString().padStart(2, '0')}_${nam}.${format}`;
+      const fallback = `Mau04_DanhSach_XepLoai_${thang.toString().padStart(2, '0')}_${nam}.${format}`;
       await downloadBlob(response, fallback);
     } catch (error: any) {
       console.error('[Export] Error exporting tong hop:', error);

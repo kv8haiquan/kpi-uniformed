@@ -6,6 +6,7 @@
  * Usage: node generate.js <report_type> <data_json_path> <output_path>
  *   report_type: "ca-nhan" | "don-vi" | "tong-hop"
  * 
+ * Version: 1.1.0 (11/02/2026) - Thêm Mẫu 04 cho tổng hợp toàn Chi cục
  * Version: 1.0.0 (02/02/2026)
  */
 
@@ -389,7 +390,6 @@ function buildMau03(data) {
       rows: [
         new TableRow({ children: [
           cell([
-            para([txt("CỤC HẢI QUAN", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
             para([txt("CHI CỤC HẢI QUAN KHU VỰC VIII", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
           ], { noBorder: true, width: 4535 }),
           cell([
@@ -488,6 +488,177 @@ function buildMau03(data) {
 
 
 // =============================================================================
+// MẪU 04: DANH SÁCH PHÊ DUYỆT KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC
+// =============================================================================
+
+function buildMau04(data) {
+  const children = [];
+  
+  // Header đơn giản - chỉ có tên cơ quan và quốc hiệu
+  children.push(
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      columnWidths: [4535, 4536],
+      rows: [
+        new TableRow({ children: [
+          cell([
+            para([txt("CHI CỤC HẢI QUAN KHU VỰC VIII", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+          ], { noBorder: true, width: 4535 }),
+          cell([
+            para([txt("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+            para([txt("Độc lập - Tự do - Hạnh phúc", { bold: true, size: FONT_SIZE_SMALL, underline: {} })], { alignment: AlignmentType.CENTER }),
+          ], { noBorder: true, width: 4536 }),
+        ]}),
+      ],
+    })
+  );
+  
+  children.push(emptyPara());
+  
+  // Title
+  children.push(titlePara(data.title || "DANH SÁCH PHÊ DUYỆT KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC"));
+  children.push(para([txt(data.subtitle || `Tháng ${data.thang} năm ${data.nam}`)], { alignment: AlignmentType.CENTER }));
+  children.push(emptyPara());
+  
+  // Bảng chính: STT, Mã CC, Họ tên, Năm sinh, Chức vụ, Đơn vị, Điểm, Xếp loại, Ghi chú
+  const cols = [400, 900, 1500, 700, 1000, 1400, 900, 1200, 1071];
+  
+  const headerRow = new TableRow({ children: [
+    headerCell("TT", { width: cols[0], fontSize: 16 }),
+    headerCell("Mã công chức", { width: cols[1], fontSize: 16 }),
+    headerCell("Họ và tên", { width: cols[2], fontSize: 16 }),
+    headerCell("Năm sinh", { width: cols[3], fontSize: 16 }),
+    headerCell("Chức vụ", { width: cols[4], fontSize: 16 }),
+    headerCell("Đơn vị", { width: cols[5], fontSize: 16 }),
+    headerCell("Điểm theo dõi, đánh giá tháng", { width: cols[6], fontSize: 16 }),
+    headerCell("Mức xếp loại chất lượng tháng", { width: cols[7], fontSize: 16 }),
+    headerCell("Ghi chú", { width: cols[8], fontSize: 16 }),
+  ]});
+  
+  const rows = [headerRow];
+  
+  (data.rows || []).forEach((item) => {
+    // Map xếp loại sang tên đầy đủ
+    const xepLoaiText = XEP_LOAI_MAP[item.xep_loai] || item.xep_loai || "";
+    
+    rows.push(new TableRow({ children: [
+      numCell(item.stt, { width: cols[0], fontSize: 18 }),
+      cell(item.ma_cc || "", { width: cols[1], fontSize: 18 }),
+      cell(item.ho_ten || "", { width: cols[2], fontSize: 18 }),
+      numCell(item.nam_sinh || "", { width: cols[3], fontSize: 18 }),
+      cell(item.chuc_vu || "", { width: cols[4], fontSize: 18 }),
+      cell(item.don_vi || "", { width: cols[5], fontSize: 18 }),
+      numCell(item.diem_tong || 0, { width: cols[6], fontSize: 18 }),
+      cell(xepLoaiText, { width: cols[7], fontSize: 18 }),
+      cell(item.ghi_chu || "", { width: cols[8], fontSize: 18 }),
+    ]}));
+  });
+  
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: cols,
+    rows,
+  }));
+  
+  children.push(emptyPara());
+  children.push(emptyPara());
+  
+  // Bảng thống kê và vinh danh (2 cột song song)
+  const tkCols = [1200, 800, 800];  // Mức xếp loại | Số lượng | Tỷ lệ %
+  const vdCols = [400, 1500, 1400, 800];  // STT | Họ tên | Đơn vị | Điểm
+  
+  // Tạo bảng thống kê
+  const tkRows = [
+    new TableRow({ children: [
+      headerCell("Mức xếp loại", { width: tkCols[0], fontSize: 18 }),
+      headerCell("Số lượng", { width: tkCols[1], fontSize: 18 }),
+      headerCell("Tỷ lệ %", { width: tkCols[2], fontSize: 18 }),
+    ]}),
+  ];
+  
+  (data.thong_ke || []).forEach((tk) => {
+    tkRows.push(new TableRow({ children: [
+      cell(tk.muc || "", { width: tkCols[0], fontSize: 18 }),
+      numCell(tk.so_luong || 0, { width: tkCols[1], fontSize: 18 }),
+      numCell(tk.ty_le ? `${tk.ty_le}%` : "0%", { width: tkCols[2], fontSize: 18 }),
+    ]}));
+  });
+  
+  // Tạo bảng vinh danh
+  const vdRows = [
+    new TableRow({ children: [
+      headerCell("STT", { width: vdCols[0], fontSize: 18 }),
+      headerCell("Họ và tên", { width: vdCols[1], fontSize: 18 }),
+      headerCell("Đơn vị", { width: vdCols[2], fontSize: 18 }),
+      headerCell("Điểm", { width: vdCols[3], fontSize: 18 }),
+    ]}),
+  ];
+  
+  (data.vinh_danh || []).forEach((vd) => {
+    vdRows.push(new TableRow({ children: [
+      numCell(vd.stt || "", { width: vdCols[0], fontSize: 18 }),
+      cell(vd.ho_ten || "", { width: vdCols[1], fontSize: 18 }),
+      cell(vd.don_vi || "", { width: vdCols[2], fontSize: 18 }),
+      numCell(vd.diem || 0, { width: vdCols[3], fontSize: 18 }),
+    ]}));
+  });
+  
+  // Bảng tổng hợp (2 bảng con)
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: [3200, 400, 5471],
+    rows: [
+      new TableRow({ children: [
+        // Cột trái: Bảng thống kê
+        cell([
+          para([txt("TỔNG HỢP", { bold: true })], { alignment: AlignmentType.CENTER, spacing: { after: 80 } }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            columnWidths: tkCols,
+            rows: tkRows,
+          }),
+        ], { noBorder: true, width: 3200, vAlign: VerticalAlign.TOP }),
+        // Cột giữa: khoảng trống
+        cell([para([txt("")])], { noBorder: true, width: 400 }),
+        // Cột phải: Bảng vinh danh
+        cell([
+          para([txt("VINH DANH CÁC CÔNG CHỨC XUẤT SẮC NHẤT", { bold: true })], { alignment: AlignmentType.CENTER, spacing: { after: 80 } }),
+          new Table({
+            width: { size: 100, type: WidthType.PERCENTAGE },
+            columnWidths: vdCols,
+            rows: vdRows,
+          }),
+        ], { noBorder: true, width: 5471, vAlign: VerticalAlign.TOP }),
+      ]}),
+    ],
+  }));
+  
+  children.push(emptyPara());
+  children.push(emptyPara());
+  
+  // Chữ ký
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    columnWidths: [4535, 4536],
+    rows: [
+      new TableRow({ children: [
+        cell([
+          para([txt("NGƯỜI LẬP BIỂU", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+          para([txt("(Ký, ghi rõ họ tên)", { italics: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+        ], { noBorder: true, width: 4535 }),
+        cell([
+          para([txt("CHI CỤC TRƯỞNG", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+          para([txt("(Ký tên, đóng dấu)", { italics: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+        ], { noBorder: true, width: 4536 }),
+      ]}),
+    ],
+  }));
+  
+  return children;
+}
+
+
+// =============================================================================
 // MAIN: GENERATE DOCUMENT
 // =============================================================================
 
@@ -528,7 +699,7 @@ async function main() {
         children: mau02Children,
       },
     ];
-  } else if (reportType === "don-vi" || reportType === "tong-hop") {
+  } else if (reportType === "don-vi") {
     // Mẫu 03 - landscape cho bảng rộng
     const mau03Children = buildMau03(rawData);
     
@@ -540,6 +711,19 @@ async function main() {
         },
       },
       children: mau03Children,
+    }];
+  } else if (reportType === "tong-hop") {
+    // Mẫu 04 - landscape cho danh sách toàn Chi cục
+    const mau04Children = buildMau04(rawData);
+    
+    sections = [{
+      properties: {
+        page: {
+          size: { width: PAGE_HEIGHT, height: PAGE_WIDTH, orientation: "landscape" },
+          margin: { top: MARGIN_LEFT, bottom: MARGIN_RIGHT, left: MARGIN_TOP, right: MARGIN_BOTTOM },
+        },
+      },
+      children: mau04Children,
     }];
   } else {
     console.error(`Unknown report type: ${reportType}`);

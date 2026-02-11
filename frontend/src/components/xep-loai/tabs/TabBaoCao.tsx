@@ -24,6 +24,9 @@ import {
   StatusBadge,
 } from '../shared';
 
+import ExportButton, { ExportFormat } from '@/components/common/ExportButton';
+import { exportService } from '@/services/export.service';
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -247,7 +250,16 @@ const TRANG_THAI_MAP: Record<string, { label: string; color: string }> = {
   NHAP: { label: 'Nháp', color: 'bg-gray-100 text-gray-700' },
   CHO_PHE_DUYET: { label: 'Chờ duyệt', color: 'bg-amber-100 text-amber-700' },
   DA_PHE_DUYET: { label: 'Đã duyệt', color: 'bg-green-100 text-green-700' },
+  TU_CHOI: { label: 'Từ chối', color: 'bg-red-100 text-red-700' },
   TRA_LAI: { label: 'Trả lại', color: 'bg-red-100 text-red-700' },
+};
+
+// Map trạng thái riêng cho nghỉ phép (TrangThaiNghi không có NHAP)
+const TRANG_THAI_NGHI_MAP: Record<string, { label: string; color: string }> = {
+  CHO_PHE_DUYET: { label: 'Chờ duyệt', color: 'bg-amber-100 text-amber-700' },
+  DA_PHE_DUYET: { label: 'Đã duyệt', color: 'bg-green-100 text-green-700' },
+  TU_CHOI: { label: 'Từ chối', color: 'bg-red-100 text-red-700' },
+  HUY: { label: 'Đã hủy', color: 'bg-gray-100 text-gray-500' },
 };
 
 const XEP_LOAI_COLORS: Record<string, string> = {
@@ -387,6 +399,15 @@ function XepLoaiBadge({ xepLoai, size = 'sm' }: { xepLoai?: string; size?: 'sm' 
   );
 }
 
+function NghiPhepStatusBadge({ trangThai, trangThaiTen }: { trangThai: string; trangThaiTen?: string }) {
+  const info = TRANG_THAI_NGHI_MAP[trangThai] || { label: trangThaiTen || trangThai, color: 'bg-gray-100 text-gray-600' };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${info.color}`}>
+      {info.label}
+    </span>
+  );
+}
+
 function StatsSummary({ baoCao }: { baoCao: IBaoCaoXepLoai }) {
   const stats = [
     { label: 'A', value: baoCao.so_loai_a, color: 'bg-green-500' },
@@ -397,11 +418,12 @@ function StatsSummary({ baoCao }: { baoCao: IBaoCaoXepLoai }) {
   ];
   const total = baoCao.tong_cong_chuc || stats.reduce((sum, s) => sum + s.value, 0);
 
-  // Tính tỷ lệ A/B theo business rule: A ≤ 20% số CC mức B
-  const tyLeA = baoCao.so_loai_b > 0
-    ? ((baoCao.so_loai_a / baoCao.so_loai_b) * 100)
-    : (baoCao.so_loai_a > 0 ? 100 : 0);
-  const isVuotNguong = baoCao.canh_bao_ty_le_a || (baoCao.so_loai_b > 0 && tyLeA > 20);
+  // Tính tỷ lệ A/B theo business rule: A ≤ 20% số CC mức B và A
+  const tongAB = baoCao.so_loai_a + baoCao.so_loai_b;
+  const tyLeA = tongAB > 0
+    ? ((baoCao.so_loai_a / tongAB) * 100)
+    : 0;
+  const isVuotNguong = baoCao.canh_bao_ty_le_a || (tongAB > 0 && tyLeA > 20);
 
   return (
     <div className="space-y-2">
@@ -424,7 +446,7 @@ function StatsSummary({ baoCao }: { baoCao: IBaoCaoXepLoai }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.27 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
           <span className="text-xs text-red-700 font-medium">
-            Cảnh báo: Tỷ lệ A/B = {tyLeA.toFixed(0)}% (vượt ngưỡng 20%). Theo Quy chế, mức A ≤ 20% số CC mức B.
+            Cảnh báo: Tỷ lệ A/(A+B) = {tyLeA.toFixed(0)}% (vượt ngưỡng 20%). Theo Quy chế, mức A ≤ 20% số CC mức B trở lên.
           </span>
         </div>
       )}
@@ -977,7 +999,7 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
                               <td className="px-3 py-2 text-center font-medium">{np.so_ngay}</td>
                               <td className="px-3 py-2 text-gray-600 text-xs">{np.ly_do || '-'}</td>
                               <td className="px-3 py-2 text-center">
-                                <StatusBadge status={np.trang_thai as any} />
+                                <NghiPhepStatusBadge trangThai={np.trang_thai} trangThaiTen={np.trang_thai_ten} />
                               </td>
                             </tr>
                           ))}
@@ -1028,6 +1050,8 @@ interface BaoCaoTableViewProps {
   onRefresh: () => void;
   isProcessing: boolean;
   setIsProcessing: (v: boolean) => void;
+  selectedThang: number;
+  selectedNam: number;
 }
 
 function BaoCaoTableView({ 
@@ -1036,7 +1060,9 @@ function BaoCaoTableView({
   canApprove, 
   onRefresh,
   isProcessing,
-  setIsProcessing 
+  setIsProcessing,
+  selectedThang,
+  selectedNam,
 }: BaoCaoTableViewProps) {
   const [selectedChiTiet, setSelectedChiTiet] = useState<IChiTietXepLoai | null>(null);
   const [deXuatXepLoai, setDeXuatXepLoai] = useState('B');
@@ -1047,7 +1073,7 @@ function BaoCaoTableView({
   const sortedChiTiet = baoCao.chi_tiet ? sortChiTietByDiem(baoCao.chi_tiet) : [];
 
   const trangThaiInfo = TRANG_THAI_MAP[baoCao.trang_thai] || TRANG_THAI_MAP.NHAP;
-  const canGuiDuyet = canEdit && (baoCao.trang_thai === 'NHAP' || baoCao.trang_thai === 'TRA_LAI');
+  const canGuiDuyet = canEdit && (baoCao.trang_thai === 'NHAP' || baoCao.trang_thai === 'TRA_LAI' || baoCao.trang_thai === 'TU_CHOI');
 
   const handleDeXuat = (ct: IChiTietXepLoai) => {
     setSelectedChiTiet(ct);
@@ -1117,6 +1143,21 @@ function BaoCaoTableView({
               </svg>
               Gửi phê duyệt
             </button>
+          )}
+          {/* Nút xuất báo cáo - hiện khi có dữ liệu */}
+          {baoCao.chi_tiet && baoCao.chi_tiet.length > 0 && (
+            <ExportButton
+              label={baoCao.trang_thai === 'NHAP' || baoCao.trang_thai === 'TRA_LAI' ? 'Xuất tạm' : 'Xuất báo cáo'}
+              size="sm"
+              onExport={async (format: ExportFormat) => {
+                await exportService.exportDonVi({
+                  thang: selectedThang,
+                  nam: selectedNam,
+                  donViId: baoCao.don_vi?.id,
+                  format,
+                });
+              }}
+            />
           )}
         </div>
       </div>
@@ -1400,6 +1441,8 @@ function DonViView({ thang, nam, canApprove }: DonViViewProps) {
       onRefresh={loadData}
       isProcessing={isProcessing}
       setIsProcessing={setIsProcessing}
+      selectedThang={thang}
+      selectedNam={nam}
     />
   );
 }
@@ -1571,16 +1614,31 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
                 <h3 className="text-lg font-semibold text-gray-900">{selectedBaoCao.don_vi?.ten_don_vi}</h3>
                 <p className="text-sm text-gray-500">Báo cáo xếp loại tháng {selectedBaoCao.thang}/{selectedBaoCao.nam}</p>
               </div>
-              <button 
-                onClick={() => setSelectedBaoCao(null)} 
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <div className="flex items-center gap-3">
+                {selectedBaoCao?.chi_tiet && selectedBaoCao.chi_tiet.length > 0 && (
+                  <ExportButton
+                    label="Xuất báo cáo"
+                    size="sm"
+                    onExport={async (format: ExportFormat) => {
+                      await exportService.exportDonVi({
+                        thang: selectedBaoCao.thang,
+                        nam: selectedBaoCao.nam,
+                        donViId: selectedBaoCao.don_vi?.id,
+                        format,
+                      });
+                    }}
+                  />
+                )}
+                <button
+                  onClick={() => setSelectedBaoCao(null)}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
-
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6">
               {/* Stats */}
@@ -1639,9 +1697,11 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
             </div>
 
             {/* Footer */}
-            {canApprove && (
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
-                {selectedBaoCao?.trang_thai === 'DA_PHE_DUYET' ? (
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end items-center">
+              {/* Nút phê duyệt - bên phải */}
+              {canApprove && (
+                <div className="flex gap-3">
+                  {selectedBaoCao?.trang_thai === 'DA_PHE_DUYET' ? (
                   <button
                     onClick={() => handleTraLaiBaoCao(selectedBaoCao!)}
                     disabled={isProcessing}
@@ -1667,8 +1727,9 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
                     </button>
                   </>
                 )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

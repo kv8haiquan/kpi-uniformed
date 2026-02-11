@@ -898,7 +898,7 @@ async def get_bao_cao_don_vi(
     # =========================================================================
     # BƯỚC 2: Nếu báo cáo chưa bị khóa (NHAP) → tính lại điểm từ dữ liệu mới nhất
     # =========================================================================
-    if bao_cao.trang_thai == TrangThaiBaoCao.NHAP.value:
+    if bao_cao.trang_thai in [TrangThaiBaoCao.NHAP.value, 'CHO_PHE_DUYET', 'TRA_LAI', 'TU_CHOI']:
         await cap_nhat_chi_tiet_tu_du_lieu(db, bao_cao, current_user)
     
     # =========================================================================

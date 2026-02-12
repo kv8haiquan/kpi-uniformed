@@ -659,6 +659,28 @@ function buildMau04(data) {
 
 
 // =============================================================================
+// MẪU 03 TỔNG HỢP: GHÉP NHIỀU ĐƠN VỊ (MỖI ĐƠN VỊ 1 TRANG)
+// =============================================================================
+
+function buildMau03TongHop(data) {
+  // data.don_vi_list là mảng các mau03_data của từng đơn vị
+  const allChildren = [];
+  
+  (data.don_vi_list || []).forEach((donViData, index) => {
+    // Thêm page break trước mỗi đơn vị (trừ đơn vị đầu tiên)
+    if (index > 0) {
+      allChildren.push(new Paragraph({ children: [new PageBreak()] }));
+    }
+    
+    // Build nội dung Mẫu 03 cho đơn vị này
+    const donViChildren = buildMau03(donViData);
+    allChildren.push(...donViChildren);
+  });
+  
+  return allChildren;
+}
+
+// =============================================================================
 // MAIN: GENERATE DOCUMENT
 // =============================================================================
 
@@ -711,6 +733,21 @@ async function main() {
         },
       },
       children: mau03Children,
+    }];
+
+    
+  } else if (reportType === "don-vi-tong-hop") {
+    // Mẫu 03 tổng hợp - ghép tất cả đơn vị
+    const mau03TongHopChildren = buildMau03TongHop(rawData);
+    
+    sections = [{
+      properties: {
+        page: {
+          size: { width: PAGE_HEIGHT, height: PAGE_WIDTH, orientation: "landscape" },
+          margin: { top: MARGIN_LEFT, bottom: MARGIN_RIGHT, left: MARGIN_TOP, right: MARGIN_BOTTOM },
+        },
+      },
+      children: mau03TongHopChildren,
     }];
   } else if (reportType === "tong-hop") {
     // Mẫu 04 - landscape cho danh sách toàn Chi cục

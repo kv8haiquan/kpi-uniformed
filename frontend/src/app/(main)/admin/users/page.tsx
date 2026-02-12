@@ -40,9 +40,10 @@ interface UserTableProps {
   onToggleStatus: (user: IUserResponse) => void;
   onResetPassword: (user: IUserResponse) => void;
   onTransfer: (user: IUserResponse) => void;
+  onDelete: (user: IUserResponse) => void;
 }
 
-function UserTable({ users, isLoading, onEdit, onToggleStatus, onResetPassword, onTransfer }: UserTableProps) {
+function UserTable({ users, isLoading, onEdit, onToggleStatus, onResetPassword, onTransfer, onDelete }: UserTableProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -163,6 +164,18 @@ function UserTable({ users, isLoading, onEdit, onToggleStatus, onResetPassword, 
                       </svg>
                     )}
                   </button>
+                  {/* Nút xóa - chỉ hiện khi user đã bị vô hiệu hóa */}
+                  {!user.is_active && user.ma_cc !== 'ADMIN-001' && (
+                    <button
+                      onClick={() => onDelete(user)}
+                      className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Xóa hoàn toàn"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -242,6 +255,7 @@ export default function AdminUsersPage() {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<IUserResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -329,6 +343,19 @@ export default function AdminUsersPage() {
     setShowStatusModal(true);
   };
 
+  const handleDelete = (user: IUserResponse) => {
+    if (user.ma_cc === 'ADMIN-001') {
+      alert('Không thể xóa tài khoản ADMIN-001');
+      return;
+    }
+    if (user.is_active) {
+      alert('Chỉ có thể xóa user đã bị vô hiệu hóa');
+      return;
+    }
+    setSelectedUser(user);
+    setShowDeleteModal(true);
+  };
+
   const confirmResetPassword = async () => {
     if (!selectedUser) return;
     
@@ -355,6 +382,23 @@ export default function AdminUsersPage() {
       });
       loadUsers(pagination.page);
       setShowStatusModal(false);
+      setSelectedUser(null);
+    } catch (err) {
+      alert(isApiError(err) ? err.message : 'Có lỗi xảy ra');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedUser) return;
+    
+    setIsSubmitting(true);
+    try {
+      await adminService.deleteUser(selectedUser.id);
+      alert(`Đã xóa hoàn toàn tài khoản ${selectedUser.ma_cc}`);
+      loadUsers(pagination.page);
+      setShowDeleteModal(false);
       setSelectedUser(null);
     } catch (err) {
       alert(isApiError(err) ? err.message : 'Có lỗi xảy ra');
@@ -453,6 +497,7 @@ export default function AdminUsersPage() {
             onToggleStatus={handleToggleStatus}
             onResetPassword={handleResetPassword}
             onTransfer={handleTransfer}
+            onDelete={handleDelete}
           />
           <Pagination pagination={pagination} onPageChange={handlePageChange} />
         </div>
@@ -548,6 +593,40 @@ export default function AdminUsersPage() {
           onSuccess={() => loadUsers(pagination.page)}
           onClose={() => { setShowTransferModal(false); setSelectedUser(null); }}
         />
+      )}
+
+      {/* Delete User Modal */}
+      {showDeleteModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-red-600 mb-2">🗑️ Xóa hoàn toàn tài khoản</h3>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-red-700 text-sm font-medium">⚠️ Cảnh báo: Thao tác này KHÔNG THỂ HOÀN TÁC!</p>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Bạn có chắc muốn xóa hoàn toàn tài khoản <strong>{selectedUser.ho_ten}</strong> ({selectedUser.ma_cc})?
+            </p>
+            <p className="text-gray-500 text-sm mb-4">
+              Tất cả dữ liệu liên quan đến user này sẽ bị xóa vĩnh viễn.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setShowDeleteModal(false); setSelectedUser(null); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                disabled={isSubmitting}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Đang xóa...' : 'Xóa hoàn toàn'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

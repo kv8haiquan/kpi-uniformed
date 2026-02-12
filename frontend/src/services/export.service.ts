@@ -145,6 +145,27 @@ class ExportService {
       throw error;
     }
   }
+
+  /**
+   * Xuất báo cáo Mẫu 03 tổng hợp tất cả đơn vị (mỗi đơn vị 1 trang).
+   * Quyền: Chỉ CCT và PCCT.
+   */
+  async exportDonViTongHop(options: IExportOptions): Promise<void> {
+    const { thang, nam, format = 'docx' } = options;
+    
+    try {
+      const response = await apiClient.get(
+        `${this.BASE_URL}/don-vi-tong-hop/thang/${thang}/nam/${nam}`,
+        { params: { format }, responseType: 'blob' }
+      );
+      
+      const fallback = `Mau03_TatCaDonVi_${thang.toString().padStart(2, '0')}_${nam}.${format}`;
+      await downloadBlob(response, fallback);
+    } catch (error: any) {
+      console.error('[Export] Error exporting don vi tong hop:', error);
+      throw error;
+    }
+  }
 }
 
 // =============================================================================

@@ -252,7 +252,7 @@ export default function ThongKeXepLoaiPage() {
   }, [isAuthenticated, router]);
 
   // Check quyền CCT hoặc Phó CCT
-  const hasAccess = user?.vai_tro?.cap_bac === 'CHI_CUC_TRUONG' || user?.vai_tro?.cap_bac === 'PHO_CHI_CUC_TRUONG';
+  const hasAccess = user?.vai_tro?.cap_bac === 'CHI_CUC_TRUONG' || user?.vai_tro?.cap_bac === 'PHO_CHI_CUC_TRUONG' || user?.can_view_all_units === true;
 
   // Load data
   const loadData = useCallback(async () => {
@@ -341,17 +341,30 @@ export default function ThongKeXepLoaiPage() {
             
             {/* Nút xuất báo cáo Mẫu 04 */}
             {thongKe && (
-              <ExportButton
-                label="Xuất báo cáo"
-                size="sm"
-                onExport={async (format: ExportFormat) => {
-                  await exportService.exportTongHop({
-                    thang: selectedThang,
-                    nam: selectedNam,
-                    format,
-                  });
-                }}
-              />
+              <>
+                <ExportButton
+                  label="Xuất Mẫu 03 (Tất cả ĐV)"
+                  size="sm"
+                  onExport={async (format: ExportFormat) => {
+                    await exportService.exportDonViTongHop({
+                      thang: selectedThang,
+                      nam: selectedNam,
+                      format,
+                    });
+                  }}
+                />
+                <ExportButton
+                  label="Xuất Mẫu 04"
+                  size="sm"
+                  onExport={async (format: ExportFormat) => {
+                    await exportService.exportTongHop({
+                      thang: selectedThang,
+                      nam: selectedNam,
+                      format,
+                    });
+                  }}
+                />
+              </>
             )}
           </div>
         </div>

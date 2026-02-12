@@ -380,10 +380,12 @@ export default function DashboardPage() {
   const isDoiTruong = maVaiTro === 'TDV';
   const isCCT = maVaiTro === 'CCT';
   const isPhoCCT = maVaiTro === 'PCCT';
+  const hasViewAll = user?.can_view_all_units === true;
   
-  const canViewManageUnit = isPhoDT || isDoiTruong || isCCT;
+  const canViewManageUnit = isPhoDT || isDoiTruong || isCCT || hasViewAll;
   const canEditManageUnit = isDoiTruong || isCCT;
-  const canViewStats = isCCT || isPhoCCT;
+  const canViewStats = isCCT || isPhoCCT || hasViewAll;
+  const canViewChiCuc = isCCT || hasViewAll;
   const canApproveXepLoai = isCCT;
 
   // Load data for non-admin users only
@@ -617,26 +619,36 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* SECTION 2: QUẢN LÝ ĐƠN VỊ */}
-        {canViewManageUnit && (
+        {/* SECTION 2: PHÊ DUYỆT */}
+        {isLanhDao && (
           <div className="mb-8">
-            <SectionHeader icon="📋" title="Quản lý đơn vị" subtitle={canEditManageUnit ? "Báo cáo và thống kê xếp loại công chức" : "Xem báo cáo xếp loại công chức (chỉ xem)"} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <QuickActionCard icon="📊" title="Báo cáo Xếp loại" description={canEditManageUnit ? "Lập báo cáo xếp loại CC" : "Xem báo cáo xếp loại CC"} href="/xep-loai?tab=bao-cao" color="indigo" size="large" viewOnly={!canEditManageUnit} />
-              {canViewStats && <QuickActionCard icon="📈" title="Thống kê Xếp loại" description="Tổng hợp toàn Chi cục" href="/xep-loai/thong-ke" color="pink" size="large" />}
-              {isCCT && <QuickActionCard icon="📑" title="Báo cáo tổng hợp" description="Báo cáo KPI toàn Chi cục" href="/bao-cao" color="purple" size="large" />}
+            <SectionHeader icon="✅" title="Phê duyệt" subtitle="Xử lý các đơn chờ phê duyệt từ nhân viên" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <QuickActionCard icon="📦" title="Phê duyệt Công việc" description={pendingSanPham > 0 ? `${pendingSanPham} kê khai chờ duyệt` : 'Duyệt kê khai công việc'} href="/xep-loai?tab=cong-viec" color="yellow" badge={pendingSanPham} size="large" />
+              <QuickActionCard icon="🏅" title="Phê duyệt Tiêu chí" description={pendingTCCount > 0 ? `${pendingTCCount} đơn chờ duyệt` : 'Duyệt 30 điểm TC chung'} href="/xep-loai?tab=tieu-chi" color="orange" badge={pendingTCCount} size="large" />
+              <QuickActionCard icon="🏖️" title="Phê duyệt Nghỉ phép" description="Duyệt đơn nghỉ phép" href="/xep-loai?tab=nghi-phep" color="cyan" size="large" />
+              {canApproveXepLoai && <QuickActionCard icon="📋" title="Phê duyệt Xếp loại" description={pendingXepLoaiCount > 0 ? `${pendingXepLoaiCount} báo cáo chờ duyệt` : 'Duyệt báo cáo xếp loại'} href="/xep-loai?tab=bao-cao" color="pink" badge={pendingXepLoaiCount} size="large" />}
             </div>
           </div>
         )}
 
-        {/* SECTION 3: PHÊ DUYỆT */}
-        {isLanhDao && (
+        {/* SECTION 3: QUẢN LÝ ĐƠN VỊ */}
+        {canViewManageUnit && (
           <div className="mb-8">
-            <SectionHeader icon="✅" title="Phê duyệt" subtitle="Xử lý các đơn chờ phê duyệt từ nhân viên" />
+            <SectionHeader icon="📋" title="Quản lý đơn vị" subtitle={canEditManageUnit ? "Báo cáo và thống kê xếp loại công chức" : "Xem báo cáo xếp loại công chức (chỉ xem)"} />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <QuickActionCard icon="📦" title="Phê duyệt Công việc" description={pendingSanPham > 0 ? `${pendingSanPham} kê khai chờ duyệt` : 'Duyệt kê khai công việc'} href="/xep-loai?tab=cong-viec" color="yellow" badge={pendingSanPham} size="large" />
-              <QuickActionCard icon="🏅" title="Phê duyệt Tiêu chí" description={pendingTCCount > 0 ? `${pendingTCCount} đơn chờ duyệt` : 'Duyệt 30 điểm TC chung'} href="/xep-loai?tab=tieu-chi" color="orange" badge={pendingTCCount} size="large" />
-              {canApproveXepLoai && <QuickActionCard icon="📋" title="Phê duyệt Xếp loại" description={pendingXepLoaiCount > 0 ? `${pendingXepLoaiCount} báo cáo chờ duyệt` : 'Duyệt báo cáo xếp loại'} href="/xep-loai?tab=bao-cao" color="pink" badge={pendingXepLoaiCount} size="large" />}
+            <QuickActionCard icon="📊" title="Báo cáo Xếp loại" description={canEditManageUnit ? "Lập báo cáo xếp loại CC" : "Xem báo cáo xếp loại CC"} href="/xep-loai?tab=bao-cao" color="indigo" size="large" viewOnly={!canEditManageUnit} />
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 3b: QUẢN LÝ CHI CỤC (CCT + user có can_view_all_units) */}
+        {canViewChiCuc && (
+          <div className="mb-8">
+            <SectionHeader icon="🏛️" title="Quản lý Chi cục" subtitle={isCCT ? "Tổng hợp và giám sát toàn Chi cục" : "Xem báo cáo và thống kê toàn Chi cục (chỉ xem)"} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <QuickActionCard icon="📑" title="Báo cáo tất cả đơn vị" description="Xem báo cáo xếp loại tất cả đơn vị" href="/xep-loai?tab=bao-cao" color="purple" size="large" viewOnly={!isCCT} />
+              <QuickActionCard icon="📈" title="Thống kê Chi cục" description="Biểu đồ & thống kê toàn Chi cục" href="/xep-loai/thong-ke" color="pink" size="large" viewOnly={!isCCT} />
             </div>
           </div>
         )}

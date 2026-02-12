@@ -121,10 +121,8 @@ export interface IPendingCounts {
  */
 export function getCapBacFromUser(user: IUser | null): CapBacVaiTro {
   if (!user) return CapBacVaiTro.CONG_CHUC;
-  
   // Lấy ma_vai_tro từ nested object vai_tro
   const maVaiTro = user.vai_tro?.ma_vai_tro;
-  
   if (!maVaiTro) {
     // Fallback: check is_lanh_dao nếu không có vai_tro
     if (user.is_lanh_dao) {
@@ -132,7 +130,6 @@ export function getCapBacFromUser(user: IUser | null): CapBacVaiTro {
     }
     return CapBacVaiTro.CONG_CHUC;
   }
-  
   // Map ma_vai_tro sang CapBacVaiTro
   switch (maVaiTro) {
     case 'CCT':
@@ -149,7 +146,23 @@ export function getCapBacFromUser(user: IUser | null): CapBacVaiTro {
   }
 }
 
-export function getAccessibleTabs(capBac: CapBacVaiTro): ITabConfig[] {
+/**
+ * v1.1.0: Kiểm tra user có quyền xem toàn chi cục không.
+ */
+export function canViewAllUnits(user: IUser | null): boolean {
+  if (!user) return false;
+  if (user.is_system_admin) return true;
+  if (user.can_view_all_units) return true;
+  const maVaiTro = user.vai_tro?.ma_vai_tro;
+  return ['CCT', 'PCCT'].includes(maVaiTro || '');
+}
+
+export function getAccessibleTabs(capBac: CapBacVaiTro, user?: IUser | null): ITabConfig[] {
+  // v1.1.0: User có can_view_all_units → xem được tab bao-cao (read-only)
+  if (user && canViewAllUnits(user) && capBac === CapBacVaiTro.CONG_CHUC) {
+    // Chỉ cho xem tab bao-cao, KHÔNG cho phê duyệt
+    return TABS_CONFIG.filter((tab) => tab.id === 'bao-cao');
+  }
   return TABS_CONFIG.filter((tab) => tab.allowedRoles.includes(capBac));
 }
 

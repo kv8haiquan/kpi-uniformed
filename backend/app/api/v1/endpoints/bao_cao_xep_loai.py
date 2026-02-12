@@ -73,7 +73,10 @@ def check_is_chi_cuc_truong(user: CongChuc) -> bool:
 
 
 def check_is_lanh_dao_chi_cuc(user: CongChuc) -> bool:
-    """Kiểm tra user có phải là Lãnh đạo Chi cục (CCT hoặc PCCT) không."""
+    """Kiểm tra user có phải là Lãnh đạo Chi cục (CCT hoặc PCCT) hoặc có quyền xem toàn chi cục không."""
+    # v1.1.0: User có flag can_view_all_units cũng được xem (read-only)
+    if getattr(user, 'can_view_all_units', False):
+        return True
     if not user.vai_tro:
         return False
     return user.vai_tro.cap_bac in [
@@ -101,9 +104,11 @@ def check_is_lanh_dao_don_vi(user: CongChuc) -> bool:
 def check_can_view_bao_cao(user: CongChuc) -> bool:
     """
     Kiểm tra user có quyền XEM báo cáo không.
-    
-    Quyền xem: Phó ĐT, ĐT, Phó CCT, CCT
+    Quyền xem: Phó ĐT, ĐT, Phó CCT, CCT, hoặc user có flag can_view_all_units
     """
+    # v1.1.0: User có flag can_view_all_units luôn được xem
+    if getattr(user, 'can_view_all_units', False):
+        return True
     if not user.vai_tro:
         return False
     return user.vai_tro.cap_bac in [
@@ -1089,7 +1094,8 @@ async def get_bao_cao_cho_phe_duyet(
     
     ⚠️ KHÔNG có params thang/nam - lấy tất cả báo cáo CHO_PHE_DUYET
     """
-    if not check_is_chi_cuc_truong(current_user):
+    has_view_all = getattr(current_user, 'can_view_all_units', False)
+    if not check_is_chi_cuc_truong(current_user) and not has_view_all:
         raise HTTPException(status_code=403, detail=error_response(
             code="PERM_003", message="Chỉ Chi cục trưởng mới có quyền xem danh sách chờ phê duyệt"
         ))
@@ -1135,7 +1141,8 @@ async def get_danh_sach_bao_cao(
     Query params:
     - trang_thai: filter theo trạng thái (không truyền = tất cả trừ NHAP)
     """
-    if not check_is_chi_cuc_truong(current_user):
+    has_view_all = getattr(current_user, 'can_view_all_units', False)
+    if not check_is_chi_cuc_truong(current_user) and not has_view_all:
         raise HTTPException(status_code=403, detail=error_response(
             code="PERM_003", message="Chỉ Chi cục trưởng mới có quyền xem danh sách báo cáo"
         ))
@@ -1149,14 +1156,20 @@ async def get_danh_sach_bao_cao(
     if trang_thai:
         conditions.append(BaoCaoXepLoai.trang_thai == trang_thai)
     else:
-        # Mặc định: tất cả trừ NHAP (chỉ hiện báo cáo đã gửi)
-        conditions.append(
-            BaoCaoXepLoai.trang_thai.in_([
-                TrangThaiBaoCao.CHO_PHE_DUYET.value,
-                TrangThaiBaoCao.DA_PHE_DUYET.value,
-                TrangThaiBaoCao.TU_CHOI.value,
-            ])
-        )
+        # v1.1.0: CCT và user có can_view_all_units xem được cả NHAP
+        has_view_all = getattr(current_user, 'can_view_all_units', False)
+        if check_is_chi_cuc_truong(current_user) or has_view_all:
+            # Xem tất cả trạng thái (bao gồm NHAP)
+            pass  # Không filter trạng thái
+        else:
+            # Mặc định: tất cả trừ NHAP (chỉ hiện báo cáo đã gửi)
+            conditions.append(
+                BaoCaoXepLoai.trang_thai.in_([
+                    TrangThaiBaoCao.CHO_PHE_DUYET.value,
+                    TrangThaiBaoCao.DA_PHE_DUYET.value,
+                    TrangThaiBaoCao.TU_CHOI.value,
+                ])
+            )
     
     stmt = (
         select(BaoCaoXepLoai)
@@ -1230,7 +1243,8 @@ async def get_bao_cao_chi_tiet(
     
     # Kiểm tra quyền: Lãnh đạo Chi cục xem tất cả, Lãnh đạo đơn vị chỉ xem đơn vị mình
     is_lanh_dao_cc = check_is_lanh_dao_chi_cuc(current_user)
-    if not is_lanh_dao_cc and bao_cao.don_vi_id != current_user.don_vi_id:
+    has_view_all = getattr(current_user, 'can_view_all_units', False)
+    if not is_lanh_dao_cc and not has_view_all and bao_cao.don_vi_id != current_user.don_vi_id:
         raise HTTPException(status_code=403, detail=error_response(
             code="PERM_004", message="Bạn không có quyền xem báo cáo của đơn vị khác"
         ))

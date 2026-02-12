@@ -202,7 +202,9 @@ async def login_access_token(
     additional_claims["ho_ten"] = user.ho_ten
     if user.don_vi:
         additional_claims["don_vi_id"] = str(user.don_vi.id)
-    
+    # THÊM NGAY BÊN DƯỚI:
+    # v1.1.0 - Flag xem toàn chi cục
+    additional_claims["can_view_all_units"] = getattr(user, 'can_view_all_units', False) or False
     # Tạo access token
     access_token = create_access_token(
         subject=str(user.id),
@@ -291,6 +293,7 @@ async def get_current_user_info(
         "chuc_vu": current_user.chuc_vu,
         "is_lanh_dao": current_user.is_lanh_dao,
         "is_system_admin": getattr(current_user, 'is_system_admin', False),
+        "can_view_all_units": getattr(current_user, 'can_view_all_units', False) or False,
         "is_active": current_user.is_active,
         "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
     }

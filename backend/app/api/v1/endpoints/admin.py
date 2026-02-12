@@ -3,7 +3,11 @@ app/api/v1/endpoints/admin.py
 =============================
 API Endpoints cho Admin Module.
 
-Phiên bản: 1.0.0 (30/01/2026)
+Phiên bản: 1.1.0 (06/02/2026)
+
+CHANGELOG v1.1.0:
+- FIX: Sử dụng hash_password() để generate hash động thay vì hardcoded hash
+- Tạo user mới và reset password giờ sẽ tạo hash bcrypt đúng chuẩn
 
 Chức năng:
 - Quản lý User (CRUD, status, reset password, transfer)
@@ -19,7 +23,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
-from sqlalchemy import select, func, and_, or_, exists, Integer
+from sqlalchemy import select, func, and_, or_, exists, Integer, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -68,7 +72,7 @@ router = APIRouter()
 # Mã công chức Admin gốc - không được phép thao tác
 PROTECTED_ADMIN_MA_CC = "ADMIN-001"
 
-# Password hash mặc định cho 123456
+# Mật khẩu mặc định cho user mới và reset password
 DEFAULT_PASSWORD = "123456"
 
 
@@ -395,7 +399,7 @@ async def create_user(
             detail=error_response(code="ADMIN_004", message="Vai trò không tồn tại")
         )
     
-    # Tạo user mới
+    # Tạo user mới - v1.1.0: Dùng hash_password() để generate hash động
     new_user = CongChuc(
         ma_cc=payload.ma_cc,
         ho_ten=payload.ho_ten,
@@ -589,6 +593,7 @@ async def reset_user_password(
             detail=error_response(code="ADMIN_002", message="Không thể thao tác với tài khoản ADMIN-001")
         )
     
+    # v1.1.0: Dùng hash_password() để generate hash động
     user.password_hash = hash_password(DEFAULT_PASSWORD)
     
     try:
@@ -603,6 +608,174 @@ async def reset_user_password(
     return success_response(
         data={"user_id": str(user_id), "ma_cc": user.ma_cc, "new_password": "123456"},
         message=f"Đã đặt lại mật khẩu cho '{user.ma_cc}' về 123456"
+    )
+
+
+# =============================================================================
+# USER MANAGEMENT - DELETE (Xóa hoàn toàn)
+# =============================================================================
+
+@router.delete(
+    "/users/{user_id}",
+    summary="Xóa hoàn toàn người dùng",
+    response_model=DataResponse[dict],
+)
+async def delete_user(
+    user_id: UUID,
+    db: DatabaseDep,
+    admin: AdminUserDep,
+) -> dict:
+    """
+    Xóa hoàn toàn người dùng khỏi hệ thống (hard delete).
+    
+    Điều kiện:
+    - User phải đang bị vô hiệu hóa (is_active = False)
+    - Không thể xóa tài khoản ADMIN-001
+    
+    Dữ liệu bị xóa:
+    - Phê duyệt SP (phe_duyet_sp)
+    - Kê khai công việc (ke_khai_cong_viec)
+    - Kê khai lãnh đạo (ke_khai_lanh_dao)
+    - Tiêu chí chung đánh giá (tieu_chi_chung_danh_gia)
+    - Lãnh đạo chỉ số (lanh_dao_chi_so)
+    - Đánh giá D,Đ,E (danh_gia_dde)
+    - Chi tiết xếp loại (chi_tiet_xep_loai)
+    - Đăng ký nghỉ (dang_ky_nghi)
+    - Đánh giá tháng (danh_gia_thang)
+    - Lịch sử điều chuyển (lich_su_dieu_chuyen)
+    
+    Lưu ý: Thao tác này KHÔNG THỂ HOÀN TÁC!
+    """
+    
+    stmt = select(CongChuc).where(
+        CongChuc.id == user_id,
+        CongChuc.is_deleted == False
+    )
+    user = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="ADMIN_007", message="User không tồn tại")
+        )
+    
+    # Không cho phép xóa ADMIN-001
+    if user.ma_cc == PROTECTED_ADMIN_MA_CC:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="ADMIN_002", message="Không thể xóa tài khoản ADMIN-001")
+        )
+    
+    # Chỉ cho phép xóa user đã bị vô hiệu hóa
+    if user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="ADMIN_008", 
+                message="Chỉ có thể xóa user đã bị vô hiệu hóa. Vui lòng vô hiệu hóa trước khi xóa."
+            )
+        )
+    
+    # Lưu thông tin để trả về
+    deleted_info = {
+        "user_id": str(user_id),
+        "ma_cc": user.ma_cc,
+        "ho_ten": user.ho_ten,
+    }
+    
+    try:
+        # Xóa các dữ liệu liên quan theo thứ tự FK (con trước, cha sau)
+        # Tham khảo: clear_user_month.sh
+        
+        # 1. Xóa phê duyệt SP (FK → ke_khai_cong_viec)
+        await db.execute(
+            text("""
+                DELETE FROM phe_duyet_sp 
+                WHERE ke_khai_id IN (
+                    SELECT id FROM ke_khai_cong_viec WHERE cong_chuc_id = :user_id
+                )
+            """),
+            {"user_id": user_id}
+        )
+        
+        # 2. Xóa kê khai công việc
+        await db.execute(
+            text("DELETE FROM ke_khai_cong_viec WHERE cong_chuc_id = :user_id"),
+            {"user_id": user_id}
+        )
+        
+        # 3. Xóa kê khai lãnh đạo
+        await db.execute(
+            text("DELETE FROM ke_khai_lanh_dao WHERE cong_chuc_id = :user_id"),
+            {"user_id": user_id}
+        )
+        
+        # 4. Xóa tiêu chí chung đánh giá (FK → danh_gia_thang)
+        await db.execute(
+            text("""
+                DELETE FROM tieu_chi_chung_danh_gia 
+                WHERE danh_gia_thang_id IN (
+                    SELECT id FROM danh_gia_thang WHERE cong_chuc_id = :user_id
+                )
+            """),
+            {"user_id": user_id}
+        )
+        
+        # 5. Xóa lãnh đạo chỉ số (FK → danh_gia_thang)
+        await db.execute(
+            text("""
+                DELETE FROM lanh_dao_chi_so 
+                WHERE danh_gia_thang_id IN (
+                    SELECT id FROM danh_gia_thang WHERE cong_chuc_id = :user_id
+                )
+            """),
+            {"user_id": user_id}
+        )
+        
+        # 6. Xóa đánh giá D,Đ,E
+        await db.execute(
+            text("DELETE FROM danh_gia_dde WHERE cong_chuc_id = :user_id"),
+            {"user_id": user_id}
+        )
+        
+        # 7. Xóa chi tiết xếp loại
+        await db.execute(
+            text("DELETE FROM chi_tiet_xep_loai WHERE cong_chuc_id = :user_id"),
+            {"user_id": user_id}
+        )
+        
+        # 8. Xóa đăng ký nghỉ
+        await db.execute(
+            text("DELETE FROM dang_ky_nghi WHERE cong_chuc_id = :user_id"),
+            {"user_id": user_id}
+        )
+        
+        # 9. Xóa đánh giá tháng (bảng cha - xóa sau các bảng con)
+        await db.execute(
+            text("DELETE FROM danh_gia_thang WHERE cong_chuc_id = :user_id"),
+            {"user_id": user_id}
+        )
+        
+        # 10. Xóa lịch sử điều chuyển
+        await db.execute(
+            text("DELETE FROM lich_su_dieu_chuyen WHERE cong_chuc_id = :user_id"),
+            {"user_id": user_id}
+        )
+        
+        # 11. Cuối cùng: Xóa user
+        await db.delete(user)
+        
+        await db.flush()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code="DB_ERROR", message=f"Lỗi xóa user: {str(e)}")
+        )
+    
+    return success_response(
+        data=deleted_info,
+        message=f"Đã xóa hoàn toàn tài khoản '{deleted_info['ma_cc']}' ({deleted_info['ho_ten']})"
     )
 
 

@@ -18,6 +18,8 @@ import {
   TABS_CONFIG,
   getCapBacFromUser,
   getAccessibleTabs,
+  canViewAllUnits,
+  CapBacVaiTro,
   canApproveInTab,
   getCapBacLabel,
   createDefaultPendingCounts,
@@ -57,13 +59,17 @@ export default function XepLoaiPage() {
   const [pendingCounts, setPendingCounts] = useState<IPendingCounts>(createDefaultPendingCounts());
 
   const capBac = getCapBacFromUser(user);
-  const accessibleTabs = useMemo(() => getAccessibleTabs(capBac), [capBac]);
+  const accessibleTabs = useMemo(() => getAccessibleTabs(capBac, user), [capBac, user]);
   const activeTab = useMemo(() => {
     if (urlTab && accessibleTabs.find((t) => t.id === urlTab)) return urlTab;
     return accessibleTabs[0]?.id || 'cong-viec';
   }, [urlTab, accessibleTabs]);
   const activeTabConfig = useMemo(() => TABS_CONFIG.find((t) => t.id === activeTab) || TABS_CONFIG[0], [activeTab]);
-  const canApproveActiveTab = useMemo(() => canApproveInTab(capBac, activeTabConfig), [capBac, activeTabConfig]);
+  const canApproveActiveTab = useMemo(() => {
+    // v1.1.0: User có can_view_all_units nhưng là CC → KHÔNG được phê duyệt
+    if (user && user.can_view_all_units && capBac === CapBacVaiTro.CONG_CHUC) return false;
+    return canApproveInTab(capBac, activeTabConfig);
+  }, [capBac, activeTabConfig, user]);
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/login');

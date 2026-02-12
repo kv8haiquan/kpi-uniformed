@@ -96,6 +96,7 @@ export interface IUser {
   chuc_vu: string | null;     // Chức vụ hiển thị (VD: "Đội trưởng")
   is_lanh_dao: boolean;       // Có phải lãnh đạo không
   is_system_admin: boolean;   // Có phải System Admin không
+  can_view_all_units: boolean; // v1.1.0: Quyền xem toàn chi cục (read-only)
   is_active: boolean;         // Tài khoản đang active
   
   // Nested objects

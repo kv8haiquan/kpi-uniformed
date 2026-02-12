@@ -169,9 +169,9 @@ async def get_tong_hop_xep_loai(
     if current_user.vai_tro:
         cap_bac = current_user.vai_tro.cap_bac
     
-    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    has_view_all = getattr(current_user, 'can_view_all_units', False)
+    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG] or has_view_all
     is_lanh_dao_don_vi = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
-    
     if not (is_lanh_dao_chi_cuc or is_lanh_dao_don_vi):
         raise HTTPException(
             status_code=403,
@@ -335,8 +335,8 @@ async def get_chi_tiet_xep_loai(
         cap_bac = current_user.vai_tro.cap_bac
     
     is_self = cong_chuc_id == current_user.id
-    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
-    
+    has_view_all = getattr(current_user, 'can_view_all_units', False)
+    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG] or has_view_all    
     # Lấy thông tin CC
     stmt_cc = (
         select(CongChuc)
@@ -695,7 +695,8 @@ async def get_danh_sach_don_vi(
     if current_user.vai_tro:
         cap_bac = current_user.vai_tro.cap_bac
     
-    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    has_view_all = getattr(current_user, 'can_view_all_units', False)
+    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG] or has_view_all
     
     if not is_lanh_dao_chi_cuc:
         # ĐT/PĐT chỉ thấy đơn vị mình

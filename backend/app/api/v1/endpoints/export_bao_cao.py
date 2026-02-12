@@ -138,7 +138,10 @@ def _get_cap_bac(user: CongChuc) -> Optional[str]:
 
 
 def _is_lanh_dao_chi_cuc(user: CongChuc) -> bool:
-    """CCT hoặc PCCT."""
+    """CCT hoặc PCCT hoặc user có flag can_view_all_units."""
+    # v1.1.0: User có flag can_view_all_units
+    if getattr(user, 'can_view_all_units', False):
+        return True
     cap_bac = _get_cap_bac(user)
     return cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
 
@@ -438,6 +441,14 @@ def _build_mau04_data(
         
         if bc.chi_tiets:
             for ct in bc.chi_tiets:
+                # Filter: bỏ qua user đã bị vô hiệu hóa hoặc đã xóa
+                if not ct.cong_chuc:
+                    continue
+                if hasattr(ct.cong_chuc, 'is_active') and ct.cong_chuc.is_active == False:
+                    continue
+                if hasattr(ct.cong_chuc, 'deleted_at') and ct.cong_chuc.deleted_at is not None:
+                    continue
+                    
                 stt += 1
                 xep_loai_cuoi = ct.xep_loai_quyet_dinh or ct.xep_loai_de_xuat or ct.xep_loai_he_thong
                 
@@ -649,18 +660,18 @@ async def export_don_vi(
     # Xác định đơn vị
     target_don_vi_id = don_vi_id or current_user.don_vi_id
     
-    # Kiểm tra quyền
     cap_bac = _get_cap_bac(current_user)
-    if cap_bac not in [
+    has_view_all = getattr(current_user, 'can_view_all_units', False)
+    if not has_view_all and cap_bac not in [
         CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI,
         CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG,
     ]:
         raise HTTPException(403, detail=error_response(
             "PERM_003", "Bạn không có quyền xuất báo cáo đơn vị"
         ))
-    
-    # ĐT/Phó ĐT: chỉ được xuất đơn vị mình
-    if _is_lanh_dao_don_vi(current_user) and target_don_vi_id != current_user.don_vi_id:
+
+    # ĐT/Phó ĐT: chỉ được xuất đơn vị mình (trừ user có flag can_view_all_units)
+    if not has_view_all and _is_lanh_dao_don_vi(current_user) and target_don_vi_id != current_user.don_vi_id:
         raise HTTPException(403, detail=error_response(
             "PERM_004", "Bạn chỉ được xuất báo cáo đơn vị mình"
         ))
@@ -737,6 +748,59 @@ async def export_tong_hop(
     filename = f"Mau04_DanhSach_XepLoai_ChiCuc_{thang:02d}_{nam}.{format}"
     return make_file_response(docx_bytes, filename, format)
 
+
+@router.get("/don-vi-tong-hop/thang/{thang}/nam/{nam}")
+async def export_don_vi_tong_hop(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int,
+    nam: int,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+):
+    """
+    Xuất Mẫu 03 tổng hợp TẤT CẢ đơn vị (mỗi đơn vị 1 trang).
+    
+    Quyền: Chỉ CCT và PCCT.
+    """
+    if thang < 1 or thang > 12:
+        raise HTTPException(400, detail=error_response("VAL_001", "Tháng phải từ 1-12"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+    
+    if not _is_lanh_dao_chi_cuc(current_user):
+        raise HTTPException(403, detail=error_response(
+            "PERM_003", "Chỉ CCT và Phó CCT mới được xuất báo cáo tổng hợp"
+        ))
+    
+    bao_caos = await _get_all_bao_cao(db, thang, nam)
+    if not bao_caos:
+        raise HTTPException(404, detail=error_response(
+            "BIZ_003", f"Chưa có báo cáo xếp loại tháng {thang}/{nam}"
+        ))
+    
+    # Build data cho từng đơn vị
+    don_vi_list = []
+    for bc in bao_caos:
+        don_vi_data = _build_mau03_data(
+            [bc], thang, nam,
+            don_vi_name=bc.don_vi.ten_don_vi if bc.don_vi else "",
+            is_toan_chi_cuc=False,
+        )
+        don_vi_list.append(don_vi_data)
+    
+    combined_data = {
+        "don_vi_list": don_vi_list,
+        "thang": thang,
+        "nam": nam,
+    }
+    
+    docx_bytes = await _generate_docx("don-vi-tong-hop", combined_data)
+    
+    if format == "pdf":
+        docx_bytes = convert_docx_to_pdf(docx_bytes)
+    
+    filename = f"Mau03_TatCaDonVi_{thang:02d}_{nam}.{format}"
+    return make_file_response(docx_bytes, filename, format)
 
 # =============================================================================
 # HELPER: GỌI NODE.JS SCRIPT TẠO DOCX

@@ -374,6 +374,12 @@ class CongChuc(BaseModelWithSoftDelete):
         comment="Tài khoản còn hoạt động"
     )
     
+    can_view_all_units: Mapped[bool] = mapped_column(
+    Boolean,
+    default=False,
+    server_default="false",
+    comment="Cho phép xem báo cáo/thống kê toàn Chi cục (read-only)"
+    )
     # -------------------------------------------------------------------------
     # ĐĂNG NHẬP
     # -------------------------------------------------------------------------

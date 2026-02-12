@@ -26,6 +26,7 @@ import {
 
 import ExportButton, { ExportFormat } from '@/components/common/ExportButton';
 import { exportService } from '@/services/export.service';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 // =============================================================================
 // TYPES
@@ -319,6 +320,21 @@ const baoCaoApi = {
 
   async traLai(baoCaoId: string, lyDo: string): Promise<void> {
     await apiClient.post(`/xep-loai/${baoCaoId}/tra-lai`, { ly_do: lyDo });
+  },
+  // v1.1.0: Lấy danh sách tất cả báo cáo (có filter trạng thái)
+  async getDanhSach(thang: number, nam: number, trangThai?: string): Promise<IBaoCaoXepLoai[]> {
+    try {
+      const params: Record<string, string> = {};
+      if (trangThai) params.trang_thai = trangThai;
+      const response = await apiClient.get(`/bao-cao-xep-loai/danh-sach/thang/${thang}/nam/${nam}`, { params });
+      if (Array.isArray(response.data)) return response.data;
+      if (response.data?.data?.danh_sach && Array.isArray(response.data.data.danh_sach)) return response.data.data.danh_sach;
+      if (response.data?.data && Array.isArray(response.data.data)) return response.data.data;
+      if (response.data?.danh_sach && Array.isArray(response.data.danh_sach)) return response.data.danh_sach;
+      return [];
+    } catch {
+      return [];
+    }
   },
 
   // APIs cho xem chi tiết công chức
@@ -1464,9 +1480,10 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  
   const [pheDuyetAction, setPheDuyetAction] = useState<'approve' | 'reject' | null>(null);
   const [lyDoPheDuyet, setLyDoPheDuyet] = useState('');
+  // v1.1.0: Filter trạng thái
+  const [filterTrangThai, setFilterTrangThai] = useState<string>('');
 
   // Trả lại báo cáo đã duyệt
   const [traLaiBaoCao, setTraLaiBaoCao] = useState<IBaoCaoXepLoai | null>(null);
@@ -1500,16 +1517,16 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
     setIsLoading(true);
     setError(null);
     try {
-      const items = await baoCaoApi.getChoPheDuyet();
-      const filtered = items.filter(item => item.thang === thang && item.nam === nam);
-      setPendingList(filtered);
+      // v1.1.0: Gọi API danh sách thay vì chỉ chờ phê duyệt
+      const items = await baoCaoApi.getDanhSach(thang, nam, filterTrangThai || undefined);
+      setPendingList(items);
     } catch (err) {
       const error = err as Error;
       setError(error.message || 'Có lỗi xảy ra');
     } finally {
       setIsLoading(false);
     }
-  }, [thang, nam]);
+  }, [thang, nam, filterTrangThai]);
 
   useEffect(() => {
     loadData();
@@ -1565,18 +1582,63 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
     return <ErrorMessage message={error} onRetry={loadData} />;
   }
 
-  if (pendingList.length === 0) {
+  const TRANG_THAI_OPTIONS = [
+    { value: '', label: 'Tất cả' },
+    { value: 'NHAP', label: 'Nháp' },
+    { value: 'CHO_PHE_DUYET', label: 'Chờ duyệt' },
+    { value: 'DA_PHE_DUYET', label: 'Đã duyệt' },
+    { value: 'TU_CHOI', label: 'Từ chối' },
+  ];
+  const trangThaiLabel = (tt: string) => {
+    const map: Record<string, { label: string; color: string }> = {
+      NHAP: { label: 'Nháp', color: 'bg-gray-100 text-gray-700' },
+      CHO_PHE_DUYET: { label: 'Chờ duyệt', color: 'bg-amber-100 text-amber-700' },
+      DA_PHE_DUYET: { label: 'Đã duyệt', color: 'bg-green-100 text-green-700' },
+      TU_CHOI: { label: 'Từ chối', color: 'bg-red-100 text-red-700' },
+    };
+    return map[tt] || { label: tt, color: 'bg-gray-100 text-gray-700' };
+  };
+  if (pendingList.length === 0 && !filterTrangThai) {
     return (
-      <EmptyState 
-        title="Không có báo cáo chờ duyệt" 
-        description={`Không có báo cáo xếp loại nào chờ phê duyệt tháng ${thang}/${nam}`} 
-      />
+      <div>
+        <div className="flex items-center gap-3 mb-4">
+          <label className="text-sm font-medium text-gray-700">Trạng thái:</label>
+          <select
+            value={filterTrangThai}
+            onChange={(e) => setFilterTrangThai(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+          >
+            {TRANG_THAI_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+        <EmptyState
+          title="Không có báo cáo"
+          description={`Không có báo cáo xếp loại nào tháng ${thang}/${nam}`}
+        />
+      </div>
     );
   }
-
   return (
     <div className="space-y-4">
-      {/* Danh sách báo cáo chờ duyệt */}
+      {/* v1.1.0: Filter trạng thái */}
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-medium text-gray-700">Trạng thái:</label>
+        <select
+          value={filterTrangThai}
+          onChange={(e) => setFilterTrangThai(e.target.value)}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+        >
+          {TRANG_THAI_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label} ({pendingList.filter(bc => opt.value ? bc.trang_thai === opt.value : true).length})
+            </option>
+          ))}
+        </select>
+        <span className="text-sm text-gray-500">{pendingList.length} báo cáo</span>
+      </div>
+      {/* Danh sách báo cáo */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {pendingList.map((bc) => (
           <div
@@ -1589,8 +1651,8 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
                 <h4 className="font-medium text-gray-900">{bc.don_vi?.ten_don_vi}</h4>
                 <p className="text-sm text-gray-500">Tháng {bc.thang}/{bc.nam}</p>
               </div>
-              <span className="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
-                Chờ duyệt
+              <span className={`px-2 py-1 text-xs font-medium rounded-full ${trangThaiLabel(bc.trang_thai).color}`}>
+                {trangThaiLabel(bc.trang_thai).label}
               </span>
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
@@ -1841,13 +1903,13 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
 // =============================================================================
 
 export default function TabBaoCao({ thang, nam, canApprove, capBac, onPendingCountChange }: ITabProps) {
+  const user = useAuthStore((state) => state.user);
   const isCCT = capBac === CapBacVaiTro.CHI_CUC_TRUONG;
-
-  // CCT xem danh sách chờ duyệt
-  if (isCCT) {
-    return <CCTView thang={thang} nam={nam} canApprove={canApprove} onPendingCountChange={onPendingCountChange} />;
+  const hasViewAll = user?.can_view_all_units === true;
+  // CCT hoặc user có can_view_all_units → xem tất cả đơn vị
+  if (isCCT || hasViewAll) {
+    return <CCTView thang={thang} nam={nam} canApprove={isCCT ? canApprove : false} onPendingCountChange={onPendingCountChange} />;
   }
-  
   // Phó ĐT, ĐT, Phó CCT xem báo cáo đơn vị
   return <DonViView thang={thang} nam={nam} canApprove={canApprove} />;
-}
+} 

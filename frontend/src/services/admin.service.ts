@@ -203,6 +203,19 @@ export const adminService = {
     }
   },
 
+  /**
+   * Xóa hoàn toàn user (hard delete)
+   * Điều kiện: User phải đang bị vô hiệu hóa và không có kê khai công việc
+   */
+  async deleteUser(userId: string): Promise<{ user_id: string; ma_cc: string; ho_ten: string }> {
+    try {
+      const response = await apiClient.delete(`${ADMIN_URL}/users/${userId}`);
+      return response.data.data;
+    } catch (error) {
+      throw handleError(error);
+    }
+  },
+
   // ===========================================================================
   // SP CHUẨN MANAGEMENT
   // ===========================================================================

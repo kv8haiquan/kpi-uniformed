@@ -59,6 +59,11 @@ const XEP_LOAI_MAP = {
 // =============================================================================
 // HELPERS
 // =============================================================================
+// Helper: số La Mã
+function toRoman(num) {
+  const map = { 1: "I", 2: "II", 3: "III", 4: "IV", 5: "V" };
+  return map[num] || String(num);
+}
 
 function txt(text, opts = {}) {
   return new TextRun({ text: String(text), font: FONT, size: opts.size || FONT_SIZE_NORMAL, ...opts });
@@ -657,6 +662,149 @@ function buildMau04(data) {
   return children;
 }
 
+// =============================================================================
+// MẪU 05: BÁO CÁO CÔNG CHỨC CÓ THÀNH TÍCH ĐỔI MỚI SÁNG TẠO
+// =============================================================================
+
+function buildMau05(data) {
+  const allChildren = [];
+  
+  (data.cong_chucs || []).forEach((cc, index) => {
+    // Page break trước mỗi CC (trừ người đầu tiên)
+    if (index > 0) {
+      allChildren.push(new Paragraph({ children: [new PageBreak()] }));
+    }
+    
+    // Header
+    allChildren.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        columnWidths: [4535, 4536],
+        rows: [
+          new TableRow({ children: [
+            cell([
+              para([txt("CHI CỤC HẢI QUAN KHU VỰC VIII", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+            ], { noBorder: true, width: 4535 }),
+            cell([
+              para([txt("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+              para([txt("Độc lập - Tự do - Hạnh phúc", { bold: true, size: FONT_SIZE_SMALL, underline: {} })], { alignment: AlignmentType.CENTER }),
+            ], { noBorder: true, width: 4536 }),
+          ]}),
+        ],
+      })
+    );
+    
+    allChildren.push(emptyPara());
+    allChildren.push(titlePara(data.title || "PHIẾU THEO DÕI TIÊU CHÍ CHUNG - CÔNG CHỨC CÓ THÀNH TÍCH ĐỔI MỚI"));
+    allChildren.push(para([txt(`Tháng ${data.thang} năm ${data.nam}`)], { alignment: AlignmentType.CENTER }));
+    allChildren.push(emptyPara());
+    
+    // Thông tin CC
+    allChildren.push(para([txt("Họ và tên: ", { bold: true }), txt(cc.ho_ten)]));
+    allChildren.push(para([txt("Mã công chức: ", { bold: true }), txt(cc.ma_cc)]));
+    allChildren.push(para([txt("Đơn vị: ", { bold: true }), txt(cc.don_vi)]));
+    if (cc.chuc_vu) {
+      allChildren.push(para([txt("Chức vụ: ", { bold: true }), txt(cc.chuc_vu)]));
+    }
+    allChildren.push(emptyPara());
+    
+    // Bảng tiêu chí chung
+    const cols = [400, 3500, 700, 800, 800, 2871];
+    
+    const headerRow = new TableRow({ children: [
+      headerCell("TT", { width: cols[0], fontSize: 18 }),
+      headerCell("Tiêu chí chấm điểm", { width: cols[1], fontSize: 18 }),
+      headerCell("Điểm tối đa", { width: cols[2], fontSize: 18 }),
+      headerCell("CC tự chấm", { width: cols[3], fontSize: 18 }),
+      headerCell("LĐ duyệt", { width: cols[4], fontSize: 18 }),
+      headerCell("Ghi chú / Minh chứng", { width: cols[5], fontSize: 18 }),
+    ]});
+    
+    const rows = [headerRow];
+    let currentNhom = 0;
+    const nhomNames = {
+      1: "Phẩm chất chính trị, đạo đức",
+      2: "Năng lực chuyên môn, nghiệp vụ", 
+      3: "Năng lực đổi mới, sáng tạo",
+    };
+    
+    (cc.tieu_chi || []).forEach((tc) => {
+      // Header nhóm
+      if (tc.nhom !== currentNhom) {
+        currentNhom = tc.nhom;
+        rows.push(new TableRow({ children: [
+          cell([para([txt(toRoman(tc.nhom), { bold: true, size: 18 })])], { width: cols[0], shading: "E8E8E8" }),
+          cell([para([txt(nhomNames[tc.nhom] || "", { bold: true, size: 18 })])], { width: cols[1] + cols[2] + cols[3] + cols[4] + cols[5], shading: "E8E8E8", colSpan: 5 }),
+        ]}));
+      }
+      
+      // Dòng tiêu chí
+      const diemCcText = tc.is_achieved_cc ? `✓ (${tc.diem_cc})` : `✗ (0)`;
+      const diemLdText = tc.is_achieved_ld === null ? "-" : (tc.is_achieved_ld ? `✓ (${tc.diem_ld})` : `✗ (0)`);
+      
+      // Highlight nhóm III có ghi chú
+      const isNhom3WithNote = tc.nhom === 3 && tc.ghi_chu;
+      
+      rows.push(new TableRow({ children: [
+        numCell(tc.ma, { width: cols[0], fontSize: 18 }),
+        cell(tc.ten, { width: cols[1], fontSize: 18 }),
+        numCell(tc.diem_toi_da, { width: cols[2], fontSize: 18 }),
+        numCell(diemCcText, { width: cols[3], fontSize: 18 }),
+        numCell(diemLdText, { width: cols[4], fontSize: 18 }),
+        cell(tc.ghi_chu || "", { width: cols[5], fontSize: 16, shading: isNhom3WithNote ? "FFFDE7" : undefined }),
+      ]}));
+    });
+    
+    // Dòng tổng cộng
+    rows.push(new TableRow({ children: [
+      cell([para([txt("", { bold: true })])], { width: cols[0] }),
+      cell([para([txt("Tổng cộng", { bold: true, size: 18 })])], { width: cols[1] }),
+      numCell("30", { width: cols[2], fontSize: 18 }),
+      numCell(cc.tong_diem_cc, { width: cols[3], fontSize: 18 }),
+      numCell(cc.tong_diem_ld || "-", { width: cols[4], fontSize: 18 }),
+      cell("", { width: cols[5] }),
+    ]}));
+    
+    allChildren.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      columnWidths: cols,
+      rows,
+    }));
+    
+    allChildren.push(emptyPara());
+    allChildren.push(para([
+      txt("Tổng điểm tiêu chí chung: ", { bold: true }), 
+      txt(`${cc.tong_diem_ld || cc.tong_diem_cc}/30`),
+      txt("   |   Điểm nhóm III: ", { bold: true }),
+      txt(`${cc.diem_nhom3_ld || cc.diem_nhom3_cc}/10`),
+    ]));
+    
+    allChildren.push(emptyPara());
+    allChildren.push(emptyPara());
+    
+    // Chữ ký
+    allChildren.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      columnWidths: [4535, 4536],
+      rows: [
+        new TableRow({ children: [
+          cell([
+            para([txt("CÔNG CHỨC TỰ ĐÁNH GIÁ", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+            para([txt("(Ký, ghi rõ họ tên)", { italics: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+            emptyPara(), emptyPara(), emptyPara(),
+            para([txt(cc.ho_ten, { bold: true })], { alignment: AlignmentType.CENTER }),
+          ], { noBorder: true, width: 4535 }),
+          cell([
+            para([txt("TRƯỞNG ĐƠN VỊ", { bold: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+            para([txt("(Ký tên, đóng dấu)", { italics: true, size: FONT_SIZE_SMALL })], { alignment: AlignmentType.CENTER }),
+          ], { noBorder: true, width: 4536 }),
+        ]}),
+      ],
+    }));
+  });
+  
+  return allChildren;
+}
 
 // =============================================================================
 // MẪU 03 TỔNG HỢP: GHÉP NHIỀU ĐƠN VỊ (MỖI ĐƠN VỊ 1 TRANG)
@@ -748,6 +896,19 @@ async function main() {
         },
       },
       children: mau03TongHopChildren,
+    }];
+  } else if (reportType === "mau05-doi-moi") {
+    // Mẫu 05 - portrait, mỗi CC 1 trang
+    const mau05Children = buildMau05(rawData);
+    
+    sections = [{
+      properties: {
+        page: {
+          size: { width: PAGE_WIDTH, height: PAGE_HEIGHT },
+          margin: { top: MARGIN_TOP, bottom: MARGIN_BOTTOM, left: MARGIN_LEFT, right: MARGIN_RIGHT },
+        },
+      },
+      children: mau05Children,
     }];
   } else if (reportType === "tong-hop") {
     // Mẫu 04 - landscape cho danh sách toàn Chi cục

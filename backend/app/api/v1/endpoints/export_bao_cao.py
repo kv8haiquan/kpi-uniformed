@@ -7,6 +7,8 @@ Endpoints:
 1. GET /export/ca-nhan/thang/{thang}/nam/{nam}          - Xuất Mẫu 01 + 02 (cá nhân)
 2. GET /export/don-vi/thang/{thang}/nam/{nam}            - Xuất Mẫu 03 (đơn vị)
 3. GET /export/tong-hop/thang/{thang}/nam/{nam}          - Xuất Mẫu 04 toàn Chi cục (CCT/PCCT)
+4. GET /export/don-vi-tong-hop/thang/{thang}/nam/{nam}   - Xuất Mẫu 03 tất cả đơn vị
+5. GET /export/mau05-doi-moi/thang/{thang}/nam/{nam}     - Xuất Mẫu 05 CC có thành tích đổi mới
 
 Output: DOCX hoặc PDF (query param ?format=docx|pdf)
 
@@ -516,6 +518,116 @@ def _build_mau04_data(
         "tong_cong_chuc": tong,
     }
 
+async def _build_mau05_data(
+    db: AsyncSession,
+    thang: int, 
+    nam: int,
+) -> dict:
+    """
+    Build data cho Mẫu 05 - Báo cáo CC có thành tích đổi mới sáng tạo.
+    Chỉ lấy CC có tích ít nhất 1 tiêu chí nhóm III (nhom_tieu_chi = 3).
+    """
+    # 1. Lấy tất cả tiêu chí chung (master data)
+    stmt_tc = select(TieuChiChung).where(TieuChiChung.is_active == True).order_by(TieuChiChung.ma_tieu_chi)
+    result_tc = await db.execute(stmt_tc)
+    all_tieu_chi = result_tc.scalars().all()
+    
+    # 2. Lấy tất cả đánh giá tháng
+    stmt = (
+        select(DanhGiaThang)
+        .options(
+            selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DanhGiaThang.tieu_chi_chungs),
+        )
+        .where(
+            DanhGiaThang.thang == thang,
+            DanhGiaThang.nam == nam,
+        )
+    )
+    result = await db.execute(stmt)
+    danh_gias = result.scalars().all()
+    
+    cong_chuc_list = []
+    
+    for dg in danh_gias:
+        # Filter: bỏ user inactive/deleted
+        if not dg.cong_chuc:
+            continue
+        if hasattr(dg.cong_chuc, 'is_active') and dg.cong_chuc.is_active == False:
+            continue
+        if hasattr(dg.cong_chuc, 'deleted_at') and dg.cong_chuc.deleted_at is not None:
+            continue
+        
+        # Kiểm tra có tích nhóm III không
+        has_nhom3 = False
+        tieu_chi_data = []
+        tong_diem_cc = 0
+        tong_diem_ld = 0
+        diem_nhom3_cc = 0
+        diem_nhom3_ld = 0
+        
+        # Map tiêu chí đánh giá theo tieu_chi_id
+        tc_danh_gia_map = {str(tcdg.tieu_chi_id): tcdg for tcdg in (dg.tieu_chi_chungs or [])}
+        
+        for tc in all_tieu_chi:
+            tcdg = tc_danh_gia_map.get(str(tc.id))
+            
+            is_achieved_cc = tcdg.is_achieved_cc if tcdg else False
+            is_achieved_ld = tcdg.is_achieved_ld if tcdg else None
+            diem_cc = float(tcdg.diem_tu_cham) if tcdg and tcdg.diem_tu_cham else 0
+            diem_ld = float(tcdg.diem_phe_duyet) if tcdg and tcdg.diem_phe_duyet is not None else None
+            ghi_chu = tcdg.ghi_chu_cc if tcdg else ""
+            
+            # Tính điểm
+            tong_diem_cc += diem_cc
+            if diem_ld is not None:
+                tong_diem_ld += diem_ld
+            
+            # Kiểm tra nhóm III
+            if tc.nhom_tieu_chi == 3:
+                diem_nhom3_cc += diem_cc
+                if diem_ld is not None:
+                    diem_nhom3_ld += diem_ld
+                final_achieved = is_achieved_ld if is_achieved_ld is not None else is_achieved_cc
+                if final_achieved:
+                    has_nhom3 = True
+            
+            tieu_chi_data.append({
+                "ma": tc.ma_tieu_chi,
+                "ten": tc.ten_tieu_chi,
+                "nhom": tc.nhom_tieu_chi,
+                "diem_toi_da": float(tc.diem_toi_da),
+                "is_achieved_cc": is_achieved_cc,
+                "is_achieved_ld": is_achieved_ld,
+                "diem_cc": diem_cc,
+                "diem_ld": diem_ld,
+                "ghi_chu": ghi_chu or "",
+            })
+        
+        # Chỉ lấy CC có tích nhóm III
+        if has_nhom3:
+            cong_chuc_list.append({
+                "ho_ten": dg.cong_chuc.ho_ten,
+                "ma_cc": dg.cong_chuc.ma_cc,
+                "don_vi": dg.cong_chuc.don_vi.ten_don_vi if dg.cong_chuc.don_vi else "",
+                "chuc_vu": dg.cong_chuc.chuc_vu or "",
+                "tieu_chi": tieu_chi_data,
+                "tong_diem_cc": tong_diem_cc,
+                "tong_diem_ld": tong_diem_ld,
+                "diem_nhom3_cc": diem_nhom3_cc,
+                "diem_nhom3_ld": diem_nhom3_ld,
+            })
+    
+    # Sắp xếp theo điểm nhóm III giảm dần
+    cong_chuc_list.sort(key=lambda x: x["diem_nhom3_ld"] or x["diem_nhom3_cc"], reverse=True)
+    
+    return {
+        "title": "PHIẾU THEO DÕI TIÊU CHÍ CHUNG - CÔNG CHỨC CÓ THÀNH TÍCH ĐỔI MỚI",
+        "thang": thang,
+        "nam": nam,
+        "cong_chucs": cong_chuc_list,
+        "tong_so_cc": len(cong_chuc_list),
+    }
 
 # =============================================================================
 # HELPER: TÌM CHI TIẾT XẾP LOẠI CỦA 1 CC
@@ -800,6 +912,45 @@ async def export_don_vi_tong_hop(
         docx_bytes = convert_docx_to_pdf(docx_bytes)
     
     filename = f"Mau03_TatCaDonVi_{thang:02d}_{nam}.{format}"
+    return make_file_response(docx_bytes, filename, format)
+
+@router.get("/mau05-doi-moi/thang/{thang}/nam/{nam}")
+async def export_mau05_doi_moi(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int,
+    nam: int,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+):
+    """
+    Xuất Mẫu 05 - Báo cáo công chức có thành tích đổi mới sáng tạo.
+    Chỉ lấy CC có tích ít nhất 1 tiêu chí nhóm III.
+    
+    Quyền: Chỉ CCT và PCCT.
+    """
+    if thang < 1 or thang > 12:
+        raise HTTPException(400, detail=error_response("VAL_001", "Tháng phải từ 1-12"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+    
+    if not _is_lanh_dao_chi_cuc(current_user):
+        raise HTTPException(403, detail=error_response(
+            "PERM_003", "Chỉ CCT và Phó CCT mới được xuất báo cáo này"
+        ))
+    
+    mau05_data = await _build_mau05_data(db, thang, nam)
+    
+    if not mau05_data["cong_chucs"]:
+        raise HTTPException(404, detail=error_response(
+            "BIZ_004", f"Không có công chức nào có tích tiêu chí nhóm III trong tháng {thang}/{nam}"
+        ))
+    
+    docx_bytes = await _generate_docx("mau05-doi-moi", mau05_data)
+    
+    if format == "pdf":
+        docx_bytes = convert_docx_to_pdf(docx_bytes)
+    
+    filename = f"Mau05_DoiMoiSangTao_{thang:02d}_{nam}.{format}"
     return make_file_response(docx_bytes, filename, format)
 
 # =============================================================================

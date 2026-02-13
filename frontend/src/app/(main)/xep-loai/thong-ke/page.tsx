@@ -341,31 +341,42 @@ export default function ThongKeXepLoaiPage() {
             
             {/* Nút xuất báo cáo Mẫu 04 */}
             {thongKe && (
-              <>
-                <ExportButton
-                  label="Xuất Mẫu 03 (Tất cả ĐV)"
-                  size="sm"
-                  onExport={async (format: ExportFormat) => {
-                    await exportService.exportDonViTongHop({
-                      thang: selectedThang,
-                      nam: selectedNam,
-                      format,
-                    });
-                  }}
-                />
-                <ExportButton
-                  label="Xuất Mẫu 04"
-                  size="sm"
-                  onExport={async (format: ExportFormat) => {
-                    await exportService.exportTongHop({
-                      thang: selectedThang,
-                      nam: selectedNam,
-                      format,
-                    });
-                  }}
-                />
-              </>
-            )}
+            <>
+              <ExportButton
+                label="Xuất Mẫu 03 (Tất cả ĐV)"
+                size="sm"
+                onExport={async (format: ExportFormat) => {
+                  await exportService.exportDonViTongHop({
+                    thang: selectedThang,
+                    nam: selectedNam,
+                    format,
+                  });
+                }}
+              />
+              <ExportButton
+                label="Xuất Mẫu 04"
+                size="sm"
+                onExport={async (format: ExportFormat) => {
+                  await exportService.exportTongHop({
+                    thang: selectedThang,
+                    nam: selectedNam,
+                    format,
+                  });
+                }}
+              />
+              <ExportButton
+                label="Xuất Mẫu 05 (Đổi mới)"
+                size="sm"
+                onExport={async (format: ExportFormat) => {
+                  await exportService.exportMau05DoiMoi({
+                    thang: selectedThang,
+                    nam: selectedNam,
+                    format,
+                  });
+                }}
+              />
+            </>
+          )}
           </div>
         </div>
       </header>

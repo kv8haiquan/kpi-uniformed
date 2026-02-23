@@ -1,3 +1,8 @@
+# User uploads — luu tren server, khong push len git
+uploads/
+!uploads/.gitkeep
+!uploads/lms/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]

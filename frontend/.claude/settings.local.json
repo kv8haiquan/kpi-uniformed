@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sort:*)",
+      "Bash(cd /d/kpi-haiquan/kpi-haiquan-kv8/frontend && npm run build 2>&1)",
+      "Bash(cd /d/kpi-haiquan/kpi-haiquan-kv8/frontend && npm run lint 2>&1)",
+      "Bash(npm run:*)",
+      "Bash(npx eslint:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(ls /d/kpi-haiquan/kpi-haiquan-kv8/backend/.env* 2>/dev/null && ls /d/kpi-haiquan/kpi-haiquan-kv8/backend/legal_service/.env* 2>/dev/null)",
+      "Bash(cd /d/kpi-haiquan/kpi-haiquan-kv8/backend && python -m pytest legal_service/tests/test_van_ban_crud.py::TestVanBanList::test_danh_sach_pagination legal_service/tests/test_van_ban_crud.py::TestVanBanDelete::test_xoa_van_ban_nhap_ok -v --tb=short 2>&1)",
+      "Bash(cd:*)",
+      "Bash(cd /d/kpi-haiquan/kpi-haiquan-kv8/backend && python -m pytest legal_service/tests/ --cov=legal_service --cov-report=term-missing --tb=no -q 2>&1)"
+    ]
+  }
+}

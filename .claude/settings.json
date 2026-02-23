@@ -1,0 +1,16 @@
+{
+    "permissions": {
+      "allow": [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Glob",
+        "Grep"
+      ],
+      "deny": []
+    },
+    "env": {
+      "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4-5-20250929"
+    }
+  }

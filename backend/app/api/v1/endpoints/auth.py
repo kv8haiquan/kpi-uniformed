@@ -205,6 +205,25 @@ async def login_access_token(
     # THÊM NGAY BÊN DƯỚI:
     # v1.1.0 - Flag xem toàn chi cục
     additional_claims["can_view_all_units"] = getattr(user, 'can_view_all_units', False) or False
+
+    # --- MO RONG PLATFORM (3 fields moi) ---
+    # vai_tro: alias cho "role" — LMS doc field nay (backward compatible, "role" van giu)
+    if user.vai_tro:
+        additional_claims["vai_tro"] = user.vai_tro.ma_vai_tro
+    # is_lanh_dao: flag lanh dao
+    additional_claims["is_lanh_dao"] = getattr(user, 'is_lanh_dao', False) or False
+    # platform_roles: query tu bang cong_chuc_platform_role
+    try:
+        from sqlalchemy import text as sa_text
+        pr_result = await db.execute(sa_text(
+            "SELECT pr.ma_role FROM public.platform_role pr "
+            "JOIN public.cong_chuc_platform_role ccpr ON pr.id = ccpr.platform_role_id "
+            "WHERE ccpr.cong_chuc_id = :uid AND ccpr.is_active = true AND pr.is_active = true"
+        ), {"uid": str(user.id)})
+        additional_claims["platform_roles"] = [r[0] for r in pr_result.fetchall()]
+    except Exception:
+        additional_claims["platform_roles"] = []
+
     # Tạo access token
     access_token = create_access_token(
         subject=str(user.id),

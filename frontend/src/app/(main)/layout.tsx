@@ -2,7 +2,7 @@
  * src/app/(main)/layout.tsx
  * =========================
  * Layout cho các trang main (protected routes).
- * Sau này sẽ thêm Sidebar, Header components.
+ * Bao gồm Sidebar navigation + content area.
  */
 
 'use client';
@@ -10,6 +10,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
+import Sidebar from '@/components/common/Sidebar';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -64,5 +65,12 @@ export default function MainLayout({ children }: MainLayoutProps) {
     return null;
   }
 
-  return <>{children}</>;
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar />
+      <main className="flex-1 overflow-y-auto">
+        {children}
+      </main>
+    </div>
+  );
 }

@@ -33,6 +33,47 @@ import { UserCreateModal, UserEditModal, UserTransferModal } from '@/components/
 // SUB COMPONENTS
 // =============================================================================
 
+/**
+ * Thứ tự sắp xếp chức vụ:
+ * 0 - Chi cục trưởng
+ * 1 - Phó Chi cục trưởng
+ * 2 - Trưởng (đội/phòng): Đội trưởng, Trưởng phòng, Chánh Văn phòng...
+ * 3 - Phó (đội/phòng): Phó Đội trưởng, Phó trưởng phòng, Phó Văn phòng...
+ * 4 - Công chức
+ * 5 - Hợp đồng 111
+ * 
+ * LƯU Ý: Check từ cụ thể → chung. "Phó chi cục trưởng" chứa cả
+ * "phó", "chi cục", "trưởng" nên phải match riêng trước.
+ */
+function getChucVuPriority(user: IUserResponse): number {
+  const cv = (user.chuc_vu || '').toLowerCase();
+  const vt = (user.vai_tro_ten || '').toLowerCase();
+  const text = `${cv} | ${vt}`;
+  
+  // 1) Phó Chi cục trưởng (check TRƯỚC "chi cục" vì chứa cả 2)
+  if (text.includes('phó chi cục') || text.includes('phó cục')) return 1;
+  // 2) Chi cục trưởng
+  if (text.includes('chi cục trưởng') || text.includes('cục trưởng')) return 0;
+  // 3) Phó đội/phòng (check TRƯỚC "trưởng" vì "Phó Đội trưởng" chứa cả 2)
+  if (text.includes('phó')) return 3;
+  // 4) Trưởng đội/phòng (Đội trưởng, Trưởng phòng, Chánh Văn phòng...)
+  if (text.includes('trưởng') || text.includes('chánh')) return 2;
+  // 5) Hợp đồng 111
+  if (text.includes('hợp đồng') || text.includes('hđ') || text.includes('111')) return 5;
+  // 6) Công chức (mặc định)
+  return 4;
+}
+
+function sortUsersByChucVu(users: IUserResponse[]): IUserResponse[] {
+  return [...users].sort((a, b) => {
+    const priorityA = getChucVuPriority(a);
+    const priorityB = getChucVuPriority(b);
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    // Cùng chức vụ → sắp xếp theo họ tên
+    return (a.ho_ten || '').localeCompare(b.ho_ten || '', 'vi');
+  });
+}
+
 interface UserTableProps {
   users: IUserResponse[];
   isLoading: boolean;
@@ -197,30 +238,33 @@ interface PaginationProps {
 
 function Pagination({ pagination, onPageChange }: PaginationProps) {
   const { page, total_pages } = pagination;
-  
-  if (total_pages <= 1) return null;
 
   return (
     <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
       <div className="text-sm text-gray-500">
-        Trang {page} / {total_pages} • Tổng {pagination.total_items} người dùng
+        {total_pages > 1 
+          ? `Trang ${page} / ${total_pages} • Tổng ${pagination.total_items} người dùng`
+          : `Tổng ${pagination.total_items} người dùng`
+        }
       </div>
-      <div className="flex gap-2">
-        <button
-          onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Trước
-        </button>
-        <button
-          onClick={() => onPageChange(page + 1)}
-          disabled={page >= total_pages}
-          className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Sau
-        </button>
-      </div>
+      {total_pages > 1 && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => onPageChange(page - 1)}
+            disabled={page <= 1}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Trước
+          </button>
+          <button
+            onClick={() => onPageChange(page + 1)}
+            disabled={page >= total_pages}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Sau
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -234,11 +278,24 @@ export default function AdminUsersPage() {
   const searchParams = useSearchParams();
   
   // Data states
-  const [users, setUsers] = useState<IUserResponse[]>([]);
-  const [pagination, setPagination] = useState<IPagination>({ page: 1, page_size: 20, total_items: 0, total_pages: 0 });
+  const [allUsers, setAllUsers] = useState<IUserResponse[]>([]);  // Toàn bộ data đã sort
+  const [clientPage, setClientPage] = useState(1);                // Trang hiện tại (client-side)
+  const PAGE_SIZE = 20;
   const [donViList, setDonViList] = useState<IDonViOption[]>([]);
   const [vaiTroList, setVaiTroList] = useState<IVaiTroOption[]>([]);
   
+  // Phân trang client-side: sort trước → chia trang sau
+  const sortedUsers = sortUsersByChucVu(allUsers);
+  const totalItems = sortedUsers.length;
+  const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+  const users = sortedUsers.slice((clientPage - 1) * PAGE_SIZE, clientPage * PAGE_SIZE);
+  const pagination: IPagination = {
+    page: clientPage,
+    page_size: PAGE_SIZE,
+    total_items: totalItems,
+    total_pages: totalPages,
+  };
+
   // Filter states
   const [search, setSearch] = useState('');
   const [filterDonVi, setFilterDonVi] = useState('');
@@ -276,21 +333,37 @@ export default function AdminUsersPage() {
     loadOptions();
   }, []);
 
-  // Load users
-  const loadUsers = useCallback(async (page: number = 1) => {
+  // Load ALL users: gọi API nhiều trang (page_size=100) → gom hết → sort client-side
+  const loadUsers = useCallback(async (resetPage: boolean = true) => {
     setIsLoading(true);
     setError(null);
     
     try {
-      const params: any = { page, page_size: 20 };
-      if (search) params.search = search;
-      if (filterDonVi) params.don_vi_id = filterDonVi;
-      if (filterVaiTro) params.vai_tro_id = filterVaiTro;
-      if (filterActive !== '') params.is_active = filterActive === 'true';
+      const baseParams: any = {};
+      if (search) baseParams.search = search;
+      if (filterDonVi) baseParams.don_vi_id = filterDonVi;
+      if (filterVaiTro) baseParams.vai_tro_id = filterVaiTro;
+      if (filterActive !== '') baseParams.is_active = filterActive === 'true';
       
-      const response = await adminService.getUsers(params);
-      setUsers(response.data);
-      setPagination(response.pagination);
+      // Gọi trang đầu để biết tổng số trang
+      const firstPage = await adminService.getUsers({ ...baseParams, page: 1, page_size: 100 });
+      let all: IUserResponse[] = [...firstPage.data];
+      
+      // Load các trang còn lại (nếu có)
+      const totalApiPages = firstPage.pagination.total_pages;
+      if (totalApiPages > 1) {
+        const remaining = await Promise.all(
+          Array.from({ length: totalApiPages - 1 }, (_, i) =>
+            adminService.getUsers({ ...baseParams, page: i + 2, page_size: 100 })
+          )
+        );
+        for (const res of remaining) {
+          all = all.concat(res.data);
+        }
+      }
+      
+      setAllUsers(all);
+      if (resetPage) setClientPage(1);
     } catch (err) {
       setError(isApiError(err) ? err.message : 'Có lỗi xảy ra');
     } finally {
@@ -299,16 +372,16 @@ export default function AdminUsersPage() {
   }, [search, filterDonVi, filterVaiTro, filterActive]);
 
   useEffect(() => {
-    loadUsers(1);
+    loadUsers();
   }, [loadUsers]);
 
   // Handlers
   const handleSearch = () => {
-    loadUsers(1);
+    loadUsers();
   };
 
   const handlePageChange = (page: number) => {
-    loadUsers(page);
+    setClientPage(page);
   };
 
   const handleEdit = (user: IUserResponse) => {
@@ -380,7 +453,7 @@ export default function AdminUsersPage() {
       await adminService.updateUserStatus(selectedUser.id, { 
         is_active: !selectedUser.is_active 
       });
-      loadUsers(pagination.page);
+      loadUsers(false);
       setShowStatusModal(false);
       setSelectedUser(null);
     } catch (err) {
@@ -397,13 +470,62 @@ export default function AdminUsersPage() {
     try {
       await adminService.deleteUser(selectedUser.id);
       alert(`Đã xóa hoàn toàn tài khoản ${selectedUser.ma_cc}`);
-      loadUsers(pagination.page);
+      loadUsers(false);
       setShowDeleteModal(false);
       setSelectedUser(null);
     } catch (err) {
       alert(isApiError(err) ? err.message : 'Có lỗi xảy ra');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // ===== EXPORT EXCEL =====
+  const handleExport = async () => {
+    if (sortedUsers.length === 0) {
+      alert('Không có dữ liệu để xuất');
+      return;
+    }
+
+    try {
+      const XLSX = await import('xlsx');
+
+      const exportData = sortedUsers.map((user, index) => ({
+        'STT': index + 1,
+        'Mã CC': user.ma_cc,
+        'Họ tên': user.ho_ten,
+        'Đơn vị': user.don_vi_ten || '',
+        'Vai trò': user.vai_tro_ten || '',
+        'Chức vụ': user.chuc_vu || '',
+        'Email': user.email || '',
+        'Trạng thái': user.is_active ? 'Hoạt động' : 'Vô hiệu',
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Đặt độ rộng cột
+      ws['!cols'] = [
+        { wch: 5 },   // STT
+        { wch: 14 },  // Mã CC
+        { wch: 28 },  // Họ tên
+        { wch: 28 },  // Đơn vị
+        { wch: 16 },  // Vai trò
+        { wch: 20 },  // Chức vụ
+        { wch: 28 },  // Email
+        { wch: 12 },  // Trạng thái
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Danh sách công chức');
+
+      // Tên file theo đơn vị (nếu đang lọc)
+      const donViName = filterDonVi 
+        ? donViList.find(d => d.id === filterDonVi)?.ten_don_vi || 'don-vi'
+        : 'tat-ca';
+      const date = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `danh-sach-cong-chuc_${donViName}_${date}.xlsx`);
+    } catch {
+      alert('Lỗi xuất file. Hãy đảm bảo đã cài thư viện: npm install xlsx');
     }
   };
 
@@ -426,15 +548,27 @@ export default function AdminUsersPage() {
               <p className="text-gray-600">Tạo, sửa, điều chuyển và quản lý tài khoản</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Tạo mới
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExport}
+              disabled={isLoading || sortedUsers.length === 0}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Xuất Excel
+            </button>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Tạo mới
+            </button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -570,7 +704,7 @@ export default function AdminUsersPage() {
         <UserCreateModal
           donViList={donViList}
           vaiTroList={vaiTroList}
-          onSuccess={() => loadUsers(1)}
+          onSuccess={() => loadUsers()}
           onClose={() => setShowCreateModal(false)}
         />
       )}
@@ -579,7 +713,7 @@ export default function AdminUsersPage() {
       {showEditModal && selectedUser && (
         <UserEditModal
           user={selectedUser}
-          onSuccess={() => loadUsers(pagination.page)}
+          onSuccess={() => loadUsers(false)}
           onClose={() => { setShowEditModal(false); setSelectedUser(null); }}
         />
       )}
@@ -590,7 +724,7 @@ export default function AdminUsersPage() {
           user={selectedUser}
           donViList={donViList}
           vaiTroList={vaiTroList}
-          onSuccess={() => loadUsers(pagination.page)}
+          onSuccess={() => loadUsers(false)}
           onClose={() => { setShowTransferModal(false); setSelectedUser(null); }}
         />
       )}

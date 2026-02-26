@@ -286,7 +286,7 @@ TRƯỚC KHI implement bất kỳ feature nào, ĐỌC file specs tương ứng:
 
 (Cập nhật mỗi khi hoàn thành milestone)
 
-- [x] KPI module — ✅ Production (kpi.kv08.vn)
+- [x] KPI module — ✅ Production (kpihaiquan.vn)
 - [x] Tài liệu kiến trúc mở rộng — ✅ Hoàn thành
 - [x] SHARED specs (Auth, DB, Coding Standards) — ✅ Hoàn thành
 - [x] Shared backend module (auth, schemas, database, constants) — ✅ Hoàn thành

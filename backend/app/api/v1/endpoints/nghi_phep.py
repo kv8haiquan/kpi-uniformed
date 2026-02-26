@@ -43,7 +43,7 @@ from sqlalchemy import select, func, and_, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.leave import DangKyNghi, LoaiNghi, TrangThaiNghi
 from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro, DonVi
 from app.schemas.common import (
@@ -461,20 +461,40 @@ async def get_cho_phe_duyet(
     """
     Lấy danh sách đơn nghỉ phép chờ tôi phê duyệt.
     v3.0: Chỉ 1 cấp - ai được assign làm nguoi_phe_duyet thì duyệt
+    v3.6: QLDV xem đơn chờ duyệt trong đơn vị (read-only)
     """
-    # Query đơn chờ duyệt mà current_user là người phê duyệt
-    stmt = (
-        select(DangKyNghi)
-        .options(
-            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
-            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
-            selectinload(DangKyNghi.nguoi_phe_duyet),
+    is_qldv_user = is_qldv(current_user)
+
+    # Query đơn chờ duyệt
+    if is_qldv_user:
+        # QLDV: Xem tất cả đơn chờ duyệt trong đơn vị
+        stmt = (
+            select(DangKyNghi)
+            .options(
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
+                selectinload(DangKyNghi.nguoi_phe_duyet),
+            )
+            .join(CongChuc)
+            .where(DangKyNghi.is_deleted == False)
+            .where(DangKyNghi.trang_thai == TrangThaiNghi.CHO_PHE_DUYET)
+            .where(CongChuc.don_vi_id == current_user.don_vi_id)
+            .order_by(DangKyNghi.created_at.desc())
         )
-        .where(DangKyNghi.is_deleted == False)
-        .where(DangKyNghi.trang_thai == TrangThaiNghi.CHO_PHE_DUYET)
-        .where(DangKyNghi.nguoi_phe_duyet_id == current_user.id)
-        .order_by(DangKyNghi.created_at.desc())
-    )
+    else:
+        # Lãnh đạo: Chỉ đơn được assign
+        stmt = (
+            select(DangKyNghi)
+            .options(
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
+                selectinload(DangKyNghi.nguoi_phe_duyet),
+            )
+            .where(DangKyNghi.is_deleted == False)
+            .where(DangKyNghi.trang_thai == TrangThaiNghi.CHO_PHE_DUYET)
+            .where(DangKyNghi.nguoi_phe_duyet_id == current_user.id)
+            .order_by(DangKyNghi.created_at.desc())
+        )
     
     result = await db.execute(stmt)
     items = result.scalars().all()
@@ -496,18 +516,37 @@ async def get_lich_su_phe_duyet(
 ) -> dict:
     """
     Lấy lịch sử các đơn nghỉ phép đã duyệt/từ chối bởi current_user.
+    v3.6: QLDV xem lịch sử của đơn vị
     """
-    stmt = (
-        select(DangKyNghi)
-        .options(
-            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
-            selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
-            selectinload(DangKyNghi.nguoi_phe_duyet),
+    is_qldv_user = is_qldv(current_user)
+
+    if is_qldv_user:
+        # QLDV: Xem lịch sử của đơn vị
+        stmt = (
+            select(DangKyNghi)
+            .options(
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
+                selectinload(DangKyNghi.nguoi_phe_duyet),
+            )
+            .join(CongChuc)
+            .where(DangKyNghi.is_deleted == False)
+            .where(CongChuc.don_vi_id == current_user.don_vi_id)
+            .where(DangKyNghi.trang_thai.in_([TrangThaiNghi.DA_PHE_DUYET, TrangThaiNghi.TU_CHOI]))
         )
-        .where(DangKyNghi.is_deleted == False)
-        .where(DangKyNghi.nguoi_phe_duyet_id == current_user.id)
-        .where(DangKyNghi.trang_thai.in_([TrangThaiNghi.DA_PHE_DUYET, TrangThaiNghi.TU_CHOI]))
-    )
+    else:
+        # Lãnh đạo: Chỉ đơn mình đã duyệt
+        stmt = (
+            select(DangKyNghi)
+            .options(
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.don_vi),
+                selectinload(DangKyNghi.cong_chuc).selectinload(CongChuc.vai_tro),
+                selectinload(DangKyNghi.nguoi_phe_duyet),
+            )
+            .where(DangKyNghi.is_deleted == False)
+            .where(DangKyNghi.nguoi_phe_duyet_id == current_user.id)
+            .where(DangKyNghi.trang_thai.in_([TrangThaiNghi.DA_PHE_DUYET, TrangThaiNghi.TU_CHOI]))
+        )
     
     # Filter theo trang_thai nếu có
     if trang_thai:
@@ -1214,11 +1253,19 @@ async def phe_duyet_nghi_phep(
 ) -> dict:
     """
     Phê duyệt đơn nghỉ phép - v3.0: CHỈ 1 CẤP.
-    
+    v3.6: Block QLDV - chỉ xem, KHÔNG duyệt
+
     Luồng đơn giản:
     - Ai được assign làm nguoi_phe_duyet thì duyệt → XONG
     - CCT tự duyệt đơn của mình
     """
+    # Block QLDV
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_002", message="QLDV không có quyền phê duyệt nghỉ phép")
+        )
+
     stmt = (
         select(DangKyNghi)
         .options(
@@ -1329,9 +1376,17 @@ async def tu_choi_nghi_phep(
 ) -> dict:
     """
     Từ chối đơn nghỉ phép - v3.0: CHỈ 1 CẤP.
-    
+    v3.6: Block QLDV - chỉ xem, KHÔNG từ chối
+
     Bắt buộc phải có lý do từ chối.
     """
+    # Block QLDV
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_002", message="QLDV không có quyền phê duyệt nghỉ phép")
+        )
+
     stmt = (
         select(DangKyNghi)
         .options(

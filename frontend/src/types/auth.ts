@@ -25,12 +25,12 @@ export type LoaiDonVi = 'PHONG' | 'DOI' | 'HAI_QUAN_CUA_KHAU';
 /**
  * Cấp bậc vai trò.
  */
-export type CapBac = 'CHI_CUC_TRUONG' | 'PHO_CHI_CUC_TRUONG' | 'TRUONG_DON_VI' | 'PHO_DON_VI' | 'CONG_CHUC';
+export type CapBac = 'CHI_CUC_TRUONG' | 'PHO_CHI_CUC_TRUONG' | 'TRUONG_DON_VI' | 'QUAN_LY_DON_VI' | 'PHO_DON_VI' | 'CONG_CHUC';
 
 /**
  * Mã vai trò chuẩn.
  */
-export type MaVaiTro = 'CCT' | 'PCCT' | 'TDV' | 'PDV' | 'CC';
+export type MaVaiTro = 'CCT' | 'PCCT' | 'TDV' | 'QLDV' | 'PDV' | 'CC';
 
 // =============================================================================
 // LOGIN TYPES
@@ -172,6 +172,15 @@ export function isLanhDaoDonVi(user: IUser | null): boolean {
 export function isCongChuc(user: IUser | null): boolean {
   if (!user?.vai_tro) return false;
   return user.vai_tro.ma_vai_tro === 'CC';
+}
+
+/**
+ * Kiểm tra user có phải Quản lý Đơn vị (QLDV) không.
+ * QLDV: Read-only TDV + trả lại + export, KHÔNG có quyền phê duyệt.
+ */
+export function isQLDV(user: IUser | null): boolean {
+  if (!user?.vai_tro) return false;
+  return user.vai_tro.ma_vai_tro === 'QLDV';
 }
 
 /**

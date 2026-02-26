@@ -1,6 +1,6 @@
 # PROGRESS.md — Tiến độ dự án Nền tảng Số HQKV8
 
-> Cập nhật lần cuối: 22/02/2026
+> Cập nhật lần cuối: 25/02/2026
 > Claude Code: ĐỌC FILE NÀY ĐẦU MỖI SESSION để biết trạng thái hiện tại
 
 ---
@@ -13,10 +13,12 @@
 | Platform tables | ✅ | — | ✅ Done | ✅ | ✅ Migrated + seeded |
 | JWT mở rộng | ⏳ | — | — | ⏳ | Chưa implement |
 | LMS | ✅ 45 endpoints | ✅ 7/7 pages | ✅ 11/11 bảng | ✅ 49 tests (69%) | ✅ Done |
-| Forum | ⏳ | ⏳ | ⏳ | ⏳ | Chưa bắt đầu |
+| Forum | ⏳ | ⏳ | ✅ 5/5 bảng | ⏳ | 🔄 Migration done |
 | Legal | ✅ 25 endpoints | ✅ 6/6 pages + 5 components | ✅ 6/6 bảng | ✅ 108 tests (82%) | ✅ HOÀN THÀNH 2026-02-22 |
 | Portal | ✅ 27 endpoints (CMS+ECM+Dashboard) | ✅ /tong-quan + /tin-tuc + /tai-lieu | ✅ 4/4 bảng | ✅ 60 tests (39% svc) | ✅ HOÀN THÀNH 2026-02-22 |
-| Nginx routing | — | — | — | — | ✅ Cấu hình xong |
+| Common | ✅ 4 models + 22 endpoints | ✅ 3/3 pages | ✅ 4/4 bảng | ✅ 64 tests | ✅ HOÀN THÀNH 2026-02-24 |
+| Nginx routing | — | — | — | — | ✅ Multi-service (KPI+Portal+Common+Internal) |
+| Navigation | — | ✅ Sidebar + redirect | — | — | ✅ Login → /tong-quan |
 
 ---
 
@@ -113,7 +115,8 @@
 
 ## SẮP LÀM (Next Up — sau khi LMS xong)
 
-- [ ] Forum: Migration schema forum (5 bảng)
+- [x] Forum: Migration schema forum (5 bảng) — ✅ 2026-02-25
+- [ ] Forum: SQLAlchemy models (5 files)
 - [ ] Forum: Backend CRUD chu_de, tra_loi
 - [ ] Forum: Frontend pages dien-dan/
 - [x] Legal: Frontend foundation — types/legal.ts (20+ interfaces) + services/legal.ts (17 methods) + phap-luat/layout.tsx
@@ -187,13 +190,157 @@
   - tai-lieu/page.tsx — split layout sidebar+main, mobile hamburger toggle, grid/list view, search+filter type, pagination
   - tai-lieu/[id]/page.tsx — chi tiết, meta grid, download link, lịch sử phiên bản, upload version mới modal
   - `npm run build` PASS — 41 routes (10 routes mới) ✅
-- [ ] Common: thong_bao, file_storage, kpi_integration_log
+- [x] Common: Migration schema common (4 bảng) — thong_bao, file_storage, knowledge_base, kpi_integration_log — 2026-02-24
+- [x] Common: common_service skeleton (port 8005) — main.py, config.py, dependencies.py, models/base.py, tests/conftest.py — 2026-02-24
+- [x] Common: SQLAlchemy models (4 files) — ThongBao, FileStorage, KnowledgeBase, KpiIntegrationLog — 2026-02-24
+- [x] Common: Thông báo API (6 endpoints) — schemas + service + public endpoints + internal endpoints — 2026-02-24
+- [x] Common: File Storage API (3 endpoints) — upload/get/delete + MinIO fallback local — 2026-02-24
+- [x] Common: Knowledge Base API (7 endpoints) — CRUD + workflow + FTS + internal cap-nhat-van-ban — 2026-02-24
+- [x] Common: KPI Integration Log API (4 endpoints) — read personal/unit + internal UPSERT/bulk — 2026-02-24
+- [x] Common: Unified Search API (2 endpoints) — cross-schema FTS + ILIKE + suggestions — 2026-02-24
+- [x] Common: Frontend 3 trang + types + service — /thong-bao, /tim-kiem, /kien-thuc, /kien-thuc/[id] — 2026-02-24
+- [x] Common: Tests COMPLETE — 64 tests, 5 test files + conftest.py — 2026-02-24
+- [x] R01: Routing, Nginx & Navigation — chuyển trang chủ sang Portal — 2026-02-24
+- [x] FIX01: Database Connection Fix — 5 service config.py + PM2 common-backend — 2026-02-24
 - [ ] Cross-module integration (LMS → Common notification + KPI log)
-- [ ] Nginx routing cấu hình multi-service
 
 ---
 
 ## ĐÃ HOÀN THÀNH
+
+### 25/02/2026
+- [x] Forum Migration schema forum (5 bảng) — create_forum_schema_20260225.py
+  - forum.chuyen_muc: Chuyên mục diễn đàn (self-ref parent_id phân cấp, chi_doc, yeu_cau_duyet)
+  - forum.chu_de: Chủ đề/Thread (21 cột, tsvector search_vector, JSONB tags/van_ban/sop, moderation workflow CHO_DUYET/MO/DONG/AN)
+  - forum.tra_loi: Trả lời/Bình luận (threaded parent_id, is_dap_an_chuan, JSONB can_cu_phap_ly)
+  - forum.bieu_quyet: Upvote/Downvote polymorphic (UNIQUE cc+type+id)
+  - forum.theo_doi: Theo dõi chủ đề (composite PK cong_chuc_id+chu_de_id)
+  - FK deferred: chu_de.tra_loi_chuan_id → forum.tra_loi(id) (thêm sau khi tạo bảng tra_loi)
+  - 10 custom indexes: 6 chu_de (incl 2 GIN: tags, search_vector) + 3 tra_loi + 1 bieu_quyet
+  - FTS trigger: trg_forum_chu_de_search → forum.update_chu_de_search() (BEFORE INSERT/UPDATE, config 'simple')
+  - Seed: 8 chuyên mục mặc định (Thủ tục HQ, KTSTQ, Thuế, Kiểm soát, CNTT, Pháp luật, Tình huống, Góp ý)
+  - 11 FK total: 5 cross-schema → public.cong_chuc(id), 6 intra-schema
+  - Verify: downgrade -1 → 0 tables → upgrade head → 5 tables, all constraints OK, FTS trigger OK
+
+### 24/02/2026
+- [x] Common Migration schema common (4 bảng) — create_common_schema_20260224.py
+  - common.thong_bao: Notification Center (nguoi_nhan_id FK, loai, da_doc, muc_do)
+  - common.file_storage: File metadata MinIO (file_path, mime_type, module, doi_tuong)
+  - common.knowledge_base: SOP/FAQ (tsvector FTS trigger, JSONB tags+chuyen_de, phien_ban)
+  - common.kpi_integration_log: KPI integration (UNIQUE cc+thang+nam+module, CHECK thang 1-12, nam>=2025)
+  - 11 indexes: 4 thong_bao (incl partial WHERE da_doc=FALSE) + 1 file_storage + 4 knowledge_base (incl 2 GIN) + 2 kpi_log
+  - FTS trigger: trg_common_kb_search → common.update_kb_search() (BEFORE INSERT/UPDATE)
+  - Verify: downgrade -1 → 0 tables → upgrade head → 4 tables, all constraints OK
+- [x] Common service skeleton: backend/common_service/ (port 8005)
+  - main.py, config.py, dependencies.py, requirements.txt
+  - models/base.py (Base + CongChucRef + DonViRef READONLY stubs)
+  - schemas/base.py, tests/conftest.py (5 user fixtures)
+  - api/endpoints/, api/internal/, services/ (empty — ready for endpoints)
+- [x] Common SQLAlchemy 2.0 models: 4 files + __init__.py — ALL PASS — 2026-02-24
+  - thong_bao.py: ThongBao — 12 cột, FK nguoi_nhan_id → public.cong_chuc, loai/muc_do VARCHAR
+  - file_storage.py: FileStorage — 11 cột, FK nguoi_tai_len_id, file_url property, soft delete
+  - knowledge_base.py: KnowledgeBase — 16 cột, TSVECTOR search_vector (trigger auto-fill), JSONB tags+chuyen_de, phien_ban
+  - kpi_integration_log.py: KpiIntegrationLog — 8 cột, UniqueConstraint(cc+thang+nam+module), 2 CheckConstraints, JSONB metrics
+  - Verify: All imports OK, 4/4 schema="common", 4 relationships joined, TSVECTOR type correct, no circular imports
+- [x] Common Thông báo API: 6 endpoints (4 public + 2 internal) — 2026-02-24
+  - schemas/thong_bao.py: ThongBaoResponse, ThongBaoListItem, ThongBaoCountResponse, ThongBaoCreateInternal, ThongBaoCreateBulk
+  - services/thong_bao_service.py: danh_sach (phân trang + lọc), dem_chua_doc, danh_dau_da_doc, danh_dau_tat_ca_da_doc, tao_thong_bao, tao_thong_bao_hang_loat
+  - api/endpoints/thong_bao.py: GET /thong-bao, GET /thong-bao/count, PATCH /thong-bao/{id}/doc, PATCH /thong-bao/doc-tat-ca
+  - api/internal/thong_bao.py: POST /thong-bao (tạo 1), POST /thong-bao/bulk (tạo hàng loạt)
+  - dependencies.py: verify_internal_key (X-Internal-Key header auth)
+  - main.py: include 2 routers (API_PREFIX=/api/common/v1, INTERNAL_PREFIX=/internal/v1)
+  - Business logic: KHAN ưu tiên đầu, phân loại mức độ, chỉ đọc thông báo của mình, validate loại/mức_độ
+  - Verify: All 6 routes registered, imports OK
+- [x] Common File Storage API: 3 endpoints (upload/get/delete) — 2026-02-24
+  - schemas/file_storage.py: UserBrief (dùng chung), FileUploadResponse, FileInfoResponse
+  - services/storage_client.py: MinIO wrapper + local fallback (data/uploads/), lazy init
+  - services/file_storage_service.py: upload_file (validate module/mime/size), get_file_info, delete_file (soft)
+  - api/endpoints/file_storage.py: POST /file/upload (multipart), GET /file/{id}, DELETE /file/{id}
+  - MIME types: 10 loại (PDF, DOCX, XLSX, PPTX, JPG, PNG, GIF, MP4, ZIP, RAR)
+  - Size limits: documents 50MB, images 10MB, videos 500MB, archives 100MB
+  - Verify: 3 routes registered, storage fallback OK
+- [x] Common Knowledge Base API: 7 endpoints (6 public + 1 internal) — 2026-02-24
+  - schemas/knowledge_base.py: KBCreate, KBUpdate, KBDoiTrangThai, KBResponse, KBListItem, KBCapNhatVanBanRequest
+  - services/knowledge_base_service.py: danh_sach (FTS tsvector + ts_rank), chi_tiet, tao, sua (phien_ban++), doi_trang_thai, xoa, danh_dau_can_cap_nhat
+  - api/endpoints/knowledge_base.py: GET (search+filter), GET/{id}, POST, PUT, DELETE, PATCH/trang-thai
+  - api/internal/knowledge_base.py: POST /cap-nhat-van-ban (Legal gọi khi VB thay đổi → KB CAN_CAP_NHAT)
+  - Workflow: NHAP→CHO_DUYET→DA_XUAT_BAN→CAN_CAP_NHAT→NHAP (5 transitions, role-based permissions)
+  - Phân quyền: CHUYEN_GIA tạo, QT_NOI_DUNG duyệt, chủ sở hữu sửa/xóa, ADMIN bypass
+  - Verify: 7 routes registered, workflow transitions correct, FTS logic OK
+- [x] Common KPI Integration Log API: 4 endpoints (2 public + 2 internal) — 2026-02-24
+  - schemas/kpi_log.py: KpiLogResponse, KpiLogDonViSummary, KpiLogModuleSummary, KpiLogCreateInternal
+  - services/kpi_log_service.py: doc_kpi_log (phân quyền CBCC/lãnh đạo/admin), doc_theo_don_vi (metrics TB), ghi_log (UPSERT), ghi_log_hang_loat
+  - api/endpoints/kpi_log.py: GET /kpi-log/{cc_id} (cá nhân), GET /kpi-log/don-vi/{dv_id} (tổng hợp đơn vị)
+  - api/internal/kpi_log.py: POST /kpi-log (UPSERT), POST /kpi-log/bulk (batch)
+  - Business: UPSERT by unique(cc_id, thang, nam, module), metrics trung bình theo đơn vị, phân quyền 3 cấp
+- [x] Common Unified Search API: 2 endpoints — 2026-02-24
+  - schemas/search.py: SearchResultItem, SearchResponse (total_by_module), SearchSuggestion
+  - services/search_service.py: cross-schema search (common.knowledge_base tsvector, portal.bai_viet ILIKE, legal.van_ban tsvector, lms.khoa_hoc ILIKE)
+  - api/endpoints/search.py: GET /search (q, modules, page), GET /search/suggest (q)
+  - Graceful: kiểm tra bảng tồn tại trước khi query, skip module lỗi, boost LEGAL ×1.2
+  - Snippet: ~150 ký tự xung quanh match, strip HTML tags
+- [x] Common main.py: 22 API endpoints total (17 public + 5 internal) + health
+- [x] Common Frontend: 3 trang + types + service — `npm run build` PASS — 2026-02-24
+  - types/common.ts: IThongBao, IThongBaoListItem, IThongBaoCount, ISearchResultItem, ISearchResponse, ISearchParams, IKnowledgeBase, IKBListItem, IKBParams, constants (LOAI_THONG_BAO_LABELS, MUC_DO_CONFIG, TRANG_THAI_KB_CONFIG, SEARCH_MODULE_LABELS)
+  - services/common.ts: commonAxios instance (port 8005, JWT interceptor), thongBaoApi (4 methods), searchApi (2 methods), knowledgeBaseApi (6 methods)
+  - next.config.ts: thêm rewrite /api/common/v1/:path* → http://localhost:8005/api/common/v1/:path*
+  - thong-bao/page.tsx: danh sách thông báo, badges đếm theo mức độ (khẩn/quan trọng/bình thường), lọc loại+trạng thái, đánh dấu đã đọc, đánh dấu tất cả đã đọc, timeAgo, phân trang, click navigate link_url
+  - tim-kiem/page.tsx: ô tìm kiếm toàn cục, gợi ý debounce 300ms, module tabs (tất cả + 5 module), SearchResultCard (icon, title, snippet, module badge), phân trang, URL sync (?q=)
+  - kien-thuc/page.tsx: tabs SOP/FAQ, tìm kiếm debounce 400ms, lọc tags dropdown, grid cards (loại icon, trạng thái badge, tags chips, tác giả), phân trang
+  - kien-thuc/[id]/page.tsx: breadcrumb, header (loại, trạng thái, phiên bản, tác giả), tags+chuyên đề chips, nội dung HTML (dangerouslySetInnerHTML), liên kết văn bản pháp luật + chủ đề diễn đàn
+- [x] Common Tests COMPLETE — 64 tests, 5 test files — 2026-02-24
+  - conftest.py: mở rộng thêm qt_noi_dung_user fixture + 5 data fixtures (sample_thong_bao 5 records, sample_thong_bao_nguoi_khac, sample_file_storage 3 records, sample_knowledge_base 4 records, sample_kpi_log 3 records)
+  - test_thong_bao.py (15 tests): danh sách 6 (lọc loại/mức độ/đã đọc, sắp xếp KHAN ưu tiên, phân trang) + đếm chưa đọc 1 + đánh dấu đã đọc 4 (OK/403/404/tất cả) + internal 4 (tạo/bulk/sai key 401/loại sai 400)
+  - test_file_storage.py (11 tests): upload 5 (OK mock MinIO, quá lớn CMN_ERR_001, MIME sai CMN_ERR_002, module sai CMN_ERR_004, size limit theo loại) + get info 3 (OK/404/đã xóa 404) + delete 3 (owner/admin/người khác 403)
+  - test_knowledge_base.py (17 tests): danh sách 5 (CBCC chỉ DA_XUAT_BAN, admin tất cả, lọc loại/tags, chuyên gia tất cả) + chi tiết 1 (van_ban_lien_quan) + tạo 2 (chuyên gia OK/CBCC 403) + sửa 3 (chủ sở hữu/người khác 403/tăng phiên bản) + workflow 4 (happy NHAP→CHO_DUYET→DA_XUAT_BAN, từ chối, CAN_CAP_NHAT, sai bước 400) + xóa soft 1 + internal 1 (cap_nhat_van_ban → CAN_CAP_NHAT)
+  - test_kpi_log.py (10 tests): đọc cá nhân 3 (của mình/người khác 403/admin) + đơn vị 1 (cấu trúc) + internal 4 (ghi log/update UPSERT/bulk/module sai 400) + lãnh đạo 2 (cùng/khác đơn vị)
+  - test_search.py (11 tests): search 9 (KB tsvector, combined, filter module, empty, ranking DESC, snippet, phân trang, min 2 ký tự 422, module chưa tồn tại skip) + suggest 2 (OK, min 2 ký tự 422)
+  - Verify: 64 tests collected, all imports OK
+  - Note: Tests cần PostgreSQL Docker (port 5433) để chạy thực tế — không có DB trong môi trường hiện tại
+- [x] R01: Routing, Nginx & Navigation — chuyển trang chủ sang Portal — 2026-02-24
+  - PHẦN 1 — Redirect sau login:
+    - auth.service.ts: getRedirectUrl() default '/dashboard' → '/tong-quan'
+    - app/page.tsx: root redirect '/login' → '/tong-quan'
+    - Login flow giữ nguyên: POST /api/v1/auth/login → getMe() → loginSuccess() → router.push(getRedirectUrl())
+    - sessionStorage redirect_after_login vẫn hoạt động (session expired → quay lại trang cũ)
+  - PHẦN 2 — Sidebar Navigation:
+    - components/common/Sidebar.tsx (MỚI): sidebar responsive (desktop collapsed/expanded + mobile drawer)
+    - 4 nhóm menu: Tổng quan (1), KPI (4 item giữ nguyên), Nền tảng số (6 item), Hệ thống (2 item) + Quản trị (admin only)
+    - lucide-react icons, active state highlight, user info footer, thu gọn/mở rộng toggle
+    - app/(main)/layout.tsx: flex layout sidebar + content area (flex h-screen overflow-hidden)
+  - PHẦN 3 — Trang Tổng quan: ĐÃ CÓ từ C06 (page.tsx + 6 widgets + Promise.allSettled + auto-refresh 5 phút)
+  - PHẦN 4 — Nginx (production: kpihaiquan.vn / 79.108.216.189):
+    - Backup: /etc/nginx/sites-available/kpi-haiquan.backup.202602241845
+    - nginx/default.conf + /etc/nginx/sites-available/kpi-haiquan: cập nhật đồng bộ
+    - /api/common/ → localhost:8005 (Common backend)
+    - /internal/ → localhost:8005 (restrict: allow 127.0.0.1 + ::1, deny all)
+    - /files/ → local uploads (alias /opt/kpihaiquan/data/uploads/, cache 30d)
+    - /_next/static/ → frontend (cache 365d immutable)
+    - /uploads/legal/ → localhost:8003 (Legal backend)
+    - client_max_body_size 500M (cho video LMS tương lai)
+    - SSL: Certbot managed (/etc/letsencrypt/live/kpihaiquan.vn/)
+    - GIỮ NGUYÊN: /api → KPI backend (8000), /api/v1/{lms,forum,legal,portal}/ → module backends
+    - nginx -t PASS, systemctl reload nginx OK
+    - Verify: curl KPI login → 401 OK, curl / → 200 OK, curl /internal/ → 403 OK
+  - Domain update: kv08.vn → kpihaiquan.vn trong CLAUDE.md, PROGRESS.md, status.md
+  - npm run build PASS — 46 routes, không lỗi
+  - Tất cả route KPI cũ vẫn hoạt động: /dashboard, /ke-khai, /danh-gia, /phe-duyet, /xep-loai, /nghi-phep
+- [x] FIX01: Database Connection Fix — tất cả backend services — 2026-02-24
+  - Root cause: Tất cả 5 service mới chạy từ cwd /root/kpi-haiquan/backend/ (chung .env với KPI)
+    - KPI dùng db_host/db_port/db_user/db_password (separate fields) → .env load OK
+    - 5 service mới dùng database_url (single field) → .env KHÔNG có DATABASE_URL → fall back hardcoded defaults
+    - Defaults sai: postgres:postgres123@localhost:5433 (DB thật: kpi_user:KpiHaiQuan2026!@localhost:5432)
+  - Fix: Sửa config.py 5 service (lms, forum, legal, portal, common) dùng pattern giống KPI:
+    - Thay `database_url: str = "..."` → `db_host/db_port/db_name/db_user/db_password` fields + `@property database_url`
+    - Tự động load từ .env chung (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+    - SECRET_KEY, CORS_ORIGINS cũng load từ .env chung
+  - PM2: Thêm common-backend (port 8005) → 7 processes total
+  - Reset restart counters (pm2 reset all + pm2 save)
+  - Verify: 7/7 services online, 0 restarts, 16+ phút stable
+    - KPI (8000): ✅ online | LMS (8001): /docs 200, /health OK
+    - Forum (8002): /docs 200, /health OK | Legal (8003): /docs 200, /health OK
+    - Portal (8004): /docs 200, /health OK | Common (8005): /docs 200, /health OK
+    - Tất cả DB-hitting endpoints trả đúng (401 Not authenticated = chạy đúng, chỉ thiếu JWT)
 
 ### 22/02/2026
 - [x] Portal Tests COMPLETE — 60/60 PASS, 39% service coverage — 2026-02-22
@@ -277,7 +424,7 @@
 ### Trước đó
 - [x] KPI Backend — 100% production
 - [x] KPI Frontend — 100% production
-- [x] Deploy VPS (kpi.kv08.vn) — HTTPS, PM2, Nginx
+- [x] Deploy VPS (kpihaiquan.vn) — HTTPS, PM2, Nginx
 - [x] Database KPI — 12 bảng, schema public
 - [x] Seed data — 549 công chức, 15 đơn vị
 

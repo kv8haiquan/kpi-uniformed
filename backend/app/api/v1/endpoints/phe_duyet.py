@@ -39,7 +39,7 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.task_catalog import DanhMucSpCongViec, CapDoPhucTap
 from app.models.user_org import CongChuc, DonVi
@@ -339,9 +339,10 @@ async def get_pending_list(
     """
     Lấy danh sách kê khai chờ phê duyệt.
     """
-    # Kiểm tra quyền: Phải là Lãnh đạo hoặc Admin
+    # Kiểm tra quyền: Phải là Lãnh đạo hoặc Admin hoặc QLDV
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
     is_lanh_dao = current_user.is_lanh_dao or False
+    is_qldv_user = is_qldv(current_user)
     
     # Base query
     base_query = (
@@ -364,8 +365,21 @@ async def get_pending_list(
     
     # Phân quyền:
     # - Admin/CCT: Thấy tất cả hoặc filter theo đơn vị
+    # - QLDV: Thấy tất cả kê khai chờ phê duyệt của đơn vị (không filter theo người phê duyệt)
     # - Lãnh đạo thường: Chỉ thấy những bài mình được gán làm người phê duyệt
-    if not is_admin:
+    if is_qldv_user and not is_admin:
+        # QLDV: Lấy tất cả kê khai chờ phê duyệt của đơn vị
+        base_query = (
+            base_query
+            .join(CongChuc, KeKhaiCongViec.cong_chuc_id == CongChuc.id)
+            .where(CongChuc.don_vi_id == current_user.don_vi_id)
+        )
+        count_query = (
+            count_query
+            .join(CongChuc, KeKhaiCongViec.cong_chuc_id == CongChuc.id)
+            .where(CongChuc.don_vi_id == current_user.don_vi_id)
+        )
+    elif not is_admin:
         # Chỉ lấy những kê khai mà current_user được gán làm người phê duyệt
         base_query = base_query.where(KeKhaiCongViec.nguoi_phe_duyet_id == current_user.id)
         count_query = count_query.where(KeKhaiCongViec.nguoi_phe_duyet_id == current_user.id)
@@ -461,10 +475,23 @@ async def xu_ly_phe_duyet(
     """
     Phê duyệt hoặc từ chối một hoặc nhiều kê khai.
     """
+    # Block QLDV: QLDV không có quyền phê duyệt
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_003",
+                    "message": "QLDV không có quyền phê duyệt. Chức năng này chỉ dành cho Lãnh đạo có thẩm quyền."
+                }
+            }
+        )
+
     # Kiểm tra quyền cơ bản: Phải là Lãnh đạo hoặc Admin
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
     is_lanh_dao = current_user.is_lanh_dao or False
-    
+
     if not (is_admin or is_lanh_dao):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -644,6 +671,19 @@ async def xu_ly_phe_duyet_don_le(
     """
     Phê duyệt hoặc từ chối một kê khai cụ thể.
     """
+    # Block QLDV: QLDV không có quyền phê duyệt
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_003",
+                    "message": "QLDV không có quyền phê duyệt. Chức năng này chỉ dành cho Lãnh đạo có thẩm quyền."
+                }
+            }
+        )
+
     # Lấy kê khai
     stmt = (
         select(KeKhaiCongViec)
@@ -797,18 +837,19 @@ async def tra_lai_ke_khai(
     current_user: ActiveUserDep,
 ) -> dict:
     """Trả lại kê khai đã phê duyệt."""
-    # Kiểm tra quyền cơ bản
+    # Kiểm tra quyền cơ bản: Admin, Lãnh đạo, hoặc QLDV
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
     is_lanh_dao = current_user.is_lanh_dao or False
-    
-    if not (is_admin or is_lanh_dao):
+    is_qldv_user = is_qldv(current_user)
+
+    if not (is_admin or is_lanh_dao or is_qldv_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "success": False,
                 "error": {
                     "code": "PERM_003",
-                    "message": "Chỉ Lãnh đạo mới có quyền trả lại kê khai."
+                    "message": "Chỉ Lãnh đạo hoặc QLDV mới có quyền trả lại kê khai."
                 }
             }
         )
@@ -822,7 +863,7 @@ async def tra_lai_ke_khai(
     )
     result = await db.execute(stmt)
     ke_khai = result.scalar_one_or_none()
-    
+
     if not ke_khai:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -831,7 +872,7 @@ async def tra_lai_ke_khai(
                 "error": {"code": "NOT_FOUND", "message": "Không tìm thấy bản kê khai"}
             }
         )
-    
+
     # Kiểm tra trạng thái: chỉ trả lại được khi DA_PHE_DUYET
     if ke_khai.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET:
         raise HTTPException(
@@ -844,19 +885,39 @@ async def tra_lai_ke_khai(
                 }
             }
         )
-    
-    # Kiểm tra quyền: phải là người đã phê duyệt hoặc Admin
-    if not is_admin and ke_khai.nguoi_phe_duyet_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "PERM_003",
-                    "message": "Bạn không phải người đã phê duyệt kê khai này"
+
+    # Kiểm tra quyền:
+    # - Admin: luôn được phép
+    # - Người đã phê duyệt: được phép
+    # - QLDV: được phép nếu cùng đơn vị
+    is_same_don_vi = (ke_khai.cong_chuc and ke_khai.cong_chuc.don_vi_id == current_user.don_vi_id)
+
+    if not is_admin:
+        if is_qldv_user:
+            # QLDV: chỉ được trả lại kê khai của đơn vị mình
+            if not is_same_don_vi:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "success": False,
+                        "error": {
+                            "code": "PERM_003",
+                            "message": "QLDV chỉ được trả lại kê khai của đơn vị mình"
+                        }
+                    }
+                )
+        elif ke_khai.nguoi_phe_duyet_id != current_user.id:
+            # Lãnh đạo thường: chỉ được trả lại kê khai mình đã phê duyệt
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "PERM_003",
+                        "message": "Bạn không phải người đã phê duyệt kê khai này"
+                    }
                 }
-            }
-        )
+            )
     
     # === TRẢ LẠI ===
     ke_khai.trang_thai = TrangThaiKeKhai.NHAP
@@ -901,31 +962,44 @@ async def tra_lai_ke_khai_bulk(
     """Trả lại nhiều kê khai đã phê duyệt."""
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
     is_lanh_dao = current_user.is_lanh_dao or False
-    
-    if not (is_admin or is_lanh_dao):
+    is_qldv_user = is_qldv(current_user)
+
+    if not (is_admin or is_lanh_dao or is_qldv_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"success": False, "error": {"code": "PERM_003", "message": "Chỉ Lãnh đạo"}}
+            detail={"success": False, "error": {"code": "PERM_003", "message": "Chỉ Lãnh đạo hoặc QLDV"}}
         )
     
     stmt = (
         select(KeKhaiCongViec)
+        .options(selectinload(KeKhaiCongViec.cong_chuc))
         .where(KeKhaiCongViec.id.in_(payload.ke_khai_ids))
         .where(KeKhaiCongViec.is_deleted == False)
     )
     result = await db.execute(stmt)
     ke_khai_list = result.scalars().all()
-    
+
     processed_ids = []
     errors = []
-    
+
     for kk in ke_khai_list:
         if kk.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET:
             errors.append(f"KK {kk.id}: không ở trạng thái DA_PHE_DUYET")
             continue
-        if not is_admin and kk.nguoi_phe_duyet_id != current_user.id:
-            errors.append(f"KK {kk.id}: không phải người phê duyệt")
-            continue
+
+        # Kiểm tra quyền
+        if not is_admin:
+            is_same_don_vi = (kk.cong_chuc and kk.cong_chuc.don_vi_id == current_user.don_vi_id)
+
+            if is_qldv_user:
+                # QLDV: chỉ được trả lại kê khai của đơn vị mình
+                if not is_same_don_vi:
+                    errors.append(f"KK {kk.id}: không thuộc đơn vị của QLDV")
+                    continue
+            elif kk.nguoi_phe_duyet_id != current_user.id:
+                # Lãnh đạo thường: chỉ được trả lại kê khai mình đã phê duyệt
+                errors.append(f"KK {kk.id}: không phải người phê duyệt")
+                continue
         
         kk.trang_thai = TrangThaiKeKhai.NHAP
         kk.y_kien_lanh_dao = f"[TRẢ LẠI] {payload.ly_do}"
@@ -983,24 +1057,30 @@ async def get_pending_stats(
     Thống kê kê khai chờ phê duyệt.
     """
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
-    
-    # Base filter
-    base_filter = [
-        KeKhaiCongViec.trang_thai == TrangThaiKeKhai.CHO_PHE_DUYET,
-        KeKhaiCongViec.is_deleted == False,
-    ]
-    
-    if not is_admin:
-        base_filter.append(KeKhaiCongViec.nguoi_phe_duyet_id == current_user.id)
-    
+    is_qldv_user = is_qldv(current_user)
+
     # Query thống kê
     stats_query = (
         select(
             func.count(KeKhaiCongViec.id).label("tong_cho_duyet"),
             func.sum(KeKhaiCongViec.so_sp_goc_quy_doi).label("tong_sp"),
         )
-        .where(and_(*base_filter))
+        .where(KeKhaiCongViec.trang_thai == TrangThaiKeKhai.CHO_PHE_DUYET)
+        .where(KeKhaiCongViec.is_deleted == False)
     )
+
+    # Phân quyền:
+    # - Admin: thống kê tất cả
+    # - QLDV: thống kê đơn vị
+    # - Lãnh đạo: thống kê công việc được gán
+    if is_qldv_user and not is_admin:
+        stats_query = (
+            stats_query
+            .join(CongChuc, KeKhaiCongViec.cong_chuc_id == CongChuc.id)
+            .where(CongChuc.don_vi_id == current_user.don_vi_id)
+        )
+    elif not is_admin:
+        stats_query = stats_query.where(KeKhaiCongViec.nguoi_phe_duyet_id == current_user.id)
     
     result = await db.execute(stats_query)
     row = result.one()
@@ -1029,7 +1109,8 @@ async def get_lich_su_phe_duyet(
     nam: Optional[int] = Query(default=None, ge=2025),
 ) -> dict:
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
-    
+    is_qldv_user = is_qldv(current_user)
+
     base_query = (
         select(KeKhaiCongViec)
         .options(
@@ -1039,7 +1120,7 @@ async def get_lich_su_phe_duyet(
         )
         .where(KeKhaiCongViec.is_deleted == False)
     )
-    
+
     # Filter trạng thái
     if trang_thai == "DA_PHE_DUYET":
         base_query = base_query.where(KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET)
@@ -1049,9 +1130,18 @@ async def get_lich_su_phe_duyet(
         base_query = base_query.where(
             KeKhaiCongViec.trang_thai.in_([TrangThaiKeKhai.DA_PHE_DUYET, TrangThaiKeKhai.TU_CHOI])
         )
-    
-    # Phân quyền: Chỉ lấy kê khai mà current_user đã phê duyệt
-    if not is_admin:
+
+    # Phân quyền:
+    # - Admin: xem tất cả
+    # - QLDV: xem tất cả kê khai đã xử lý của đơn vị
+    # - Lãnh đạo: chỉ xem kê khai mà mình đã phê duyệt
+    if is_qldv_user and not is_admin:
+        base_query = (
+            base_query
+            .join(CongChuc, KeKhaiCongViec.cong_chuc_id == CongChuc.id)
+            .where(CongChuc.don_vi_id == current_user.don_vi_id)
+        )
+    elif not is_admin:
         base_query = base_query.where(KeKhaiCongViec.nguoi_phe_duyet_id == current_user.id)
     
     # Filter đơn vị

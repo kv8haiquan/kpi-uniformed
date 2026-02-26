@@ -74,6 +74,7 @@ class CapBacVaiTro(str, enum.Enum):
     CHI_CUC_TRUONG = "CHI_CUC_TRUONG"          # Cấp 1 - Cao nhất nghiệp vụ
     PHO_CHI_CUC_TRUONG = "PHO_CHI_CUC_TRUONG"  # Cấp 2
     TRUONG_DON_VI = "TRUONG_DON_VI"            # Cấp 3
+    QUAN_LY_DON_VI = "QUAN_LY_DON_VI"          # Cấp 3.5 - QLDV: Read-only TDV + trả lại + export
     PHO_DON_VI = "PHO_DON_VI"                  # Cấp 4
     CONG_CHUC = "CONG_CHUC"                    # Cấp 5
     TCCB = "TCCB"                              # Đặc biệt - Phòng Tổ chức cán bộ

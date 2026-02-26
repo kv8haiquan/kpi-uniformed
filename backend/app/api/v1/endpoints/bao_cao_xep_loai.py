@@ -26,12 +26,12 @@ from typing import Optional, List, Tuple, NamedTuple
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
-from app.models.user_org import CongChuc, DonVi, LoaiDonVi, CapBacVaiTro
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
+from app.models.user_org import CongChuc, DonVi, LoaiDonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_assessment import DanhGiaThang
 from app.models.leader_kpi import KeKhaiLanhDao, DanhGiaDDE, TrangThaiKeKhaiLD, TrangThaiDDE
 from app.models.bao_cao_xep_loai import (
@@ -92,19 +92,24 @@ def check_is_pho_don_vi(user: CongChuc) -> bool:
 
 
 def check_is_lanh_dao_don_vi(user: CongChuc) -> bool:
-    """Kiểm tra user có phải là Lãnh đạo đơn vị (ĐT hoặc Phó ĐT) không."""
+    """
+    Kiểm tra user có phải là Lãnh đạo đơn vị (ĐT hoặc Phó ĐT hoặc QLDV) không.
+    v3.6: Thêm QLDV (read-only)
+    """
     if not user.vai_tro:
         return False
     return user.vai_tro.cap_bac in [
         CapBacVaiTro.TRUONG_DON_VI,
-        CapBacVaiTro.PHO_DON_VI
+        CapBacVaiTro.PHO_DON_VI,
+        CapBacVaiTro.QUAN_LY_DON_VI,  # QLDV
     ]
 
 
 def check_can_view_bao_cao(user: CongChuc) -> bool:
     """
     Kiểm tra user có quyền XEM báo cáo không.
-    Quyền xem: Phó ĐT, ĐT, Phó CCT, CCT, hoặc user có flag can_view_all_units
+    Quyền xem: QLDV, Phó ĐT, ĐT, Phó CCT, CCT, hoặc user có flag can_view_all_units
+    v3.6: Thêm QLDV (read-only với don_vi scope)
     """
     # v1.1.0: User có flag can_view_all_units luôn được xem
     if getattr(user, 'can_view_all_units', False):
@@ -112,6 +117,7 @@ def check_can_view_bao_cao(user: CongChuc) -> bool:
     if not user.vai_tro:
         return False
     return user.vai_tro.cap_bac in [
+        CapBacVaiTro.QUAN_LY_DON_VI,  # QLDV - CHỈ XEM (v3.6)
         CapBacVaiTro.PHO_DON_VI,      # Phó Đội trưởng - CHỈ XEM
         CapBacVaiTro.TRUONG_DON_VI,   # Đội trưởng - XEM + SỬA
         CapBacVaiTro.PHO_CHI_CUC_TRUONG,  # Phó CCT - CHỈ XEM
@@ -122,24 +128,28 @@ def check_can_view_bao_cao(user: CongChuc) -> bool:
 def check_can_edit_bao_cao(user: CongChuc) -> bool:
     """
     Kiểm tra user có quyền CHỈNH SỬA báo cáo không.
-    
+
     Quyền sửa: ĐT (lập báo cáo), CCT (phê duyệt)
+    v3.6: QLDV KHÔNG có quyền sửa (chỉ xem)
     """
     if not user.vai_tro:
         return False
     return user.vai_tro.cap_bac in [
         CapBacVaiTro.TRUONG_DON_VI,   # Đội trưởng - lập báo cáo
         CapBacVaiTro.CHI_CUC_TRUONG,  # CCT - phê duyệt
+        # KHÔNG bao gồm QLDV
     ]
 
 def check_can_approve_bao_cao(user: CongChuc) -> bool:
     """
     Kiểm tra user có quyền PHÊ DUYỆT báo cáo không.
     Quyền duyệt: Chỉ CCT
+    v3.6: QLDV KHÔNG có quyền phê duyệt (chỉ xem)
     """
     if not user.vai_tro:
         return False
     return user.vai_tro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
+    # KHÔNG bao gồm QLDV
 
 
 # =============================================================================
@@ -421,14 +431,20 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
     thang = bao_cao.thang
     nam = bao_cao.nam
     
-    # Lấy danh sách CC trong đơn vị
+    # Lấy danh sách CC trong đơn vị (loại trừ ADMIN và QLDV)
+    _excluded_roles = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
     stmt_cc = (
         select(CongChuc)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(selectinload(CongChuc.vai_tro))
         .where(
             CongChuc.don_vi_id == don_vi_id,
             CongChuc.is_deleted == False,
             CongChuc.is_active == True,
+            or_(
+                CongChuc.vai_tro_id == None,
+                ~VaiTro.cap_bac.in_(_excluded_roles),
+            ),
         )
         .order_by(CongChuc.ho_ten)
     )
@@ -540,19 +556,25 @@ async def tao_bao_cao_xep_loai(
     2. Với mỗi CC, tính điểm dựa vào is_lanh_dao
     3. Tạo bản ghi bao_cao_xep_loai và chi_tiet_xep_loai
     """
-    # Lấy danh sách CC thuộc đơn vị
+    # Lấy danh sách CC thuộc đơn vị (loại trừ ADMIN và QLDV)
+    _excluded = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
     cc_stmt = (
         select(CongChuc)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .where(
             CongChuc.don_vi_id == don_vi_id,
             CongChuc.is_active == True,
             CongChuc.is_deleted == False,
+            or_(
+                CongChuc.vai_tro_id == None,
+                ~VaiTro.cap_bac.in_(_excluded),
+            ),
         )
         .order_by(CongChuc.ho_ten)
     )
     cc_result = await db.execute(cc_stmt)
     cong_chucs = cc_result.scalars().all()
-    
+
     # Tạo báo cáo
     bao_cao = BaoCaoXepLoai(
         don_vi_id=don_vi_id,

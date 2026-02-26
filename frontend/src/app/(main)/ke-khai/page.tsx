@@ -31,7 +31,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { useAuthStore, useIsLanhDao } from '@/stores/useAuthStore';
+import { useAuthStore, useIsLanhDao, useIsQLDV } from '@/stores/useAuthStore';
 import LeaderKeKhaiView from '@/components/ke-khai/LeaderKeKhaiView';
 import { kpiService } from '@/services/kpi.service';
 import { isApiError } from '@/lib/axios';
@@ -45,6 +45,7 @@ import {
   canEditKeKhai,
 } from '@/types/kpi';
 import KpiTargetModal from '@/components/kpi/KpiTargetModal';
+import KpiMultiDayModal from '@/components/kpi/KpiMultiDayModal';
 
 // =============================================================================
 // COMPONENT
@@ -54,6 +55,7 @@ export default function KeKhaiPage() {
   const router = useRouter();
   const { user } = useAuthStore();
   const isLanhDao = useIsLanhDao();
+  const isQldv = useIsQLDV();
 
   // State cho filter tháng/năm - DÙNG CHUNG CHO CẢ 2 VIEW
   const currentDate = new Date();
@@ -88,6 +90,18 @@ export default function KeKhaiPage() {
 
   // v2.7.4: State cho expandable row - xem chi tiết lỗi
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+
+  // v2.8.0: State cho Modal kê khai nhiều ngày
+  const [isMultiDayModalOpen, setIsMultiDayModalOpen] = useState(false);
+
+  // ==========================================================================
+  // QLDV REDIRECT — QLDV không có quyền tạo kê khai
+  // ==========================================================================
+  useEffect(() => {
+    if (isQldv) {
+      router.replace('/dashboard');
+    }
+  }, [isQldv, router]);
 
   // ==========================================================================
   // LOAD DATA - FIX v2.6.0: SỬ DỤNG getAllKeKhaiByMonth()
@@ -426,6 +440,17 @@ export default function KeKhaiPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
                   Thêm công việc
+                </button>
+
+                <button
+                  onClick={() => setIsMultiDayModalOpen(true)}
+                  className="btn-outline"
+                  disabled={summary?.trang_thai_chung === KpiStatus.APPROVED}
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Kê khai nhiều ngày
                 </button>
 
                 {/* FIX v2.6.0: Hiển thị số bản nháp thực tế */}
@@ -855,6 +880,15 @@ export default function KeKhaiPage() {
         }}
         onSuccess={loadData}
         editData={editingKeKhai}
+        thang={selectedThang}
+        nam={selectedNam}
+      />
+
+      {/* Modal kê khai nhiều ngày */}
+      <KpiMultiDayModal
+        isOpen={isMultiDayModalOpen}
+        onClose={() => setIsMultiDayModalOpen(false)}
+        onSuccess={loadData}
         thang={selectedThang}
         nam={selectedNam}
       />

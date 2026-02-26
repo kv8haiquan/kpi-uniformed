@@ -23,10 +23,10 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.leader_kpi import (
-    KeKhaiLanhDao, 
-    TrangThaiKeKhaiLD, 
+    KeKhaiLanhDao,
+    TrangThaiKeKhaiLD,
     TrangThaiHoanThanh
 )
 from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro
@@ -183,12 +183,13 @@ async def get_ke_khai_cho_phe_duyet(
 ) -> dict:
     """
     Lấy danh sách kê khai công việc Lãnh đạo chờ tôi phê duyệt.
-    
-    Logic: 
+
+    Logic:
     - Lấy các kê khai có nguoi_phe_duyet_id = current_user.id
     - Và trang_thai = CHO_PHE_DUYET
+    - QLDV chỉ xem, KHÔNG phê duyệt
     """
-    if not check_is_lanh_dao(current_user):
+    if not check_is_lanh_dao(current_user) and not is_qldv(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
     
     stmt = (
@@ -226,14 +227,15 @@ async def get_thong_ke(db: DatabaseDep, current_user: ActiveUserDep,
     thang: int = Query(..., ge=1, le=12), nam: int = Query(..., ge=2025)) -> dict:
     """
     Thống kê kê khai theo tháng cho Lãnh đạo.
-    
+
     v2.6.3 UPDATE: Thêm fields tạm tính để hỗ trợ 2-tab UI
-    
+
     **Response mới:**
     - Chính thức (chỉ DA_PHE_DUYET): tong_da_duyet, tong_hoan_thanh, tong_dat_chat_luong, tong_dung_tien_do
     - Tạm tính (tất cả): tam_tinh_*, dùng để hiển thị tab "Tạm tính" trước khi duyệt
+    - QLDV chỉ xem thống kê
     """
-    if not check_is_lanh_dao(current_user):
+    if not check_is_lanh_dao(current_user) and not is_qldv(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
     
     stmt = select(KeKhaiLanhDao).where(
@@ -367,8 +369,8 @@ async def get_ke_khai_lanh_dao(
     thang: int = Query(..., ge=1, le=12), nam: int = Query(..., ge=2025),
     trang_thai: Optional[str] = Query(default=None),
 ) -> dict:
-    """Lấy danh sách kê khai công việc của Lãnh đạo (của chính mình)."""
-    if not check_is_lanh_dao(current_user):
+    """Lấy danh sách kê khai công việc của Lãnh đạo (của chính mình). QLDV chỉ xem."""
+    if not check_is_lanh_dao(current_user) and not is_qldv(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
     
     stmt = select(KeKhaiLanhDao).options(selectinload(KeKhaiLanhDao.nguoi_phe_duyet)).where(
@@ -392,7 +394,11 @@ async def get_ke_khai_lanh_dao(
 async def create_ke_khai_lanh_dao(
     db: DatabaseDep, current_user: ActiveUserDep, payload: KeKhaiLanhDaoCreate,
 ) -> dict:
-    """Tạo kê khai công việc mới cho Lãnh đạo."""
+    """Tạo kê khai công việc mới cho Lãnh đạo. QLDV KHÔNG được tạo."""
+    # QLDV không có quyền tạo
+    if is_qldv(current_user):
+        raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="QLDV không có quyền tạo kê khai"))
+
     if not check_is_lanh_dao(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
     
@@ -442,7 +448,11 @@ async def create_ke_khai_lanh_dao(
 async def update_ke_khai_lanh_dao(
     db: DatabaseDep, current_user: ActiveUserDep, ke_khai_id: UUID, payload: KeKhaiLanhDaoUpdate,
 ) -> dict:
-    """Cập nhật kê khai. Chỉ được sửa khi trạng thái = NHAP hoặc TU_CHOI."""
+    """Cập nhật kê khai. Chỉ được sửa khi trạng thái = NHAP hoặc TU_CHOI. QLDV KHÔNG được sửa."""
+    # QLDV không có quyền sửa
+    if is_qldv(current_user):
+        raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="QLDV không có quyền cập nhật kê khai"))
+
     stmt = select(KeKhaiLanhDao).where(
         KeKhaiLanhDao.id == ke_khai_id, KeKhaiLanhDao.cong_chuc_id == current_user.id,
         KeKhaiLanhDao.is_deleted == False,
@@ -485,7 +495,11 @@ async def update_ke_khai_lanh_dao(
 
 @router.delete("/{ke_khai_id}")
 async def delete_ke_khai_lanh_dao(db: DatabaseDep, current_user: ActiveUserDep, ke_khai_id: UUID) -> dict:
-    """Xóa kê khai (soft delete). Chỉ được xóa khi trạng thái = NHAP hoặc TU_CHOI."""
+    """Xóa kê khai (soft delete). Chỉ được xóa khi trạng thái = NHAP hoặc TU_CHOI. QLDV KHÔNG được xóa."""
+    # QLDV không có quyền xóa
+    if is_qldv(current_user):
+        raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="QLDV không có quyền xóa kê khai"))
+
     stmt = select(KeKhaiLanhDao).where(
         KeKhaiLanhDao.id == ke_khai_id, KeKhaiLanhDao.cong_chuc_id == current_user.id,
         KeKhaiLanhDao.is_deleted == False,
@@ -507,7 +521,11 @@ async def delete_ke_khai_lanh_dao(db: DatabaseDep, current_user: ActiveUserDep, 
 
 @router.post("/{ke_khai_id}/gui-duyet")
 async def gui_duyet_ke_khai(db: DatabaseDep, current_user: ActiveUserDep, ke_khai_id: UUID, payload: GuiDuyetRequest) -> dict:
-    """Gửi kê khai để phê duyệt."""
+    """Gửi kê khai để phê duyệt. QLDV KHÔNG được gửi duyệt."""
+    # QLDV không có quyền gửi duyệt
+    if is_qldv(current_user):
+        raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="QLDV không có quyền gửi phê duyệt"))
+
     stmt = select(KeKhaiLanhDao).where(
         KeKhaiLanhDao.id == ke_khai_id, KeKhaiLanhDao.cong_chuc_id == current_user.id,
         KeKhaiLanhDao.is_deleted == False,
@@ -543,7 +561,7 @@ async def phe_duyet_ke_khai_lanh_dao(
 ) -> dict:
     """
     Phê duyệt hoặc từ chối kê khai công việc Lãnh đạo.
-    
+
     Payload:
     {
         "action": "APPROVE" | "REJECT",
@@ -551,7 +569,13 @@ async def phe_duyet_ke_khai_lanh_dao(
         "so_loi_tien_do": 0,     // Chỉ khi APPROVE
         "y_kien": "..."          // Optional
     }
+
+    QLDV KHÔNG có quyền phê duyệt.
     """
+    # QLDV không có quyền phê duyệt
+    if is_qldv(current_user):
+        raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="QLDV không có quyền phê duyệt"))
+
     # Lấy kê khai (kèm relationship)
     stmt = (
         select(KeKhaiLanhDao)
@@ -670,16 +694,17 @@ async def get_ke_khai_ld_cong_chuc(
     """
     Xem kê khai công việc lãnh đạo của một CC cụ thể.
     Dùng trong modal Chi tiết CC của Báo cáo xếp loại.
-    
-    Quyền: Lãnh đạo cấp trên hoặc Admin.
+
+    Quyền: Lãnh đạo cấp trên hoặc Admin hoặc QLDV (cùng đơn vị).
     """
     # Kiểm tra quyền
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
     cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
     is_cct = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
     is_tdv = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
-    
-    if not (is_admin or is_cct or is_tdv):
+    is_quan_ly_dv = is_qldv(current_user)
+
+    if not (is_admin or is_cct or is_tdv or is_quan_ly_dv):
         raise HTTPException(status_code=403, detail=error_response(
             code="PERM_001", message="Không có quyền xem kê khai của lãnh đạo khác"
         ))

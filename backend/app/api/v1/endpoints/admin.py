@@ -228,6 +228,38 @@ async def get_admin_stats(
 
 
 # =============================================================================
+# VAI TRÒ - DANH SÁCH VAI TRÒ
+# =============================================================================
+
+@router.get(
+    "/vai-tro",
+    summary="Danh sách tất cả vai trò",
+)
+async def get_vai_tro_list(
+    db: DatabaseDep,
+    admin: AdminUserDep,
+) -> dict:
+    """Lấy danh sách tất cả vai trò từ bảng vai_tro (bao gồm QLDV)."""
+    stmt = select(VaiTro).where(VaiTro.is_active == True).order_by(VaiTro.created_at)
+    result = await db.execute(stmt)
+    vai_tro_list = result.scalars().all()
+
+    data = [
+        {
+            "id": str(vt.id),
+            "ma_vai_tro": vt.ma_vai_tro,
+            "ten_vai_tro": vt.ten_vai_tro,
+            "cap_bac": vt.cap_bac.value if vt.cap_bac else None,
+            "is_lanh_dao": vt.is_lanh_dao,
+            "is_system_admin": vt.is_system_admin,
+        }
+        for vt in vai_tro_list
+    ]
+
+    return success_response(data=data, message="Danh sách vai trò")
+
+
+# =============================================================================
 # USER MANAGEMENT - LIST & DETAIL
 # =============================================================================
 

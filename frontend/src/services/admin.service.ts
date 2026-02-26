@@ -436,48 +436,31 @@ export const adminService = {
   },
 
   /**
-   * Lấy danh sách vai trò
-   * NOTE: Backend không có endpoint /vai-tro riêng
-   * Lấy từ danh sách users và extract unique vai trò
+   * Lấy danh sách vai trò từ API endpoint GET /admin/vai-tro
    */
   async getVaiTroList(): Promise<IVaiTroOption[]> {
     try {
-      // Lấy danh sách users để extract vai trò
-      const response = await apiClient.get(`${ADMIN_URL}/users`, { 
-        params: { page_size: 100 } 
-      });
-      
-      const users = response.data.data || [];
-      const vaiTroMap = new Map<string, IVaiTroOption>();
-      
-      users.forEach((user: IUserResponse) => {
-        if (user.vai_tro_id && user.vai_tro_ma && !vaiTroMap.has(user.vai_tro_id)) {
-          vaiTroMap.set(user.vai_tro_id, {
-            id: user.vai_tro_id,
-            ma_vai_tro: user.vai_tro_ma,
-            ten_vai_tro: user.vai_tro_ten || user.vai_tro_ma,
-            is_lanh_dao: user.is_lanh_dao,
-          });
-        }
-      });
-      
-      // Sắp xếp theo thứ tự: CC, PDV, TDV, PCCT, CCT
-      const order = ['CC', 'PDV', 'TDV', 'PCCT', 'CCT', 'ADMIN'];
-      return Array.from(vaiTroMap.values()).sort((a, b) => {
+      const response = await apiClient.get(`${ADMIN_URL}/vai-tro`);
+      const data = response.data.data || [];
+
+      // Map API response sang IVaiTroOption
+      const vaiTroList: IVaiTroOption[] = data.map((vt: any) => ({
+        id: vt.id,
+        ma_vai_tro: vt.ma_vai_tro,
+        ten_vai_tro: vt.ten_vai_tro,
+        is_lanh_dao: vt.is_lanh_dao,
+      }));
+
+      // Sắp xếp theo thứ tự: CC, QLDV, PDV, TDV, PCCT, CCT, ADMIN
+      const order = ['CC', 'QLDV', 'PDV', 'TDV', 'PCCT', 'CCT', 'ADMIN', 'TCCB'];
+      return vaiTroList.sort((a, b) => {
         const aIdx = order.indexOf(a.ma_vai_tro);
         const bIdx = order.indexOf(b.ma_vai_tro);
-        return aIdx - bIdx;
+        return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
       });
     } catch (error) {
       console.error('Error loading vai tro:', error);
-      // Fallback về hardcode nếu lỗi
-      return [
-        { id: 'CC', ma_vai_tro: 'CC', ten_vai_tro: 'Công chức', is_lanh_dao: false },
-        { id: 'PDV', ma_vai_tro: 'PDV', ten_vai_tro: 'Phó Đội trưởng', is_lanh_dao: true },
-        { id: 'TDV', ma_vai_tro: 'TDV', ten_vai_tro: 'Đội trưởng', is_lanh_dao: true },
-        { id: 'PCCT', ma_vai_tro: 'PCCT', ten_vai_tro: 'Phó Chi cục trưởng', is_lanh_dao: true },
-        { id: 'CCT', ma_vai_tro: 'CCT', ten_vai_tro: 'Chi cục trưởng', is_lanh_dao: true },
-      ];
+      return [];
     }
   },
 };

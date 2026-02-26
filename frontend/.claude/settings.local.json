@@ -11,7 +11,12 @@
       "Bash(ls /d/kpi-haiquan/kpi-haiquan-kv8/backend/.env* 2>/dev/null && ls /d/kpi-haiquan/kpi-haiquan-kv8/backend/legal_service/.env* 2>/dev/null)",
       "Bash(cd /d/kpi-haiquan/kpi-haiquan-kv8/backend && python -m pytest legal_service/tests/test_van_ban_crud.py::TestVanBanList::test_danh_sach_pagination legal_service/tests/test_van_ban_crud.py::TestVanBanDelete::test_xoa_van_ban_nhap_ok -v --tb=short 2>&1)",
       "Bash(cd:*)",
-      "Bash(cd /d/kpi-haiquan/kpi-haiquan-kv8/backend && python -m pytest legal_service/tests/ --cov=legal_service --cov-report=term-missing --tb=no -q 2>&1)"
+      "Bash(cd /d/kpi-haiquan/kpi-haiquan-kv8/backend && python -m pytest legal_service/tests/ --cov=legal_service --cov-report=term-missing --tb=no -q 2>&1)",
+      "Bash(cat \"/root/kpi-haiquan/frontend/src/app/\\(auth\\)/layout.tsx\")",
+      "Bash(cat /root/kpi-haiquan/frontend/src/app/\\\\\\(main\\\\\\)/tong-quan/components/WidgetThongBao.tsx)",
+      "Bash(cat \"/root/kpi-haiquan/frontend/src/app/\\(main\\)/tong-quan/page.tsx\" | head -100)",
+      "Bash(pip3 show pytest pytest-asyncio httpx 2>&1 | grep -E \"^\\(Name|Version\\)\")",
+      "Bash(echo \"========== 1. DATABASE CONNECTION ==========\" && cat /root/kpi-haiquan/backend/.env 2>/dev/null && echo \"\" && echo \"========== 2. PM2 STATUS ==========\" && pm2 status 2>&1)"
     ]
   }
 }

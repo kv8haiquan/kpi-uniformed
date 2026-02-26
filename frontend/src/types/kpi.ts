@@ -361,3 +361,43 @@ export function canEditKeKhai(status: KpiStatus): boolean {
 export function canSubmitKeKhai(status: KpiStatus): boolean {
   return status === KpiStatus.DRAFT;
 }
+
+
+// =============================================================================
+// KÊ KHAI NHIỀU NGÀY (Multi-day Declaration)
+// =============================================================================
+
+/**
+ * Request tạo kê khai cho nhiều ngày cùng lúc.
+ */
+export interface IKeKhaiNhieuNgayRequest {
+  danh_muc_sp_id: string;
+  cap_do_id: string;
+  so_luong: number;
+  ngay_thuc_hien_list: string[]; // ISO date strings
+  nguoi_phe_duyet_id?: string;
+  mo_ta_cong_viec?: string;
+  he_so_thuc_te?: number;
+  is_doi_moi_sang_tao?: boolean;
+  tu_danh_gia_chat_luong?: number;
+  tu_danh_gia_tien_do?: number;
+  ghi_chu_tu_danh_gia?: string;
+}
+
+/**
+ * Response sau khi tạo kê khai nhiều ngày.
+ */
+export interface IKeKhaiNhieuNgayResponse {
+  total_created: number;
+  ke_khai_ids: string[];
+  thang: number;
+  nam: number;
+}
+
+/**
+ * Request gửi duyệt nhiều kê khai cùng lúc.
+ */
+export interface IGuiDuyetBulkRequest {
+  ke_khai_ids: string[];
+  nguoi_phe_duyet_id: string;
+}

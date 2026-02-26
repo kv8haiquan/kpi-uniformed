@@ -32,7 +32,7 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.task_catalog import DanhMucSpCongViec, CapDoPhucTap, SpCongViecChuan
 from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro
@@ -49,6 +49,9 @@ from app.schemas.kpi_submission import (
     KeKhaiResponse,
     ThongKeKeKhaiResponse,
     GuiDuyetRequest,
+    KeKhaiNhieuNgayCreate,
+    KeKhaiNhieuNgayResponse,
+    GuiDuyetBulkRequest,
 )
 
 
@@ -831,6 +834,233 @@ async def get_ke_khai_list(
 
 
 # =============================================================================
+# KÊ KHAI NHIỀU NGÀY (Multi-day Declaration)
+# IMPORTANT: Đặt trước /{ke_khai_id} để tránh FastAPI path matching issue
+# =============================================================================
+
+@router.post(
+    "/nhieu-ngay",
+    summary="Tạo kê khai cho nhiều ngày cùng lúc",
+    description="""
+    Tạo nhiều bản kê khai cùng công việc, cùng cấp độ cho nhiều ngày.
+    Mỗi ngày trong danh sách sẽ tạo 1 bản kê khai riêng.
+
+    **Validation:**
+    - Tất cả ngày phải cùng tháng/năm
+    - Không cho trùng ngày
+    - Không cho ngày tương lai
+    - Tối đa 31 ngày
+
+    **Quyền truy cập:** Tất cả user đã đăng nhập (trừ QLDV).
+    """,
+    response_model=DataResponse[KeKhaiNhieuNgayResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def ke_khai_nhieu_ngay(
+    payload: KeKhaiNhieuNgayCreate,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """Tạo kê khai cho nhiều ngày cùng lúc."""
+    # QLDV không có quyền tạo kê khai
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_QLDV",
+                    "message": "QLDV không có quyền tạo kê khai"
+                }
+            }
+        )
+
+    # Tính điểm KPI quy đổi (chung cho tất cả ngày)
+    so_sp_goc_quy_doi, ma_sp = await calculate_kpi_score(
+        db=db,
+        danh_muc_sp_id=payload.danh_muc_sp_id,
+        cap_do_id=payload.cap_do_id,
+        so_luong=payload.so_luong,
+        he_so_thuc_te=payload.he_so_thuc_te,
+    )
+
+    # Lấy tháng/năm từ ngày đầu tiên
+    first_date = payload.ngay_thuc_hien_list[0]
+    thang = first_date.month
+    nam = first_date.year
+
+    # Tạo N bản kê khai
+    created_records = []
+    for ngay in payload.ngay_thuc_hien_list:
+        ke_khai = KeKhaiCongViec(
+            cong_chuc_id=current_user.id,
+            thang=thang,
+            nam=nam,
+            ngay_thuc_hien=ngay,
+            danh_muc_sp_id=payload.danh_muc_sp_id,
+            cap_do_id=payload.cap_do_id,
+            so_luong=payload.so_luong,
+            he_so_thuc_te=payload.he_so_thuc_te,
+            nguoi_phe_duyet_id=payload.nguoi_phe_duyet_id,
+            mo_ta_cong_viec=payload.mo_ta_cong_viec,
+            is_doi_moi_sang_tao=payload.is_doi_moi_sang_tao,
+            trang_thai=TrangThaiKeKhai.NHAP,
+            so_sp_goc_quy_doi=so_sp_goc_quy_doi,
+            tu_danh_gia_chat_luong=payload.tu_danh_gia_chat_luong,
+            tu_danh_gia_tien_do=payload.tu_danh_gia_tien_do,
+            ghi_chu_tu_danh_gia=payload.ghi_chu_tu_danh_gia,
+        )
+        db.add(ke_khai)
+        created_records.append(ke_khai)
+
+    try:
+        await db.flush()
+        ke_khai_ids = [kk.id for kk in created_records]
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "CREATE_FAILED",
+                    "message": f"Không thể tạo kê khai nhiều ngày: {str(e)}"
+                }
+            }
+        )
+
+    return success_response(
+        data={
+            "total_created": len(ke_khai_ids),
+            "ke_khai_ids": ke_khai_ids,
+            "thang": thang,
+            "nam": nam,
+        },
+        message=f"Đã tạo {len(ke_khai_ids)} bản kê khai cho tháng {thang}/{nam}"
+    )
+
+
+@router.post(
+    "/gui-duyet-bulk",
+    summary="Gửi duyệt nhiều kê khai cùng lúc",
+    description="""
+    Chuyển trạng thái nhiều kê khai từ NHAP → CHO_PHE_DUYET.
+
+    **Validation:**
+    - Tất cả kê khai phải thuộc current_user
+    - Tất cả phải ở trạng thái NHAP
+
+    **Quyền truy cập:** Chủ sở hữu.
+    """,
+    response_model=DataResponse[dict],
+)
+async def gui_duyet_bulk(
+    payload: GuiDuyetBulkRequest,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """Gửi duyệt nhiều kê khai cùng lúc."""
+    stmt = (
+        select(KeKhaiCongViec)
+        .where(KeKhaiCongViec.id.in_(payload.ke_khai_ids))
+        .where(KeKhaiCongViec.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    ke_khai_list = result.scalars().all()
+
+    if not ke_khai_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Không tìm thấy bản kê khai nào"
+                }
+            }
+        )
+
+    # Kiểm tra người phê duyệt tồn tại
+    npd_stmt = (
+        select(CongChuc)
+        .where(CongChuc.id == payload.nguoi_phe_duyet_id)
+        .where(CongChuc.is_deleted == False)
+        .where(CongChuc.is_active == True)
+    )
+    npd_result = await db.execute(npd_stmt)
+    nguoi_phe_duyet = npd_result.scalar_one_or_none()
+
+    if not nguoi_phe_duyet:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "INVALID_APPROVER",
+                    "message": "Người phê duyệt không tồn tại hoặc không hoạt động"
+                }
+            }
+        )
+
+    processed_ids = []
+    errors = []
+
+    for kk in ke_khai_list:
+        if kk.cong_chuc_id != current_user.id:
+            errors.append(f"KK {kk.id}: không phải kê khai của bạn")
+            continue
+        if kk.trang_thai != TrangThaiKeKhai.NHAP:
+            errors.append(f"KK {kk.id}: không ở trạng thái NHAP (hiện: {kk.trang_thai.value})")
+            continue
+
+        kk.nguoi_phe_duyet_id = payload.nguoi_phe_duyet_id
+        kk.trang_thai = TrangThaiKeKhai.CHO_PHE_DUYET
+        processed_ids.append(kk.id)
+
+    if not processed_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PROCESS_FAILED",
+                    "message": "Không gửi duyệt được bản nào",
+                    "details": errors,
+                }
+            }
+        )
+
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "DB_ERROR",
+                    "message": f"Lỗi khi gửi duyệt: {str(e)}"
+                }
+            }
+        )
+
+    response_data = {
+        "processed_count": len(processed_ids),
+        "ke_khai_ids": processed_ids,
+        "trang_thai_moi": "CHO_PHE_DUYET",
+    }
+    if errors:
+        response_data["warnings"] = errors
+
+    return success_response(
+        data=response_data,
+        message=f"Đã gửi duyệt {len(processed_ids)} bản kê khai"
+    )
+
+
+# =============================================================================
 # GET KE KHAI BY ID
 # =============================================================================
 
@@ -889,12 +1119,14 @@ async def get_ke_khai_detail(
             }
         )
     
-    # Kiểm tra quyền xem: chủ sở hữu hoặc người phê duyệt
+    # Kiểm tra quyền xem: chủ sở hữu, người phê duyệt, QLDV cùng đơn vị, hoặc Admin
     is_owner = ke_khai.cong_chuc_id == current_user.id
     is_approver = ke_khai.nguoi_phe_duyet_id == current_user.id
     is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
-    
-    if not (is_owner or is_approver or is_admin):
+    is_qldv_user = is_qldv(current_user)
+    is_same_don_vi = (ke_khai.cong_chuc and ke_khai.cong_chuc.don_vi_id == current_user.don_vi_id)
+
+    if not (is_owner or is_approver or is_admin or (is_qldv_user and is_same_don_vi)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -948,6 +1180,19 @@ async def create_ke_khai(
     """
     Tạo bản kê khai công việc mới.
     """
+    # Block QLDV: QLDV không có quyền tạo kê khai
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_003",
+                    "message": "QLDV không có quyền tạo kê khai. Chức năng này chỉ dành cho Công chức."
+                }
+            }
+        )
+
     # Xác định tháng/năm
     if payload.ngay_thuc_hien:
         thang = payload.ngay_thuc_hien.month

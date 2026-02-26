@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.core.security import decode_access_token
 from app.db.session import AsyncSessionLocal
-from app.models.user_org import CongChuc, VaiTro, DonVi
+from app.models.user_org import CongChuc, VaiTro, DonVi, CapBacVaiTro
 from app.schemas.token import TokenPayload
 
 
@@ -349,3 +349,13 @@ def require_leader():
         return current_user
     
     return leader_checker
+
+
+def is_qldv(user: CongChuc) -> bool:
+    """
+    Kiểm tra user có vai trò Quản lý Đơn vị (QLDV).
+    QLDV = read-only TDV + trả lại + export, KHÔNG có quyền phê duyệt.
+    """
+    if not user.vai_tro:
+        return False
+    return user.vai_tro.cap_bac == CapBacVaiTro.QUAN_LY_DON_VI

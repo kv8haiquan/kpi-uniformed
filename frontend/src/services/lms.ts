@@ -13,7 +13,7 @@ import type { IChuyenDeCreate, IChuyenDeUpdate, IBaiHocCreate, ICauHoiCreate, IB
 // AXIOS INSTANCE cho LMS
 // =============================================================================
 
-const LMS_API_URL = process.env.NEXT_PUBLIC_LMS_API_URL || 'http://localhost:8001/api/v1/lms';
+const LMS_API_URL = process.env.NEXT_PUBLIC_LMS_API_URL || '/api/v1/lms';
 const TOKEN_KEY = 'kpi_access_token';
 
 const lmsApi: AxiosInstance = axios.create({

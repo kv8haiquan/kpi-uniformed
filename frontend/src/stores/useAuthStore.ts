@@ -158,6 +158,14 @@ export const useIsAdmin = () => {
 };
 
 /**
+ * Hook kiểm tra user có phải QLDV (Quản lý Đơn vị) không.
+ */
+export const useIsQLDV = () => {
+  const user = useAuthStore((state) => state.user);
+  return user?.vai_tro?.ma_vai_tro === 'QLDV';
+};
+
+/**
  * Hook lấy tên đơn vị của user.
  */
 export const useUserDonVi = () => {

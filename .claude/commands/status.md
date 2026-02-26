@@ -31,7 +31,7 @@ Kiểm tra trạng thái dự án: $ARGUMENTS
 ```
 📊 TRẠNG THÁI DỰ ÁN — [ngày]
 
-KPI:     ✅ Production (kpi.kv08.vn)
+KPI:     ✅ Production (kpihaiquan.vn)
 LMS:     🔄 Backend X/11 endpoints | Frontend X/Y pages | Tests: X pass
 Forum:   ⏳ Chưa bắt đầu
 Legal:   ⏳ Chưa bắt đầu

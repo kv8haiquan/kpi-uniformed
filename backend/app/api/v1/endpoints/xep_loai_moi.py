@@ -23,7 +23,7 @@ from sqlalchemy import select, func, and_, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChungDanhGia,
@@ -168,46 +168,63 @@ async def get_tong_hop_xep_loai(
     cap_bac = None
     if current_user.vai_tro:
         cap_bac = current_user.vai_tro.cap_bac
-    
+
     has_view_all = getattr(current_user, 'can_view_all_units', False)
     is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG] or has_view_all
     is_lanh_dao_don_vi = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
-    if not (is_lanh_dao_chi_cuc or is_lanh_dao_don_vi):
+    is_quan_ly_dv = is_qldv(current_user)
+
+    if not (is_lanh_dao_chi_cuc or is_lanh_dao_don_vi or is_quan_ly_dv):
         raise HTTPException(
             status_code=403,
             detail=error_response(code="PERM_001", message="Chỉ lãnh đạo mới được xem tổng hợp xếp loại")
         )
-    
+
     # Xác định đơn vị cần lọc
     filter_don_vi_id = None
     if is_lanh_dao_chi_cuc:
         # CCT/PCCT có thể xem tất cả hoặc lọc theo đơn vị
         filter_don_vi_id = don_vi_id
     else:
-        # ĐT/PĐT chỉ xem đơn vị mình
+        # ĐT/PĐT/QLDV chỉ xem đơn vị mình
         filter_don_vi_id = current_user.don_vi_id
     
-    # Query danh sách CC
+    # Query danh sách CC (loại trừ ADMIN và QLDV khỏi báo cáo)
+    _excluded_roles = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
     stmt_cc = (
         select(CongChuc)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(
             selectinload(CongChuc.don_vi),
             selectinload(CongChuc.vai_tro),
         )
         .where(CongChuc.is_deleted == False)
         .where(CongChuc.is_active == True)
+        .where(
+            or_(
+                CongChuc.vai_tro_id == None,
+                ~VaiTro.cap_bac.in_(_excluded_roles),
+            )
+        )
     )
-    
+
     if filter_don_vi_id:
         stmt_cc = stmt_cc.where(CongChuc.don_vi_id == filter_don_vi_id)
-    
+
     stmt_cc = stmt_cc.order_by(CongChuc.ho_ten)
-    
-    # Count total
+
+    # Count total (cũng loại trừ ADMIN và QLDV)
     count_stmt = (
         select(func.count(CongChuc.id))
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .where(CongChuc.is_deleted == False)
         .where(CongChuc.is_active == True)
+        .where(
+            or_(
+                CongChuc.vai_tro_id == None,
+                ~VaiTro.cap_bac.in_(_excluded_roles),
+            )
+        )
     )
     if filter_don_vi_id:
         count_stmt = count_stmt.where(CongChuc.don_vi_id == filter_don_vi_id)
@@ -336,7 +353,7 @@ async def get_chi_tiet_xep_loai(
     
     is_self = cong_chuc_id == current_user.id
     has_view_all = getattr(current_user, 'can_view_all_units', False)
-    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG] or has_view_all    
+    is_lanh_dao_chi_cuc = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG] or has_view_all
     # Lấy thông tin CC
     stmt_cc = (
         select(CongChuc)
@@ -345,14 +362,15 @@ async def get_chi_tiet_xep_loai(
     )
     result_cc = await db.execute(stmt_cc)
     cc = result_cc.scalar_one_or_none()
-    
+
     if not cc:
         raise HTTPException(status_code=404, detail=error_response(code="NOT_FOUND", message="Công chức không tồn tại"))
-    
+
     is_same_don_vi = cc.don_vi_id == current_user.don_vi_id
     is_lanh_dao_don_vi = is_same_don_vi and cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
-    
-    if not (is_self or is_lanh_dao_chi_cuc or is_lanh_dao_don_vi):
+    is_quan_ly_dv = is_same_don_vi and is_qldv(current_user)
+
+    if not (is_self or is_lanh_dao_chi_cuc or is_lanh_dao_don_vi or is_quan_ly_dv):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_001", message="Không có quyền xem"))
     
     # Lấy đánh giá tháng
@@ -501,10 +519,17 @@ async def khoa_du_lieu(
     cap_bac = None
     if current_user.vai_tro:
         cap_bac = current_user.vai_tro.cap_bac
-    
+
     is_cct = cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
     is_dt = cap_bac == CapBacVaiTro.TRUONG_DON_VI
-    
+
+    # QLDV không có quyền khóa
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_001", message="QLDV không có quyền khóa dữ liệu")
+        )
+
     if not (is_cct or is_dt):
         raise HTTPException(
             status_code=403,
@@ -604,7 +629,14 @@ async def mo_khoa_du_lieu(
     cap_bac = None
     if current_user.vai_tro:
         cap_bac = current_user.vai_tro.cap_bac
-    
+
+    # QLDV không có quyền mở khóa
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_001", message="QLDV không có quyền mở khóa dữ liệu")
+        )
+
     if cap_bac != CapBacVaiTro.CHI_CUC_TRUONG:
         raise HTTPException(
             status_code=403,

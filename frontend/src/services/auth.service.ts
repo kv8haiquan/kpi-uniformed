@@ -137,18 +137,18 @@ class AuthService {
    * Lấy URL redirect sau khi login (nếu có).
    * Dùng khi user bị redirect về login do session expired.
    *
-   * @returns URL để redirect hoặc '/dashboard'
+   * @returns URL để redirect hoặc '/tong-quan'
    */
   getRedirectUrl(): string {
-    if (typeof window === 'undefined') return '/dashboard';
-    
+    if (typeof window === 'undefined') return '/tong-quan';
+
     const redirectUrl = sessionStorage.getItem('redirect_after_login');
     if (redirectUrl) {
       sessionStorage.removeItem('redirect_after_login');
       return redirectUrl;
     }
-    
-    return '/dashboard';
+
+    return '/tong-quan';
   }
 }
 

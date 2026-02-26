@@ -496,3 +496,73 @@ class KeKhaiFilterParams(BaseModel):
         default=None,
         description="Filter các bản kê khai có lỗi (tự đánh giá hoặc lãnh đạo chốt)"
     )
+
+
+# =============================================================================
+# KÊ KHAI NHIỀU NGÀY (Multi-day Declaration)
+# =============================================================================
+
+class KeKhaiNhieuNgayCreate(BaseModel):
+    """
+    Schema tạo kê khai cho nhiều ngày cùng lúc.
+    Cùng công việc, cùng cấp độ, cùng số lượng — nhưng mỗi ngày 1 bản kê khai.
+    """
+    danh_muc_sp_id: UUID = Field(..., description="ID công việc trong danh mục")
+    cap_do_id: UUID = Field(..., description="ID cấp độ phức tạp")
+    so_luong: int = Field(..., ge=1, description="Số lượng công việc mỗi ngày")
+    ngay_thuc_hien_list: List[date] = Field(
+        ...,
+        min_length=1,
+        max_length=31,
+        description="Danh sách ngày thực hiện (cùng tháng/năm)"
+    )
+    nguoi_phe_duyet_id: Optional[UUID] = Field(default=None, description="ID người phê duyệt")
+    mo_ta_cong_viec: Optional[str] = Field(default=None, max_length=2000, description="Mô tả công việc")
+    he_so_thuc_te: Optional[Decimal] = Field(default=None, ge=0, description="Hệ số thực tế (C5)")
+    is_doi_moi_sang_tao: bool = Field(default=False, description="Có đổi mới sáng tạo")
+    tu_danh_gia_chat_luong: int = Field(default=0, ge=0, description="Số lỗi CL tự đánh giá")
+    tu_danh_gia_tien_do: int = Field(default=0, ge=0, description="Số lỗi TĐ tự đánh giá")
+    ghi_chu_tu_danh_gia: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("ngay_thuc_hien_list")
+    @classmethod
+    def validate_ngay_list(cls, v: List[date]) -> List[date]:
+        """Validate: cùng tháng/năm, không trùng, không tương lai."""
+        if not v:
+            raise ValueError("Danh sách ngày không được rỗng")
+
+        # Kiểm tra trùng lặp
+        if len(v) != len(set(v)):
+            raise ValueError("Danh sách ngày không được có ngày trùng lặp")
+
+        # Kiểm tra cùng tháng/năm
+        first = v[0]
+        for d in v[1:]:
+            if d.month != first.month or d.year != first.year:
+                raise ValueError("Tất cả ngày phải cùng tháng và năm")
+
+        # Kiểm tra không tương lai
+        today = date.today()
+        for d in v:
+            if d > today:
+                raise ValueError(f"Ngày {d} không được là ngày trong tương lai")
+
+        return sorted(v)
+
+
+class KeKhaiNhieuNgayResponse(BaseModel):
+    """Response sau khi tạo kê khai nhiều ngày."""
+    total_created: int = Field(..., description="Số bản kê khai đã tạo")
+    ke_khai_ids: List[UUID] = Field(..., description="Danh sách ID kê khai đã tạo")
+    thang: int = Field(..., description="Tháng kê khai")
+    nam: int = Field(..., description="Năm kê khai")
+
+
+class GuiDuyetBulkRequest(BaseModel):
+    """Schema request gửi duyệt nhiều kê khai cùng lúc."""
+    ke_khai_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        description="Danh sách ID kê khai cần gửi duyệt"
+    )
+    nguoi_phe_duyet_id: UUID = Field(..., description="ID người phê duyệt")

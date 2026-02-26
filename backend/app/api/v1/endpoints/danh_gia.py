@@ -30,7 +30,7 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChung,
@@ -555,39 +555,60 @@ async def get_danh_sach_cho_phe_duyet(
     """
     Lấy danh sách tiêu chí chung chờ phê duyệt.
     v2.6: Hỗ trợ 2 cấp - hiển thị đơn chờ cấp 1 và cấp 2
+    v3.6: Thêm QLDV - chỉ xem, không duyệt
     """
-    if not current_user.is_lanh_dao:
-        raise HTTPException(status_code=403, detail=error_response(code="PERM_002", message="Chỉ lãnh đạo"))
-    
+    is_qldv_user = is_qldv(current_user)
+
+    # Cho phép: lãnh đạo HOẶC QLDV
+    if not current_user.is_lanh_dao and not is_qldv_user:
+        raise HTTPException(status_code=403, detail=error_response(code="PERM_002", message="Chỉ lãnh đạo hoặc QLDV"))
+
     # v2.6: Lọc cả cấp 1 và cấp 2
-    stmt = select(DanhGiaThang).options(
-        selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
-        selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
-    ).where(
-        DanhGiaThang.is_deleted == False,
-        or_(
-            # Cấp 1: Phó ĐT chờ duyệt
-            and_(
-                DanhGiaThang.nguoi_phe_duyet_tc_cap1_id == current_user.id,
-                or_(
-                    DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_PHE_DUYET,
-                    DanhGiaThang.trang_thai_tc == None
-                ),
-                DanhGiaThang.ngay_phe_duyet_tc_cap1 == None
-            ),
-            # Cấp 2: ĐT chờ duyệt (sau khi cấp 1 đã duyệt)
-            and_(
-                DanhGiaThang.nguoi_phe_duyet_tc_cap2_id == current_user.id,
-                or_(
-                    DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2,  # v3.5
-                    and_(  # fallback: cũng lọc theo ngay_phe_duyet
-                        DanhGiaThang.ngay_phe_duyet_tc_cap1 != None,
+    # v3.6: QLDV chỉ xem đơn vị của mình (tất cả trạng thái chờ duyệt)
+    if is_qldv_user:
+        # QLDV: Xem tất cả đơn chờ duyệt trong đơn vị
+        stmt = select(DanhGiaThang).options(
+            selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+        ).join(CongChuc).where(
+            DanhGiaThang.is_deleted == False,
+            CongChuc.don_vi_id == current_user.don_vi_id,
+            or_(
+                DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_PHE_DUYET,
+                DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2,
+                DanhGiaThang.trang_thai_tc == None
+            )
+        ).distinct().order_by(DanhGiaThang.created_at.desc())
+    else:
+        # Lãnh đạo: theo logic cũ
+        stmt = select(DanhGiaThang).options(
+            selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+        ).where(
+            DanhGiaThang.is_deleted == False,
+            or_(
+                # Cấp 1: Phó ĐT chờ duyệt
+                and_(
+                    DanhGiaThang.nguoi_phe_duyet_tc_cap1_id == current_user.id,
+                    or_(
+                        DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_PHE_DUYET,
+                        DanhGiaThang.trang_thai_tc == None
                     ),
+                    DanhGiaThang.ngay_phe_duyet_tc_cap1 == None
                 ),
-                DanhGiaThang.ngay_phe_duyet_tc_cap2 == None
-            ),
-        )
-    ).distinct().order_by(DanhGiaThang.created_at.desc())
+                # Cấp 2: ĐT chờ duyệt (sau khi cấp 1 đã duyệt)
+                and_(
+                    DanhGiaThang.nguoi_phe_duyet_tc_cap2_id == current_user.id,
+                    or_(
+                        DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2,  # v3.5
+                        and_(  # fallback: cũng lọc theo ngay_phe_duyet
+                            DanhGiaThang.ngay_phe_duyet_tc_cap1 != None,
+                        ),
+                    ),
+                    DanhGiaThang.ngay_phe_duyet_tc_cap2 == None
+                ),
+            )
+        ).distinct().order_by(DanhGiaThang.created_at.desc())
     
     # ✅ FIX: Filter theo tháng/năm nếu có
     if thang:
@@ -596,14 +617,18 @@ async def get_danh_sach_cho_phe_duyet(
         stmt = stmt.where(DanhGiaThang.nam == nam)
     
     # Fallback: Cũng lọc theo cách cũ (TieuChiChungDanhGia.nguoi_phe_duyet_id)
-    stmt_fallback = select(DanhGiaThang).options(
-        selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
-        selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
-    ).join(TieuChiChungDanhGia).where(
-        TieuChiChungDanhGia.trang_thai == TrangThaiTieuChi.CHO_PHE_DUYET,
-        TieuChiChungDanhGia.nguoi_phe_duyet_id == current_user.id,
-        DanhGiaThang.is_deleted == False
-    ).distinct().order_by(DanhGiaThang.created_at.desc())
+    # QLDV không cần fallback vì đã lấy theo đơn vị
+    if is_qldv_user:
+        stmt_fallback = select(DanhGiaThang).where(DanhGiaThang.id == None)  # Empty query
+    else:
+        stmt_fallback = select(DanhGiaThang).options(
+            selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+        ).join(TieuChiChungDanhGia).where(
+            TieuChiChungDanhGia.trang_thai == TrangThaiTieuChi.CHO_PHE_DUYET,
+            TieuChiChungDanhGia.nguoi_phe_duyet_id == current_user.id,
+            DanhGiaThang.is_deleted == False
+        ).distinct().order_by(DanhGiaThang.created_at.desc())
     
     # ✅ FIX: Filter fallback theo tháng/năm
     if thang:
@@ -703,13 +728,20 @@ async def get_lich_su_tieu_chi(
         
     # Phân quyền
     is_cct = cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
+    is_qldv_user = is_qldv(current_user)
+
     if not is_cct:
-        stmt = stmt.where(
-            or_(
-                DanhGiaThang.nguoi_phe_duyet_tc_cap1_id == current_user.id,
-                DanhGiaThang.nguoi_phe_duyet_tc_cap2_id == current_user.id,
+        if is_qldv_user:
+            # QLDV xem lịch sử của đơn vị
+            stmt = stmt.join(CongChuc).where(CongChuc.don_vi_id == current_user.don_vi_id)
+        else:
+            # Lãnh đạo khác xem đơn mình đã duyệt
+            stmt = stmt.where(
+                or_(
+                    DanhGiaThang.nguoi_phe_duyet_tc_cap1_id == current_user.id,
+                    DanhGiaThang.nguoi_phe_duyet_tc_cap2_id == current_user.id,
+                )
             )
-        )
     
     if thang:
         stmt = stmt.where(DanhGiaThang.thang == thang)
@@ -810,7 +842,15 @@ async def phe_duyet_tieu_chi_chung(
     """
     LĐ phê duyệt tiêu chí chung của CC.
     v2.6: Phê duyệt 2 cấp - Phó ĐT (cấp 1) → ĐT (cấp 2)
+    v3.6: Block QLDV - chỉ xem, KHÔNG duyệt
     """
+    # Block QLDV
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_002", message="QLDV không có quyền phê duyệt đánh giá")
+        )
+
     stmt = select(DanhGiaThang).options(
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.vai_tro),
@@ -1167,14 +1207,22 @@ async def tu_choi_tieu_chi_chung(
 ) -> dict:
     """
     Từ chối tiêu chí chung - Trả đơn về cho CC kê khai lại.
-    
+
     v3.5.0: Endpoint mới - trước đó backend thiếu → gây lỗi "Chờ ĐT phê duyệt".
-    
+    v3.6: Block QLDV - chỉ xem, KHÔNG từ chối
+
     Logic:
     - Phó ĐT/ĐT/CCT từ chối → reset toàn bộ tiêu chí về NHAP
     - CC thấy trạng thái NHAP → sửa → gửi lại
     - Lưu lý do từ chối để CC biết cần sửa gì
     """
+    # Block QLDV
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_002", message="QLDV không có quyền phê duyệt đánh giá")
+        )
+
     stmt = select(DanhGiaThang).options(
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.vai_tro),
@@ -1460,7 +1508,17 @@ async def tra_lai_tieu_chi_da_duyet(
 async def phe_duyet_tieu_chi_bulk(
     db: DatabaseDep, current_user: ActiveUserDep, payload: PheDuyetTieuChiBulkRequest
 ) -> dict:
-    """Phê duyệt hàng loạt (không điều chỉnh)."""
+    """
+    Phê duyệt hàng loạt (không điều chỉnh).
+    v3.6: Block QLDV - chỉ xem, KHÔNG duyệt
+    """
+    # Block QLDV
+    if is_qldv(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail=error_response(code="PERM_002", message="QLDV không có quyền phê duyệt đánh giá")
+        )
+
     if not current_user.is_lanh_dao:
         raise HTTPException(status_code=403, detail=error_response(code="PERM_002", message="Chỉ lãnh đạo"))
     

@@ -1038,6 +1038,55 @@ class KpiService {
     });
     return response.data;
   }
+
+  // ===========================================================================
+  // KÊ KHAI NHIỀU NGÀY (Multi-day Declaration)
+  // ===========================================================================
+
+  /**
+   * Tạo kê khai cho nhiều ngày cùng lúc.
+   */
+  async keKhaiNhieuNgay(data: {
+    danh_muc_sp_id: string;
+    cap_do_id: string;
+    so_luong: number;
+    ngay_thuc_hien_list: string[];
+    nguoi_phe_duyet_id?: string;
+    mo_ta_cong_viec?: string;
+    he_so_thuc_te?: number;
+    is_doi_moi_sang_tao?: boolean;
+    tu_danh_gia_chat_luong?: number;
+    tu_danh_gia_tien_do?: number;
+    ghi_chu_tu_danh_gia?: string;
+  }): Promise<{ total_created: number; ke_khai_ids: string[]; thang: number; nam: number }> {
+    try {
+      const response = await apiClient.post<IDataResponse<{ total_created: number; ke_khai_ids: string[]; thang: number; nam: number }>>(
+        '/ke-khai/nhieu-ngay',
+        data
+      );
+      return response.data.data;
+    } catch (error) {
+      throw error as IApiError;
+    }
+  }
+
+  /**
+   * Gửi duyệt nhiều kê khai cùng lúc.
+   */
+  async guiDuyetBulk(data: {
+    ke_khai_ids: string[];
+    nguoi_phe_duyet_id: string;
+  }): Promise<{ processed_count: number; ke_khai_ids: string[] }> {
+    try {
+      const response = await apiClient.post<IDataResponse<{ processed_count: number; ke_khai_ids: string[] }>>(
+        '/ke-khai/gui-duyet-bulk',
+        data
+      );
+      return response.data.data;
+    } catch (error) {
+      throw error as IApiError;
+    }
+  }
 }
 
 // =============================================================================

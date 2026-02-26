@@ -4,13 +4,11 @@ const nextConfig: NextConfig = {
   /**
    * Rewrites — proxy API calls từ frontend đến các backend service.
    *
-   * Pattern chuẩn (SHARED_CODING_STANDARDS §5.1):
-   *   Frontend  →  /api/{module}/v1/:path*
-   *   Rewrite   →  http://localhost:{port}/api/v1/{module}/:path*
-   *
-   * ⚠️ Lưu ý: Backend Legal đang dùng prefix /api/v1/legal (chưa đổi sang /api/legal/v1).
-   * Rewrite bên dưới translate để frontend luôn đúng chuẩn.
-   * Khi backend sửa prefix → chỉ cần cập nhật destination ở đây.
+   * Mỗi module có prefix khác nhau tùy backend:
+   *   LMS:    /api/v1/lms/     → http://localhost:8001/api/v1/lms/
+   *   Legal:  /api/legal/v1/   → http://localhost:8003/api/legal/v1/
+   *   Portal: /api/portal/v1/  → http://localhost:8004/api/v1/
+   *   Common: /api/common/v1/  → http://localhost:8005/api/common/v1/
    */
   async rewrites() {
     return [
@@ -36,11 +34,23 @@ const nextConfig: NextConfig = {
         destination: 'http://localhost:8004/api/v1/:path*',
       },
       // LMS module — port 8001
-      // Frontend gọi: /api/lms/v1/dashboard/summary
-      // Backend nhận: http://localhost:8001/api/v1/dashboard/summary
+      // Frontend gọi: /api/v1/lms/dashboard/summary
+      // Backend nhận: http://localhost:8001/api/v1/lms/dashboard/summary
       {
-        source: '/api/lms/v1/:path*',
-        destination: 'http://localhost:8001/api/v1/:path*',
+        source: '/api/v1/lms/:path*',
+        destination: 'http://localhost:8001/api/v1/lms/:path*',
+      },
+      // LMS uploads — dev proxy, production dùng nginx
+      {
+        source: '/uploads/lms/:path*',
+        destination: 'http://localhost:8001/uploads/lms/:path*',
+      },
+      // Common module — port 8005
+      // Frontend gọi: /api/common/v1/thong-bao
+      // Backend nhận: http://localhost:8005/api/common/v1/thong-bao
+      {
+        source: '/api/common/v1/:path*',
+        destination: 'http://localhost:8005/api/common/v1/:path*',
       },
     ];
   },

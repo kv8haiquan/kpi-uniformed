@@ -36,7 +36,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import DatabaseDep, ActiveUserDep
+from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.user_org import CongChuc, DonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.kpi_assessment import DanhGiaThang, TieuChiChung, TieuChiChungDanhGia
@@ -149,9 +149,9 @@ def _is_lanh_dao_chi_cuc(user: CongChuc) -> bool:
 
 
 def _is_lanh_dao_don_vi(user: CongChuc) -> bool:
-    """ĐT hoặc Phó ĐT."""
+    """ĐT hoặc Phó ĐT hoặc QLDV (có quyền export)."""
     cap_bac = _get_cap_bac(user)
-    return cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+    return cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI] or is_qldv(user)
 
 
 # =============================================================================
@@ -223,7 +223,7 @@ async def _get_bao_cao_don_vi(
             selectinload(BaoCaoXepLoai.don_vi),
             selectinload(BaoCaoXepLoai.nguoi_lap),
             selectinload(BaoCaoXepLoai.nguoi_phe_duyet),
-            selectinload(BaoCaoXepLoai.chi_tiets).selectinload(ChiTietXepLoai.cong_chuc),
+            selectinload(BaoCaoXepLoai.chi_tiets).selectinload(ChiTietXepLoai.cong_chuc).selectinload(CongChuc.vai_tro),
         )
         .where(
             BaoCaoXepLoai.don_vi_id == don_vi_id,
@@ -245,7 +245,7 @@ async def _get_all_bao_cao(
         .options(
             selectinload(BaoCaoXepLoai.don_vi),
             selectinload(BaoCaoXepLoai.nguoi_lap),
-            selectinload(BaoCaoXepLoai.chi_tiets).selectinload(ChiTietXepLoai.cong_chuc),
+            selectinload(BaoCaoXepLoai.chi_tiets).selectinload(ChiTietXepLoai.cong_chuc).selectinload(CongChuc.vai_tro),
         )
         .where(
             BaoCaoXepLoai.thang == thang,
@@ -450,7 +450,12 @@ def _build_mau04_data(
                     continue
                 if hasattr(ct.cong_chuc, 'deleted_at') and ct.cong_chuc.deleted_at is not None:
                     continue
-                    
+                # Loại trừ ADMIN và QLDV khỏi báo cáo
+                if ct.cong_chuc.vai_tro and ct.cong_chuc.vai_tro.cap_bac in (
+                    CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI,
+                ):
+                    continue
+
                 stt += 1
                 xep_loai_cuoi = ct.xep_loai_quyet_dinh or ct.xep_loai_de_xuat or ct.xep_loai_he_thong
                 
@@ -537,6 +542,7 @@ async def _build_mau05_data(
         select(DanhGiaThang)
         .options(
             selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.vai_tro),
             selectinload(DanhGiaThang.tieu_chi_chungs),
         )
         .where(
@@ -557,7 +563,12 @@ async def _build_mau05_data(
             continue
         if hasattr(dg.cong_chuc, 'deleted_at') and dg.cong_chuc.deleted_at is not None:
             continue
-        
+        # Loại trừ ADMIN và QLDV khỏi báo cáo
+        if dg.cong_chuc.vai_tro and dg.cong_chuc.vai_tro.cap_bac in (
+            CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI,
+        ):
+            continue
+
         # Kiểm tra có tích nhóm III không
         has_nhom3 = False
         tieu_chi_data = []

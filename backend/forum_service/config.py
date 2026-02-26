@@ -21,7 +21,20 @@ class Settings(BaseSettings):
     )
 
     # Database — cung database voi KPI, dung schema rieng (forum.*)
-    database_url: str = "postgresql+asyncpg://kpi_user:password@localhost:5433/kpi_haiquan"
+    # Doc tu .env chung tai backend/.env (cung cwd voi KPI)
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "kpi_haiquan"
+    db_user: str = "kpi_user"
+    db_password: str = "KpiHaiQuan2026!"
+
+    @property
+    def database_url(self) -> str:
+        """Build async PostgreSQL connection string."""
+        return (
+            f"postgresql+asyncpg://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
 
     # Security — PHAI giong KPI backend
     secret_key: str = "CHANGE_THIS_IN_PRODUCTION_MUST_BE_AT_LEAST_32_CHARS"

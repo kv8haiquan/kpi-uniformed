@@ -17,20 +17,12 @@ import type { IBaiHoc } from '@/types/lms';
 // =============================================================================
 
 /**
- * Chuyển relative URL (/uploads/...) thành absolute URL trỏ đến LMS backend.
- * File_url được lưu dạng /uploads/lms/... nhưng phục vụ từ port 8001, không phải 3000.
+ * Resolve URL cho file LMS.
+ * File_url dạng /uploads/lms/... — nginx proxy về LMS backend (port 8001).
+ * Trả về relative URL (cùng origin, qua nginx proxy).
  */
 function resolveLmsUrl(url: string | null | undefined): string | null {
   if (!url) return null;
-  if (url.startsWith('/uploads/')) {
-    const apiUrl = process.env.NEXT_PUBLIC_LMS_API_URL || 'http://localhost:8001/api/v1/lms';
-    try {
-      const origin = new URL(apiUrl).origin; // e.g. "http://localhost:8001"
-      return `${origin}${url}`;
-    } catch {
-      return url;
-    }
-  }
   return url;
 }
 

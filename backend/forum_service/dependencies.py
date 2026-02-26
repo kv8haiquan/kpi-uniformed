@@ -81,6 +81,10 @@ def require_platform_role(*allowed_roles: str):
             ...
     """
     async def role_checker(current_user: CurrentUserDep) -> TokenPayload:
+        # SUPER_ADMIN luon bypass kiem tra role
+        if current_user.vai_tro == "SUPER_ADMIN" or current_user.is_admin:
+            return current_user
+
         user_roles = set(current_user.platform_roles or [])
         required_roles = set(allowed_roles)
 

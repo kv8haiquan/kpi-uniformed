@@ -1,6 +1,6 @@
 # PROGRESS.md — Tiến độ dự án Nền tảng Số HQKV8
 
-> Cập nhật lần cuối: 25/02/2026
+> Cập nhật lần cuối: 26/02/2026
 > Claude Code: ĐỌC FILE NÀY ĐẦU MỖI SESSION để biết trạng thái hiện tại
 
 ---
@@ -13,7 +13,7 @@
 | Platform tables | ✅ | — | ✅ Done | ✅ | ✅ Migrated + seeded |
 | JWT mở rộng | ⏳ | — | — | ⏳ | Chưa implement |
 | LMS | ✅ 45 endpoints | ✅ 7/7 pages | ✅ 11/11 bảng | ✅ 49 tests (69%) | ✅ Done |
-| Forum | ⏳ | ⏳ | ✅ 5/5 bảng | ⏳ | 🔄 Migration done |
+| Forum | ✅ 26 endpoints | ✅ 6/6 pages + 4 components | ✅ 5/5 bảng | ⏳ | 🔄 Frontend done |
 | Legal | ✅ 25 endpoints | ✅ 6/6 pages + 5 components | ✅ 6/6 bảng | ✅ 108 tests (82%) | ✅ HOÀN THÀNH 2026-02-22 |
 | Portal | ✅ 27 endpoints (CMS+ECM+Dashboard) | ✅ /tong-quan + /tin-tuc + /tai-lieu | ✅ 4/4 bảng | ✅ 60 tests (39% svc) | ✅ HOÀN THÀNH 2026-02-22 |
 | Common | ✅ 4 models + 22 endpoints | ✅ 3/3 pages | ✅ 4/4 bảng | ✅ 64 tests | ✅ HOÀN THÀNH 2026-02-24 |
@@ -116,9 +116,22 @@
 ## SẮP LÀM (Next Up — sau khi LMS xong)
 
 - [x] Forum: Migration schema forum (5 bảng) — ✅ 2026-02-25
-- [ ] Forum: SQLAlchemy models (5 files)
-- [ ] Forum: Backend CRUD chu_de, tra_loi
-- [ ] Forum: Frontend pages dien-dan/
+- [x] Forum: SQLAlchemy 2.0 models (7 files) — ✅ 2026-02-26
+- [x] Forum: Backend API COMPLETE — 26 endpoints, 5 services, 7 schemas — ✅ 2026-02-26
+  - Schemas: chuyen_muc, chu_de, tra_loi, bieu_quyet, theo_doi, dashboard, base (re-export shared)
+  - Services: chuyen_muc_service (tree+stats), chu_de_service (PHUC TAP NHAT: filter/search/FTS/24h/dieu_phoi), tra_loi_service (nested+flatten+auto-follow), bieu_quyet_service (toggle 3-way), theo_doi_service (idempotent+paginated)
+  - Endpoints: chuyen_muc(4), chu_de(10), tra_loi(3), bieu_quyet(2), tim_kiem(2), theo_doi(1), dashboard+bao_cao(4)
+  - Fix: TheoDoi composite PK (no id column), require_platform_role SUPER_ADMIN bypass, /api/forum/v1 prefix
+  - Verify: ALL imports OK, 26 API routes, uvicorn startup OK
+- [x] Forum: Frontend COMPLETE — 6 pages + 4 components + types + service — ✅ 2026-02-26
+  - types/forum.ts (283 lines): IChuyenMuc, IChuDeDetail, ITraLoiInChuDe, IBieuQuyetCreate, IDashboardSummary + 20 more
+  - services/forum.ts (236 lines): chuyenMucApi, chuDeApi, traLoiApi, bieuQuyetApi, theoDoiApi, timKiemApi, dashboardApi
+  - next.config.ts: added Forum rewrite (port 8002)
+  - Components: VoteButton (158L), NestedReply (216L), TagSelector (193L), VanBanCitation (140L)
+  - Pages: /dien-dan (239L), /chuyen-muc/[id] (372L), /chu-de/[id] (394L), /tao-moi (258L), /cua-toi (257L), /quan-ly (443L)
+  - Build PASS — 50 routes (6 forum: 4 static + 2 dynamic)
+  - Total: 12 files, 3189 lines
+- [ ] Forum: Tests
 - [x] Legal: Frontend foundation — types/legal.ts (20+ interfaces) + services/legal.ts (17 methods) + phap-luat/layout.tsx
 - [x] Legal: Migration schema legal (6 bảng) — 6 bảng + 13 indexes + FTS trigger — 2026-02-22
 - [x] Legal: SQLAlchemy 2.0 models (8 files) — Base+3 stubs + 6 legal models, ALL PASS — 2026-02-22
@@ -207,6 +220,18 @@
 ---
 
 ## ĐÃ HOÀN THÀNH
+
+### 26/02/2026
+- [x] Forum SQLAlchemy 2.0 models: 7 files — ALL PASS — 2026-02-26
+  - models/base.py: Base(DeclarativeBase) + CongChucRef(public, READONLY) + DonViRef(public, READONLY)
+  - models/chuyen_muc.py: ChuyenMuc — 10 cột, self-ref parent_id (phân cấp 2 cấp), chi_doc, yeu_cau_duyet
+  - models/chu_de.py: ChuDe — 21 cột, 2 FK cross-schema (tac_gia_id, nguoi_duyet_id → cong_chuc), JSONB x3 (tags, van_ban_lien_quan, sop_lien_quan), TSVECTOR search_vector, 5 relationships
+  - models/tra_loi.py: TraLoi — 12 cột, self-ref parent_id (threaded 2 cấp), is_dap_an_chuan, JSONB can_cu_phap_ly, 4 relationships
+  - models/bieu_quyet.py: BieuQuyet — 6 cột, polymorphic (doi_tuong_type+doi_tuong_id), UniqueConstraint uq_forum_bq_cc_dt
+  - models/theo_doi.py: TheoDoi — 3 cột, composite PK (cong_chuc_id, chu_de_id), KHÔNG có cột id
+  - models/__init__.py: Export 5 models + Base + CongChucRef + DonViRef
+  - Circular import ChuDe ↔ TraLoi: xử lý bằng from __future__ import annotations + TYPE_CHECKING
+  - Verify: All imports OK, 5/5 schema="forum", 21 cột ChuDe, UniqueConstraint OK, composite PK OK
 
 ### 25/02/2026
 - [x] Forum Migration schema forum (5 bảng) — create_forum_schema_20260225.py

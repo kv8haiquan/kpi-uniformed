@@ -3,6 +3,10 @@
  * Layout cho section Diễn đàn.
  */
 
-export default function DienDanLayout({ children }: { children: React.ReactNode }) {
+export default function DienDanLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return <>{children}</>;
 }

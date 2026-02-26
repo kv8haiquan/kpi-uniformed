@@ -45,6 +45,13 @@ const nextConfig: NextConfig = {
         source: '/uploads/lms/:path*',
         destination: 'http://localhost:8001/uploads/lms/:path*',
       },
+      // Forum module — port 8002
+      // Frontend goi: /api/forum/v1/chu-de
+      // Backend nhan: http://localhost:8002/api/forum/v1/chu-de
+      {
+        source: '/api/forum/v1/:path*',
+        destination: 'http://localhost:8002/api/forum/v1/:path*',
+      },
       // Common module — port 8005
       // Frontend gọi: /api/common/v1/thong-bao
       // Backend nhận: http://localhost:8005/api/common/v1/thong-bao

@@ -10,6 +10,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from forum_service.api.endpoints import (
+    bao_cao_router,
+    bieu_quyet_router,
+    chu_de_router,
+    chuyen_muc_router,
+    dashboard_router,
+    search_router,
+    tags_router,
+    theo_doi_router,
+    tra_loi_router,
+)
 from forum_service.config import settings
 
 
@@ -38,6 +49,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount routers — prefix /api/forum/v1
+API_PREFIX = "/api/forum/v1"
+app.include_router(chuyen_muc_router, prefix=API_PREFIX)
+app.include_router(chu_de_router, prefix=API_PREFIX)
+app.include_router(tra_loi_router, prefix=API_PREFIX)
+app.include_router(bieu_quyet_router, prefix=API_PREFIX)
+app.include_router(search_router, prefix=API_PREFIX)
+app.include_router(tags_router, prefix=API_PREFIX)
+app.include_router(theo_doi_router, prefix=API_PREFIX)
+app.include_router(dashboard_router, prefix=API_PREFIX)
+app.include_router(bao_cao_router, prefix=API_PREFIX)
 
 
 @app.get("/health")

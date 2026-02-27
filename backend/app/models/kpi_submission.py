@@ -49,7 +49,7 @@ from sqlalchemy.sql import func
 from app.models.base import BaseModel, BaseModelWithSoftDelete
 
 if TYPE_CHECKING:
-    from app.models.user_org import CongChuc
+    from app.models.user_org import CongChuc, DonVi
     from app.models.task_catalog import DanhMucSpCongViec, CapDoPhucTap
 
 
@@ -113,11 +113,19 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         index=True,
         comment="ID công chức kê khai"
     )
-    
+
+    don_vi_id_snapshot: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("don_vi.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Snapshot đơn vị tại thời điểm kê khai (dùng cho báo cáo)"
+    )
+
     # -------------------------------------------------------------------------
     # THỜI GIAN
     # -------------------------------------------------------------------------
-    
+
     thang: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -331,7 +339,7 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
     # -------------------------------------------------------------------------
     # RELATIONSHIPS
     # -------------------------------------------------------------------------
-    
+
     # Người kê khai
     cong_chuc: Mapped["CongChuc"] = relationship(
         "CongChuc",
@@ -339,7 +347,13 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         foreign_keys=[cong_chuc_id],
         lazy="joined"
     )
-    
+
+    don_vi_snapshot: Mapped[Optional["DonVi"]] = relationship(
+        "DonVi",
+        foreign_keys=[don_vi_id_snapshot],
+        lazy="joined"
+    )
+
     # Công việc
     danh_muc_sp: Mapped["DanhMucSpCongViec"] = relationship(
         "DanhMucSpCongViec",
@@ -392,6 +406,7 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         Index("idx_ke_khai_trang_thai", "trang_thai"),
         Index("idx_ke_khai_phe_duyet", "nguoi_phe_duyet_id"),
         Index("idx_ke_khai_cc_thang_nam", "cong_chuc_id", "thang", "nam"),
+        Index("idx_ke_khai_don_vi_snapshot", "don_vi_id_snapshot", "thang", "nam"),
     )
     
     def __repr__(self) -> str:

@@ -61,7 +61,7 @@ from sqlalchemy.sql import func
 from app.models.base import BaseModel, BaseModelWithSoftDelete
 
 if TYPE_CHECKING:
-    from app.models.user_org import CongChuc
+    from app.models.user_org import CongChuc, DonVi
 
 
 # =============================================================================
@@ -120,7 +120,15 @@ class DanhGiaThang(BaseModelWithSoftDelete):
         index=True,
         comment="ID công chức được đánh giá"
     )
-    
+
+    don_vi_id_snapshot: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("don_vi.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Snapshot đơn vị tại thời điểm đánh giá (dùng cho báo cáo)"
+    )
+
     thang: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -348,7 +356,13 @@ class DanhGiaThang(BaseModelWithSoftDelete):
         foreign_keys=[cong_chuc_id],
         lazy="joined"
     )
-    
+
+    don_vi_snapshot: Mapped[Optional["DonVi"]] = relationship(
+        "DonVi",
+        foreign_keys=[don_vi_id_snapshot],
+        lazy="joined"
+    )
+
     nguoi_de_xuat: Mapped[Optional["CongChuc"]] = relationship(
         "CongChuc",
         foreign_keys=[nguoi_de_xuat_id],
@@ -417,6 +431,7 @@ class DanhGiaThang(BaseModelWithSoftDelete):
         Index("idx_danh_gia_thang_nam", "thang", "nam"),
         Index("idx_danh_gia_trang_thai", "trang_thai"),
         Index("idx_danh_gia_xep_loai", "muc_xep_loai_chinh_thuc"),
+        Index("idx_danh_gia_don_vi_snapshot", "don_vi_id_snapshot", "thang", "nam"),
     )
     
     def __repr__(self) -> str:

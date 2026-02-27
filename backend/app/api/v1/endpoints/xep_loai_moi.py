@@ -551,7 +551,8 @@ async def khoa_du_lieu(
         DanhGiaThang.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_dg = stmt_dg.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để khóa đúng đơn vị lúc đánh giá
+        stmt_dg = stmt_dg.where(DanhGiaThang.don_vi_id_snapshot == filter_don_vi_id)
     
     result_dg = await db.execute(stmt_dg)
     dg_list = result_dg.scalars().all()
@@ -569,7 +570,8 @@ async def khoa_du_lieu(
         KeKhaiCongViec.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_kk = stmt_kk.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để khóa đúng đơn vị lúc kê khai
+        stmt_kk = stmt_kk.where(KeKhaiCongViec.don_vi_id_snapshot == filter_don_vi_id)
     
     result_kk = await db.execute(stmt_kk)
     kk_list = result_kk.scalars().all()
@@ -652,7 +654,8 @@ async def mo_khoa_du_lieu(
         DanhGiaThang.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_dg = stmt_dg.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để mở khóa đúng đơn vị lúc đánh giá
+        stmt_dg = stmt_dg.where(DanhGiaThang.don_vi_id_snapshot == filter_don_vi_id)
     
     result_dg = await db.execute(stmt_dg)
     dg_list = result_dg.scalars().all()
@@ -670,7 +673,8 @@ async def mo_khoa_du_lieu(
         KeKhaiCongViec.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_kk = stmt_kk.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để mở khóa đúng đơn vị lúc kê khai
+        stmt_kk = stmt_kk.where(KeKhaiCongViec.don_vi_id_snapshot == filter_don_vi_id)
     
     result_kk = await db.execute(stmt_kk)
     kk_list = result_kk.scalars().all()

@@ -894,6 +894,7 @@ async def ke_khai_nhieu_ngay(
     for ngay in payload.ngay_thuc_hien_list:
         ke_khai = KeKhaiCongViec(
             cong_chuc_id=current_user.id,
+            don_vi_id_snapshot=current_user.don_vi_id,
             thang=thang,
             nam=nam,
             ngay_thuc_hien=ngay,
@@ -1214,6 +1215,7 @@ async def create_ke_khai(
     # Tạo bản kê khai
     ke_khai = KeKhaiCongViec(
         cong_chuc_id=current_user.id,
+        don_vi_id_snapshot=current_user.don_vi_id,
         thang=thang,
         nam=nam,
         ngay_thuc_hien=payload.ngay_thuc_hien,

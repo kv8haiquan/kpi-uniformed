@@ -945,7 +945,8 @@ async def transfer_user(
             .values(is_deleted=True, is_khoa=True)
         )
 
-        # 3. Remove CC from chi_tiet_xep_loai if BaoCaoXepLoai is NHAP or TU_CHOI
+        # 3. Remove CC from chi_tiet_xep_loai if BaoCaoXepLoai is NHAP, CHO_PHE_DUYET, or TU_CHOI
+        # (Không xóa nếu đã DA_PHE_DUYET - báo cáo đã khóa)
         # First, get the chi_tiet_xep_loai records to delete
         chi_tiet_to_delete_stmt = (
             select(ChiTietXepLoai.id)
@@ -954,6 +955,7 @@ async def transfer_user(
             .where(
                 or_(
                     BaoCaoXepLoai.trang_thai == "NHAP",
+                    BaoCaoXepLoai.trang_thai == "CHO_PHE_DUYET",
                     BaoCaoXepLoai.trang_thai == "TU_CHOI"
                 )
             )

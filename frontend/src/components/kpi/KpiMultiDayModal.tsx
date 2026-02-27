@@ -348,6 +348,24 @@ export default function KpiMultiDayModal({
                           </option>
                         ))}
                       </select>
+
+                      {/* Issue #3: Hiển thị thông tin SP đã chọn */}
+                      {selectedSpChuan && (
+                        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded text-sm space-y-1">
+                          <p className="font-medium text-blue-900">
+                            {selectedSpChuan.ten_sp}
+                          </p>
+                          {selectedSpChuan.mo_ta && (
+                            <p className="text-blue-700 text-xs">{selectedSpChuan.mo_ta}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {!selectedSpChuanId && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Chọn loại sản phẩm trước, sau đó chọn công việc cụ thể
+                        </p>
+                      )}
                     </div>
 
                     {/* Công việc */}
@@ -406,6 +424,44 @@ export default function KpiMultiDayModal({
                         <p className="text-xs text-blue-600 mt-1">
                           ℹ️ SP3/SP4 chỉ áp dụng cấp độ C1
                         </p>
+                      )}
+
+                      {/* Issue #3: Hiển thị thông tin cấp độ đã chọn */}
+                      {selectedCapDo && selectedSpChuan && (
+                        <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded text-sm space-y-1">
+                          {selectedCapDo.ma_cap_do === 'C5' ? (
+                            <p className="text-green-700 text-xs">
+                              <strong>C5:</strong> Hệ số do lãnh đạo xác định theo tính chất công việc
+                            </p>
+                          ) : (
+                            <>
+                              {/* Hiển thị hệ số và phút tương ứng */}
+                              {(() => {
+                                // Lấy hệ số quy đổi từ SP chuẩn
+                                const hesoQuyDoi = selectedSpChuan.ma_sp === 'SP1'
+                                  ? (selectedSpChuan as any).he_so_quy_doi_sp1 || 96
+                                  : 96;
+
+                                // Lấy hệ số cấp độ
+                                let hesoCapDo = 1;
+                                if (selectedSpChuan.ma_sp === 'SP1') {
+                                  hesoCapDo = selectedCapDo.he_so_sp1 || 1;
+                                } else {
+                                  hesoCapDo = selectedCapDo.he_so_sp2 || 1;
+                                }
+
+                                // Tính phút = hesoQuyDoi × hesoCapDo
+                                const phut = hesoQuyDoi * hesoCapDo;
+
+                                return (
+                                  <p className="text-green-700 text-xs">
+                                    <strong>Hệ số ×{hesoCapDo}</strong> → {phut} phút (= {(phut / 96).toFixed(2)} SP1)
+                                  </p>
+                                );
+                              })()}
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
 
@@ -476,6 +532,41 @@ export default function KpiMultiDayModal({
                       {errors.so_luong && (
                         <p className="error-text">{errors.so_luong.message}</p>
                       )}
+
+                      {/* Issue #3: Hiển thị tổng SP1 quy đổi */}
+                      {(() => {
+                        const soLuong = watch('so_luong');
+                        if (!selectedSpChuan || !selectedCapDo || !soLuong || isNaN(soLuong)) {
+                          return null;
+                        }
+
+                        // Lấy hệ số quy đổi từ SP chuẩn
+                        const hesoQuyDoi = selectedSpChuan.ma_sp === 'SP1'
+                          ? (selectedSpChuan as any).he_so_quy_doi_sp1 || 96
+                          : 96;
+
+                        // Lấy hệ số cấp độ
+                        let hesoCapDo = 1;
+                        if (selectedCapDo.ma_cap_do === 'C5') {
+                          const hesoThucTe = watch('he_so_thuc_te');
+                          hesoCapDo = hesoThucTe || 1;
+                        } else if (selectedSpChuan.ma_sp === 'SP1') {
+                          hesoCapDo = selectedCapDo.he_so_sp1 || 1;
+                        } else {
+                          hesoCapDo = selectedCapDo.he_so_sp2 || 1;
+                        }
+
+                        // Tổng SP1 quy đổi = soLuong × hesoQuyDoi × hesoCapDo / 96
+                        const tongSp1 = (soLuong * hesoQuyDoi * hesoCapDo) / 96;
+
+                        return (
+                          <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-sm">
+                            <p className="text-purple-700 text-xs">
+                              <strong>Tổng SP1 quy đổi:</strong> {tongSp1.toFixed(2)} SP1
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Mô tả công việc */}

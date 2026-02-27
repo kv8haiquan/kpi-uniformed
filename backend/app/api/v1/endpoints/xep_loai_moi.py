@@ -19,7 +19,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func, and_, or_, case
+from sqlalchemy import select, func, and_, or_, case, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -211,7 +211,19 @@ async def get_tong_hop_xep_loai(
     if filter_don_vi_id:
         stmt_cc = stmt_cc.where(CongChuc.don_vi_id == filter_don_vi_id)
 
-    stmt_cc = stmt_cc.order_by(CongChuc.ho_ten)
+    # FIX Issue #2 (27/02/2026): Sort theo chức vụ (cấp bậc) → họ tên
+    # Dùng SQLAlchemy CASE expression để sort theo thứ tự cấp bậc
+    cap_bac_order = case(
+        (VaiTro.cap_bac == "CHI_CUC_TRUONG", 1),
+        (VaiTro.cap_bac == "PHO_CHI_CUC_TRUONG", 2),
+        (VaiTro.cap_bac == "TRUONG_DON_VI", 3),
+        (VaiTro.cap_bac == "QUAN_LY_DON_VI", 4),
+        (VaiTro.cap_bac == "PHO_DON_VI", 5),
+        (VaiTro.cap_bac == "CONG_CHUC", 6),
+        (VaiTro.cap_bac == "TCCB", 7),
+        else_=99
+    )
+    stmt_cc = stmt_cc.order_by(cap_bac_order, CongChuc.ho_ten)
 
     # Count total (cũng loại trừ ADMIN và QLDV)
     count_stmt = (
@@ -551,7 +563,8 @@ async def khoa_du_lieu(
         DanhGiaThang.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_dg = stmt_dg.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để khóa đúng đơn vị lúc đánh giá
+        stmt_dg = stmt_dg.where(DanhGiaThang.don_vi_id_snapshot == filter_don_vi_id)
     
     result_dg = await db.execute(stmt_dg)
     dg_list = result_dg.scalars().all()
@@ -569,7 +582,8 @@ async def khoa_du_lieu(
         KeKhaiCongViec.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_kk = stmt_kk.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để khóa đúng đơn vị lúc kê khai
+        stmt_kk = stmt_kk.where(KeKhaiCongViec.don_vi_id_snapshot == filter_don_vi_id)
     
     result_kk = await db.execute(stmt_kk)
     kk_list = result_kk.scalars().all()
@@ -652,7 +666,8 @@ async def mo_khoa_du_lieu(
         DanhGiaThang.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_dg = stmt_dg.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để mở khóa đúng đơn vị lúc đánh giá
+        stmt_dg = stmt_dg.where(DanhGiaThang.don_vi_id_snapshot == filter_don_vi_id)
     
     result_dg = await db.execute(stmt_dg)
     dg_list = result_dg.scalars().all()
@@ -670,7 +685,8 @@ async def mo_khoa_du_lieu(
         KeKhaiCongViec.is_deleted == False
     )
     if filter_don_vi_id:
-        stmt_kk = stmt_kk.join(CongChuc).where(CongChuc.don_vi_id == filter_don_vi_id)
+        # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để mở khóa đúng đơn vị lúc kê khai
+        stmt_kk = stmt_kk.where(KeKhaiCongViec.don_vi_id_snapshot == filter_don_vi_id)
     
     result_kk = await db.execute(stmt_kk)
     kk_list = result_kk.scalars().all()

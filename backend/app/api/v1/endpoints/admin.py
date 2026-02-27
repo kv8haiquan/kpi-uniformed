@@ -24,6 +24,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
 from sqlalchemy import select, func, and_, or_, exists, Integer, text
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,7 +32,9 @@ from app.api.deps import DatabaseDep, AdminUserDep
 from app.core.security import hash_password
 from app.models.user_org import CongChuc, DonVi, VaiTro, GioiTinh
 from app.models.task_catalog import SpCongViecChuan, CapDoPhucTap, DanhMucSpCongViec
-from app.models.kpi_submission import KeKhaiCongViec
+from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
+from app.models.kpi_assessment import DanhGiaThang
+from app.models.bao_cao_xep_loai import BaoCaoXepLoai, ChiTietXepLoai
 from app.models.admin import LichSuDieuChuyen
 from app.schemas.common import (
     DataResponse,
@@ -908,7 +911,64 @@ async def transfer_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_response(code="VAL_001", message="Không có thông tin thay đổi")
         )
-    
+
+    # =========================================================================
+    # XỬ LÝ DỮ LIỆU LỊCH SỬ KHI CHUYỂN ĐƠN VỊ
+    # =========================================================================
+    if payload.don_vi_id_moi and payload.don_vi_id_moi != don_vi_cu_id:
+        # 1. Lock all unlocked DanhGiaThang records for current month or older
+        current_month = date.today().month
+        current_year = date.today().year
+
+        await db.execute(
+            sa.update(DanhGiaThang)
+            .where(DanhGiaThang.cong_chuc_id == user_id)
+            .where(DanhGiaThang.is_khoa == False)
+            .where(
+                or_(
+                    DanhGiaThang.nam < current_year,
+                    and_(
+                        DanhGiaThang.nam == current_year,
+                        DanhGiaThang.thang <= current_month
+                    )
+                )
+            )
+            .values(is_khoa=True)
+        )
+
+        # 2. Soft-delete all NHAP status ke_khai_cong_viec records
+        await db.execute(
+            sa.update(KeKhaiCongViec)
+            .where(KeKhaiCongViec.cong_chuc_id == user_id)
+            .where(KeKhaiCongViec.trang_thai == TrangThaiKeKhai.NHAP)
+            .where(KeKhaiCongViec.is_deleted == False)
+            .values(is_deleted=True, is_khoa=True)
+        )
+
+        # 3. Remove CC from chi_tiet_xep_loai if BaoCaoXepLoai is NHAP or TU_CHOI
+        # First, get the chi_tiet_xep_loai records to delete
+        chi_tiet_to_delete_stmt = (
+            select(ChiTietXepLoai.id)
+            .join(BaoCaoXepLoai)
+            .where(ChiTietXepLoai.cong_chuc_id == user_id)
+            .where(
+                or_(
+                    BaoCaoXepLoai.trang_thai == "NHAP",
+                    BaoCaoXepLoai.trang_thai == "TU_CHOI"
+                )
+            )
+        )
+        result = await db.execute(chi_tiet_to_delete_stmt)
+        chi_tiet_ids = [row[0] for row in result.fetchall()]
+
+        if chi_tiet_ids:
+            await db.execute(
+                sa.delete(ChiTietXepLoai)
+                .where(ChiTietXepLoai.id.in_(chi_tiet_ids))
+            )
+
+        await db.flush()
+
     # Tạo bản ghi lịch sử điều chuyển
     lich_su = LichSuDieuChuyen(
         cong_chuc_id=user_id,

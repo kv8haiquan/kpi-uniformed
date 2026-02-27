@@ -104,14 +104,28 @@ async def get_or_create_danh_gia_thang(
     )
     result = await db.execute(stmt)
     danh_gia = result.scalar_one_or_none()
-    
+
     if danh_gia:
         return danh_gia, False
-    
+
+    # Get cong_chuc's current don_vi_id for snapshot
+    cc_stmt = select(CongChuc).where(CongChuc.id == cong_chuc_id)
+    cc_result = await db.execute(cc_stmt)
+    cong_chuc = cc_result.scalar_one_or_none()
+    if not cong_chuc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="USER_NOT_FOUND", message="Công chức không tồn tại")
+        )
+
     so_ngay = calendar.monthrange(nam, thang)[1]
     danh_gia = DanhGiaThang(
-        cong_chuc_id=cong_chuc_id, thang=thang, nam=nam,
-        so_ngay_lam_viec=so_ngay, trang_thai=TrangThaiDanhGia.DANG_DANH_GIA
+        cong_chuc_id=cong_chuc_id,
+        don_vi_id_snapshot=cong_chuc.don_vi_id,
+        thang=thang,
+        nam=nam,
+        so_ngay_lam_viec=so_ngay,
+        trang_thai=TrangThaiDanhGia.DANG_DANH_GIA
     )
     db.add(danh_gia)
     await db.flush()
@@ -732,8 +746,8 @@ async def get_lich_su_tieu_chi(
 
     if not is_cct:
         if is_qldv_user:
-            # QLDV xem lịch sử của đơn vị
-            stmt = stmt.join(CongChuc).where(CongChuc.don_vi_id == current_user.don_vi_id)
+            # QLDV xem lịch sử của đơn vị - dùng snapshot để lấy đúng đơn vị lúc đánh giá
+            stmt = stmt.where(DanhGiaThang.don_vi_id_snapshot == current_user.don_vi_id)
         else:
             # Lãnh đạo khác xem đơn mình đã duyệt
             stmt = stmt.where(

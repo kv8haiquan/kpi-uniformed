@@ -50,6 +50,44 @@ router = APIRouter()
 
 
 # =============================================================================
+# HELPER: SORT CC THEO CHỨC VỤ
+# =============================================================================
+
+# Thứ tự sort theo chức vụ (cấp bậc vai trò)
+SORT_ORDER_CAP_BAC = {
+    "SUPER_ADMIN": 0,
+    "CHI_CUC_TRUONG": 1,
+    "PHO_CHI_CUC_TRUONG": 2,
+    "TRUONG_DON_VI": 3,
+    "QUAN_LY_DON_VI": 4,
+    "PHO_DON_VI": 5,
+    "CONG_CHUC": 6,
+    "TCCB": 7,
+}
+
+
+def get_sort_key_chuc_vu(cc: CongChuc) -> tuple:
+    """
+    Tạo sort key cho công chức theo chức vụ (vai trò) → họ tên.
+
+    FIX Issue #2 (27/02/2026): Sort báo cáo theo thứ tự chức vụ thay vì mã CC.
+
+    Thứ tự:
+    1. Cấp bậc vai trò (CCT → PCCT → TDV → QLDV → PDV → CC → TCCB)
+    2. Họ tên (A-Z)
+
+    Args:
+        cc: CongChuc object (must have vai_tro loaded)
+
+    Returns:
+        tuple (order_index, ho_ten)
+    """
+    cap_bac = cc.vai_tro.cap_bac.value if cc.vai_tro and cc.vai_tro.cap_bac else "CONG_CHUC"
+    order_index = SORT_ORDER_CAP_BAC.get(cap_bac, 99)
+    return (order_index, cc.ho_ten or "")
+
+
+# =============================================================================
 # HELPER: CONVERT DOCX -> PDF VIA LIBREOFFICE
 # =============================================================================
 
@@ -365,20 +403,25 @@ def _build_mau03_data(
     don_vi_name: str = "",
     is_toan_chi_cuc: bool = False,
 ) -> dict:
-    """Build data dict cho Mẫu 03 - Bảng tổng hợp xếp loại."""
+    """
+    Build data dict cho Mẫu 03 - Bảng tổng hợp xếp loại.
+
+    FIX Issue #2 (27/02/2026): Sort theo chức vụ thay vì mã CC.
+    """
     rows = []
-    stt = 0
-    
+
     for bc in bao_caos:
         don_vi_ten = bc.don_vi.ten_don_vi if bc.don_vi else ""
-        
+
         if bc.chi_tiets:
             for ct in bc.chi_tiets:
-                stt += 1
                 xep_loai_cuoi = ct.xep_loai_quyet_dinh or ct.xep_loai_de_xuat or ct.xep_loai_he_thong
-                
+
+                # Thêm thông tin sort key
+                cap_bac = ct.cong_chuc.vai_tro.cap_bac.value if ct.cong_chuc and ct.cong_chuc.vai_tro else "CONG_CHUC"
+                sort_order = SORT_ORDER_CAP_BAC.get(cap_bac, 99)
+
                 rows.append({
-                    "stt": stt,
                     "ho_ten": ct.cong_chuc.ho_ten if ct.cong_chuc else "",
                     "don_vi": don_vi_ten,
                     "chuc_vu": ct.cong_chuc.chuc_vu if ct.cong_chuc else "",
@@ -392,7 +435,17 @@ def _build_mau03_data(
                     "xep_loai_quyet_dinh": ct.xep_loai_quyet_dinh or "",
                     "xep_loai_cuoi": xep_loai_cuoi,
                     "ghi_chu": ct.ghi_chu or "",
+                    # Sort keys (không xuất ra DOCX)
+                    "_sort_order": sort_order,
                 })
+
+    # FIX Issue #2: Sort theo chức vụ (cấp bậc) → họ tên
+    rows.sort(key=lambda r: (r["_sort_order"], r["ho_ten"]))
+
+    # Gán STT sau khi sort
+    for i, row in enumerate(rows, 1):
+        row["stt"] = i
+        del row["_sort_order"]  # Xóa key tạm
     
     title = "BẢNG TỔNG HỢP KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC"
     if is_toan_chi_cuc:
@@ -429,18 +482,22 @@ def _build_mau04_data(
 ) -> dict:
     """
     Build data dict cho Mẫu 04 - DANH SÁCH PHÊ DUYỆT KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC.
-    
+
     Mẫu 04 bao gồm:
     - Bảng danh sách toàn bộ công chức với: STT, Mã CC, Họ tên, Năm sinh, Chức vụ, Đơn vị, Điểm, Xếp loại, Ghi chú
     - Bảng tổng hợp: Mức xếp loại | Số lượng | Tỷ lệ %
     - Bảng vinh danh: Top 5 công chức có điểm cao nhất (loại A)
+
+    FIX Issue #2 (27/02/2026): Sort theo logic đặc biệt:
+    - CCT → PCCT (toàn chi cục)
+    - Mỗi đơn vị: TDV → QLDV → PDV → CC (sort theo tên đơn vị)
     """
     rows = []
-    stt = 0
-    
+
     for bc in bao_caos:
         don_vi_ten = bc.don_vi.ten_don_vi if bc.don_vi else ""
-        
+        don_vi_ma = bc.don_vi.ma_don_vi if bc.don_vi else "ZZZ"  # Sort key
+
         if bc.chi_tiets:
             for ct in bc.chi_tiets:
                 # Filter: bỏ qua user đã bị vô hiệu hóa hoặc đã xóa
@@ -456,16 +513,24 @@ def _build_mau04_data(
                 ):
                     continue
 
-                stt += 1
                 xep_loai_cuoi = ct.xep_loai_quyet_dinh or ct.xep_loai_de_xuat or ct.xep_loai_he_thong
-                
+
                 # Lấy năm sinh từ ngày sinh
                 nam_sinh = ""
                 if ct.cong_chuc and ct.cong_chuc.ngay_sinh:
                     nam_sinh = ct.cong_chuc.ngay_sinh.year if hasattr(ct.cong_chuc.ngay_sinh, 'year') else str(ct.cong_chuc.ngay_sinh)[:4]
-                
+
+                # Sort keys
+                cap_bac = ct.cong_chuc.vai_tro.cap_bac.value if ct.cong_chuc and ct.cong_chuc.vai_tro else "CONG_CHUC"
+                sort_order = SORT_ORDER_CAP_BAC.get(cap_bac, 99)
+
+                # CCT/PCCT thuộc "đơn vị" đặc biệt (hiển thị trước tất cả đơn vị)
+                if cap_bac in ["CHI_CUC_TRUONG", "PHO_CHI_CUC_TRUONG"]:
+                    don_vi_sort_key = "000_CHI_CUC"  # Đặt lên đầu
+                else:
+                    don_vi_sort_key = don_vi_ma
+
                 rows.append({
-                    "stt": stt,
                     "ma_cc": ct.cong_chuc.ma_cc if ct.cong_chuc else "",
                     "ho_ten": ct.cong_chuc.ho_ten if ct.cong_chuc else "",
                     "nam_sinh": nam_sinh,
@@ -474,8 +539,20 @@ def _build_mau04_data(
                     "diem_tong": float(ct.diem_tong or 0),
                     "xep_loai": xep_loai_cuoi,
                     "ghi_chu": ct.ghi_chu or "",
+                    # Sort keys
+                    "_don_vi_sort": don_vi_sort_key,
+                    "_cap_bac_sort": sort_order,
                 })
-    
+
+    # FIX Issue #2: Sort theo đơn vị (CCT/PCCT trước) → cấp bậc → họ tên
+    rows.sort(key=lambda r: (r["_don_vi_sort"], r["_cap_bac_sort"], r["ho_ten"]))
+
+    # Gán STT sau khi sort và xóa sort keys
+    for i, row in enumerate(rows, 1):
+        row["stt"] = i
+        del row["_don_vi_sort"]
+        del row["_cap_bac_sort"]
+
     # Thống kê
     tong = len(rows)
     so_a = sum(1 for r in rows if r["xep_loai"] == "A")

@@ -433,6 +433,19 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
     
     # Lấy danh sách CC trong đơn vị (loại trừ ADMIN và QLDV)
     _excluded_roles = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
+
+    # FIX Issue #2 (27/02/2026): Sort theo chức vụ thay vì tên
+    # Thứ tự: TDV → QLDV → PDV → CC → TCCB
+    SORT_ORDER_CAP_BAC = {
+        "CHI_CUC_TRUONG": 1,
+        "PHO_CHI_CUC_TRUONG": 2,
+        "TRUONG_DON_VI": 3,
+        "QUAN_LY_DON_VI": 4,
+        "PHO_DON_VI": 5,
+        "CONG_CHUC": 6,
+        "TCCB": 7,
+    }
+
     stmt_cc = (
         select(CongChuc)
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
@@ -446,10 +459,15 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
                 ~VaiTro.cap_bac.in_(_excluded_roles),
             ),
         )
-        .order_by(CongChuc.ho_ten)
     )
     result_cc = await db.execute(stmt_cc)
-    cong_chucs = result_cc.scalars().all()
+    cong_chucs = list(result_cc.scalars().all())
+
+    # Sort Python-side: chức vụ → họ tên
+    cong_chucs.sort(key=lambda cc: (
+        SORT_ORDER_CAP_BAC.get(cc.vai_tro.cap_bac.value if cc.vai_tro else "CONG_CHUC", 99),
+        cc.ho_ten or ""
+    ))
     
     # =========================================================================
     # v1.2 FIX: Load chi_tiets relationship để tránh MissingGreenlet error
@@ -558,6 +576,18 @@ async def tao_bao_cao_xep_loai(
     """
     # Lấy danh sách CC thuộc đơn vị (loại trừ ADMIN và QLDV)
     _excluded = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
+
+    # FIX Issue #2 (27/02/2026): Sort theo chức vụ thay vì tên
+    SORT_ORDER_CAP_BAC = {
+        "CHI_CUC_TRUONG": 1,
+        "PHO_CHI_CUC_TRUONG": 2,
+        "TRUONG_DON_VI": 3,
+        "QUAN_LY_DON_VI": 4,
+        "PHO_DON_VI": 5,
+        "CONG_CHUC": 6,
+        "TCCB": 7,
+    }
+
     cc_stmt = (
         select(CongChuc)
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
@@ -570,10 +600,15 @@ async def tao_bao_cao_xep_loai(
                 ~VaiTro.cap_bac.in_(_excluded),
             ),
         )
-        .order_by(CongChuc.ho_ten)
     )
     cc_result = await db.execute(cc_stmt)
-    cong_chucs = cc_result.scalars().all()
+    cong_chucs = list(cc_result.scalars().all())
+
+    # Sort Python-side: chức vụ → họ tên
+    cong_chucs.sort(key=lambda cc: (
+        SORT_ORDER_CAP_BAC.get(cc.vai_tro.cap_bac.value if cc.vai_tro else "CONG_CHUC", 99),
+        cc.ho_ten or ""
+    ))
 
     # Tạo báo cáo
     bao_cao = BaoCaoXepLoai(

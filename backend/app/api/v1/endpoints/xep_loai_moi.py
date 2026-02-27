@@ -19,7 +19,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func, and_, or_, case
+from sqlalchemy import select, func, and_, or_, case, literal_column
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -211,7 +211,19 @@ async def get_tong_hop_xep_loai(
     if filter_don_vi_id:
         stmt_cc = stmt_cc.where(CongChuc.don_vi_id == filter_don_vi_id)
 
-    stmt_cc = stmt_cc.order_by(CongChuc.ho_ten)
+    # FIX Issue #2 (27/02/2026): Sort theo chức vụ (cấp bậc) → họ tên
+    # Dùng SQLAlchemy CASE expression để sort theo thứ tự cấp bậc
+    cap_bac_order = case(
+        (VaiTro.cap_bac == "CHI_CUC_TRUONG", 1),
+        (VaiTro.cap_bac == "PHO_CHI_CUC_TRUONG", 2),
+        (VaiTro.cap_bac == "TRUONG_DON_VI", 3),
+        (VaiTro.cap_bac == "QUAN_LY_DON_VI", 4),
+        (VaiTro.cap_bac == "PHO_DON_VI", 5),
+        (VaiTro.cap_bac == "CONG_CHUC", 6),
+        (VaiTro.cap_bac == "TCCB", 7),
+        else_=99
+    )
+    stmt_cc = stmt_cc.order_by(cap_bac_order, CongChuc.ho_ten)
 
     # Count total (cũng loại trừ ADMIN và QLDV)
     count_stmt = (

@@ -432,6 +432,8 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
     nam = bao_cao.nam
     
     # Lấy danh sách CC trong đơn vị (loại trừ ADMIN và QLDV)
+    # FIX (27/02/2026): Dùng don_vi_id_snapshot từ DanhGiaThang thay vì CongChuc.don_vi_id
+    # để tránh thiếu CC khi họ chuyển đơn vị sau tháng báo cáo
     _excluded_roles = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
 
     # FIX Issue #2 (27/02/2026): Sort theo chức vụ thay vì tên
@@ -448,10 +450,19 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
 
     stmt_cc = (
         select(CongChuc)
+        .join(
+            DanhGiaThang,
+            and_(
+                DanhGiaThang.cong_chuc_id == CongChuc.id,
+                DanhGiaThang.thang == thang,
+                DanhGiaThang.nam == nam,
+                DanhGiaThang.don_vi_id_snapshot == don_vi_id,
+                DanhGiaThang.is_deleted == False,
+            )
+        )
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(selectinload(CongChuc.vai_tro))
         .where(
-            CongChuc.don_vi_id == don_vi_id,
             CongChuc.is_deleted == False,
             CongChuc.is_active == True,
             or_(
@@ -459,6 +470,7 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
                 ~VaiTro.cap_bac.in_(_excluded_roles),
             ),
         )
+        .distinct()
     )
     result_cc = await db.execute(stmt_cc)
     cong_chucs = list(result_cc.scalars().all())
@@ -566,15 +578,18 @@ async def tao_bao_cao_xep_loai(
 ) -> BaoCaoXepLoai:
     """
     Tạo báo cáo xếp loại mới cho đơn vị.
-    
+
+    v1.2 (27/02/2026): Dùng don_vi_id_snapshot từ DanhGiaThang thay vì CongChuc.don_vi_id
     v1.1 (30/01/2026): Lưu so_ngay_lam_viec, so_ngay_nghi vào chi tiết
-    
+
     Logic:
-    1. Lấy danh sách CC thuộc đơn vị (is_active = true)
+    1. Lấy danh sách CC thuộc đơn vị tại tháng báo cáo (dùng snapshot)
     2. Với mỗi CC, tính điểm dựa vào is_lanh_dao
     3. Tạo bản ghi bao_cao_xep_loai và chi_tiet_xep_loai
     """
     # Lấy danh sách CC thuộc đơn vị (loại trừ ADMIN và QLDV)
+    # FIX (27/02/2026): Dùng don_vi_id_snapshot từ DanhGiaThang thay vì CongChuc.don_vi_id
+    # để tránh thiếu CC khi họ chuyển đơn vị sau tháng báo cáo
     _excluded = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
 
     # FIX Issue #2 (27/02/2026): Sort theo chức vụ thay vì tên
@@ -590,9 +605,18 @@ async def tao_bao_cao_xep_loai(
 
     cc_stmt = (
         select(CongChuc)
+        .join(
+            DanhGiaThang,
+            and_(
+                DanhGiaThang.cong_chuc_id == CongChuc.id,
+                DanhGiaThang.thang == thang,
+                DanhGiaThang.nam == nam,
+                DanhGiaThang.don_vi_id_snapshot == don_vi_id,
+                DanhGiaThang.is_deleted == False,
+            )
+        )
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .where(
-            CongChuc.don_vi_id == don_vi_id,
             CongChuc.is_active == True,
             CongChuc.is_deleted == False,
             or_(
@@ -600,6 +624,7 @@ async def tao_bao_cao_xep_loai(
                 ~VaiTro.cap_bac.in_(_excluded),
             ),
         )
+        .distinct()
     )
     cc_result = await db.execute(cc_stmt)
     cong_chucs = list(cc_result.scalars().all())

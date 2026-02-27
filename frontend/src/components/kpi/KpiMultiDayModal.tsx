@@ -38,6 +38,7 @@ interface ISpChuan {
   ma_sp: string;
   ten_sp: string;
   mo_ta?: string;
+  thoi_gian_phut?: number; // v2.8.0: Thêm thời gian để hiển thị trong option
 }
 
 interface KpiMultiDayModalProps {
@@ -345,6 +346,7 @@ export default function KpiMultiDayModal({
                         {spChuanList.map((sp) => (
                           <option key={sp.id} value={sp.id}>
                             {sp.ma_sp} - {sp.ten_sp}
+                            {sp.thoi_gian_phut != null && ` — ${sp.thoi_gian_phut} phút`}
                           </option>
                         ))}
                       </select>
@@ -411,11 +413,26 @@ export default function KpiMultiDayModal({
                         disabled={isSp3OrSp4}
                       >
                         <option value="">-- Chọn cấp độ --</option>
-                        {capDoList.map((cd) => (
-                          <option key={cd.id} value={cd.id}>
-                            {cd.ma_cap_do} - {cd.ten_cap_do}
-                          </option>
-                        ))}
+                        {capDoList.map((cd) => {
+                          // Tính thời gian phút cho cấp độ này (dựa vào SP đã chọn)
+                          let thoiGianPhut: number | string = 0;
+                          if (selectedSpChuan && cd.ma_cap_do !== 'C5') {
+                            const hesoQuyDoi = selectedSpChuan.thoi_gian_phut || 60;
+                            const hesoCapDo = selectedSpChuan.ma_sp === 'SP1'
+                              ? (cd.he_so_sp1 || 1)
+                              : (cd.he_so_sp2 || 1);
+                            thoiGianPhut = hesoQuyDoi * hesoCapDo;
+                          } else if (cd.ma_cap_do === 'C5') {
+                            thoiGianPhut = 'Tùy biến';
+                          }
+
+                          return (
+                            <option key={cd.id} value={cd.id}>
+                              {cd.ma_cap_do} - {cd.ten_cap_do}
+                              {thoiGianPhut !== 0 && ` — ${thoiGianPhut}${typeof thoiGianPhut === 'number' ? ' phút' : ''}`}
+                            </option>
+                          );
+                        })}
                       </select>
                       {errors.cap_do_id && (
                         <p className="error-text">{errors.cap_do_id.message}</p>

@@ -447,9 +447,18 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
     
     # Map chi tiết hiện có
     existing_map = {ct.cong_chuc_id: ct for ct in existing_chi_tiets}
-    
+
+    # FIX v1.5 (28/02/2026): XÓA chi tiết của CC KHÔNG CÒN trong đơn vị
+    # (CC đã chuyển đi sau tháng báo cáo)
+    valid_cc_ids = {cc.id for cc in cong_chucs}
+    chi_tiet_to_delete = [ct for ct in existing_chi_tiets if ct.cong_chuc_id not in valid_cc_ids]
+
+    if chi_tiet_to_delete:
+        for ct in chi_tiet_to_delete:
+            await db.delete(ct)
+
     stats = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
-    
+
     for cc in cong_chucs:
         # Xác định loại CC (lãnh đạo hay thường)
         is_lanh_dao = cc.vai_tro and cc.vai_tro.cap_bac in [

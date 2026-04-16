@@ -35,3 +35,22 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Temp files
+*.csv
+*.coverage
+backend/test_*.docx
+backend/test_*.py
+backend/verify_*.py
+backend/verify_*.sh
+*_SUMMARY.md
+*_REPORT.md
+*_IMPLEMENTATION.md
+*_VERIFICATION.md
+*_FIXES_SUMMARY.md
+LMS_*.md
+TAB_*.md
+ANTI_CHEAT_*.md
+ENROLLMENT_*.md
+EXAM_*.md
+NOTIFICATION_*.md

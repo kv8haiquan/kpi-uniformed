@@ -991,7 +991,7 @@ async def export_phieu_danh_gia_quy(
     diem_kpi_nhiem_vu = ket_qua.get("diem_kpi_quy", 0)
     diem_tong = ket_qua.get("diem_tong_quy", 0)
 
-    # === Tính điểm a,b,c,d,đ,e cho quý (trung bình 3 tháng) ===
+    # === Tính điểm a,b,c,d,đ,e cho quý (trung bình 3 tháng, thiếu tính 0) ===
     # CC thường: diem_a, diem_b, diem_c (tỷ lệ 0-100%)
     # Lãnh đạo: diem_a, b, c, d, đ, e (tỷ lệ 0-100%)
     diem_a = None
@@ -1016,21 +1016,13 @@ async def export_phieu_danh_gia_quy(
                 dd_values.append(kpi_data.get("dd_to_chuc", 0) * 100)
                 e_values.append(kpi_data.get("e_doan_ket", 0) * 100)
 
-            # Trung bình
-            diem_a = sum(a_values) / 3 if len(a_values) == 3 else 0
-            diem_b = sum(b_values) / 3 if len(b_values) == 3 else 0
-            diem_c = sum(c_values) / 3 if len(c_values) == 3 else 0
-            diem_d = sum(d_values) / 3 if len(d_values) == 3 else 0
-            diem_dd = sum(dd_values) / 3 if len(dd_values) == 3 else 0
-            diem_e = sum(e_values) / 3 if len(e_values) == 3 else 0
-
-            # Cap ở 100%
-            diem_a = min(diem_a, 100.0)
-            diem_b = min(diem_b, 100.0)
-            diem_c = min(diem_c, 100.0)
-            diem_d = min(diem_d, 100.0)
-            diem_dd = min(diem_dd, 100.0)
-            diem_e = min(diem_e, 100.0)
+            # Trung bình LUÔN chia 3 (thiếu tháng tính 0)
+            diem_a = min(sum(a_values) / 3, 100.0) if len(a_values) == 3 else 0
+            diem_b = min(sum(b_values) / 3, 100.0) if len(b_values) == 3 else 0
+            diem_c = min(sum(c_values) / 3, 100.0) if len(c_values) == 3 else 0
+            diem_d = min(sum(d_values) / 3, 100.0) if len(d_values) == 3 else 0
+            diem_dd = min(sum(dd_values) / 3, 100.0) if len(dd_values) == 3 else 0
+            diem_e = min(sum(e_values) / 3, 100.0) if len(e_values) == 3 else 0
         else:
             # CC thường: tính từng tháng, lấy TB a, b (c_tien_do), c (b_chat_luong)
             a_values, b_values, c_values = [], [], []
@@ -1041,14 +1033,10 @@ async def export_phieu_danh_gia_quy(
                 c_values.append(kpi_data.get("c_tien_do", 0) * 100)  # Key là c_tien_do
                 b_values.append(kpi_data.get("b_chat_luong", 0) * 100)  # Key là b_chat_luong
 
-            diem_a = sum(a_values) / 3 if len(a_values) == 3 else 0
-            diem_b = sum(c_values) / 3 if len(c_values) == 3 else 0  # Tỷ lệ tiến độ
-            diem_c = sum(b_values) / 3 if len(b_values) == 3 else 0  # Tỷ lệ chất lượng
-
-            # Cap ở 100%
-            diem_a = min(diem_a, 100.0)
-            diem_b = min(diem_b, 100.0)
-            diem_c = min(diem_c, 100.0)
+            # Trung bình LUÔN chia 3 (thiếu tháng tính 0)
+            diem_a = min(sum(a_values) / 3, 100.0) if len(a_values) == 3 else 0
+            diem_b = min(sum(c_values) / 3, 100.0) if len(c_values) == 3 else 0  # Tỷ lệ tiến độ
+            diem_c = min(sum(b_values) / 3, 100.0) if len(b_values) == 3 else 0  # Tỷ lệ chất lượng
     except Exception as e:
         logger.warning(f"Lỗi tính điểm KPI quý cho {cc.ma_cc} quý {quy}/{nam}: {e}")
 
@@ -1181,8 +1169,118 @@ async def export_phieu_danh_gia_quy(
                 new_run = para.add_run(full_text)
                 set_times_new_roman(new_run)
 
-    # KHÔNG điền chi tiết từng ô tiêu chí chung (quý dùng deduplicate)
-    # Chỉ điền tổng điểm tiêu chí chung đã được replace ở trên
+    # === Điền điểm tiêu chí chung vào bảng (Table 1 - bảng thứ 2) ===
+    # Logic quý: Nhóm I, II → MIN (vi phạm bất kỳ tháng nào → vi phạm quý)
+    #             Nhóm III → MAX (đạt bất kỳ tháng nào → đạt quý)
+    if len(doc.tables) >= 2:
+        table_tc = doc.tables[1]
+
+        # Query tiêu chí chung của 3 tháng
+        # Lấy tất cả DanhGiaThang trong quý
+        stmt_dg_quy = (
+            select(DanhGiaThang)
+            .where(
+                and_(
+                    DanhGiaThang.cong_chuc_id == cc.id,
+                    DanhGiaThang.thang.in_(thang_list),
+                    DanhGiaThang.nam == nam,
+                    DanhGiaThang.is_deleted == False,
+                )
+            )
+        )
+        result_dg_quy = await db.execute(stmt_dg_quy)
+        danh_gia_list = result_dg_quy.scalars().all()
+        dg_ids = [dg.id for dg in danh_gia_list]
+
+        # Lấy tất cả TieuChiChungDanhGia của 3 tháng
+        tc_quy_map = {}  # ma_tieu_chi → list of (diem, nhom, danh_gia_thang_id)
+        if dg_ids:
+            stmt_tc_quy = (
+                select(TieuChiChungDanhGia)
+                .where(TieuChiChungDanhGia.danh_gia_thang_id.in_(dg_ids))
+                .options(selectinload(TieuChiChungDanhGia.tieu_chi))
+            )
+            result_tc_quy = await db.execute(stmt_tc_quy)
+            all_tc = result_tc_quy.scalars().all()
+
+            for tc in all_tc:
+                if tc.tieu_chi:
+                    ma = tc.tieu_chi.ma_tieu_chi
+                    diem = tc.diem_phe_duyet or tc.diem_tu_cham or Decimal(0)
+                    nhom = tc.tieu_chi.nhom_tieu_chi  # 1, 2, 3
+                    diem_toi_da = tc.tieu_chi.diem_toi_da or Decimal(0)
+                    if ma not in tc_quy_map:
+                        tc_quy_map[ma] = {"diem_values": [], "nhom": nhom, "diem_toi_da": diem_toi_da}
+                    tc_quy_map[ma]["diem_values"].append(diem)
+
+        # Tính điểm quý cho mỗi tiêu chí: trung bình 3 tháng (luôn chia 3, thiếu tính 0)
+        tc_quy_diem = {}  # ma_tieu_chi → Decimal (điểm quý)
+        for ma, info in tc_quy_map.items():
+            values = info["diem_values"]
+            tc_quy_diem[ma] = sum(values) / Decimal("3")
+
+        # Điền vào bảng (logic giống endpoint tháng)
+        ma_tieu_chi_list = [
+            ("1", "1.1"), ("2", "1.2"),
+            ("1", "2.1"), ("2", "2.2"), ("3", "2.3"), ("4", "2.4"),
+            ("1", "3.1"), ("2", "3.2"), ("3", "3.3"), ("4", "3.4"),
+        ]
+
+        tc_idx = 0
+        tong_nhom_1 = Decimal(0)
+        tong_nhom_2 = Decimal(0)
+        tong_nhom_3 = Decimal(0)
+
+        for row_idx, row in enumerate(table_tc.rows[2:], start=0):
+            if len(row.cells) >= 4:
+                cell_tt = row.cells[0].text.strip()
+
+                if cell_tt == "I":
+                    pass
+                elif cell_tt == "II":
+                    table_tc.rows[2].cells[3].text = f"{float(tong_nhom_1):.2f}"
+                    for p in table_tc.rows[2].cells[3].paragraphs:
+                        for r in p.runs:
+                            set_times_new_roman(r)
+                elif cell_tt == "III":
+                    table_tc.rows[5].cells[3].text = f"{float(tong_nhom_2):.2f}"
+                    for p in table_tc.rows[5].cells[3].paragraphs:
+                        for r in p.runs:
+                            set_times_new_roman(r)
+                elif cell_tt == "Tổng cộng":
+                    table_tc.rows[10].cells[3].text = f"{float(tong_nhom_3):.2f}"
+                    for p in table_tc.rows[10].cells[3].paragraphs:
+                        for r in p.runs:
+                            set_times_new_roman(r)
+                    tong_30 = tong_nhom_1 + tong_nhom_2 + tong_nhom_3
+                    row.cells[3].text = f"{float(tong_30):.2f}"
+                    for p in row.cells[3].paragraphs:
+                        for r in p.runs:
+                            set_times_new_roman(r)
+                    continue
+
+                if tc_idx < len(ma_tieu_chi_list):
+                    expected_tt, ma_tc = ma_tieu_chi_list[tc_idx]
+                    if cell_tt == expected_tt:
+                        diem = Decimal(0)
+                        if ma_tc in tc_quy_diem:
+                            diem = tc_quy_diem[ma_tc]
+                            row.cells[3].text = f"{float(diem):.2f}"
+                        else:
+                            row.cells[3].text = ""
+
+                        for p in row.cells[3].paragraphs:
+                            for r in p.runs:
+                                set_times_new_roman(r)
+
+                        if ma_tc in ["1.1", "1.2"]:
+                            tong_nhom_1 += diem
+                        elif ma_tc in ["2.1", "2.2", "2.3", "2.4"]:
+                            tong_nhom_2 += diem
+                        elif ma_tc in ["3.1", "3.2", "3.3", "3.4"]:
+                            tong_nhom_3 += diem
+
+                        tc_idx += 1
 
     # Lưu vào buffer
     buffer = io.BytesIO()

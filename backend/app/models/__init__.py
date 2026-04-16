@@ -84,6 +84,15 @@ from app.models.leader_kpi import (
 from app.models.bao_cao_xep_loai import (
     BaoCaoXepLoai,
     ChiTietXepLoai,
+    TrangThaiBaoCao,
+    XepLoaiChatLuong,
+    tinh_xep_loai,
+)
+
+# Bao cao xep loai quy
+from app.models.bao_cao_xep_loai_quy import (
+    BaoCaoXepLoaiQuy,
+    ChiTietXepLoaiQuy,
 )
 
 # Leave Management (v2.3 - 25/01/2026)
@@ -192,6 +201,15 @@ __all__ = [
     # ==========================================================================
     "BaoCaoXepLoai",
     "ChiTietXepLoai",
+    "TrangThaiBaoCao",
+    "XepLoaiChatLuong",
+    "tinh_xep_loai",
+
+    # ==========================================================================
+    # BAO CAO XEP LOAI QUY
+    # ==========================================================================
+    "BaoCaoXepLoaiQuy",
+    "ChiTietXepLoaiQuy",
 
     # ==========================================================================
     # LICH SU DIEU CHINH

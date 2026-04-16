@@ -18,9 +18,12 @@ from app.api.v1.endpoints import (
     auth, don_vi, cong_chuc, danh_muc, ke_khai, phe_duyet, danh_gia, nghi_phep,
     ke_khai_lanh_dao, danh_gia_lanh_dao, bao_cao_xep_loai,
     xep_loai_moi,  # v2.6.0: Màn hình xếp loại mới
+    xep_loai_quy,  # v3.6.0: Xếp loại quý
     admin, #Module admin mới
     sp_cong_viec_chuan, #SP CV CHUAN MOI
     export_bao_cao,  # v2.8.0: Xuất báo cáo DOCX/PDF
+    in_bang_ke,  # v3.7.0: In bảng kê cá nhân (phiếu đánh giá + bảng kê CV)
+    bao_cao_xep_loai_quy,  # v3.9.0: Báo cáo xếp loại quý
 )
 
 # =============================================================================
@@ -133,6 +136,13 @@ api_router.include_router(
     tags=["Báo cáo Xếp loại"]
 )
 
+# Báo cáo xếp loại quý (v3.9.0)
+api_router.include_router(
+    bao_cao_xep_loai_quy.router,
+    prefix="/bao-cao-xep-loai-quy",
+    tags=["Báo cáo Xếp loại quý"]
+)
+
 
 # -----------------------------------------------------------------------------
 # XẾP LOẠI MỚI (v2.6.0 - 29/01/2026)
@@ -143,6 +153,13 @@ api_router.include_router(
     xep_loai_moi.router,
     prefix="/xep-loai",
     tags=["Xếp loại KPI"],
+)
+
+# Xếp loại quý (v3.6.0)
+api_router.include_router(
+    xep_loai_quy.router,
+    prefix="/xep-loai-quy",
+    tags=["Xếp loại quý"],
 )
 
 #ADMIN MODULE
@@ -167,4 +184,11 @@ api_router.include_router(
     export_bao_cao.router,
     prefix="/export",
     tags=["Xuất Báo cáo"],
+)
+
+# In bảng kê cá nhân (v3.7.0 - 15/04/2026)
+api_router.include_router(
+    in_bang_ke.router,
+    prefix="/in-bang-ke",
+    tags=["In Bảng kê"],
 )

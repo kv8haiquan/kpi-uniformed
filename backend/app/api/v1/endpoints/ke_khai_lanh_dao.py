@@ -19,6 +19,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -35,6 +36,11 @@ from app.schemas.leader_kpi import (
     KeKhaiLanhDaoCreate, KeKhaiLanhDaoUpdate, GuiDuyetRequest,
     PheDuyetKeKhaiLDRequest, ThongKeKeKhaiLDResponse,
 )
+
+
+class TraLaiKeKhaiLDRequest(BaseModel):
+    """Yêu cầu trả lại kê khai lãnh đạo đã phê duyệt."""
+    ly_do: str = Field(..., min_length=1, max_length=500, description="Lý do trả lại")
 
 router = APIRouter()
 
@@ -624,6 +630,70 @@ async def phe_duyet_ke_khai_lanh_dao(
     await refresh_ke_khai_full(db, ke_khai, include_cong_chuc=True)
     
     return success_response(data=build_ke_khai_response(ke_khai, include_cong_chuc=True), message=message)
+
+
+# =============================================================================
+# TRẢ LẠI KÊ KHAI LÃNH ĐẠO ĐÃ PHÊ DUYỆT
+# =============================================================================
+
+@router.post("/{ke_khai_id}/tra-lai")
+async def tra_lai_ke_khai_lanh_dao(
+    db: DatabaseDep, current_user: ActiveUserDep,
+    ke_khai_id: UUID, payload: TraLaiKeKhaiLDRequest,
+) -> dict:
+    """
+    Trả lại kê khai lãnh đạo đã phê duyệt về trạng thái NHAP.
+    Quyền: Người đã phê duyệt hoặc CCT. QLDV không có quyền.
+    """
+    if is_qldv(current_user):
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_003", message="QLDV không có quyền trả lại kê khai lãnh đạo"
+        ))
+
+    stmt = (
+        select(KeKhaiLanhDao)
+        .options(
+            selectinload(KeKhaiLanhDao.cong_chuc),
+            selectinload(KeKhaiLanhDao.nguoi_phe_duyet)
+        )
+        .where(
+            KeKhaiLanhDao.id == ke_khai_id,
+            KeKhaiLanhDao.is_deleted == False,
+        )
+    )
+    ke_khai = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not ke_khai:
+        raise HTTPException(status_code=404, detail=error_response(
+            code="NOT_FOUND", message="Không tìm thấy kê khai"
+        ))
+
+    if ke_khai.trang_thai != TrangThaiKeKhaiLD.DA_PHE_DUYET.value:
+        raise HTTPException(status_code=400, detail=error_response(
+            code="INVALID_STATE",
+            message=f"Chỉ trả lại được kê khai ở trạng thái ĐÃ PHÊ DUYỆT (hiện tại: {ke_khai.trang_thai})"
+        ))
+
+    is_cct = current_user.vai_tro and current_user.vai_tro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
+    if ke_khai.nguoi_phe_duyet_id != current_user.id and not is_cct:
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_003", message="Bạn không phải người đã phê duyệt kê khai này"
+        ))
+
+    # Trả lại
+    ke_khai.trang_thai = TrangThaiKeKhaiLD.NHAP.value
+    ke_khai.y_kien_lanh_dao = f"[TRẢ LẠI] {payload.ly_do}"
+    ke_khai.so_loi_chat_luong = 0
+    ke_khai.so_loi_tien_do = 0
+
+    await db.flush()
+    await refresh_ke_khai_full(db, ke_khai, include_cong_chuc=True)
+
+    return success_response(
+        data=build_ke_khai_response(ke_khai, include_cong_chuc=True),
+        message="Đã trả lại kê khai thành công. Lãnh đạo có thể sửa và gửi lại."
+    )
+
 
 @router.get(
     "/lich-su",

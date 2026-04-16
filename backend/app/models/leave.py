@@ -332,6 +332,7 @@ class DangKyNghi(BaseModelWithSoftDelete):
         """Trả về tên tiếng Việt của loại nghỉ."""
         mapping = {
             LoaiNghi.NGHI_TUAN: "Nghỉ tuần",
+            LoaiNghi.NGHI_TET: "Nghỉ Tết",
             LoaiNghi.PHEP_NAM: "Phép năm",
             LoaiNghi.NGHI_LE: "Nghỉ lễ",
             LoaiNghi.NGHI_OM: "Ốm đau",

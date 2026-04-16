@@ -8,8 +8,9 @@ Tính năng chính:
 2. Hỗ trợ filter theo đơn vị, trạng thái
 3. Chi tiết phê duyệt 2 cấp
 4. API khóa dữ liệu (lock data)
+5. Tab Tạm tính (v2.7.0) - tính cả công việc CHỜ PHÊ DUYỆT
 
-Phiên bản: 2.6.0 (29/01/2026)
+Phiên bản: 2.7.0 (04/03/2026)
 """
 
 import calendar
@@ -30,7 +31,8 @@ from app.models.kpi_assessment import (
     TrangThaiTieuChi,
     TrangThaiDanhGia,
 )
-from app.models.kpi_submission import KeKhaiCongViec, TrangThaiPheDuyet
+from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
+from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, DanhGiaDDE, TrangThaiDDE, TrangThaiHoanThanh
 from app.models.leave import DangKyNghi, TrangThaiNghi
 from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro, DonVi
 from app.models.lich_su_dieu_chinh import LichSuDieuChinh, LoaiDoiTuongDieuChinh
@@ -49,25 +51,41 @@ async def tinh_diem_kpi_70(
     cong_chuc_id: UUID,
     thang: int,
     nam: int,
+    tam_tinh: bool = False,
 ) -> dict:
     """
-    Tính điểm KPI 70 điểm từ kê khai công việc đã duyệt.
-    
+    Tính điểm KPI 70 điểm từ kê khai công việc đã duyệt (hoặc tạm tính).
+
     Công thức:
     - a = SP_hoàn_thành / SP_được_giao (tỷ lệ số lượng)
     - b = SP_chất_lượng / SP_hoàn_thành (tỷ lệ chất lượng)
     - c = SP_tiến_độ / SP_hoàn_thành (tỷ lệ tiến độ)
     - Điểm = (a + b + c) / 3 × 70
+
+    Params:
+    - tam_tinh: Nếu True, tính cả công việc CHỜ PHÊ DUYỆT và nghỉ phép CHỜ PHÊ DUYỆT
     """
-    # Lấy số ngày nghỉ đã duyệt
-    stmt_nghi = (
-        select(func.coalesce(func.sum(DangKyNghi.so_ngay), Decimal("0")))
-        .where(DangKyNghi.cong_chuc_id == cong_chuc_id)
-        .where(DangKyNghi.thang_ap_dung == thang)
-        .where(DangKyNghi.nam_ap_dung == nam)
-        .where(DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET)
-        .where(DangKyNghi.is_deleted == False)
-    )
+    # Lấy số ngày nghỉ (đã duyệt hoặc cả chờ duyệt)
+    if tam_tinh:
+        # Tạm tính: bao gồm cả CHO_PHE_DUYET và DA_PHE_DUYET
+        stmt_nghi = (
+            select(func.coalesce(func.sum(DangKyNghi.so_ngay), Decimal("0")))
+            .where(DangKyNghi.cong_chuc_id == cong_chuc_id)
+            .where(DangKyNghi.thang_ap_dung == thang)
+            .where(DangKyNghi.nam_ap_dung == nam)
+            .where(DangKyNghi.trang_thai.in_([TrangThaiNghi.CHO_PHE_DUYET, TrangThaiNghi.DA_PHE_DUYET]))
+            .where(DangKyNghi.is_deleted == False)
+        )
+    else:
+        # Chính thức: chỉ DA_PHE_DUYET
+        stmt_nghi = (
+            select(func.coalesce(func.sum(DangKyNghi.so_ngay), Decimal("0")))
+            .where(DangKyNghi.cong_chuc_id == cong_chuc_id)
+            .where(DangKyNghi.thang_ap_dung == thang)
+            .where(DangKyNghi.nam_ap_dung == nam)
+            .where(DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET)
+            .where(DangKyNghi.is_deleted == False)
+        )
     result_nghi = await db.execute(stmt_nghi)
     tong_ngay_nghi = result_nghi.scalar() or Decimal("0")
     
@@ -76,35 +94,71 @@ async def tinh_diem_kpi_70(
     so_ngay_lam_viec = max(Decimal("0"), Decimal(str(so_ngay_trong_thang)) - tong_ngay_nghi)
     sp_duoc_giao = float(so_ngay_lam_viec) * 96
     
-    # Lấy tổng SP đã duyệt
-    stmt_sp = (
+    # Lấy tổng SP - logic tạm tính giống ke_khai.py
+    # Cần lấy chi tiết từng row vì kê khai chưa duyệt phải tính SP CL/TĐ từ tu_danh_gia
+    if tam_tinh:
+        allowed_statuses = [TrangThaiKeKhai.NHAP, TrangThaiKeKhai.CHO_PHE_DUYET, TrangThaiKeKhai.DA_PHE_DUYET]
+    else:
+        allowed_statuses = [TrangThaiKeKhai.DA_PHE_DUYET]
+
+    detail_query = (
         select(
-            func.coalesce(func.sum(KeKhaiCongViec.so_luong_quy_doi), Decimal("0")).label("tong_sp"),
-            func.coalesce(func.sum(
-                case(
-                    (KeKhaiCongViec.ket_qua_chat_luong == True, KeKhaiCongViec.so_luong_quy_doi),
-                    else_=Decimal("0")
-                )
-            ), Decimal("0")).label("sp_chat_luong"),
-            func.coalesce(func.sum(
-                case(
-                    (KeKhaiCongViec.dung_han == True, KeKhaiCongViec.so_luong_quy_doi),
-                    else_=Decimal("0")
-                )
-            ), Decimal("0")).label("sp_tien_do"),
+            KeKhaiCongViec.trang_thai,
+            KeKhaiCongViec.so_luong,
+            KeKhaiCongViec.so_sp_goc_quy_doi,
+            KeKhaiCongViec.so_sp_chat_luong,
+            KeKhaiCongViec.so_sp_tien_do,
+            KeKhaiCongViec.tu_danh_gia_chat_luong,
+            KeKhaiCongViec.tu_danh_gia_tien_do,
         )
         .where(KeKhaiCongViec.cong_chuc_id == cong_chuc_id)
         .where(KeKhaiCongViec.thang == thang)
         .where(KeKhaiCongViec.nam == nam)
-        .where(KeKhaiCongViec.trang_thai_phe_duyet == TrangThaiPheDuyet.DA_PHE_DUYET)
         .where(KeKhaiCongViec.is_deleted == False)
+        .where(KeKhaiCongViec.trang_thai.in_(allowed_statuses))
     )
-    result_sp = await db.execute(stmt_sp)
-    row_sp = result_sp.one()
-    
-    tong_sp = float(row_sp.tong_sp or 0)
-    sp_chat_luong = float(row_sp.sp_chat_luong or 0)
-    sp_tien_do = float(row_sp.sp_tien_do or 0)
+
+    detail_result = await db.execute(detail_query)
+    detail_rows = detail_result.all()
+
+    tong_sp = Decimal("0")
+    sp_chat_luong = Decimal("0")
+    sp_tien_do = Decimal("0")
+
+    for row in detail_rows:
+        (trang_thai_row, so_luong_row, sp_goc, sp_cl, sp_td, tu_dg_cl, tu_dg_td) = row
+        sp_goc = Decimal(str(sp_goc or 0))
+        so_luong_row = so_luong_row or 1
+
+        tong_sp += sp_goc
+
+        if trang_thai_row == TrangThaiKeKhai.DA_PHE_DUYET:
+            # Đã duyệt: dùng giá trị đã tính sẵn
+            sp_chat_luong += Decimal(str(sp_cl or 0))
+            sp_tien_do += Decimal(str(sp_td or 0))
+        else:
+            # NHAP hoặc CHO_PHE_DUYET: tính từ tu_danh_gia
+            tu_dg_cl = tu_dg_cl or 0
+            tu_dg_td = tu_dg_td or 0
+
+            if sp_goc > 0 and so_luong_row > 0:
+                sp_per_unit = sp_goc / Decimal(str(so_luong_row))
+                max_loi = so_luong_row * 4
+
+                loi_tinh_cl = min(tu_dg_cl, max_loi)
+                sp_tru_cl = Decimal("0.25") * Decimal(str(loi_tinh_cl)) * sp_per_unit
+                sp_chat_luong += max(sp_goc - sp_tru_cl, Decimal("0"))
+
+                loi_tinh_td = min(tu_dg_td, max_loi)
+                sp_tru_td = Decimal("0.25") * Decimal(str(loi_tinh_td)) * sp_per_unit
+                sp_tien_do += max(sp_goc - sp_tru_td, Decimal("0"))
+            else:
+                sp_chat_luong += sp_goc
+                sp_tien_do += sp_goc
+
+    tong_sp = float(tong_sp)
+    sp_chat_luong = float(sp_chat_luong)
+    sp_tien_do = float(sp_tien_do)
     
     # Tính tỷ lệ
     a_so_luong = tong_sp / sp_duoc_giao if sp_duoc_giao > 0 else 0
@@ -128,6 +182,136 @@ async def tinh_diem_kpi_70(
         "c_tien_do": c_tien_do,
         "diem_kpi": diem_kpi,
         "diem_70": diem_70,
+    }
+
+
+async def tinh_diem_kpi_70_lanh_dao(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+    tam_tinh: bool = False,
+) -> dict:
+    """
+    Tính điểm KPI 70 điểm cho LÃNH ĐẠO từ KeKhaiLanhDao + DanhGiaDDE.
+
+    Công thức (6 chỉ số):
+    - a = CV_hoàn_thành / Tổng_CV (tỷ lệ số lượng)
+    - b = Tổng_điểm_tiến_độ / Tổng_CV (mỗi CV: max(0, 1 - lỗi×0.25))
+    - c = Tổng_điểm_chất_lượng / Tổng_CV
+    - d = d_ket_qua_don_vi / 100
+    - đ = dd_to_chuc_trien_khai / 100
+    - e = e_doan_ket_noi_bo / 100
+    - Điểm = (a + b + c + d + đ + e) / 6 × 70
+    """
+    # Xác định trạng thái được tính
+    if tam_tinh:
+        allowed_statuses = [
+            TrangThaiKeKhaiLD.NHAP.value,
+            TrangThaiKeKhaiLD.CHO_PHE_DUYET.value,
+            TrangThaiKeKhaiLD.DA_PHE_DUYET.value,
+        ]
+        dde_statuses = [TrangThaiDDE.NHAP.value, TrangThaiDDE.CHO_PHE_DUYET.value, TrangThaiDDE.DA_PHE_DUYET.value]
+    else:
+        allowed_statuses = [TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
+        dde_statuses = [TrangThaiDDE.DA_PHE_DUYET.value]
+
+    # Query kê khai lãnh đạo
+    stmt_kkld = (
+        select(
+            KeKhaiLanhDao.trang_thai_hoan_thanh,
+            KeKhaiLanhDao.so_loi_chat_luong,
+            KeKhaiLanhDao.so_loi_tien_do,
+        )
+        .where(KeKhaiLanhDao.cong_chuc_id == cong_chuc_id)
+        .where(KeKhaiLanhDao.thang == thang)
+        .where(KeKhaiLanhDao.nam == nam)
+        .where(KeKhaiLanhDao.is_deleted == False)
+        .where(KeKhaiLanhDao.trang_thai.in_(allowed_statuses))
+    )
+    result_kkld = await db.execute(stmt_kkld)
+    rows = result_kkld.all()
+
+    tong_cong_viec = len(rows)
+    tong_hoan_thanh = 0
+    tong_diem_chat_luong = 0.0
+    tong_diem_tien_do = 0.0
+    tong_loi_chat_luong = 0
+    tong_loi_tien_do = 0
+
+    for row in rows:
+        (trang_thai_ht, loi_cl, loi_td) = row
+        # a: Đếm hoàn thành
+        if trang_thai_ht == TrangThaiHoanThanh.DA_HOAN_THANH:
+            tong_hoan_thanh += 1
+        # b, c: Điểm tiến độ/chất lượng mỗi CV = max(0, 1 - lỗi × 0.25)
+        tong_loi_chat_luong += loi_cl
+        tong_loi_tien_do += loi_td
+        tong_diem_chat_luong += max(0.0, 1.0 - loi_cl * 0.25)
+        tong_diem_tien_do += max(0.0, 1.0 - loi_td * 0.25)
+
+    # Tỷ lệ a, b, c
+    a = min(tong_hoan_thanh / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
+    b = min(tong_diem_tien_do / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
+    c = min(tong_diem_chat_luong / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
+
+    # Query DDE
+    stmt_dde = (
+        select(DanhGiaDDE)
+        .where(DanhGiaDDE.cong_chuc_id == cong_chuc_id)
+        .where(DanhGiaDDE.thang == thang)
+        .where(DanhGiaDDE.nam == nam)
+        .where(DanhGiaDDE.trang_thai.in_(dde_statuses))
+    )
+    result_dde = await db.execute(stmt_dde)
+    dde = result_dde.scalar_one_or_none()
+
+    if dde:
+        # Nếu tạm tính: dùng giá trị tự đánh giá, nếu chính thức: dùng final (ưu tiên phê duyệt)
+        if tam_tinh:
+            d_val = (dde.d_phe_duyet if dde.d_phe_duyet is not None else dde.d_ket_qua_don_vi) / 100.0
+            dd_val = (dde.dd_phe_duyet if dde.dd_phe_duyet is not None else dde.dd_to_chuc_trien_khai) / 100.0
+            e_val = (dde.e_phe_duyet if dde.e_phe_duyet is not None else dde.e_doan_ket_noi_bo) / 100.0
+        else:
+            d_val = dde.d_final / 100.0
+            dd_val = dde.dd_final / 100.0
+            e_val = dde.e_final / 100.0
+    else:
+        # Mặc định 100% nếu chưa có DDE
+        d_val = 1.0
+        dd_val = 1.0
+        e_val = 1.0
+
+    # Điểm KPI = (a + b + c + d + đ + e) / 6 × 70
+    diem_kpi = (a + b + c + d_val + dd_val + e_val) / 6
+    diem_70 = min(70, diem_kpi * 70)
+
+    return {
+        "is_lanh_dao": True,
+        "tong_cong_viec": tong_cong_viec,
+        "tong_hoan_thanh": tong_hoan_thanh,
+        "tong_diem_chat_luong": tong_diem_chat_luong,
+        "tong_diem_tien_do": tong_diem_tien_do,
+        "tong_loi_chat_luong": tong_loi_chat_luong,
+        "tong_loi_tien_do": tong_loi_tien_do,
+        "a_so_luong": a,
+        "b_tien_do": b,
+        "c_chat_luong": c,
+        "d_ket_qua": d_val,
+        "dd_to_chuc": dd_val,
+        "e_doan_ket": e_val,
+        "diem_kpi": diem_kpi,
+        "diem_70": diem_70,
+        # Backward compatibility fields (cho frontend cũ)
+        "so_ngay_trong_thang": 0,
+        "so_ngay_nghi": 0,
+        "so_ngay_lam_viec": 0,
+        "sp_duoc_giao": 0,
+        "tong_sp_hoan_thanh": 0,
+        "sp_chat_luong": 0,
+        "sp_tien_do": 0,
+        "b_chat_luong": c,  # alias
+        "c_tien_do": b,  # alias
     }
 
 
@@ -156,13 +340,17 @@ async def get_tong_hop_xep_loai(
     don_vi_id: Optional[UUID] = Query(None, description="Lọc theo đơn vị"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    tam_tinh: bool = Query(False, description="Tính cả công việc chờ duyệt (tạm tính)"),
 ) -> dict:
     """
     Lấy danh sách tổng hợp xếp loại KPI của CC trong đơn vị/chi cục.
-    
+
     Quyền:
     - ĐT: Xem CC trong đơn vị mình
     - PCCT/CCT: Xem tất cả CC trong chi cục
+
+    Params:
+    - tam_tinh: Nếu True, trả về dữ liệu tạm tính (bao gồm CHỜ PHÊ DUYỆT)
     """
     # Kiểm tra quyền
     cap_bac = None
@@ -270,21 +458,46 @@ async def get_tong_hop_xep_loai(
         result_dg = await db.execute(stmt_dg)
         danh_gia = result_dg.scalar_one_or_none()
         
-        # Tính điểm 70
-        diem_70_data = await tinh_diem_kpi_70(db, cc.id, thang, nam)
-        
+        # Tính điểm 70 (truyền tam_tinh flag)
+        # Lãnh đạo dùng công thức 6 chỉ số, công chức dùng 3 chỉ số
+        if cc.is_lanh_dao:
+            diem_70_data = await tinh_diem_kpi_70_lanh_dao(db, cc.id, thang, nam, tam_tinh=tam_tinh)
+        else:
+            diem_70_data = await tinh_diem_kpi_70(db, cc.id, thang, nam, tam_tinh=tam_tinh)
+
         # Điểm 30 (tiêu chí chung)
+        # Nếu tam_tinh=True, lấy điểm tự chấm, nếu False lấy điểm phê duyệt
+        # Nếu tam_tinh=True và CC chưa tự chấm → mặc định 20 điểm
         diem_30 = 0
+        diem_30_tu_cham = 0
         trang_thai_tc = None
-        if danh_gia and danh_gia.diem_tieu_chi_chung:
-            diem_30 = float(danh_gia.diem_tieu_chi_chung)
-        if danh_gia and danh_gia.trang_thai_tc:
-            trang_thai_tc = danh_gia.trang_thai_tc.value
-        
+        if danh_gia:
+            if tam_tinh:
+                # Tạm tính: lấy tổng điểm tự chấm từ các tiêu chí
+                if danh_gia.tieu_chi_chungs:
+                    diem_30_tu_cham = sum(
+                        float(tc.diem_tu_cham or 0) for tc in danh_gia.tieu_chi_chungs
+                    )
+                    diem_30 = diem_30_tu_cham if diem_30_tu_cham > 0 else 20
+                elif danh_gia.diem_tieu_chi_chung:
+                    diem_30 = float(danh_gia.diem_tieu_chi_chung)
+                else:
+                    # Chưa tự chấm tiêu chí → mặc định 20 điểm
+                    diem_30 = 20
+            else:
+                # Chính thức: lấy điểm phê duyệt
+                if danh_gia.diem_tieu_chi_chung:
+                    diem_30 = float(danh_gia.diem_tieu_chi_chung)
+            if danh_gia.trang_thai_tc:
+                trang_thai_tc = danh_gia.trang_thai_tc.value
+        elif tam_tinh:
+            # Chưa có bản ghi đánh giá → mặc định 20 điểm cho tạm tính
+            diem_30 = 20
+
         # Tổng điểm và xếp loại
         diem_tong = diem_30 + diem_70_data["diem_70"]
         xep_loai = xep_loai_kpi(diem_tong)
-        
+
         items.append({
             "cong_chuc_id": cc.id,
             "ma_cc": cc.ma_cc,
@@ -293,7 +506,7 @@ async def get_tong_hop_xep_loai(
             "don_vi_id": cc.don_vi_id,
             "don_vi_ten": cc.don_vi.ten_don_vi if cc.don_vi else None,
             "cap_bac": cc.vai_tro.cap_bac.value if cc.vai_tro else None,
-            
+
             # Điểm số
             "diem_30": diem_30,
             "diem_70": diem_70_data["diem_70"],
@@ -303,11 +516,29 @@ async def get_tong_hop_xep_loai(
             # Trạng thái
             "trang_thai_tc": trang_thai_tc,
             "is_khoa": danh_gia.is_khoa if danh_gia else False,
-            
-            # Chi tiết 70đ
+
+            # Chi tiết 70đ (đầy đủ cho tab Tạm tính)
+            "so_ngay_trong_thang": diem_70_data["so_ngay_trong_thang"],
+            "so_ngay_nghi": diem_70_data["so_ngay_nghi"],
+            "so_ngay_lam_viec": diem_70_data["so_ngay_lam_viec"],
             "sp_duoc_giao": diem_70_data["sp_duoc_giao"],
             "tong_sp_hoan_thanh": diem_70_data["tong_sp_hoan_thanh"],
-            
+            "sp_chat_luong": diem_70_data["sp_chat_luong"],
+            "sp_tien_do": diem_70_data["sp_tien_do"],
+            "is_lanh_dao": cc.is_lanh_dao,
+            "a_so_luong": diem_70_data["a_so_luong"],
+            "b_chat_luong": diem_70_data["b_chat_luong"],
+            "c_tien_do": diem_70_data["c_tien_do"],
+            "diem_kpi": diem_70_data["diem_kpi"],
+            # Leader-specific fields
+            "tong_cong_viec": diem_70_data.get("tong_cong_viec"),
+            "tong_hoan_thanh": diem_70_data.get("tong_hoan_thanh"),
+            "tong_diem_chat_luong": diem_70_data.get("tong_diem_chat_luong"),
+            "tong_diem_tien_do": diem_70_data.get("tong_diem_tien_do"),
+            "d_ket_qua": diem_70_data.get("d_ket_qua"),
+            "dd_to_chuc": diem_70_data.get("dd_to_chuc"),
+            "e_doan_ket": diem_70_data.get("e_doan_ket"),
+
             # Phê duyệt 2 cấp
             "nguoi_phe_duyet_tc_cap1_id": danh_gia.nguoi_phe_duyet_tc_cap1_id if danh_gia else None,
             "nguoi_phe_duyet_tc_cap1_ten": danh_gia.nguoi_phe_duyet_tc_cap1.ho_ten if danh_gia and danh_gia.nguoi_phe_duyet_tc_cap1 else None,

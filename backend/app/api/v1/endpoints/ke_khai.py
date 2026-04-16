@@ -19,7 +19,7 @@ Endpoints:
 Quy tắc:
 - User chỉ được xem/sửa/xóa kê khai của chính mình
 - Chỉ sửa được khi trạng thái NHAP hoặc TU_CHOI
-- Chỉ xóa được khi trạng thái NHAP
+- Chỉ xóa được khi trạng thái NHAP hoặc TU_CHOI
 """
 
 from datetime import date
@@ -1441,7 +1441,7 @@ async def update_ke_khai(
     description="""
     Xóa bản kê khai (soft delete).
     
-    **Constraint:** Chỉ xóa được khi trạng thái là NHAP.
+    **Constraint:** Chỉ xóa được khi trạng thái là NHAP hoặc TU_CHOI.
     
     **Quyền truy cập:** Chỉ chủ sở hữu.
     """,
@@ -1494,15 +1494,17 @@ async def delete_ke_khai(
             }
         )
     
-    # Kiểm tra trạng thái: chỉ xóa được khi NHAP
-    if ke_khai.trang_thai != TrangThaiKeKhai.NHAP:
+    # Kiểm tra trạng thái: chỉ xóa được khi NHAP hoặc TU_CHOI
+    # FIX (02/03/2026): Cho phép xóa kê khai bị từ chối (nhất quán với logic sửa)
+    allowed_delete_states = [TrangThaiKeKhai.NHAP, TrangThaiKeKhai.TU_CHOI]
+    if ke_khai.trang_thai not in allowed_delete_states:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "success": False,
                 "error": {
                     "code": "INVALID_STATE",
-                    "message": f"Không thể xóa kê khai ở trạng thái '{ke_khai.trang_thai.value}'. Chỉ được xóa khi ở trạng thái NHAP."
+                    "message": f"Không thể xóa kê khai ở trạng thái '{ke_khai.trang_thai.value}'. Chỉ được xóa khi ở trạng thái NHAP hoặc TU_CHOI."
                 }
             }
         )

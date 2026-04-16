@@ -23,7 +23,9 @@ from app.api.deps import (
     ActiveUserDep,
     get_current_active_user,
 )
-from app.core.security import verify_password, create_access_token
+from pydantic import BaseModel, Field
+
+from app.core.security import verify_password, hash_password, create_access_token
 from app.models.user_org import CongChuc
 from app.schemas.token import Token
 
@@ -349,10 +351,67 @@ async def get_current_user_info(
 
 
 # =============================================================================
-# CHANGE PASSWORD (Optional - có thể thêm sau)
+# CHANGE PASSWORD
 # =============================================================================
 
-# @router.post("/change-password")
-# async def change_password(...):
-#     """Đổi mật khẩu user hiện tại"""
-#     pass
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=6, max_length=100)
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: ActiveUserDep,
+    db: DatabaseDep,
+):
+    """Đổi mật khẩu user hiện tại."""
+    # Verify mật khẩu hiện tại
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu hiện tại không đúng",
+        )
+
+    # Hash mật khẩu mới và cập nhật
+    current_user.password_hash = hash_password(body.new_password)
+    db.add(current_user)
+    await db.commit()
+
+    return {"success": True, "message": "Đổi mật khẩu thành công"}
+
+
+# =============================================================================
+# UPDATE PROFILE (Email, Số điện thoại)
+# =============================================================================
+
+
+class UpdateProfileRequest(BaseModel):
+    email: str | None = Field(None, max_length=100)
+    so_dien_thoai: str | None = Field(None, max_length=20)
+
+
+@router.put("/update-profile")
+async def update_profile(
+    body: UpdateProfileRequest,
+    current_user: ActiveUserDep,
+    db: DatabaseDep,
+):
+    """Cập nhật thông tin liên hệ (email, số điện thoại)."""
+    if body.email is not None:
+        current_user.email = body.email.strip() or None
+    if body.so_dien_thoai is not None:
+        current_user.so_dien_thoai = body.so_dien_thoai.strip() or None
+
+    db.add(current_user)
+    await db.commit()
+
+    return {
+        "success": True,
+        "message": "Cập nhật thông tin thành công",
+        "data": {
+            "email": current_user.email,
+            "so_dien_thoai": current_user.so_dien_thoai,
+        },
+    }

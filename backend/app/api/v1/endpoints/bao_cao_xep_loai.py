@@ -33,6 +33,8 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.user_org import CongChuc, DonVi, LoaiDonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_assessment import DanhGiaThang
+from app.models.kpi_submission import KeKhaiCongViec
+from app.models.leave import DangKyNghi
 from app.models.leader_kpi import KeKhaiLanhDao, DanhGiaDDE, TrangThaiKeKhaiLD, TrangThaiDDE
 from app.models.bao_cao_xep_loai import (
     BaoCaoXepLoai, ChiTietXepLoai, TrangThaiBaoCao, tinh_xep_loai
@@ -431,9 +433,9 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
     thang = bao_cao.thang
     nam = bao_cao.nam
     
-    # Lấy danh sách CC trong đơn vị (loại trừ ADMIN và QLDV)
-    # FIX (27/02/2026): Dùng don_vi_id_snapshot từ DanhGiaThang thay vì CongChuc.don_vi_id
-    # để tránh thiếu CC khi họ chuyển đơn vị sau tháng báo cáo
+    # Lấy danh sách CC HIỆN TẠI thuộc đơn vị (loại trừ ADMIN và QLDV)
+    # FIX (02/03/2026): Dùng CongChuc.don_vi_id trực tiếp thay vì INNER JOIN DanhGiaThang
+    # → CC chưa kê khai/đánh giá vẫn xuất hiện trong báo cáo với điểm 0
     _excluded_roles = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
 
     # FIX Issue #2 (27/02/2026): Sort theo chức vụ thay vì tên
@@ -450,19 +452,10 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
 
     stmt_cc = (
         select(CongChuc)
-        .join(
-            DanhGiaThang,
-            and_(
-                DanhGiaThang.cong_chuc_id == CongChuc.id,
-                DanhGiaThang.thang == thang,
-                DanhGiaThang.nam == nam,
-                DanhGiaThang.don_vi_id_snapshot == don_vi_id,
-                DanhGiaThang.is_deleted == False,
-            )
-        )
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(selectinload(CongChuc.vai_tro))
         .where(
+            CongChuc.don_vi_id == don_vi_id,
             CongChuc.is_deleted == False,
             CongChuc.is_active == True,
             or_(
@@ -470,7 +463,6 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
                 ~VaiTro.cap_bac.in_(_excluded_roles),
             ),
         )
-        .distinct()
     )
     result_cc = await db.execute(stmt_cc)
     cong_chucs = list(result_cc.scalars().all())
@@ -588,17 +580,19 @@ async def tao_bao_cao_xep_loai(
     """
     Tạo báo cáo xếp loại mới cho đơn vị.
 
-    v1.2 (27/02/2026): Dùng don_vi_id_snapshot từ DanhGiaThang thay vì CongChuc.don_vi_id
+    v1.3 (02/03/2026): Dùng CongChuc.don_vi_id thay vì INNER JOIN DanhGiaThang
+        → CC chưa kê khai vẫn xuất hiện với điểm 0
+    v1.2 (27/02/2026): Dùng don_vi_id_snapshot từ DanhGiaThang
     v1.1 (30/01/2026): Lưu so_ngay_lam_viec, so_ngay_nghi vào chi tiết
 
     Logic:
-    1. Lấy danh sách CC thuộc đơn vị tại tháng báo cáo (dùng snapshot)
-    2. Với mỗi CC, tính điểm dựa vào is_lanh_dao
+    1. Lấy TẤT CẢ CC active thuộc đơn vị hiện tại
+    2. Với mỗi CC, tính điểm (0 nếu chưa kê khai)
     3. Tạo bản ghi bao_cao_xep_loai và chi_tiet_xep_loai
     """
-    # Lấy danh sách CC thuộc đơn vị (loại trừ ADMIN và QLDV)
-    # FIX (27/02/2026): Dùng don_vi_id_snapshot từ DanhGiaThang thay vì CongChuc.don_vi_id
-    # để tránh thiếu CC khi họ chuyển đơn vị sau tháng báo cáo
+    # Lấy danh sách CC HIỆN TẠI thuộc đơn vị (loại trừ ADMIN và QLDV)
+    # FIX (02/03/2026): Dùng CongChuc.don_vi_id trực tiếp thay vì INNER JOIN DanhGiaThang
+    # → CC chưa kê khai/đánh giá vẫn xuất hiện trong báo cáo với điểm 0
     _excluded = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
 
     # FIX Issue #2 (27/02/2026): Sort theo chức vụ thay vì tên
@@ -614,18 +608,10 @@ async def tao_bao_cao_xep_loai(
 
     cc_stmt = (
         select(CongChuc)
-        .join(
-            DanhGiaThang,
-            and_(
-                DanhGiaThang.cong_chuc_id == CongChuc.id,
-                DanhGiaThang.thang == thang,
-                DanhGiaThang.nam == nam,
-                DanhGiaThang.don_vi_id_snapshot == don_vi_id,
-                DanhGiaThang.is_deleted == False,
-            )
-        )
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
+        .options(selectinload(CongChuc.vai_tro))
         .where(
+            CongChuc.don_vi_id == don_vi_id,
             CongChuc.is_active == True,
             CongChuc.is_deleted == False,
             or_(
@@ -633,7 +619,6 @@ async def tao_bao_cao_xep_loai(
                 ~VaiTro.cap_bac.in_(_excluded),
             ),
         )
-        .distinct()
     )
     cc_result = await db.execute(cc_stmt)
     cong_chucs = list(cc_result.scalars().all())
@@ -658,17 +643,23 @@ async def tao_bao_cao_xep_loai(
     
     # Tạo chi tiết cho từng CC
     stats = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
-    
+
     for cc in cong_chucs:
-        if cc.is_lanh_dao:
+        # Xác định loại CC (lãnh đạo hay thường) - nhất quán với cap_nhat_chi_tiet
+        is_lanh_dao = cc.vai_tro and cc.vai_tro.cap_bac in [
+            CapBacVaiTro.TRUONG_DON_VI,
+            CapBacVaiTro.PHO_DON_VI
+        ]
+
+        if is_lanh_dao:
             ket_qua = await tinh_diem_lanh_dao(db, cc.id, thang, nam)
         else:
             ket_qua = await tinh_diem_cong_chuc(db, cc.id, thang, nam)
-        
+
         chi_tiet = ChiTietXepLoai(
             bao_cao_id=bao_cao.id,
             cong_chuc_id=cc.id,
-            is_lanh_dao=cc.is_lanh_dao or False,
+            is_lanh_dao=is_lanh_dao,
             diem_tieu_chi_chung=ket_qua.diem_tieu_chi_chung,
             diem_kpi=ket_qua.diem_kpi,
             diem_tong=ket_qua.diem_tong,
@@ -1421,6 +1412,70 @@ async def quyet_dinh_xep_loai(
 
 
 # =============================================================================
+# HELPER: Mở khóa dữ liệu kê khai/đánh giá/nghỉ phép khi từ chối hoặc trả lại
+# =============================================================================
+
+async def _mo_khoa_du_lieu_don_vi(db: AsyncSession, thang: int, nam: int, don_vi_id: UUID) -> dict:
+    """
+    Mở khóa is_khoa cho DanhGiaThang, KeKhaiCongViec, DangKyNghi
+    của đơn vị trong tháng/năm cụ thể.
+
+    Được gọi khi CCT từ chối hoặc trả lại báo cáo xếp loại.
+    """
+    # Mở khóa DanhGiaThang
+    stmt_dg = select(DanhGiaThang).where(
+        DanhGiaThang.thang == thang,
+        DanhGiaThang.nam == nam,
+        DanhGiaThang.don_vi_id_snapshot == don_vi_id,
+        DanhGiaThang.is_deleted == False,
+        DanhGiaThang.is_khoa == True,
+    )
+    result_dg = await db.execute(stmt_dg)
+    count_dg = 0
+    for dg in result_dg.scalars().all():
+        dg.is_khoa = False
+        count_dg += 1
+
+    # Mở khóa KeKhaiCongViec
+    stmt_kk = select(KeKhaiCongViec).where(
+        KeKhaiCongViec.thang == thang,
+        KeKhaiCongViec.nam == nam,
+        KeKhaiCongViec.don_vi_id_snapshot == don_vi_id,
+        KeKhaiCongViec.is_deleted == False,
+        KeKhaiCongViec.is_khoa == True,
+    )
+    result_kk = await db.execute(stmt_kk)
+    count_kk = 0
+    for kk in result_kk.scalars().all():
+        kk.is_khoa = False
+        count_kk += 1
+
+    # Mở khóa DangKyNghi
+    stmt_np = (
+        select(DangKyNghi)
+        .join(CongChuc, DangKyNghi.cong_chuc_id == CongChuc.id)
+        .where(
+            DangKyNghi.thang_ap_dung == thang,
+            DangKyNghi.nam_ap_dung == nam,
+            CongChuc.don_vi_id == don_vi_id,
+            DangKyNghi.is_deleted == False,
+            DangKyNghi.is_khoa == True,
+        )
+    )
+    result_np = await db.execute(stmt_np)
+    count_np = 0
+    for np in result_np.scalars().all():
+        np.is_khoa = False
+        count_np += 1
+
+    return {
+        "so_danh_gia_mo_khoa": count_dg,
+        "so_ke_khai_mo_khoa": count_kk,
+        "so_nghi_phep_mo_khoa": count_np,
+    }
+
+
+# =============================================================================
 # 7. POST /{id}/phe-duyet - CCT phê duyệt/từ chối
 # =============================================================================
 
@@ -1483,7 +1538,7 @@ async def phe_duyet_bao_cao(
         # Cập nhật trạng thái
         bao_cao.trang_thai = TrangThaiBaoCao.TU_CHOI.value
         bao_cao.y_kien_phe_duyet = payload.y_kien
-        
+
         # Đánh dấu các CC bị từ chối
         if payload.chi_tiet_tu_choi:
             chi_tiet_ids = {item.chi_tiet_id: item.ly_do for item in payload.chi_tiet_tu_choi}
@@ -1492,7 +1547,12 @@ async def phe_duyet_bao_cao(
                     ct.bi_tu_choi = True
                     ct.ly_do_tu_choi = chi_tiet_ids[ct.id]
                     so_cc_bi_tu_choi += 1
-        
+
+        # FIX: Mở khóa dữ liệu khi từ chối để CC có thể chỉnh sửa lại
+        unlock_result = await _mo_khoa_du_lieu_don_vi(
+            db, bao_cao.thang, bao_cao.nam, bao_cao.don_vi_id
+        )
+
         message = f"Đã từ chối báo cáo. {so_cc_bi_tu_choi} CC cần điều chỉnh."
     
     await db.flush()
@@ -1549,14 +1609,20 @@ async def tra_lai_bao_cao(
     for ct in bao_cao.chi_tiets:
         ct.xep_loai_quyet_dinh = None
         ct.ly_do_dieu_chinh_cct = None
-    
+
+    # FIX: Mở khóa dữ liệu khi trả lại để ĐT/CC có thể chỉnh sửa
+    unlock_result = await _mo_khoa_du_lieu_don_vi(
+        db, bao_cao.thang, bao_cao.nam, bao_cao.don_vi_id
+    )
+
     await db.flush()
-    
+
     return success_response(
         data={
             "id": str(bao_cao.id),
             "trang_thai_moi": "CHO_PHE_DUYET",
             "ly_do": payload.ly_do,
+            **unlock_result,
         },
         message="Đã trả lại báo cáo. Đội trưởng có thể điều chỉnh lại."
     )
@@ -1575,56 +1641,114 @@ async def get_thong_ke_chi_cuc(
 ) -> dict:
     """
     Thống kê xếp loại toàn Chi cục theo tháng.
-    
+
+    FIX (02/03/2026): Hiển thị TẤT CẢ đơn vị có CC active, kể cả khi
+    chưa có báo cáo cho tháng đó. CC chưa kê khai tính điểm 0 → xếp loại D.
+
     Quyền: CCT, Phó CCT
     """
     if not check_is_lanh_dao_chi_cuc(current_user):
         raise HTTPException(status_code=403, detail=error_response(
             code="PERM_003", message="Chỉ Lãnh đạo Chi cục mới có quyền xem thống kê"
         ))
-    
-    # Lấy tất cả báo cáo đã phê duyệt trong tháng
-    stmt = (
+
+    _excluded_roles = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
+
+    # 1. Lấy TẤT CẢ đơn vị có CC active (loại đơn vị 0 người)
+    stmt_dv = (
+        select(
+            DonVi,
+            func.count(CongChuc.id).label("cc_count"),
+        )
+        .join(CongChuc, CongChuc.don_vi_id == DonVi.id)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
+        .where(
+            DonVi.is_deleted == False,
+            CongChuc.is_active == True,
+            CongChuc.is_deleted == False,
+            or_(
+                CongChuc.vai_tro_id == None,
+                ~VaiTro.cap_bac.in_(_excluded_roles),
+            ),
+        )
+        .group_by(DonVi.id)
+        .having(func.count(CongChuc.id) > 0)
+        .order_by(DonVi.ten_don_vi)
+    )
+    result_dv = await db.execute(stmt_dv)
+    don_vi_rows = result_dv.all()
+
+    # 2. Lấy báo cáo tháng này (nếu có)
+    stmt_bc = (
         select(BaoCaoXepLoai)
-        .options(selectinload(BaoCaoXepLoai.don_vi))
         .where(
             BaoCaoXepLoai.thang == thang,
             BaoCaoXepLoai.nam == nam,
             BaoCaoXepLoai.is_deleted == False,
         )
-        .order_by(BaoCaoXepLoai.don_vi_id)
     )
-    result = await db.execute(stmt)
-    bao_caos = result.scalars().all()
-    
-    # Tổng hợp
+    result_bc = await db.execute(stmt_bc)
+    bc_map = {bc.don_vi_id: bc for bc in result_bc.scalars().all()}
+
+    # 3. Tổng hợp
+    # FIX (02/03/2026): Luôn dùng cc_count (live) làm tổng CC thay vì
+    # bc.tong_cong_chuc (snapshot cũ có thể sai do code cũ hoặc CC chuyển đơn vị).
+    # A/B/C/D: dùng từ báo cáo nếu có, phần dư = D (CC chưa được xếp loại).
     tong = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
     tong_cc = 0
     theo_don_vi = []
-    
-    for bc in bao_caos:
-        tong["A"] += bc.so_loai_a
-        tong["B"] += bc.so_loai_b
-        tong["C"] += bc.so_loai_c
-        tong["D"] += bc.so_loai_d
-        tong["E"] += bc.so_loai_e
-        tong_cc += bc.tong_cong_chuc
-        
+
+    for dv, cc_count in don_vi_rows:
+        bc = bc_map.get(dv.id)
+
+        # Luôn dùng cc_count (số CC active hiện tại) làm tổng
+        dv_tong = cc_count
+
+        if bc:
+            # Có báo cáo → dùng A/B/C/D/E từ báo cáo
+            dv_a = bc.so_loai_a or 0
+            dv_b = bc.so_loai_b or 0
+            dv_c = bc.so_loai_c or 0
+            dv_d = bc.so_loai_d or 0
+            dv_e = bc.so_loai_e or 0
+            dv_trang_thai = bc.trang_thai
+
+            # Nếu tổng xếp loại < cc_count (báo cáo cũ thiếu CC)
+            # → CC thiếu tính là D (chưa kê khai = điểm 0)
+            tong_xl = dv_a + dv_b + dv_c + dv_d + dv_e
+            if tong_xl < cc_count:
+                dv_d += (cc_count - tong_xl)
+        else:
+            # Chưa có báo cáo → tất cả CC = điểm 0 → xếp loại D
+            dv_a = 0
+            dv_b = 0
+            dv_c = 0
+            dv_d = cc_count
+            dv_e = 0
+            dv_trang_thai = None
+
+        tong["A"] += dv_a
+        tong["B"] += dv_b
+        tong["C"] += dv_c
+        tong["D"] += dv_d
+        tong["E"] += dv_e
+        tong_cc += dv_tong
+
         theo_don_vi.append({
             "don_vi": {
-                "id": bc.don_vi.id,
-                "ma_don_vi": bc.don_vi.ma_don_vi,
-                "ten_don_vi": bc.don_vi.ten_don_vi,
-            } if bc.don_vi else None,
-            "tong": bc.tong_cong_chuc,
-            "A": bc.so_loai_a,
-            "B": bc.so_loai_b,
-            "C": bc.so_loai_c,
-            "D": bc.so_loai_d,
-            "E": bc.so_loai_e,
-            "trang_thai": bc.trang_thai,
+                "id": dv.id,
+                "ma_don_vi": dv.ma_don_vi,
+                "ten_don_vi": dv.ten_don_vi,
+            },
+            "tong": dv_tong,
+            "A": dv_a,
+            "B": dv_b,
+            "C": dv_c,
+            "D": dv_d,
+            "E": dv_e,
+            "trang_thai": dv_trang_thai,
         })
-    
+
     return success_response(
         data={
             "thang": thang,

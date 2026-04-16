@@ -1056,11 +1056,11 @@ async def create_nghi_phep_bulk(
     for ngay in ngay_moi:
         nghi = DangKyNghi(
             cong_chuc_id=current_user.id,
-            loai_nghi=LoaiNghi.NGHI_TUAN,
+            loai_nghi=LoaiNghi(payload.loai_nghi.value),
             tu_ngay=ngay,
             den_ngay=ngay,
             so_ngay=Decimal("1"),
-            ly_do=payload.ly_do or "Nghỉ tuần",
+            ly_do=payload.ly_do or "",
             nguoi_phe_duyet_id=nguoi_phe_duyet_id,
             trang_thai=TrangThaiNghi.CHO_PHE_DUYET,
         )

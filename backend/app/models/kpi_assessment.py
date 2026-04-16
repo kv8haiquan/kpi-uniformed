@@ -772,3 +772,135 @@ def tinh_diem_tu_is_achieved(ma_tieu_chi: str, is_achieved: bool) -> Decimal:
     if is_achieved:
         return get_diem_toi_da(ma_tieu_chi)
     return Decimal("0")
+
+
+# =============================================================================
+# ĐÁNH GIÁ QUÝ (v3.6.0 - 14/04/2026)
+# =============================================================================
+
+class DanhGiaQuy(BaseModel):
+    """
+    Đánh giá tổng hợp quý của công chức.
+
+    Tính tự động từ 3 tháng trong quý, không có workflow phê duyệt.
+
+    Công thức:
+    - diem_kpi_quy = TB((diem_kpi × 70) của 3 tháng)
+    - diem_tc_quy = deduplicate tiêu chí trong quý (Option Y)
+    - diem_tong_quy = diem_kpi_quy + diem_tc_quy
+    - xep_loai_quy = xep_loai_kpi(diem_tong_quy)
+
+    Edge cases:
+    - CC chuyển đơn vị giữa quý → xep_loai_quy = NULL, co_chuyen_don_vi = TRUE
+    - Chưa đủ 3 tháng → diem_tong_quy = NULL
+    """
+
+    __tablename__ = "danh_gia_quy"
+
+    cong_chuc_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("cong_chuc.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="ID công chức được đánh giá"
+    )
+
+    don_vi_id_snapshot: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("don_vi.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Snapshot đơn vị tại thời điểm tính quý"
+    )
+
+    quy: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Quý (1-4)"
+    )
+
+    nam: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Năm"
+    )
+
+    diem_kpi_quy: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+        comment="Điểm KPI quý (70đ) = TB(3 tháng × 70)"
+    )
+
+    diem_tc_quy: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+        comment="Điểm tiêu chí chung quý (max 30đ)"
+    )
+
+    diem_tong_quy: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+        comment="Điểm tổng quý (0-100)"
+    )
+
+    xep_loai_quy: Mapped[Optional[str]] = mapped_column(
+        String(1),
+        nullable=True,
+        index=True,
+        comment="Xếp loại quý (A/B/C/D)"
+    )
+
+    ghi_chu: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Ghi chú (VD: CC chuyển đơn vị giữa quý)"
+    )
+
+    co_chuyen_don_vi: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        comment="TRUE nếu CC chuyển đơn vị giữa quý"
+    )
+
+    # Relationships
+    cong_chuc: Mapped["CongChuc"] = relationship(
+        "CongChuc",
+        foreign_keys=[cong_chuc_id],
+        lazy="joined"
+    )
+
+    don_vi_snapshot: Mapped[Optional["DonVi"]] = relationship(
+        "DonVi",
+        foreign_keys=[don_vi_id_snapshot],
+        lazy="joined"
+    )
+
+    __table_args__ = (
+        CheckConstraint("quy BETWEEN 1 AND 4", name="ck_quy_range"),
+        CheckConstraint("nam >= 2025", name="ck_nam_min"),
+        CheckConstraint(
+            "diem_kpi_quy IS NULL OR diem_kpi_quy BETWEEN 0 AND 70",
+            name="ck_diem_kpi_quy"
+        ),
+        CheckConstraint(
+            "diem_tc_quy IS NULL OR diem_tc_quy BETWEEN 0 AND 30",
+            name="ck_diem_tc_quy"
+        ),
+        CheckConstraint(
+            "diem_tong_quy IS NULL OR diem_tong_quy BETWEEN 0 AND 100",
+            name="ck_diem_tong_quy"
+        ),
+        CheckConstraint(
+            "xep_loai_quy IS NULL OR xep_loai_quy IN ('A', 'B', 'C', 'D')",
+            name="ck_xep_loai_quy"
+        ),
+        UniqueConstraint("cong_chuc_id", "quy", "nam", name="uq_danh_gia_quy_cc_quy_nam"),
+        Index("idx_danh_gia_quy_cc", "cong_chuc_id"),
+        Index("idx_danh_gia_quy_quy_nam", "quy", "nam"),
+        Index("idx_danh_gia_quy_don_vi_snapshot", "don_vi_id_snapshot", "quy", "nam"),
+        Index("idx_danh_gia_quy_xep_loai", "xep_loai_quy"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DanhGiaQuy(cc_id={self.cong_chuc_id}, quy={self.quy}/{self.nam})>"

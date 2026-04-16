@@ -166,8 +166,8 @@ class NghiPhepBulkCreate(BaseModel):
     """
     
     loai_nghi: LoaiNghiEnum = Field(
-        default=LoaiNghiEnum.NGHI_TUAN,
-        description="Loại nghỉ (mặc định NGHI_TUAN cho bulk)"
+        ...,
+        description="Loại nghỉ (NGHI_TUAN, PHEP_NAM, NGHI_LE, ...)"
     )
     
     danh_sach_ngay: List[date] = Field(

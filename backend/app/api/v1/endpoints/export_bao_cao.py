@@ -9,9 +9,11 @@ Endpoints:
 3. GET /export/tong-hop/thang/{thang}/nam/{nam}          - Xuất Mẫu 04 toàn Chi cục (CCT/PCCT)
 4. GET /export/don-vi-tong-hop/thang/{thang}/nam/{nam}   - Xuất Mẫu 03 tất cả đơn vị
 5. GET /export/mau05-doi-moi/thang/{thang}/nam/{nam}     - Xuất Mẫu 05 CC có thành tích đổi mới
+6. GET /export/bao-cao-tong-hop/thang/{thang}/nam/{nam}  - Xuất 5 báo cáo thống kê Excel (ZIP)
 
-Output: DOCX hoặc PDF (query param ?format=docx|pdf)
+Output: DOCX hoặc PDF (query param ?format=docx|pdf) hoặc ZIP (endpoint 6)
 
+Phiên bản: 1.2.0 (15/03/2026) - Thêm endpoint xuất 5 báo cáo Excel ZIP
 Phiên bản: 1.1.0 (11/02/2026) - Thêm Mẫu 04 cho tổng hợp toàn Chi cục
 Phiên bản: 1.0.0 (02/02/2026)
 """
@@ -1109,5 +1111,1639 @@ async def _generate_docx(report_type: str, data: dict) -> bytes:
             raise HTTPException(500, detail=error_response(
                 "SYS_023", "File DOCX không được tạo thành công"
             ))
-        
+
         return output_path.read_bytes()
+
+
+# =============================================================================
+# 4. EXPORT ALL 5 STATISTICAL REPORTS AS ZIP
+# =============================================================================
+
+@router.get("/bao-cao-tong-hop/thang/{thang}/nam/{nam}")
+async def export_bao_cao_tong_hop(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int,
+    nam: int,
+):
+    """
+    Xuất tất cả 5 báo cáo thống kê dưới dạng ZIP chứa 5 file Excel.
+
+    Quyền: Chỉ CCT, PCCT, hoặc users có can_view_all_units.
+
+    Các báo cáo:
+    1. 01_TieuChiChung_MM_YYYY.xlsx - Thống kê tiêu chí chung (30 điểm)
+    2. 02_DiemKPI_MM_YYYY.xlsx - Thống kê điểm KPI (70 điểm)
+    3. 03_LanhDaoDDE_MM_YYYY.xlsx - Lãnh đạo bị trừ điểm d, đ, e
+    4. 04_KhoiLuongCongViec_MM_YYYY.xlsx - Khối lượng công việc
+    5. 05_DanhMucCongViec_MM_YYYY.xlsx - Danh mục công việc chi tiết
+
+    Returns:
+        ZIP file chứa 5 Excel files
+    """
+    # Validate
+    if thang < 1 or thang > 12:
+        raise HTTPException(400, detail=error_response("VAL_001", "Tháng phải từ 1-12"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+
+    # Check permission: CCT, PCCT, or can_view_all_units
+    if not _is_lanh_dao_chi_cuc(current_user):
+        raise HTTPException(403, detail=error_response(
+            "PERM_003", "Chỉ CCT và Phó CCT mới được xuất báo cáo tổng hợp"
+        ))
+
+    try:
+        # Generate all 5 Excel files
+        logger.info(f"[EXPORT_ZIP] Generating 5 reports for {thang}/{nam}")
+
+        excel_01 = await _generate_report_01_tieu_chi_chung(db, thang, nam)
+        excel_02 = await _generate_report_02_diem_kpi(db, thang, nam)
+        excel_03 = await _generate_report_03_lanh_dao_dde(db, thang, nam)
+        excel_04 = await _generate_report_04_khoi_luong_cv(db, thang, nam)
+        excel_05 = await _generate_report_05_danh_muc_cv(db, thang, nam)
+
+        # Create ZIP file in memory
+        import zipfile
+        zip_buffer = io.BytesIO()
+
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr(f"01_TieuChiChung_{thang:02d}_{nam}.xlsx", excel_01.getvalue())
+            zip_file.writestr(f"02_DiemKPI_{thang:02d}_{nam}.xlsx", excel_02.getvalue())
+            zip_file.writestr(f"03_LanhDaoDDE_{thang:02d}_{nam}.xlsx", excel_03.getvalue())
+            zip_file.writestr(f"04_KhoiLuongCongViec_{thang:02d}_{nam}.xlsx", excel_04.getvalue())
+            zip_file.writestr(f"05_DanhMucCongViec_{thang:02d}_{nam}.xlsx", excel_05.getvalue())
+
+        zip_buffer.seek(0)
+
+        filename = f"BaoCaoThongKe_{thang:02d}_{nam}.zip"
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[EXPORT_ZIP] Error: {traceback.format_exc()}")
+        raise HTTPException(500, detail=error_response(
+            "SYS_099", f"Lỗi xuất báo cáo tổng hợp: {str(e)[:200]}"
+        ))
+
+
+# =============================================================================
+# HELPER: GENERATE REPORT 01 - TIÊU CHÍ CHUNG
+# =============================================================================
+
+async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) -> io.BytesIO:
+    """Generate Excel report 01 - Tiêu chí chung statistics."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # Get data
+    data = await _get_data_01_tieu_chi_chung(db, thang, nam)
+
+    # Create Excel
+    wb = Workbook()
+
+    # Styles
+    header_fill = PatternFill("solid", fgColor="4472C4")
+    header_font_white = Font(bold=True, size=12, color="FFFFFF")
+    title_font = Font(bold=True, size=14)
+    percent_font = Font(bold=True, color="0070C0")
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    wrap_alignment = Alignment(wrap_text=True, vertical='top')
+    center_alignment = Alignment(horizontal='center', vertical='center')
+
+    total = len(data)
+    duoi_20 = [cc for cc in data if cc["tong_diem"] < 20]
+    tron_20 = [cc for cc in data if cc["tong_diem"] == 20]
+    tren_20 = [cc for cc in data if cc["tong_diem"] > 20]
+
+    tren_20_co_nhom3 = [cc for cc in tren_20 if cc["has_nhom3"] and cc["has_ghi_chu_nhom3"]]
+    tren_20_khong_nhom3 = [cc for cc in tren_20 if cc["has_nhom3"] and not cc["has_ghi_chu_nhom3"]]
+    tren_20_30diem = [cc for cc in tren_20 if cc["tong_diem"] == 30]
+
+    def pct(count):
+        return f"{count/total*100:.1f}%" if total > 0 else "0%"
+
+    # SHEET 1: TỔNG HỢP
+    ws1 = wb.active
+    ws1.title = "Tổng hợp"
+
+    ws1['A1'] = f"1. THỐNG KÊ TIÊU CHÍ CHUNG - THÁNG {thang}/{nam}"
+    ws1['A1'].font = title_font
+    ws1.merge_cells('A1:E1')
+
+    ws1['A2'] = f"Tổng số công chức: {total}"
+    ws1['A2'].font = Font(bold=True)
+
+    row = 4
+    headers = ["Nhóm", "Số lượng", "Tỷ lệ", "Ghi chú"]
+    for col, h in enumerate(headers, 1):
+        cell = ws1.cell(row=row, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    rows_data = [
+        ("1. Dưới 20 điểm", len(duoi_20), pct(len(duoi_20)), "Xem Sheet 'Dưới 20 điểm'"),
+        ("2. Tròn 20 điểm", len(tron_20), pct(len(tron_20)), "Hoàn thành tốt, không sai sót"),
+        ("3. Trên 20 điểm", len(tren_20), pct(len(tren_20)), "Chi tiết bên dưới"),
+        ("   3a. CÓ sản phẩm đổi mới", len(tren_20_co_nhom3), pct(len(tren_20_co_nhom3)), "Có minh chứng cụ thể"),
+        ("   3b. KHÔNG CÓ sản phẩm đổi mới", len(tren_20_khong_nhom3), pct(len(tren_20_khong_nhom3)), "Chưa hiểu rõ quy định"),
+        ("   3c. Đạt 30 điểm tối đa", len(tren_20_30diem), pct(len(tren_20_30diem)), "Xuất sắc"),
+    ]
+
+    for i, (nhom, sl, tl, gc) in enumerate(rows_data):
+        r = row + 1 + i
+        ws1.cell(row=r, column=1, value=nhom).border = border
+        ws1.cell(row=r, column=2, value=sl).border = border
+        ws1.cell(row=r, column=2).alignment = center_alignment
+        ws1.cell(row=r, column=3, value=tl).border = border
+        ws1.cell(row=r, column=3).alignment = center_alignment
+        ws1.cell(row=r, column=3).font = percent_font
+        ws1.cell(row=r, column=4, value=gc).border = border
+        if i < 3:
+            ws1.cell(row=r, column=1).font = Font(bold=True)
+
+    ws1.column_dimensions['A'].width = 35
+    ws1.column_dimensions['B'].width = 12
+    ws1.column_dimensions['C'].width = 10
+    ws1.column_dimensions['D'].width = 40
+
+    # SHEET 2: DƯỚI 20 ĐIỂM
+    ws2 = wb.create_sheet("Dưới 20 điểm")
+
+    ws2['A1'] = f"DANH SÁCH CÔNG CHỨC DƯỚI 20 ĐIỂM - THÁNG {thang}/{nam}"
+    ws2['A1'].font = title_font
+    ws2.merge_cells('A1:G1')
+
+    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng điểm", "Điểm trừ", "Lý do trừ điểm"]
+    for col, h in enumerate(headers2, 1):
+        cell = ws2.cell(row=3, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    for i, cc in enumerate(duoi_20, 1):
+        r = 3 + i
+        ws2.cell(row=r, column=1, value=i).border = border
+        ws2.cell(row=r, column=2, value=cc["ho_ten"]).border = border
+        ws2.cell(row=r, column=3, value=cc["ma_cc"]).border = border
+        ws2.cell(row=r, column=4, value=cc["don_vi"]).border = border
+        ws2.cell(row=r, column=5, value=cc["tong_diem"]).border = border
+
+        diem_tru = sum(ly["diem_tru"] for ly in cc["ly_do_tru_diem"])
+        ws2.cell(row=r, column=6, value=diem_tru).border = border
+
+        ly_do_text = "; ".join([f"{ly['ma']}: {ly['ly_do']}" for ly in cc["ly_do_tru_diem"]])
+        ws2.cell(row=r, column=7, value=ly_do_text).border = border
+        ws2.cell(row=r, column=7).alignment = wrap_alignment
+        ws2.row_dimensions[r].height = 40
+
+    ws2.column_dimensions['A'].width = 5
+    ws2.column_dimensions['B'].width = 25
+    ws2.column_dimensions['C'].width = 12
+    ws2.column_dimensions['D'].width = 30
+    ws2.column_dimensions['E'].width = 10
+    ws2.column_dimensions['F'].width = 10
+    ws2.column_dimensions['G'].width = 80
+
+    # SHEET 3: TRÊN 20 ĐIỂM
+    ws3 = wb.create_sheet("Trên 20 điểm")
+
+    ws3['A1'] = f"DANH SÁCH CÔNG CHỨC TRÊN 20 ĐIỂM - THÁNG {thang}/{nam}"
+    ws3['A1'].font = title_font
+    ws3.merge_cells('A1:H1')
+
+    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng điểm", "Điểm nhóm III", "Có MC", "Minh chứng đổi mới sáng tạo"]
+    for col, h in enumerate(headers3, 1):
+        cell = ws3.cell(row=3, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    tren_20_sorted = sorted(tren_20, key=lambda x: x["tong_diem"], reverse=True)
+
+    for i, cc in enumerate(tren_20_sorted, 1):
+        r = 3 + i
+        ws3.cell(row=r, column=1, value=i).border = border
+        ws3.cell(row=r, column=2, value=cc["ho_ten"]).border = border
+        ws3.cell(row=r, column=3, value=cc["ma_cc"]).border = border
+        ws3.cell(row=r, column=4, value=cc["don_vi"]).border = border
+        ws3.cell(row=r, column=5, value=cc["tong_diem"]).border = border
+        ws3.cell(row=r, column=6, value=cc["diem_nhom3"]).border = border
+
+        if cc["has_ghi_chu_nhom3"]:
+            co_mc = "Có"
+            ws3.cell(row=r, column=7).fill = PatternFill("solid", fgColor="C6EFCE")
+        else:
+            co_mc = "Không"
+            ws3.cell(row=r, column=7).fill = PatternFill("solid", fgColor="FFC7CE")
+        ws3.cell(row=r, column=7, value=co_mc).border = border
+        ws3.cell(row=r, column=7).alignment = center_alignment
+
+        minh_chung = cc.get("minh_chung_nhom3", "")
+        if not minh_chung:
+            if cc["tong_diem"] == 30:
+                minh_chung = "(Đạt điểm tối đa - chưa điền minh chứng)"
+            else:
+                minh_chung = "(Chưa điền minh chứng cụ thể)"
+        ws3.cell(row=r, column=8, value=minh_chung).border = border
+        ws3.cell(row=r, column=8).alignment = wrap_alignment
+        ws3.row_dimensions[r].height = 60
+
+    ws3.column_dimensions['A'].width = 5
+    ws3.column_dimensions['B'].width = 25
+    ws3.column_dimensions['C'].width = 12
+    ws3.column_dimensions['D'].width = 25
+    ws3.column_dimensions['E'].width = 10
+    ws3.column_dimensions['F'].width = 12
+    ws3.column_dimensions['G'].width = 8
+    ws3.column_dimensions['H'].width = 100
+
+    # SHEET 4: TRÒN 20 ĐIỂM
+    ws4 = wb.create_sheet("Tròn 20 điểm")
+
+    ws4['A1'] = f"DANH SÁCH CÔNG CHỨC TRÒN 20 ĐIỂM - THÁNG {thang}/{nam}"
+    ws4['A1'].font = title_font
+    ws4.merge_cells('A1:E1')
+
+    ws4['A2'] = "Ghi chú: Hoàn thành tốt nhiệm vụ, không có sai sót."
+    ws4['A2'].font = Font(italic=True, color="666666")
+
+    headers4 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng điểm"]
+    for col, h in enumerate(headers4, 1):
+        cell = ws4.cell(row=4, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    for i, cc in enumerate(tron_20, 1):
+        r = 4 + i
+        ws4.cell(row=r, column=1, value=i).border = border
+        ws4.cell(row=r, column=2, value=cc["ho_ten"]).border = border
+        ws4.cell(row=r, column=3, value=cc["ma_cc"]).border = border
+        ws4.cell(row=r, column=4, value=cc["don_vi"]).border = border
+        ws4.cell(row=r, column=5, value=cc["tong_diem"]).border = border
+
+    ws4.column_dimensions['A'].width = 5
+    ws4.column_dimensions['B'].width = 25
+    ws4.column_dimensions['C'].width = 12
+    ws4.column_dimensions['D'].width = 35
+    ws4.column_dimensions['E'].width = 12
+
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+async def _get_data_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) -> list:
+    """Get data for report 01 - Tiêu chí chung."""
+    from app.models.user_org import CongChuc, DonVi
+    from app.models.kpi_assessment import DanhGiaThang, TieuChiChung
+
+    # Lấy tất cả tiêu chí chung
+    stmt_tc = select(TieuChiChung).where(TieuChiChung.is_active == True).order_by(TieuChiChung.ma_tieu_chi)
+    result_tc = await db.execute(stmt_tc)
+    all_tieu_chi = result_tc.scalars().all()
+
+    # Lấy đánh giá tháng
+    stmt = (
+        select(DanhGiaThang)
+        .options(
+            selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
+            selectinload(DanhGiaThang.tieu_chi_chungs),
+        )
+        .where(DanhGiaThang.thang == thang, DanhGiaThang.nam == nam)
+    )
+    result = await db.execute(stmt)
+    danh_gias = result.scalars().all()
+
+    cong_chuc_list = []
+
+    for dg in danh_gias:
+        if not dg.cong_chuc:
+            continue
+        if hasattr(dg.cong_chuc, 'is_active') and dg.cong_chuc.is_active == False:
+            continue
+        if hasattr(dg.cong_chuc, 'deleted_at') and dg.cong_chuc.deleted_at is not None:
+            continue
+
+        tc_danh_gia_map = {str(tcdg.tieu_chi_id): tcdg for tcdg in (dg.tieu_chi_chungs or [])}
+
+        tong_diem = 0
+        diem_nhom1 = 0
+        diem_nhom2 = 0
+        diem_nhom3 = 0
+        has_nhom3 = False
+        has_ghi_chu_nhom3 = False
+        ly_do_tru_diem = []
+        ghi_chu_nhom3_list = []
+
+        for tc in all_tieu_chi:
+            tcdg = tc_danh_gia_map.get(str(tc.id))
+
+            is_achieved_ld = tcdg.is_achieved_ld if tcdg else None
+            is_achieved_cc = tcdg.is_achieved_cc if tcdg else False
+            final_achieved = is_achieved_ld if is_achieved_ld is not None else is_achieved_cc
+
+            diem_ld = float(tcdg.diem_phe_duyet) if tcdg and tcdg.diem_phe_duyet is not None else None
+            diem_cc = float(tcdg.diem_tu_cham) if tcdg and tcdg.diem_tu_cham else 0
+            diem = diem_ld if diem_ld is not None else diem_cc
+
+            ghi_chu = tcdg.ghi_chu_cc if tcdg else ""
+            ghi_chu_ld = tcdg.ghi_chu_ld if tcdg and hasattr(tcdg, 'ghi_chu_ld') else ""
+            ly_do_dieu_chinh = tcdg.ly_do_dieu_chinh if tcdg and hasattr(tcdg, 'ly_do_dieu_chinh') else ""
+
+            tong_diem += diem
+
+            if tc.nhom_tieu_chi == 1:
+                diem_nhom1 += diem
+            elif tc.nhom_tieu_chi == 2:
+                diem_nhom2 += diem
+            elif tc.nhom_tieu_chi == 3:
+                diem_nhom3 += diem
+                if final_achieved:
+                    has_nhom3 = True
+                    if ghi_chu:
+                        has_ghi_chu_nhom3 = True
+                        ghi_chu_nhom3_list.append(f"[{tc.ma_tieu_chi}] {ghi_chu}")
+
+            if not final_achieved and float(tc.diem_toi_da) > 0:
+                ly_do = ly_do_dieu_chinh or ghi_chu_ld or f"Không đạt tiêu chí {tc.ma_tieu_chi}"
+                ly_do_tru_diem.append({
+                    "ma": tc.ma_tieu_chi,
+                    "ten": tc.ten_tieu_chi,
+                    "diem_tru": float(tc.diem_toi_da),
+                    "ly_do": ly_do,
+                    "nhom": tc.nhom_tieu_chi,
+                })
+
+        cong_chuc_list.append({
+            "ho_ten": dg.cong_chuc.ho_ten,
+            "ma_cc": dg.cong_chuc.ma_cc,
+            "don_vi": dg.cong_chuc.don_vi.ten_don_vi if dg.cong_chuc.don_vi else "",
+            "tong_diem": tong_diem,
+            "diem_nhom1": diem_nhom1,
+            "diem_nhom2": diem_nhom2,
+            "diem_nhom3": diem_nhom3,
+            "has_nhom3": has_nhom3,
+            "has_ghi_chu_nhom3": has_ghi_chu_nhom3,
+            "minh_chung_nhom3": "\n".join(ghi_chu_nhom3_list) if ghi_chu_nhom3_list else "",
+            "ly_do_tru_diem": ly_do_tru_diem,
+        })
+
+    return cong_chuc_list
+
+
+# =============================================================================
+# HELPER: GENERATE REPORT 02 - ĐIỂM KPI
+# =============================================================================
+
+async def _generate_report_02_diem_kpi(db: AsyncSession, thang: int, nam: int) -> io.BytesIO:
+    """Generate Excel report 02 - Điểm KPI statistics."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from sqlalchemy import text
+
+    # Get data
+    data, so_ngay = await _get_data_02_diem_kpi(db, thang, nam)
+
+    # Create Excel
+    wb = Workbook()
+
+    # Styles
+    header_fill = PatternFill("solid", fgColor="4472C4")
+    header_font_white = Font(bold=True, size=12, color="FFFFFF")
+    title_font = Font(bold=True, size=14)
+    percent_font = Font(bold=True, color="0070C0")
+    alert_fill = PatternFill("solid", fgColor="FFC7CE")
+    good_fill = PatternFill("solid", fgColor="C6EFCE")
+    warn_fill = PatternFill("solid", fgColor="FFEB9C")
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    wrap_alignment = Alignment(wrap_text=True, vertical='top')
+    center_alignment = Alignment(horizontal='center', vertical='center')
+
+    # Phân loại
+    total = len(data)
+    total_co_kpi = len([cc for cc in data if cc["diem_kpi_70"] is not None])
+
+    # Chỉ tính CC không phải lãnh đạo
+    cc_list = [cc for cc in data if not cc.get("is_lanh_dao")]
+
+    dat_kpi_70 = [cc for cc in cc_list if cc["diem_kpi_70"] is not None and cc["diem_kpi_70"] >= 70]
+    chua_dat_kpi_70 = [cc for cc in cc_list if cc["diem_kpi_70"] is not None and cc["diem_kpi_70"] < 70]
+
+    # Vượt KPI bất thường (vượt > 50%)
+    vuot_kpi_bat_thuong = [cc for cc in dat_kpi_70 if cc["ty_le_vuot"] > 50]
+
+    # Phân loại lý do chưa đạt
+    chua_dat_do_so_luong = [cc for cc in chua_dat_kpi_70 if cc["sp_hoan_thanh"] < cc["sp_duoc_giao"]]
+    chua_dat_do_chat_luong = [cc for cc in chua_dat_kpi_70 if cc["loi_cl"] > 0]
+    chua_dat_do_tien_do = [cc for cc in chua_dat_kpi_70 if cc["loi_td"] > 0]
+
+    def pct(count, base=total_co_kpi):
+        return f"{count/base*100:.1f}%" if base > 0 else "0%"
+
+    # SHEET 1: TỔNG HỢP
+    ws1 = wb.active
+    ws1.title = "Tổng hợp"
+
+    ws1['A1'] = f"2. THỐNG KÊ ĐIỂM KPI - THÁNG {thang}/{nam}"
+    ws1['A1'].font = title_font
+    ws1.merge_cells('A1:E1')
+
+    ws1['A2'] = f"Tổng CC có dữ liệu KPI: {total_co_kpi} | Số ngày trong tháng: {so_ngay}"
+    ws1['A2'].font = Font(bold=True)
+
+    row = 4
+    headers = ["Nhóm", "Số lượng", "Tỷ lệ", "Ghi chú"]
+    for col, h in enumerate(headers, 1):
+        cell = ws1.cell(row=row, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    rows_data = [
+        ("I. Đạt KPI 70 điểm", len(dat_kpi_70), pct(len(dat_kpi_70)), ""),
+        ("   - Vượt KPI bất thường (>50%)", len(vuot_kpi_bat_thuong), pct(len(vuot_kpi_bat_thuong)), "Cần xem xét cấp độ phức tạp"),
+        ("II. Chưa đạt KPI 70 điểm", len(chua_dat_kpi_70), pct(len(chua_dat_kpi_70)), ""),
+        ("   - Do SP chưa đạt", len(chua_dat_do_so_luong), pct(len(chua_dat_do_so_luong)), "SP hoàn thành < SP được giao"),
+        ("   - Do CL bị trừ", len(chua_dat_do_chat_luong), pct(len(chua_dat_do_chat_luong)), "Có lỗi chất lượng"),
+        ("   - Do TĐ bị trừ", len(chua_dat_do_tien_do), pct(len(chua_dat_do_tien_do)), "Có lỗi tiến độ"),
+    ]
+
+    for i, (nhom, sl, tl, gc) in enumerate(rows_data):
+        r = row + 1 + i
+        ws1.cell(row=r, column=1, value=nhom).border = border
+        ws1.cell(row=r, column=2, value=sl).border = border
+        ws1.cell(row=r, column=2).alignment = center_alignment
+        ws1.cell(row=r, column=3, value=tl).border = border
+        ws1.cell(row=r, column=3).alignment = center_alignment
+        ws1.cell(row=r, column=3).font = percent_font
+        ws1.cell(row=r, column=4, value=gc).border = border
+        if i in [0, 2]:
+            ws1.cell(row=r, column=1).font = Font(bold=True)
+
+    ws1.column_dimensions['A'].width = 35
+    ws1.column_dimensions['B'].width = 12
+    ws1.column_dimensions['C'].width = 10
+    ws1.column_dimensions['D'].width = 40
+
+    # SHEET 2: VƯỢT KPI BẤT THƯỜNG
+    ws2 = wb.create_sheet("Vượt KPI bất thường")
+
+    ws2['A1'] = f"DANH SÁCH VƯỢT KPI BẤT THƯỜNG (>50%) - THÁNG {thang}/{nam}"
+    ws2['A1'].font = title_font
+    ws2.merge_cells('A1:I1')
+
+    ws2['A2'] = "Ghi chú: Cần xem xét việc kê khai cấp độ phức tạp chưa chính xác."
+    ws2['A2'].font = Font(italic=True, color="C00000")
+
+    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "SP giao", "SP hoàn thành", "Tỷ lệ vượt", "Điểm KPI", "Ghi chú"]
+    for col, h in enumerate(headers2, 1):
+        cell = ws2.cell(row=4, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    vuot_sorted = sorted(vuot_kpi_bat_thuong, key=lambda x: x["ty_le_vuot"], reverse=True)
+
+    for i, cc in enumerate(vuot_sorted, 1):
+        r = 4 + i
+        ws2.cell(row=r, column=1, value=i).border = border
+        ws2.cell(row=r, column=2, value=cc["ho_ten"]).border = border
+        ws2.cell(row=r, column=3, value=cc["ma_cc"]).border = border
+        ws2.cell(row=r, column=4, value=cc["don_vi"]).border = border
+        ws2.cell(row=r, column=5, value=f"{cc['sp_duoc_giao']:,.0f}").border = border
+        ws2.cell(row=r, column=6, value=f"{cc['sp_hoan_thanh']:,.0f}").border = border
+
+        ty_le_cell = ws2.cell(row=r, column=7, value=f"{cc['ty_le_vuot']:.1f}%")
+        ty_le_cell.border = border
+        ty_le_cell.alignment = center_alignment
+        if cc["ty_le_vuot"] > 100:
+            ty_le_cell.fill = alert_fill
+            ty_le_cell.font = Font(bold=True, color="9C0006")
+        elif cc["ty_le_vuot"] > 50:
+            ty_le_cell.fill = warn_fill
+
+        ws2.cell(row=r, column=8, value=cc["diem_kpi_70"]).border = border
+        ws2.cell(row=r, column=9, value="Cần xác minh cấp độ").border = border
+
+    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 12), ('F', 15), ('G', 12), ('H', 10), ('I', 25)]:
+        ws2.column_dimensions[c].width = w
+
+    # SHEET 3: CHƯA ĐẠT KPI
+    ws3 = wb.create_sheet("Chưa đạt KPI")
+
+    ws3['A1'] = f"DANH SÁCH CHƯA ĐẠT KPI 70 ĐIỂM - THÁNG {thang}/{nam}"
+    ws3['A1'].font = title_font
+    ws3.merge_cells('A1:K1')
+
+    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "SP giao", "SP HT", "Lỗi CL", "Lỗi TĐ", "Điểm KPI", "Lý do chính"]
+    for col, h in enumerate(headers3, 1):
+        cell = ws3.cell(row=3, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    chua_dat_sorted = sorted(chua_dat_kpi_70, key=lambda x: x["diem_kpi_70"] or 0)
+
+    for i, cc in enumerate(chua_dat_sorted, 1):
+        r = 3 + i
+        ws3.cell(row=r, column=1, value=i).border = border
+        ws3.cell(row=r, column=2, value=cc["ho_ten"]).border = border
+        ws3.cell(row=r, column=3, value=cc["ma_cc"]).border = border
+        ws3.cell(row=r, column=4, value=cc["don_vi"]).border = border
+        ws3.cell(row=r, column=5, value=f"{cc['sp_duoc_giao']:,.0f}").border = border
+        ws3.cell(row=r, column=6, value=f"{cc['sp_hoan_thanh']:,.0f}").border = border
+
+        loi_cl_cell = ws3.cell(row=r, column=7, value=cc["loi_cl"])
+        loi_cl_cell.border = border
+        if cc["loi_cl"] > 0:
+            loi_cl_cell.fill = alert_fill
+
+        loi_td_cell = ws3.cell(row=r, column=8, value=cc["loi_td"])
+        loi_td_cell.border = border
+        if cc["loi_td"] > 0:
+            loi_td_cell.fill = warn_fill
+
+        ws3.cell(row=r, column=9, value=cc["diem_kpi_70"]).border = border
+
+        # Xác định lý do chính
+        ly_do = []
+        if cc["sp_hoan_thanh"] < cc["sp_duoc_giao"]:
+            ly_do.append("SP chưa đạt")
+        if cc["loi_cl"] > 0:
+            ly_do.append(f"CL -{cc['loi_cl']} lỗi")
+        if cc["loi_td"] > 0:
+            ly_do.append(f"TĐ -{cc['loi_td']} lỗi")
+        ws3.cell(row=r, column=10, value=", ".join(ly_do) if ly_do else "Khác").border = border
+
+    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 10), ('F', 10), ('G', 8), ('H', 8), ('I', 10), ('J', 25)]:
+        ws3.column_dimensions[c].width = w
+
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+async def _get_data_02_diem_kpi(db: AsyncSession, thang: int, nam: int) -> tuple:
+    """Get data for report 02 - Điểm KPI."""
+    from sqlalchemy import text
+
+    so_ngay_trong_thang = calendar.monthrange(nam, thang)[1]
+
+    # Load KPI từ chi_tiet_xep_loai
+    kpi_result = await db.execute(text("""
+        SELECT ct.cong_chuc_id::text, ct.diem_kpi, ct.diem_tong,
+               ct.is_lanh_dao, ct.xep_loai_he_thong,
+               ct.so_ngay_lam_viec, ct.so_ngay_nghi,
+               cc.ho_ten, cc.ma_cc, dv.ten_don_vi
+        FROM chi_tiet_xep_loai ct
+        JOIN bao_cao_xep_loai bc ON bc.id = ct.bao_cao_id
+        JOIN cong_chuc cc ON cc.id = ct.cong_chuc_id
+        LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        WHERE bc.thang = :thang AND bc.nam = :nam
+              AND cc.is_active = true
+    """), {"thang": thang, "nam": nam})
+
+    kpi_list = []
+    for row in kpi_result:
+        kpi_list.append({
+            "cong_chuc_id": row[0],
+            "diem_kpi_70": float(row[1]) if row[1] is not None else None,
+            "diem_tong_100": float(row[2]) if row[2] is not None else None,
+            "is_lanh_dao": row[3],
+            "xep_loai": row[4],
+            "so_ngay_lv": float(row[5]) if row[5] is not None else None,
+            "so_ngay_nghi": float(row[6]) if row[6] is not None else None,
+            "ho_ten": row[7],
+            "ma_cc": row[8],
+            "don_vi": row[9] or "",
+        })
+
+    # Load nghỉ phép
+    nghi_result = await db.execute(text("""
+        SELECT cong_chuc_id::text, COALESCE(SUM(so_ngay), 0) as tong_nghi
+        FROM dang_ky_nghi
+        WHERE thang_ap_dung = :thang AND nam_ap_dung = :nam
+              AND trang_thai = 'DA_PHE_DUYET' AND is_deleted = false
+        GROUP BY cong_chuc_id
+    """), {"thang": thang, "nam": nam})
+    nghi_by_cc = {row[0]: float(row[1]) for row in nghi_result}
+
+    # Load SP quy đổi CC
+    sp_result = await db.execute(text("""
+        SELECT cong_chuc_id::text,
+               COALESCE(SUM(so_sp_goc_quy_doi), 0) as tong_sp,
+               COALESCE(SUM(so_sp_goc_quy_doi * GREATEST(0, 1 - COALESCE(so_loi_chat_luong, 0) * 0.25)), 0) as sp_cl,
+               COALESCE(SUM(so_sp_goc_quy_doi * GREATEST(0, 1 - COALESCE(so_loi_tien_do, 0) * 0.25)), 0) as sp_td,
+               SUM(so_loi_chat_luong) as loi_cl,
+               SUM(so_loi_tien_do) as loi_td
+        FROM ke_khai_cong_viec
+        WHERE thang = :thang AND nam = :nam
+              AND trang_thai = 'DA_PHE_DUYET' AND is_deleted = false
+        GROUP BY cong_chuc_id
+    """), {"thang": thang, "nam": nam})
+    sp_by_cc = {}
+    for row in sp_result:
+        sp_by_cc[row[0]] = {
+            "tong_sp": float(row[1]),
+            "sp_cl": float(row[2]),
+            "sp_td": float(row[3]),
+            "loi_cl": int(row[4] or 0),
+            "loi_td": int(row[5] or 0),
+        }
+
+    # Tính toán cho từng CC
+    for cc in kpi_list:
+        cc_id = cc["cong_chuc_id"]
+        tong_nghi = nghi_by_cc.get(cc_id, 0)
+        sp_data = sp_by_cc.get(cc_id, {"tong_sp": 0, "sp_cl": 0, "sp_td": 0, "loi_cl": 0, "loi_td": 0})
+
+        # SP được giao = (ngày trong tháng - nghỉ) × 96
+        sp_duoc_giao = (so_ngay_trong_thang - tong_nghi) * 96
+        cc["sp_duoc_giao"] = sp_duoc_giao
+        cc["sp_hoan_thanh"] = sp_data["tong_sp"]
+        cc["sp_cl"] = sp_data["sp_cl"]
+        cc["sp_td"] = sp_data["sp_td"]
+        cc["loi_cl"] = sp_data["loi_cl"]
+        cc["loi_td"] = sp_data["loi_td"]
+
+        # Tỷ lệ vượt KPI
+        if sp_duoc_giao > 0:
+            cc["ty_le_vuot"] = (sp_data["tong_sp"] - sp_duoc_giao) / sp_duoc_giao * 100
+        else:
+            cc["ty_le_vuot"] = 0
+
+    return kpi_list, so_ngay_trong_thang
+
+# =============================================================================
+# HELPER: GENERATE REPORT 03 - LÃNH ĐẠO BỊ TRỪ d,đ,e
+# =============================================================================
+
+async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> io.BytesIO:
+    """Generate Excel report 03 - Lãnh đạo bị trừ điểm d,đ,e."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from sqlalchemy import text
+
+    # Get data
+    data = await _get_data_03_lanh_dao_dde(db, thang, nam)
+
+    # Create Excel
+    wb = Workbook()
+
+    # Styles
+    header_fill = PatternFill("solid", fgColor="4472C4")
+    header_font_white = Font(bold=True, size=12, color="FFFFFF")
+    title_font = Font(bold=True, size=14)
+    percent_font = Font(bold=True, color="0070C0")
+    alert_fill = PatternFill("solid", fgColor="FFC7CE")
+    good_fill = PatternFill("solid", fgColor="C6EFCE")
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    wrap_alignment = Alignment(wrap_text=True, vertical='top')
+    center_alignment = Alignment(horizontal='center', vertical='center')
+
+    # Phân loại
+    total_ld = len(data)
+    bi_tru_d = [ld for ld in data if ld["bi_tru_d"]]
+    bi_tru_dd = [ld for ld in data if ld["bi_tru_dd"]]
+    bi_tru_e = [ld for ld in data if ld["bi_tru_e"]]
+    bi_tru_any = [ld for ld in data if ld["tong_bi_tru"] > 0]
+    khong_bi_tru = [ld for ld in data if ld["tong_bi_tru"] == 0]
+
+    def pct(count):
+        return f"{count/total_ld*100:.1f}%" if total_ld > 0 else "0%"
+
+    # SHEET 1: TỔNG HỢP
+    ws1 = wb.active
+    ws1.title = "Tổng hợp"
+
+    ws1['A1'] = f"3. THỐNG KÊ LÃNH ĐẠO BỊ TRỪ ĐIỂM d, đ, e - THÁNG {thang}/{nam}"
+    ws1['A1'].font = title_font
+    ws1.merge_cells('A1:E1')
+
+    ws1['A2'] = f"Tổng số lãnh đạo: {total_ld}"
+    ws1['A2'].font = Font(bold=True)
+
+    row = 4
+    headers = ["Tiêu chí", "Số lượng bị trừ", "Tỷ lệ", "Ghi chú"]
+    for col, h in enumerate(headers, 1):
+        cell = ws1.cell(row=row, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    rows_data = [
+        ("d - Kết quả đơn vị", len(bi_tru_d), pct(len(bi_tru_d)), "Đơn vị không hoàn thành nhiệm vụ"),
+        ("đ - Tổ chức triển khai", len(bi_tru_dd), pct(len(bi_tru_dd)), "Triển khai không đạt yêu cầu"),
+        ("e - Đoàn kết nội bộ", len(bi_tru_e), pct(len(bi_tru_e)), "Có vấn đề đoàn kết"),
+        ("TỔNG BỊ TRỪ (ít nhất 1 tiêu chí)", len(bi_tru_any), pct(len(bi_tru_any)), ""),
+        ("Không bị trừ", len(khong_bi_tru), pct(len(khong_bi_tru)), ""),
+    ]
+
+    for i, (nhom, sl, tl, gc) in enumerate(rows_data):
+        r = row + 1 + i
+        ws1.cell(row=r, column=1, value=nhom).border = border
+        ws1.cell(row=r, column=2, value=sl).border = border
+        ws1.cell(row=r, column=2).alignment = center_alignment
+        ws1.cell(row=r, column=3, value=tl).border = border
+        ws1.cell(row=r, column=3).alignment = center_alignment
+        ws1.cell(row=r, column=3).font = percent_font
+        ws1.cell(row=r, column=4, value=gc).border = border
+
+        if i == 3:  # Tổng bị trừ
+            ws1.cell(row=r, column=1).font = Font(bold=True)
+            if sl > 0:
+                ws1.cell(row=r, column=2).fill = alert_fill
+
+    ws1.column_dimensions['A'].width = 35
+    ws1.column_dimensions['B'].width = 18
+    ws1.column_dimensions['C'].width = 10
+    ws1.column_dimensions['D'].width = 40
+
+    # SHEET 2: DANH SÁCH BỊ TRỪ
+    ws2 = wb.create_sheet("Danh sách bị trừ")
+
+    ws2['A1'] = f"DANH SÁCH LÃNH ĐẠO BỊ TRỪ ĐIỂM d, đ, e - THÁNG {thang}/{nam}"
+    ws2['A1'].font = title_font
+    ws2.merge_cells('A1:K1')
+
+    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Tổng trừ", "Lý do", "Điểm tổng"]
+    for col, h in enumerate(headers2, 1):
+        cell = ws2.cell(row=3, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    # Sắp xếp theo số tiêu chí bị trừ giảm dần
+    bi_tru_sorted = sorted(bi_tru_any, key=lambda x: x["tong_bi_tru"], reverse=True)
+
+    for i, ld in enumerate(bi_tru_sorted, 1):
+        r = 3 + i
+        ws2.cell(row=r, column=1, value=i).border = border
+        ws2.cell(row=r, column=2, value=ld["ho_ten"]).border = border
+        ws2.cell(row=r, column=3, value=ld["ma_cc"]).border = border
+        ws2.cell(row=r, column=4, value=ld["don_vi"]).border = border
+        ws2.cell(row=r, column=5, value=ld["vai_tro"]).border = border
+
+        # d
+        d_cell = ws2.cell(row=r, column=6, value="✗" if ld["bi_tru_d"] else "✓")
+        d_cell.border = border
+        d_cell.alignment = center_alignment
+        if ld["bi_tru_d"]:
+            d_cell.fill = alert_fill
+            d_cell.font = Font(bold=True, color="9C0006")
+        else:
+            d_cell.fill = good_fill
+
+        # đ
+        dd_cell = ws2.cell(row=r, column=7, value="✗" if ld["bi_tru_dd"] else "✓")
+        dd_cell.border = border
+        dd_cell.alignment = center_alignment
+        if ld["bi_tru_dd"]:
+            dd_cell.fill = alert_fill
+            dd_cell.font = Font(bold=True, color="9C0006")
+        else:
+            dd_cell.fill = good_fill
+
+        # e
+        e_cell = ws2.cell(row=r, column=8, value="✗" if ld["bi_tru_e"] else "✓")
+        e_cell.border = border
+        e_cell.alignment = center_alignment
+        if ld["bi_tru_e"]:
+            e_cell.fill = alert_fill
+            e_cell.font = Font(bold=True, color="9C0006")
+        else:
+            e_cell.fill = good_fill
+
+        # Tổng trừ
+        ws2.cell(row=r, column=9, value=ld["tong_bi_tru"]).border = border
+        ws2.cell(row=r, column=9).alignment = center_alignment
+        ws2.cell(row=r, column=9).font = Font(bold=True)
+
+        # Lý do
+        ly_do = []
+        if ld["bi_tru_d"]:
+            ly_do.append(f"d: {ld['d_ghi_chu']}" if ld['d_ghi_chu'] else "d")
+        if ld["bi_tru_dd"]:
+            ly_do.append(f"đ: {ld['dd_ghi_chu']}" if ld['dd_ghi_chu'] else "đ")
+        if ld["bi_tru_e"]:
+            ly_do.append(f"e: {ld['e_ghi_chu']}" if ld['e_ghi_chu'] else "e")
+        ws2.cell(row=r, column=10, value="; ".join(ly_do)).border = border
+        ws2.cell(row=r, column=10).alignment = wrap_alignment
+
+        ws2.cell(row=r, column=11, value=ld["diem_tong"]).border = border
+
+        ws2.row_dimensions[r].height = 30
+
+    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 15),
+                 ('F', 6), ('G', 6), ('H', 6), ('I', 10), ('J', 50), ('K', 10)]:
+        ws2.column_dimensions[c].width = w
+
+    # SHEET 3: TẤT CẢ LÃNH ĐẠO
+    ws3 = wb.create_sheet("Tất cả lãnh đạo")
+
+    ws3['A1'] = f"DANH SÁCH TẤT CẢ LÃNH ĐẠO - THÁNG {thang}/{nam}"
+    ws3['A1'].font = title_font
+    ws3.merge_cells('A1:J1')
+
+    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Điểm KPI", "Điểm tổng"]
+    for col, h in enumerate(headers3, 1):
+        cell = ws3.cell(row=3, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    for i, ld in enumerate(data, 1):
+        r = 3 + i
+        ws3.cell(row=r, column=1, value=i).border = border
+        ws3.cell(row=r, column=2, value=ld["ho_ten"]).border = border
+        ws3.cell(row=r, column=3, value=ld["ma_cc"]).border = border
+        ws3.cell(row=r, column=4, value=ld["don_vi"]).border = border
+        ws3.cell(row=r, column=5, value=ld["vai_tro"]).border = border
+
+        for col_idx, key in [(6, "bi_tru_d"), (7, "bi_tru_dd"), (8, "bi_tru_e")]:
+            cell = ws3.cell(row=r, column=col_idx, value="✗" if ld[key] else "✓")
+            cell.border = border
+            cell.alignment = center_alignment
+            if ld[key]:
+                cell.fill = alert_fill
+            else:
+                cell.fill = good_fill
+
+        ws3.cell(row=r, column=9, value=ld["diem_kpi"]).border = border
+        ws3.cell(row=r, column=10, value=ld["diem_tong"]).border = border
+
+    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 15),
+                 ('F', 6), ('G', 6), ('H', 6), ('I', 10), ('J', 10)]:
+        ws3.column_dimensions[c].width = w
+
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> list:
+    """Get data for report 03 - Lãnh đạo bị trừ d,đ,e."""
+    from sqlalchemy import text
+
+    # Lấy danh sách lãnh đạo từ chi_tiet_xep_loai
+    ld_result = await db.execute(text("""
+        SELECT ct.cong_chuc_id::text, cc.ho_ten, cc.ma_cc, dv.ten_don_vi,
+               vt.ten_vai_tro, ct.diem_kpi, ct.diem_tong, ct.xep_loai_he_thong
+        FROM chi_tiet_xep_loai ct
+        JOIN bao_cao_xep_loai bc ON bc.id = ct.bao_cao_id
+        JOIN cong_chuc cc ON cc.id = ct.cong_chuc_id
+        LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        LEFT JOIN vai_tro vt ON vt.id = cc.vai_tro_id
+        WHERE bc.thang = :thang AND bc.nam = :nam
+              AND ct.is_lanh_dao = true
+              AND cc.is_active = true
+    """), {"thang": thang, "nam": nam})
+
+    lanh_dao_list = []
+    for row in ld_result:
+        lanh_dao_list.append({
+            "cong_chuc_id": row[0],
+            "ho_ten": row[1],
+            "ma_cc": row[2],
+            "don_vi": row[3] or "",
+            "vai_tro": row[4] or "",
+            "diem_kpi": float(row[5]) if row[5] is not None else None,
+            "diem_tong": float(row[6]) if row[6] is not None else None,
+            "xep_loai": row[7],
+        })
+
+    # Lấy đánh giá d, đ, e
+    dde_result = await db.execute(text("""
+        SELECT cong_chuc_id::text,
+               d_ket_qua_don_vi, d_ghi_chu, d_phe_duyet,
+               dd_to_chuc_trien_khai, dd_ghi_chu, dd_phe_duyet,
+               e_doan_ket_noi_bo, e_ghi_chu, e_phe_duyet,
+               trang_thai
+        FROM danh_gia_dde
+        WHERE thang = :thang AND nam = :nam
+    """), {"thang": thang, "nam": nam})
+
+    dde_by_cc = {}
+    for row in dde_result:
+        dde_by_cc[row[0]] = {
+            "d_dat": row[1],  # True = Đạt, False = Không đạt
+            "d_ghi_chu": row[2] or "",
+            "d_phe_duyet": row[3],
+            "dd_dat": row[4],
+            "dd_ghi_chu": row[5] or "",
+            "dd_phe_duyet": row[6],
+            "e_dat": row[7],
+            "e_ghi_chu": row[8] or "",
+            "e_phe_duyet": row[9],
+            "trang_thai": row[10],
+        }
+
+    # Gộp dữ liệu
+    for ld in lanh_dao_list:
+        cc_id = ld["cong_chuc_id"]
+        dde = dde_by_cc.get(cc_id, {})
+        ld["d_dat"] = dde.get("d_dat", True)
+        ld["d_ghi_chu"] = dde.get("d_ghi_chu", "")
+        ld["dd_dat"] = dde.get("dd_dat", True)
+        ld["dd_ghi_chu"] = dde.get("dd_ghi_chu", "")
+        ld["e_dat"] = dde.get("e_dat", True)
+        ld["e_ghi_chu"] = dde.get("e_ghi_chu", "")
+
+        # Tính số tiêu chí bị trừ
+        ld["bi_tru_d"] = ld["d_dat"] == False
+        ld["bi_tru_dd"] = ld["dd_dat"] == False
+        ld["bi_tru_e"] = ld["e_dat"] == False
+        ld["tong_bi_tru"] = sum([ld["bi_tru_d"], ld["bi_tru_dd"], ld["bi_tru_e"]])
+
+    return lanh_dao_list
+
+
+# =============================================================================
+# HELPER: GENERATE REPORT 04 - KHỐI LƯỢNG CÔNG VIỆC
+# =============================================================================
+
+async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> io.BytesIO:
+    """Generate Excel report 04 - Khối lượng công việc."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    from collections import defaultdict
+
+    # Get data
+    sp_data, cap_do_data, don_vi_data, tong_sp_all, so_ngay = await _get_data_04_khoi_luong_cv(db, thang, nam)
+
+    # Create Excel
+    wb = Workbook()
+
+    # Styles
+    header_fill = PatternFill("solid", fgColor="4472C4")
+    header_font_white = Font(bold=True, size=12, color="FFFFFF")
+    title_font = Font(bold=True, size=14)
+    percent_font = Font(bold=True, color="0070C0")
+    sp1_fill = PatternFill("solid", fgColor="DAEEF3")
+    sp2_fill = PatternFill("solid", fgColor="E2EFDA")
+    sp3_fill = PatternFill("solid", fgColor="FDE9D9")
+    sp4_fill = PatternFill("solid", fgColor="E4DFEC")
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    center_alignment = Alignment(horizontal='center', vertical='center')
+
+    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill}
+
+    SP_NAMES = {
+        "SP1": "Tờ khai HQ (kiểm tra chi tiết hồ sơ)",
+        "SP2": "Văn bản hành chính",
+        "SP3": "Giờ trực làm việc",
+        "SP4": "Giờ tuần tra kiểm soát",
+    }
+
+    CAP_DO_NAMES = {
+        "C1": "Dễ - Đơn giản",
+        "C2": "Trung bình - Thông thường",
+        "C3": "Khó - Nâng cao",
+        "C4": "Rất khó - Phức tạp",
+        "C5": "Đặc biệt khó - Đặc thù",
+    }
+
+    def pct(val):
+        return f"{val/tong_sp_all*100:.1f}%" if tong_sp_all > 0 else "0%"
+
+    # SHEET 1: TỔNG HỢP
+    ws1 = wb.active
+    ws1.title = "Tổng hợp"
+
+    ws1['A1'] = f"4. BÁO CÁO THỐNG KÊ TÌNH HÌNH THỰC HIỆN NHIỆM VỤ - THÁNG {thang}/{nam}"
+    ws1['A1'].font = title_font
+    ws1.merge_cells('A1:E1')
+
+    ws1['A2'] = f"Chi cục Hải quan Khu vực VIII | Tổng SP: {tong_sp_all:,.0f}"
+    ws1['A2'].font = Font(bold=True)
+
+    # 4.1. Khối lượng công việc
+    row = 4
+    ws1.cell(row=row, column=1, value="4.1. KHỐI LƯỢNG CÔNG VIỆC")
+    ws1.cell(row=row, column=1).font = Font(bold=True, size=13, color="2F5496")
+    ws1.merge_cells(f'A{row}:E{row}')
+
+    row += 1
+    headers = ["Loại SP", "Tên", "Số lượng SP", "Tỷ lệ"]
+    for col, h in enumerate(headers, 1):
+        cell = ws1.cell(row=row, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    for sp in sp_data:
+        row += 1
+        ws1.cell(row=row, column=1, value=sp["ma_sp"]).border = border
+        ws1.cell(row=row, column=1).fill = SP_FILLS.get(sp["ma_sp"], sp1_fill)
+        ws1.cell(row=row, column=1).font = Font(bold=True)
+
+        ten_sp = SP_NAMES.get(sp["ma_sp"], sp["ten_sp"])
+        ws1.cell(row=row, column=2, value=ten_sp).border = border
+
+        ws1.cell(row=row, column=3, value=f"{sp['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=3).alignment = center_alignment
+
+        ws1.cell(row=row, column=4, value=pct(sp["tong_sp"])).border = border
+        ws1.cell(row=row, column=4).alignment = center_alignment
+        ws1.cell(row=row, column=4).font = percent_font
+
+    # Tổng
+    row += 1
+    ws1.cell(row=row, column=1, value="TỔNG").border = border
+    ws1.cell(row=row, column=1).font = Font(bold=True)
+    ws1.cell(row=row, column=2).border = border
+    ws1.cell(row=row, column=3, value=f"{tong_sp_all:,.0f}").border = border
+    ws1.cell(row=row, column=3).font = Font(bold=True)
+    ws1.cell(row=row, column=3).alignment = center_alignment
+    ws1.cell(row=row, column=4, value="100%").border = border
+    ws1.cell(row=row, column=4).font = Font(bold=True, color="0070C0")
+    ws1.cell(row=row, column=4).alignment = center_alignment
+
+    # 4.2. Mức độ phức tạp
+    row += 3
+    ws1.cell(row=row, column=1, value="4.2. MỨC ĐỘ PHỨC TẠP CỦA CÔNG VIỆC")
+    ws1.cell(row=row, column=1).font = Font(bold=True, size=13, color="2F5496")
+    ws1.merge_cells(f'A{row}:E{row}')
+
+    row += 1
+    headers2 = ["Cấp độ", "Tên", "Số lượng SP", "Tỷ lệ"]
+    for col, h in enumerate(headers2, 1):
+        cell = ws1.cell(row=row, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    cap_do_fills = {
+        "C1": PatternFill("solid", fgColor="C6EFCE"),
+        "C2": PatternFill("solid", fgColor="D9EAD3"),
+        "C3": PatternFill("solid", fgColor="FFEB9C"),
+        "C4": PatternFill("solid", fgColor="FFC7CE"),
+        "C5": PatternFill("solid", fgColor="E6B8AF"),
+    }
+
+    for cd in cap_do_data:
+        row += 1
+        ws1.cell(row=row, column=1, value=cd["ma_cap_do"]).border = border
+        ws1.cell(row=row, column=1).fill = cap_do_fills.get(cd["ma_cap_do"], sp1_fill)
+        ws1.cell(row=row, column=1).font = Font(bold=True)
+        ws1.cell(row=row, column=1).alignment = center_alignment
+
+        ten_cd = CAP_DO_NAMES.get(cd["ma_cap_do"], cd["ten_cap_do"])
+        ws1.cell(row=row, column=2, value=ten_cd).border = border
+
+        ws1.cell(row=row, column=3, value=f"{cd['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=3).alignment = center_alignment
+
+        ws1.cell(row=row, column=4, value=pct(cd["tong_sp"])).border = border
+        ws1.cell(row=row, column=4).alignment = center_alignment
+        ws1.cell(row=row, column=4).font = percent_font
+
+    # Tổng
+    row += 1
+    tong_cap_do = sum(cd["tong_sp"] for cd in cap_do_data)
+    ws1.cell(row=row, column=1, value="TỔNG").border = border
+    ws1.cell(row=row, column=1).font = Font(bold=True)
+    ws1.cell(row=row, column=2).border = border
+    ws1.cell(row=row, column=3, value=f"{tong_cap_do:,.0f}").border = border
+    ws1.cell(row=row, column=3).font = Font(bold=True)
+    ws1.cell(row=row, column=3).alignment = center_alignment
+    ws1.cell(row=row, column=4, value="100%").border = border
+    ws1.cell(row=row, column=4).font = Font(bold=True, color="0070C0")
+    ws1.cell(row=row, column=4).alignment = center_alignment
+
+    ws1.column_dimensions['A'].width = 12
+    ws1.column_dimensions['B'].width = 40
+    ws1.column_dimensions['C'].width = 15
+    ws1.column_dimensions['D'].width = 12
+
+    # SHEET 2: CHI TIẾT THEO ĐƠN VỊ - LOẠI SP
+    ws2 = wb.create_sheet("Theo đơn vị - Loại SP")
+
+    ws2['A1'] = f"CHI TIẾT KHỐI LƯỢNG CÔNG VIỆC THEO ĐƠN VỊ - THÁNG {thang}/{nam}"
+    ws2['A1'].font = title_font
+    ws2.merge_cells('A1:G1')
+
+    # Pivot: đơn vị -> ma_sp -> tổng SP
+    pivot_dv_sp = defaultdict(lambda: defaultdict(float))
+    for item in don_vi_data:
+        pivot_dv_sp[item["don_vi"]][item["ma_sp"]] += item["tong_sp"]
+
+    headers2 = ["STT", "Đơn vị", "SP1", "SP2", "SP3", "SP4", "Tổng"]
+    for col, h in enumerate(headers2, 1):
+        cell = ws2.cell(row=3, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    row = 3
+    for i, (dv, sp_map) in enumerate(sorted(pivot_dv_sp.items()), 1):
+        row += 1
+        ws2.cell(row=row, column=1, value=i).border = border
+        ws2.cell(row=row, column=2, value=dv).border = border
+
+        tong_dv = 0
+        for col_idx, ma_sp in enumerate(["SP1", "SP2", "SP3", "SP4"], 3):
+            val = sp_map.get(ma_sp, 0)
+            tong_dv += val
+            cell = ws2.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
+            cell.border = border
+            cell.alignment = center_alignment
+            if val > 0:
+                cell.fill = SP_FILLS.get(ma_sp, sp1_fill)
+
+        ws2.cell(row=row, column=7, value=f"{tong_dv:,.0f}").border = border
+        ws2.cell(row=row, column=7).font = Font(bold=True)
+        ws2.cell(row=row, column=7).alignment = center_alignment
+
+    # Tổng hàng
+    row += 1
+    ws2.cell(row=row, column=1).border = border
+    ws2.cell(row=row, column=2, value="TỔNG").border = border
+    ws2.cell(row=row, column=2).font = Font(bold=True)
+
+    for col_idx, ma_sp in enumerate(["SP1", "SP2", "SP3", "SP4"], 3):
+        tong = sum(sp_map.get(ma_sp, 0) for sp_map in pivot_dv_sp.values())
+        cell = ws2.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
+        cell.border = border
+        cell.font = Font(bold=True)
+        cell.alignment = center_alignment
+
+    ws2.cell(row=row, column=7, value=f"{tong_sp_all:,.0f}").border = border
+    ws2.cell(row=row, column=7).font = Font(bold=True)
+    ws2.cell(row=row, column=7).alignment = center_alignment
+
+    for c, w in [('A', 5), ('B', 35), ('C', 12), ('D', 12), ('E', 12), ('F', 12), ('G', 12)]:
+        ws2.column_dimensions[c].width = w
+
+    # SHEET 3: CHI TIẾT THEO ĐƠN VỊ - CẤP ĐỘ
+    ws3 = wb.create_sheet("Theo đơn vị - Cấp độ")
+
+    ws3['A1'] = f"CHI TIẾT MỨC ĐỘ PHỨC TẠP THEO ĐƠN VỊ - THÁNG {thang}/{nam}"
+    ws3['A1'].font = title_font
+    ws3.merge_cells('A1:H1')
+
+    # Pivot: đơn vị -> ma_cap_do -> tổng SP
+    pivot_dv_cd = defaultdict(lambda: defaultdict(float))
+    for item in don_vi_data:
+        pivot_dv_cd[item["don_vi"]][item["ma_cap_do"]] += item["tong_sp"]
+
+    headers3 = ["STT", "Đơn vị", "C1", "C2", "C3", "C4", "C5", "Tổng"]
+    for col, h in enumerate(headers3, 1):
+        cell = ws3.cell(row=3, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    row = 3
+    for i, (dv, cd_map) in enumerate(sorted(pivot_dv_cd.items()), 1):
+        row += 1
+        ws3.cell(row=row, column=1, value=i).border = border
+        ws3.cell(row=row, column=2, value=dv).border = border
+
+        tong_dv = 0
+        for col_idx, ma_cd in enumerate(["C1", "C2", "C3", "C4", "C5"], 3):
+            val = cd_map.get(ma_cd, 0)
+            tong_dv += val
+            cell = ws3.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
+            cell.border = border
+            cell.alignment = center_alignment
+            if val > 0:
+                cell.fill = cap_do_fills.get(ma_cd)
+
+        ws3.cell(row=row, column=8, value=f"{tong_dv:,.0f}").border = border
+        ws3.cell(row=row, column=8).font = Font(bold=True)
+        ws3.cell(row=row, column=8).alignment = center_alignment
+
+    # Tổng hàng
+    row += 1
+    ws3.cell(row=row, column=1).border = border
+    ws3.cell(row=row, column=2, value="TỔNG").border = border
+    ws3.cell(row=row, column=2).font = Font(bold=True)
+
+    for col_idx, ma_cd in enumerate(["C1", "C2", "C3", "C4", "C5"], 3):
+        tong = sum(cd_map.get(ma_cd, 0) for cd_map in pivot_dv_cd.values())
+        cell = ws3.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
+        cell.border = border
+        cell.font = Font(bold=True)
+        cell.alignment = center_alignment
+
+    ws3.cell(row=row, column=8, value=f"{tong_sp_all:,.0f}").border = border
+    ws3.cell(row=row, column=8).font = Font(bold=True)
+    ws3.cell(row=row, column=8).alignment = center_alignment
+
+    for c, w in [('A', 5), ('B', 35), ('C', 10), ('D', 10), ('E', 10), ('F', 10), ('G', 10), ('H', 12)]:
+        ws3.column_dimensions[c].width = w
+
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+async def _get_data_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> tuple:
+    """Get data for report 04 - Khối lượng công việc."""
+    from sqlalchemy import text
+
+    so_ngay_trong_thang = calendar.monthrange(nam, thang)[1]
+
+    # Thống kê theo loại SP (SP1, SP2, SP3, SP4)
+    sp_result = await db.execute(text("""
+        SELECT sp.ma_sp, sp.ten_sp,
+               COUNT(*) as so_khai,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+        FROM ke_khai_cong_viec kk
+        JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
+        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        WHERE kk.thang = :thang AND kk.nam = :nam
+              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
+        GROUP BY sp.ma_sp, sp.ten_sp
+        ORDER BY sp.ma_sp
+    """), {"thang": thang, "nam": nam})
+
+    sp_data = []
+    for row in sp_result:
+        sp_data.append({
+            "ma_sp": row[0],
+            "ten_sp": row[1],
+            "so_khai": int(row[2]),
+            "tong_sp": float(row[3]),
+        })
+
+    # Thống kê theo cấp độ phức tạp (C1-C5)
+    cap_do_result = await db.execute(text("""
+        SELECT cd.ma_cap_do, cd.ten_cap_do,
+               COUNT(*) as so_khai,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+        FROM ke_khai_cong_viec kk
+        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        WHERE kk.thang = :thang AND kk.nam = :nam
+              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
+        GROUP BY cd.ma_cap_do, cd.ten_cap_do
+        ORDER BY cd.ma_cap_do
+    """), {"thang": thang, "nam": nam})
+
+    cap_do_data = []
+    for row in cap_do_result:
+        cap_do_data.append({
+            "ma_cap_do": row[0],
+            "ten_cap_do": row[1],
+            "so_khai": int(row[2]),
+            "tong_sp": float(row[3]),
+        })
+
+    # Chi tiết theo đơn vị
+    don_vi_result = await db.execute(text("""
+        SELECT dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do,
+               COUNT(*) as so_khai,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp
+        FROM ke_khai_cong_viec kk
+        JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
+        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
+        JOIN don_vi dv ON dv.id = cc.don_vi_id
+        WHERE kk.thang = :thang AND kk.nam = :nam
+              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
+        GROUP BY dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do
+        ORDER BY dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do
+    """), {"thang": thang, "nam": nam})
+
+    don_vi_data = []
+    for row in don_vi_result:
+        don_vi_data.append({
+            "don_vi": row[0],
+            "ma_sp": row[1],
+            "ma_cap_do": row[2],
+            "so_khai": int(row[3]),
+            "tong_sp": float(row[4]),
+        })
+
+    # Tổng SP
+    tong_sp_all = sum(item["tong_sp"] for item in sp_data)
+
+    return sp_data, cap_do_data, don_vi_data, tong_sp_all, so_ngay_trong_thang
+
+
+# =============================================================================
+# HELPER: GENERATE REPORT 05 - DANH MỤC CÔNG VIỆC
+# =============================================================================
+
+async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> io.BytesIO:
+    """Generate Excel report 05 - Danh mục công việc chi tiết."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    # Get data
+    data = await _get_data_05_danh_muc_cv(db, thang, nam)
+
+    # Create Excel
+    wb = Workbook()
+
+    # Styles
+    header_fill = PatternFill("solid", fgColor="4472C4")
+    header_font_white = Font(bold=True, size=12, color="FFFFFF")
+    title_font = Font(bold=True, size=14)
+    dm_header_fill = PatternFill("solid", fgColor="2F5496")
+    sub_header_fill = PatternFill("solid", fgColor="D6DCE4")
+    sp1_fill = PatternFill("solid", fgColor="DAEEF3")
+    sp2_fill = PatternFill("solid", fgColor="E2EFDA")
+    sp3_fill = PatternFill("solid", fgColor="FDE9D9")
+    sp4_fill = PatternFill("solid", fgColor="E4DFEC")
+    border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    center_alignment = Alignment(horizontal='center', vertical='center')
+    wrap_alignment = Alignment(wrap_text=True, vertical='top')
+
+    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill}
+
+    # SHEET 1: TỔNG HỢP DANH MỤC
+    ws1 = wb.active
+    ws1.title = "Tổng hợp"
+
+    ws1['A1'] = f"5. THỐNG KÊ DANH MỤC CÔNG VIỆC - THÁNG {thang}/{nam}"
+    ws1['A1'].font = title_font
+    ws1.merge_cells('A1:H1')
+
+    ws1['A2'] = f"Tổng số đầu mục công việc: {len(data)}"
+    ws1['A2'].font = Font(bold=True)
+
+    headers = ["STT", "Loại SP", "Tên công việc", "Số user kê khai", "Số lần kê khai", "Tổng SP quy đổi", "Cấp độ phổ biến", "Số cấp độ"]
+    for col, h in enumerate(headers, 1):
+        cell = ws1.cell(row=4, column=col, value=h)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = center_alignment
+
+    row = 4
+    for i, dm in enumerate(data, 1):
+        row += 1
+        ws1.cell(row=row, column=1, value=i).border = border
+        ws1.cell(row=row, column=1).alignment = center_alignment
+
+        ma_sp_cell = ws1.cell(row=row, column=2, value=dm["ma_sp"])
+        ma_sp_cell.border = border
+        ma_sp_cell.alignment = center_alignment
+        ma_sp_cell.fill = SP_FILLS.get(dm["ma_sp"], sp1_fill)
+        ma_sp_cell.font = Font(bold=True)
+
+        ws1.cell(row=row, column=3, value=dm["ten_cong_viec"]).border = border
+
+        ws1.cell(row=row, column=4, value=dm["so_user"]).border = border
+        ws1.cell(row=row, column=4).alignment = center_alignment
+
+        ws1.cell(row=row, column=5, value=dm["tong_lan_khai"]).border = border
+        ws1.cell(row=row, column=5).alignment = center_alignment
+
+        ws1.cell(row=row, column=6, value=f"{dm['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=6).alignment = center_alignment
+
+        # Cấp độ phổ biến nhất
+        cap_do_pho_bien = max(dm["cap_do_stats"], key=dm["cap_do_stats"].get) if dm["cap_do_stats"] else "-"
+        ws1.cell(row=row, column=7, value=cap_do_pho_bien).border = border
+        ws1.cell(row=row, column=7).alignment = center_alignment
+
+        so_cap_do = len(dm["cap_do_stats"])
+        cap_do_cell = ws1.cell(row=row, column=8, value=so_cap_do)
+        cap_do_cell.border = border
+        cap_do_cell.alignment = center_alignment
+        if so_cap_do >= 4:
+            cap_do_cell.fill = PatternFill("solid", fgColor="FFC7CE")
+            cap_do_cell.font = Font(bold=True, color="9C0006")
+        elif so_cap_do == 3:
+            cap_do_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+
+    ws1.column_dimensions['A'].width = 5
+    ws1.column_dimensions['B'].width = 10
+    ws1.column_dimensions['C'].width = 50
+    ws1.column_dimensions['D'].width = 15
+    ws1.column_dimensions['E'].width = 15
+    ws1.column_dimensions['F'].width = 18
+    ws1.column_dimensions['G'].width = 15
+    ws1.column_dimensions['H'].width = 12
+
+    # SHEET 2: CHI TIẾT TỪNG DANH MỤC VÀ USER
+    ws2 = wb.create_sheet("Chi tiết theo công việc")
+
+    ws2['A1'] = f"CHI TIẾT DANH MỤC CÔNG VIỆC VÀ USER KÊ KHAI - THÁNG {thang}/{nam}"
+    ws2['A1'].font = title_font
+    ws2.merge_cells('A1:H1')
+
+    row = 3
+    for dm_idx, dm in enumerate(data, 1):
+        # Header cho mỗi danh mục
+        ws2.merge_cells(f'A{row}:H{row}')
+        header_text = f"{dm_idx}. [{dm['ma_sp']}] {dm['ten_cong_viec']} ({dm['so_user']} user | {dm['tong_lan_khai']} lần | {dm['tong_sp']:,.0f} SP)"
+        cell = ws2.cell(row=row, column=1, value=header_text)
+        cell.font = Font(bold=True, size=11, color="FFFFFF")
+        cell.fill = dm_header_fill
+        for col in range(2, 9):
+            ws2.cell(row=row, column=col).fill = dm_header_fill
+        row += 1
+
+        # Sub-header
+        sub_headers = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Số lần khai", "Tổng SP", "Cấp độ sử dụng"]
+        for col, h in enumerate(sub_headers, 1):
+            cell = ws2.cell(row=row, column=col, value=h)
+            cell.font = Font(bold=True, size=10)
+            cell.fill = sub_header_fill
+            cell.border = border
+            cell.alignment = center_alignment
+        row += 1
+
+        # Users
+        for u_idx, user in enumerate(dm["users"], 1):
+            ws2.cell(row=row, column=1, value=u_idx).border = border
+            ws2.cell(row=row, column=1).alignment = center_alignment
+
+            ws2.cell(row=row, column=2, value=user["ho_ten"]).border = border
+            ws2.cell(row=row, column=3, value=user["ma_cc"]).border = border
+            ws2.cell(row=row, column=4, value=user["don_vi"]).border = border
+
+            ws2.cell(row=row, column=5, value=user["so_lan_khai"]).border = border
+            ws2.cell(row=row, column=5).alignment = center_alignment
+
+            ws2.cell(row=row, column=6, value=f"{user['tong_sp']:,.0f}").border = border
+            ws2.cell(row=row, column=6).alignment = center_alignment
+
+            cap_do_str = ", ".join(sorted(user["cap_do_list"]))
+            ws2.cell(row=row, column=7, value=cap_do_str).border = border
+            ws2.cell(row=row, column=7).alignment = center_alignment
+
+            row += 1
+
+        row += 1  # Khoảng cách giữa các danh mục
+
+    ws2.column_dimensions['A'].width = 5
+    ws2.column_dimensions['B'].width = 25
+    ws2.column_dimensions['C'].width = 12
+    ws2.column_dimensions['D'].width = 30
+    ws2.column_dimensions['E'].width = 12
+    ws2.column_dimensions['F'].width = 12
+    ws2.column_dimensions['G'].width = 18
+
+    # Save to BytesIO
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+
+async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> list:
+    """Get data for report 05 - Danh mục công việc."""
+    from sqlalchemy import text
+    from collections import defaultdict
+
+    # Lấy tất cả kê khai công việc với thông tin chi tiết
+    result = await db.execute(text("""
+        SELECT
+            dm.id as danh_muc_id,
+            dm.ten_cong_viec,
+            sp.ma_sp,
+            sp.ten_sp,
+            cc.id as cong_chuc_id,
+            cc.ho_ten,
+            cc.ma_cc,
+            dv.ten_don_vi,
+            cd.ma_cap_do,
+            cd.ten_cap_do,
+            COUNT(*) as so_lan_khai,
+            COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi,
+            COALESCE(SUM(kk.so_luong), 0) as tong_so_luong
+        FROM ke_khai_cong_viec kk
+        JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
+        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
+        LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        WHERE kk.thang = :thang AND kk.nam = :nam
+              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
+        GROUP BY dm.id, dm.ten_cong_viec,
+                 sp.ma_sp, sp.ten_sp,
+                 cc.id, cc.ho_ten, cc.ma_cc, dv.ten_don_vi,
+                 cd.ma_cap_do, cd.ten_cap_do
+        ORDER BY sp.ma_sp, dm.ten_cong_viec, dv.ten_don_vi, cc.ho_ten
+    """), {"thang": thang, "nam": nam})
+
+    raw_data = []
+    for row in result:
+        raw_data.append({
+            "danh_muc_id": row[0],
+            "ten_cong_viec": row[1],
+            "ma_sp": row[2],
+            "ten_sp": row[3],
+            "cong_chuc_id": row[4],
+            "ho_ten": row[5],
+            "ma_cc": row[6],
+            "don_vi": row[7] or "",
+            "ma_cap_do": row[8],
+            "ten_cap_do": row[9],
+            "so_lan_khai": int(row[10]),
+            "tong_sp_quy_doi": float(row[11]),
+            "tong_so_luong": float(row[12]),
+        })
+
+    # Tổng hợp theo danh mục công việc
+    danh_muc_map = defaultdict(lambda: {
+        "ten_cong_viec": "",
+        "ma_sp": "",
+        "ten_sp": "",
+        "users": [],
+        "tong_sp": 0,
+        "tong_lan_khai": 0,
+        "cap_do_stats": defaultdict(int),
+    })
+
+    for item in raw_data:
+        dm_id = item["danh_muc_id"]
+        dm = danh_muc_map[dm_id]
+        dm["ten_cong_viec"] = item["ten_cong_viec"]
+        dm["ma_sp"] = item["ma_sp"]
+        dm["ten_sp"] = item["ten_sp"]
+        dm["tong_sp"] += item["tong_sp_quy_doi"]
+        dm["tong_lan_khai"] += item["so_lan_khai"]
+        dm["cap_do_stats"][item["ma_cap_do"]] += item["so_lan_khai"]
+
+        # Tìm user đã có chưa
+        user_found = False
+        for u in dm["users"]:
+            if u["cong_chuc_id"] == item["cong_chuc_id"]:
+                u["so_lan_khai"] += item["so_lan_khai"]
+                u["tong_sp"] += item["tong_sp_quy_doi"]
+                u["cap_do_list"].add(item["ma_cap_do"])
+                user_found = True
+                break
+
+        if not user_found:
+            dm["users"].append({
+                "cong_chuc_id": item["cong_chuc_id"],
+                "ho_ten": item["ho_ten"],
+                "ma_cc": item["ma_cc"],
+                "don_vi": item["don_vi"],
+                "so_lan_khai": item["so_lan_khai"],
+                "tong_sp": item["tong_sp_quy_doi"],
+                "cap_do_list": {item["ma_cap_do"]},
+            })
+
+    # Convert to list và sort
+    danh_muc_list = []
+    for dm_id, dm in danh_muc_map.items():
+        dm["danh_muc_id"] = dm_id
+        dm["so_user"] = len(dm["users"])
+        # Sort users theo đơn vị, tên
+        dm["users"] = sorted(dm["users"], key=lambda x: (x["don_vi"], x["ho_ten"]))
+        danh_muc_list.append(dm)
+
+    # Sort theo ma_sp, tên công việc
+    danh_muc_list = sorted(danh_muc_list, key=lambda x: (x["ma_sp"], x["ten_cong_viec"]))
+
+    return danh_muc_list

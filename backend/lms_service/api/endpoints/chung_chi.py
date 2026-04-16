@@ -13,7 +13,7 @@ Endpoints:
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.dependencies import get_db, get_current_user, require_platform_role
@@ -63,10 +63,14 @@ async def tai_chung_chi(
     db: AsyncSession = Depends(get_db),
     user: TokenPayload = Depends(get_current_user),
 ):
-    """Tải chứng chỉ PDF (placeholder)."""
+    """Tải chứng chỉ PDF."""
     service = ChungChiService(db)
-    data = await service.tai_chung_chi(id, user)
-    return {"success": True, "data": data}
+    pdf_bytes, filename = await service.tai_chung_chi(id, user)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.post("/khao-sat", status_code=201)

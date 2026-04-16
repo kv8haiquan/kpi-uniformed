@@ -54,4 +54,5 @@ class DashboardSummary(BaseModel):
     """Dashboard summary cho widget frontend."""
     khoa_dang_hoc: int = 0
     khoa_sap_het_han: list[dict] = []
+    bkt_chua_lam: list[dict] = []
     chung_chi_moi: list[dict] = []

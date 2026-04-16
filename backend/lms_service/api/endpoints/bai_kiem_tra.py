@@ -6,11 +6,15 @@ API endpoints cho BKT CRUD + luong thi.
 Endpoints:
   GET    /khoa-hoc/{id}/bai-kiem-tra       Danh sach BKT cua khoa
   GET    /bai-kiem-tra/{id}                Chi tiet BKT
+  GET    /bai-kiem-tra/{id}/cau-hoi        Danh sach cau hoi (GIANG_VIEN/QT)
+  GET    /bai-kiem-tra/{id}/ket-qua-tat-ca Tat ca ket qua thi (GIANG_VIEN/QT)
+  GET    /bai-kiem-tra/{id}/ket-qua        Lich su thi cua user
   POST   /khoa-hoc/{id}/bai-kiem-tra       Tao BKT moi
   PUT    /bai-kiem-tra/{id}                Cap nhat BKT
   DELETE /bai-kiem-tra/{id}                Xoa BKT
   POST   /bai-kiem-tra/{id}/bat-dau        Bat dau lam bai
   POST   /bai-kiem-tra/{id}/nop-bai        Nop bai
+  POST   /bai-kiem-tra/{id}/luu-nhap       Luu bai lam nhap
   GET    /ket-qua/{id}                     Xem ket qua chi tiet
 """
 
@@ -28,6 +32,7 @@ from lms_service.schemas.bai_kiem_tra import (
     KetQuaResponse,
     LichSuThiResponse,
     NopBaiRequest,
+    LuuNhapRequest,
 )
 from lms_service.schemas.cau_hoi import CauHoiForExam, CauHoiResponse
 from lms_service.services.bai_kiem_tra_service import BaiKiemTraService
@@ -64,6 +69,18 @@ async def danh_sach_cau_hoi_bkt(
     """Danh sách câu hỏi của bài kiểm tra (kèm đáp án — chỉ dành cho giảng viên quản trị)."""
     service = BaiKiemTraService(db)
     items = await service.danh_sach_cau_hoi(id)
+    return {"success": True, "data": items}
+
+
+@router.get("/bai-kiem-tra/{id}/ket-qua-tat-ca")
+async def ket_qua_tat_ca(
+    id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(require_platform_role("GIANG_VIEN", "QT_DAO_TAO")),
+):
+    """Tất cả kết quả thi của 1 BKT (cho giảng viên/QT)."""
+    service = BaiKiemTraService(db)
+    items = await service.ket_qua_tat_ca(id, user)
     return {"success": True, "data": items}
 
 
@@ -148,6 +165,11 @@ async def bat_dau_thi(
             thoi_gian_phut=result["thoi_gian_phut"],
             so_cau=result["so_cau"],
             cau_hoi=[CauHoiForExam(**ch) for ch in result["cau_hoi"]],
+            so_lan_con_lai=result.get("so_lan_con_lai"),
+            dang_tiep_tuc=result.get("dang_tiep_tuc", False),
+            chi_tiet_nhap=result.get("chi_tiet_nhap"),
+            thoi_gian_da_lam_giay=result.get("thoi_gian_da_lam_giay", 0),
+            so_lan_vi_pham=result.get("so_lan_vi_pham", 0),
         ).model_dump(mode="json"),
     }
 
@@ -167,6 +189,20 @@ async def nop_bai(
         "data": KetQuaResponse(**result).model_dump(mode="json"),
         "message": f"Nộp bài thành công. Điểm: {result['diem']}/{result.get('so_cau_dung', 0) + result.get('so_cau_sai', 0)} câu đúng",
     }
+
+
+@router.post("/bai-kiem-tra/{id}/luu-nhap")
+async def luu_nhap(
+    id: UUID,
+    body: LuuNhapRequest,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Lưu bài làm nháp (auto-save). Frontend gọi mỗi 30s."""
+    service = BaiKiemTraService(db)
+    result = await service.luu_nhap(body.ket_qua_id, body.tra_loi, body.so_lan_vi_pham, user)
+    await db.commit()
+    return {"success": True, "data": result}
 
 
 @router.get("/ket-qua/{id}")

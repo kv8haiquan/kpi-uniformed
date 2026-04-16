@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads/lms"        # Thư mục lưu file (relative to working dir)
     max_file_size_mb: int = 100            # Giới hạn kích thước file
 
+    # Common service internal API
+    common_internal_url: str = "http://localhost:8005/internal/v1"
+    internal_api_key: str = "kv08-internal-secret-key"
+
 
 @lru_cache()
 def get_settings() -> Settings:

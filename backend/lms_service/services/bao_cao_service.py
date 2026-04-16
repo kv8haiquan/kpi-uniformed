@@ -24,6 +24,8 @@ from lms_service.models.bai_kiem_tra import BaiKiemTra
 from lms_service.schemas.chung_chi import tinh_xep_loai
 from shared.auth import TokenPayload
 
+from lms_service.services.thong_bao_helper import gui_thong_bao
+
 
 class BaoCaoService:
     """Service xu ly bao cao va dashboard."""
@@ -288,6 +290,53 @@ class BaoCaoService:
             for r in het_han_r.all()
         ]
 
+        # Bai kiem tra chua lam (khoa hoc da dang ky, BKT dang mo, user chua dat)
+        from lms_service.models.bai_kiem_tra_cau_hoi import BaiKiemTraCauHoi
+        # Subquery: BKT da dat cua user
+        bkt_da_dat_sub = (
+            select(KetQuaBaiKiemTra.bai_kiem_tra_id)
+            .where(
+                KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
+                KetQuaBaiKiemTra.dat_yeu_cau == True,  # noqa: E712
+            )
+            .distinct()
+            .correlate_except(KetQuaBaiKiemTra)
+            .subquery()
+        )
+        # BKT thuoc khoa hoc user da dang ky, dang active, chua dat
+        bkt_r = await self.db.execute(
+            select(
+                BaiKiemTra.id,
+                BaiKiemTra.tieu_de,
+                BaiKiemTra.ngay_dong,
+                BaiKiemTra.so_lan_lam_toi_da,
+                KhoaHoc.ten_khoa_hoc,
+                KhoaHoc.id.label("khoa_hoc_id"),
+            )
+            .join(KhoaHoc, BaiKiemTra.khoa_hoc_id == KhoaHoc.id)
+            .join(DangKyKhoaHoc, DangKyKhoaHoc.khoa_hoc_id == KhoaHoc.id)
+            .where(
+                DangKyKhoaHoc.cong_chuc_id == user_uuid,
+                DangKyKhoaHoc.trang_thai.in_(["CHUA_BAT_DAU", "DANG_HOC"]),
+                BaiKiemTra.is_active == True,  # noqa: E712
+                BaiKiemTra.id.notin_(select(bkt_da_dat_sub.c.bai_kiem_tra_id)),
+            )
+            .order_by(BaiKiemTra.ngay_dong.asc().nullslast())
+        )
+        bkt_chua_lam = []
+        for row in bkt_r.all():
+            ngay_dong = row[2]
+            con_lai_ngay = (ngay_dong - now.date()).days if ngay_dong else None
+            bkt_chua_lam.append({
+                "id": str(row[0]),
+                "tieu_de": row[1],
+                "ngay_dong": ngay_dong.isoformat() if ngay_dong else None,
+                "con_lai_ngay": con_lai_ngay,
+                "ten_khoa_hoc": row[4],
+                "khoa_hoc_id": str(row[5]),
+                "khan_cap": con_lai_ngay is not None and con_lai_ngay <= 3,
+            })
+
         # Chung chi moi (30 ngay)
         cc_r = await self.db.execute(
             select(ChungChi.ma_chung_chi, ChungChi.ngay_cap, KhoaHoc.ten_khoa_hoc)
@@ -303,8 +352,24 @@ class BaoCaoService:
             for r in cc_r.all()
         ]
 
+        # Fire-and-forget: gui thong bao cho BKT khan cap (con <= 3 ngay)
+        for bkt_item in bkt_chua_lam:
+            if bkt_item.get("khan_cap"):
+                con_lai = bkt_item["con_lai_ngay"]
+                lbl = f"còn {con_lai} ngày" if con_lai and con_lai > 0 else "hết hạn hôm nay"
+                await gui_thong_bao(
+                    nguoi_nhan_id=user_uuid,
+                    tieu_de=f"Bài kiểm tra sắp hết hạn: {bkt_item['tieu_de']}",
+                    noi_dung=f"Bài kiểm tra \"{bkt_item['tieu_de']}\" ({lbl}). Vui lòng hoàn thành sớm.",
+                    muc_do="KHAN" if (con_lai is not None and con_lai <= 1) else "QUAN_TRONG",
+                    link_url=f"/dao-tao/khoa-hoc/{bkt_item['khoa_hoc_id']}",
+                    doi_tuong_type="BAI_KIEM_TRA",
+                    doi_tuong_id=uuid.UUID(bkt_item["id"]),
+                )
+
         return {
             "khoa_dang_hoc": khoa_dang_hoc,
             "khoa_sap_het_han": sap_het_han,
+            "bkt_chua_lam": bkt_chua_lam,
             "chung_chi_moi": chung_chi_moi,
         }

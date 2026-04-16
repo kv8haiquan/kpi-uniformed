@@ -27,6 +27,9 @@ class DangKyResponse(BaseModel):
     ngay_hoan_thanh: Optional[datetime] = None
     diem_cao_nhat: Optional[Decimal] = None
     created_at: Optional[datetime] = None
+    nguoi_phe_duyet_id: Optional[UUID] = None
+    ngay_phe_duyet: Optional[datetime] = None
+    ly_do_tu_choi: Optional[str] = None
     # Fields tu JOIN
     khoa_hoc_ten: Optional[str] = None
     khoa_hoc_ma: Optional[str] = None
@@ -64,6 +67,7 @@ class HocVienListItem(BaseModel):
     """Thong tin hoc vien cua khoa hoc."""
     model_config = ConfigDict(from_attributes=True)
 
+    dang_ky_id: Optional[UUID] = None
     cong_chuc_id: UUID
     ho_ten: Optional[str] = None
     ma_cc: Optional[str] = None
@@ -74,3 +78,20 @@ class HocVienListItem(BaseModel):
     ngay_dang_ky: Optional[datetime] = None
     ngay_bat_dau_hoc: Optional[datetime] = None
     ngay_hoan_thanh: Optional[datetime] = None
+
+
+class PheDuyetRequest(BaseModel):
+    """Request phe duyet hoac tu choi dang ky."""
+    phe_duyet: bool
+    ly_do_tu_choi: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_ly_do(self):
+        if not self.phe_duyet and not self.ly_do_tu_choi:
+            raise ValueError("Phải cung cấp lý do khi từ chối")
+        return self
+
+
+class RemoveStudentRequest(BaseModel):
+    """Request loai hoc vien."""
+    ly_do: Optional[str] = Field(default=None, max_length=500)

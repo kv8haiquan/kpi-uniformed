@@ -21,6 +21,7 @@ from lms_service.models.cau_hoi import CauHoi
 from lms_service.models.ket_qua_bai_kiem_tra import KetQuaBaiKiemTra
 from lms_service.models.khoa_hoc import KhoaHoc
 from lms_service.models.dang_ky_khoa_hoc import DangKyKhoaHoc
+from lms_service.models.base import CongChucRef, DonViRef
 from lms_service.schemas.bai_kiem_tra import BaiKiemTraCreate, BaiKiemTraUpdate
 from shared.auth import TokenPayload
 
@@ -103,6 +104,8 @@ class BaiKiemTraService:
                 "hien_giai_thich": item.hien_giai_thich,
                 "ngay_mo": item.ngay_mo if hasattr(item, "ngay_mo") else None,
                 "ngay_dong": item.ngay_dong if hasattr(item, "ngay_dong") else None,
+                "gio_mo": item.gio_mo if hasattr(item, "gio_mo") else None,
+                "gio_dong": item.gio_dong if hasattr(item, "gio_dong") else None,
                 "nguoi_tao_id": item.nguoi_tao_id,
                 "is_active": item.is_active,
                 "created_at": item.created_at,
@@ -153,6 +156,8 @@ class BaiKiemTraService:
             tron_dap_an=data.tron_dap_an,
             che_do_xem_ket_qua=data.che_do_xem_ket_qua,
             hien_giai_thich=data.hien_giai_thich,
+            gio_mo=data.gio_mo,
+            gio_dong=data.gio_dong,
             nguoi_tao_id=uuid.UUID(user.sub),
         )
         self.db.add(bkt)
@@ -294,12 +299,31 @@ class BaiKiemTraService:
         bkt = await self._get_bkt(bai_kiem_tra_id)
         user_uuid = uuid.UUID(user.sub)
 
+        # Enforce ngay_mo/ngay_dong (Date check) va gio_mo/gio_dong (time check)
+        from datetime import date, time
+        now = datetime.utcnow()
+        today = now.date()
+        current_time = now.strftime("%H:%M")
+
+        if bkt.ngay_mo and today < bkt.ngay_mo:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Bài kiểm tra chưa mở. Ngày mở: {bkt.ngay_mo}"}})
+        if bkt.ngay_dong and today > bkt.ngay_dong:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_012", "message": "Bài kiểm tra đã đóng"}})
+        if bkt.gio_mo and current_time < bkt.gio_mo:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_013", "message": f"Chưa đến giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
+        if bkt.gio_dong and current_time > bkt.gio_dong:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_014", "message": f"Đã hết giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
+
         # Verify da dang ky khoa hoc
         dk_r = await self.db.execute(
             select(DangKyKhoaHoc).where(DangKyKhoaHoc.cong_chuc_id == user_uuid, DangKyKhoaHoc.khoa_hoc_id == bkt.khoa_hoc_id)
         )
-        if dk_r.scalar_one_or_none() is None:
+        dk_obj = dk_r.scalar_one_or_none()
+        if dk_obj is None:
             raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_003", "message": "Bạn chưa đăng ký khóa học này"}})
+        if dk_obj.trang_thai in ("CHO_PHE_DUYET", "TU_CHOI", "BI_LOAI"):
+            status_labels = {"CHO_PHE_DUYET": "chờ phê duyệt", "TU_CHOI": "bị từ chối", "BI_LOAI": "đã bị loại"}
+            raise HTTPException(status_code=403, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Không thể thi. Đăng ký {status_labels.get(dk_obj.trang_thai, dk_obj.trang_thai)}."}})
 
         # Kiem tra so lan da thi
         done_count_r = await self.db.execute(
@@ -313,17 +337,32 @@ class BaiKiemTraService:
         if bkt.so_lan_lam_toi_da and done_count >= bkt.so_lan_lam_toi_da:
             raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_005", "message": f"Đã hết lượt thi ({bkt.so_lan_lam_toi_da} lần)"}})
 
-        # Tao ket qua moi
-        lan_thu = done_count + 1
-        kq = KetQuaBaiKiemTra(
-            cong_chuc_id=user_uuid,
-            bai_kiem_tra_id=bai_kiem_tra_id,
-            lan_thu=lan_thu,
-            ngay_lam=datetime.utcnow(),
+        # Check for existing in-progress attempt (resume logic)
+        existing_r = await self.db.execute(
+            select(KetQuaBaiKiemTra).where(
+                KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
+                KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
+                KetQuaBaiKiemTra.dat_yeu_cau.is_(None),
+            )
         )
-        self.db.add(kq)
-        await self.db.flush()
-        await self.db.refresh(kq)
+        existing = existing_r.scalar_one_or_none()
+
+        if existing:
+            # Resume existing attempt
+            kq = existing
+            lan_thu = kq.lan_thu
+        else:
+            # Tao ket qua moi
+            lan_thu = done_count + 1
+            kq = KetQuaBaiKiemTra(
+                cong_chuc_id=user_uuid,
+                bai_kiem_tra_id=bai_kiem_tra_id,
+                lan_thu=lan_thu,
+                ngay_lam=datetime.utcnow(),
+            )
+            self.db.add(kq)
+            await self.db.flush()
+            await self.db.refresh(kq)
 
         # Lay danh sach cau hoi
         links_r = await self.db.execute(
@@ -365,13 +404,59 @@ class BaiKiemTraService:
                 if item["lua_chon"] and isinstance(item["lua_chon"], list):
                     random.shuffle(item["lua_chon"])
 
-        return {
-            "ket_qua_id": kq.id,
-            "lan_thu": lan_thu,
-            "thoi_gian_phut": bkt.thoi_gian_lam_bai_phut,
-            "so_cau": len(cau_hoi_list),
-            "cau_hoi": cau_hoi_list,
-        }
+        # Tinh so_lan_con_lai
+        so_lan_con_lai = (bkt.so_lan_lam_toi_da - lan_thu) if bkt.so_lan_lam_toi_da else None
+
+        # Neu resume, tra ve chi_tiet_nhap va thoi_gian_da_lam
+        if existing:
+            thoi_gian_da_lam_giay = int((datetime.utcnow() - kq.ngay_lam).total_seconds()) if kq.ngay_lam else 0
+            return {
+                "ket_qua_id": kq.id,
+                "lan_thu": lan_thu,
+                "thoi_gian_phut": bkt.thoi_gian_lam_bai_phut,
+                "so_cau": len(cau_hoi_list),
+                "cau_hoi": cau_hoi_list,
+                "so_lan_con_lai": so_lan_con_lai,
+                "dang_tiep_tuc": True,
+                "chi_tiet_nhap": kq.chi_tiet_nhap,
+                "thoi_gian_da_lam_giay": thoi_gian_da_lam_giay,
+                "so_lan_vi_pham": kq.so_lan_vi_pham or 0,
+            }
+        else:
+            return {
+                "ket_qua_id": kq.id,
+                "lan_thu": lan_thu,
+                "thoi_gian_phut": bkt.thoi_gian_lam_bai_phut,
+                "so_cau": len(cau_hoi_list),
+                "cau_hoi": cau_hoi_list,
+                "so_lan_con_lai": so_lan_con_lai,
+                "dang_tiep_tuc": False,
+                "chi_tiet_nhap": None,
+                "thoi_gian_da_lam_giay": 0,
+                "so_lan_vi_pham": 0,
+            }
+
+    # =========================================================================
+    # 6b. LUU NHAP (AUTO-SAVE)
+    # =========================================================================
+    async def luu_nhap(self, ket_qua_id: uuid.UUID, tra_loi_nhap: list, so_lan_vi_pham: int, user: TokenPayload) -> dict:
+        """Luu bai lam nhap (auto-save moi 30s)."""
+        user_uuid = uuid.UUID(user.sub)
+        kq_r = await self.db.execute(select(KetQuaBaiKiemTra).where(KetQuaBaiKiemTra.id == ket_qua_id))
+        kq = kq_r.scalar_one_or_none()
+        if kq is None:
+            raise HTTPException(status_code=404, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Không tìm thấy kết quả thi"}})
+        if kq.cong_chuc_id != user_uuid:
+            raise HTTPException(status_code=403, detail={"success": False, "error": {"code": "LMS_ERR_008", "message": "Không có quyền"}})
+        if kq.dat_yeu_cau is not None:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_010", "message": "Bài đã nộp"}})
+
+        # Convert list to serializable format
+        nhap_data = [{"cau_hoi_id": str(tl.cau_hoi_id), "dap_an": tl.dap_an} for tl in tra_loi_nhap]
+        kq.chi_tiet_nhap = nhap_data
+        kq.so_lan_vi_pham = so_lan_vi_pham
+        await self.db.flush()
+        return {"success": True, "message": "Đã lưu bài làm nháp"}
 
     # =========================================================================
     # 7. NOP BAI — CHAM DIEM TU DONG
@@ -681,3 +766,59 @@ class BaiKiemTraService:
                 for kq in ket_qua_list
             ],
         }
+
+    # =========================================================================
+    # 10. KET QUA TAT CA — danh sach tat ca ket qua thi cua 1 BKT (cho GIANG_VIEN/QT)
+    # =========================================================================
+    async def ket_qua_tat_ca(self, bai_kiem_tra_id: uuid.UUID, user: TokenPayload) -> list:
+        """Lay tat ca ket qua thi cua 1 BKT (cho giang vien/QT)."""
+        bkt = await self._get_bkt(bai_kiem_tra_id)
+
+        # Auth check: only GIANG_VIEN, QT_DAO_TAO, SUPER_ADMIN
+        if not self._is_manager(user) and "GIANG_VIEN" not in (user.platform_roles or []):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "success": False,
+                    "error": {"code": "LMS_ERR_008", "message": "Không có quyền"}
+                }
+            )
+
+        cc = CongChucRef.__table__.alias("cc")
+        dv = DonViRef.__table__.alias("dv")
+
+        stmt = (
+            select(
+                KetQuaBaiKiemTra,
+                cc.c.ho_ten.label("ho_ten"),
+                cc.c.ma_cc.label("ma_cc"),
+                dv.c.ten_don_vi.label("don_vi_ten"),
+            )
+            .join(cc, KetQuaBaiKiemTra.cong_chuc_id == cc.c.id)
+            .outerjoin(dv, cc.c.don_vi_id == dv.c.id)
+            .where(KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id)
+            .order_by(KetQuaBaiKiemTra.ngay_lam.desc())
+        )
+
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        items = []
+        for kq, ho_ten, ma_cc, don_vi_ten in rows:
+            items.append({
+                "id": kq.id,
+                "cong_chuc_id": kq.cong_chuc_id,
+                "ho_ten": ho_ten,
+                "ma_cc": ma_cc,
+                "don_vi_ten": don_vi_ten,
+                "lan_thu": kq.lan_thu,
+                "diem": kq.diem,
+                "so_cau_dung": kq.so_cau_dung,
+                "so_cau_sai": kq.so_cau_sai,
+                "thoi_gian_lam_giay": kq.thoi_gian_lam_giay,
+                "dat_yeu_cau": kq.dat_yeu_cau,
+                "so_lan_vi_pham": kq.so_lan_vi_pham or 0,
+                "ngay_lam": kq.ngay_lam,
+            })
+
+        return items

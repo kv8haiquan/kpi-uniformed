@@ -23,6 +23,12 @@ from lms_service.api.endpoints.chung_chi import router as chung_chi_router
 from lms_service.api.endpoints.bao_cao import router as bao_cao_router
 from lms_service.api.endpoints.cbcc import router as cbcc_router
 from lms_service.api.endpoints.upload import router as upload_router
+# DGNL routers
+from lms_service.api.endpoints.linh_vuc import router as linh_vuc_router
+from lms_service.api.endpoints.vi_tri_viec_lam import router as vi_tri_viec_lam_router
+from lms_service.api.endpoints.ky_thi import router as ky_thi_router
+from lms_service.api.endpoints.thi_sinh import router as thi_sinh_router
+from lms_service.api.endpoints.cau_hoi_dgnl import router as cau_hoi_dgnl_router
 
 # Tao thu muc uploads truoc khi mount StaticFiles (tranh loi khoi dong)
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -69,6 +75,12 @@ app.include_router(chung_chi_router, prefix="/api/v1/lms")
 app.include_router(bao_cao_router, prefix="/api/v1/lms")
 app.include_router(cbcc_router, prefix="/api/v1/lms")
 app.include_router(upload_router, prefix="/api/v1/lms")
+# DGNL routers
+app.include_router(linh_vuc_router, prefix="/api/v1/lms")
+app.include_router(vi_tri_viec_lam_router, prefix="/api/v1/lms")
+app.include_router(ky_thi_router, prefix="/api/v1/lms")
+app.include_router(thi_sinh_router, prefix="/api/v1/lms")
+app.include_router(cau_hoi_dgnl_router, prefix="/api/v1/lms")
 
 
 @app.get("/health")

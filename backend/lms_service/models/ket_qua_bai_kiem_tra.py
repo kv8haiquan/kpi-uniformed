@@ -54,6 +54,12 @@ class KetQuaBaiKiemTra(Base):
     # Chi tiet tra loi (JSONB)
     chi_tiet_tra_loi: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Bai lam nhap (auto-save)
+    chi_tiet_nhap: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, comment="Bai lam nhap (auto-save)")
+
+    # So lan vi pham (thoat tab/fullscreen)
+    so_lan_vi_pham: Mapped[Optional[int]] = mapped_column(Integer, server_default="0", comment="So lan thoat tab/fullscreen")
+
     # Dat yeu cau
     dat_yeu_cau: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
 

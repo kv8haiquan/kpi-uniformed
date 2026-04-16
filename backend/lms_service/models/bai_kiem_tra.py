@@ -54,6 +54,8 @@ class BaiKiemTra(Base):
     # Thoi gian mo
     ngay_mo: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     ngay_dong: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    gio_mo: Mapped[Optional[str]] = mapped_column(String(5), nullable=True, comment="Gio bat dau cho phep thi (HH:MM)")
+    gio_dong: Mapped[Optional[str]] = mapped_column(String(5), nullable=True, comment="Gio ket thuc cho phep thi (HH:MM)")
 
     # FK den public.cong_chuc — KHONG tao relationship
     nguoi_tao_id: Mapped[Optional[uuid.UUID]] = mapped_column(

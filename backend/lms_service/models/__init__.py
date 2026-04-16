@@ -1,7 +1,7 @@
 """
 lms_service/models/__init__.py
 ==============================
-Import tat ca 11 LMS models.
+Import tat ca LMS models (11 goc + 5 DGNL).
 """
 
 from lms_service.models.base import Base
@@ -16,6 +16,13 @@ from lms_service.models.tien_do_bai_hoc import TienDoBaiHoc
 from lms_service.models.ket_qua_bai_kiem_tra import KetQuaBaiKiemTra
 from lms_service.models.chung_chi import ChungChi
 from lms_service.models.khao_sat import KhaoSat
+# DGNL models
+from lms_service.models.linh_vuc import LinhVuc
+from lms_service.models.vi_tri_viec_lam import ViTriViecLam
+from lms_service.models.ky_thi import KyThi
+from lms_service.models.cau_truc_de import CauTrucDe
+from lms_service.models.thi_sinh import ThiSinh
+from lms_service.models.cau_hoi_dgnl import CauHoiDgnl
 
 __all__ = [
     "Base",
@@ -30,4 +37,11 @@ __all__ = [
     "KetQuaBaiKiemTra",
     "ChungChi",
     "KhaoSat",
+    # DGNL
+    "LinhVuc",
+    "ViTriViecLam",
+    "KyThi",
+    "CauTrucDe",
+    "ThiSinh",
+    "CauHoiDgnl",
 ]

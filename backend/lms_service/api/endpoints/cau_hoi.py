@@ -41,6 +41,7 @@ async def danh_sach_cau_hoi(
     khoa_hoc_id: Optional[UUID] = Query(None),
     chuyen_de_id: Optional[UUID] = Query(None),
     bai_kiem_tra_id: Optional[UUID] = Query(None),
+    linh_vuc_id: Optional[UUID] = Query(None, description="Filter theo lĩnh vực (ĐGNL)"),
     loai: Optional[str] = Query(None),
     do_kho: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
@@ -50,7 +51,7 @@ async def danh_sach_cau_hoi(
 ):
     """Ngân hàng câu hỏi. Auth: GIANG_VIEN, QT_DAO_TAO."""
     service = CauHoiService(db)
-    result = await service.danh_sach(khoa_hoc_id, chuyen_de_id, bai_kiem_tra_id, loai, do_kho, page, page_size)
+    result = await service.danh_sach(khoa_hoc_id, chuyen_de_id, bai_kiem_tra_id, linh_vuc_id, loai, do_kho, page, page_size)
     return {
         "success": True,
         "data": [CauHoiResponse(**item).model_dump(mode="json") for item in result["items"]],
@@ -69,8 +70,17 @@ async def tao_cau_hoi(
     user: TokenPayload = Depends(require_platform_role("GIANG_VIEN", "QT_DAO_TAO")),
 ):
     """Tạo câu hỏi mới."""
+    # Validate bai_kiem_tra_id ton tai
+    from lms_service.models.bai_kiem_tra import BaiKiemTra
+    from sqlalchemy import select
+    bkt_r = await db.execute(select(BaiKiemTra.id).where(BaiKiemTra.id == data.bai_kiem_tra_id))
+    if bkt_r.scalar_one_or_none() is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Không tìm thấy bài kiểm tra"}})
+
     service = CauHoiService(db)
     ch = await service.tao_moi(data, user)
+    await db.commit()
     return {
         "success": True,
         "data": CauHoiResponse.model_validate(ch).model_dump(mode="json"),

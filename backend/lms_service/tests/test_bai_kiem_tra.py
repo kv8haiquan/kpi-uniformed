@@ -182,3 +182,72 @@ class TestLuongThi:
         resp = await client.get(f"/api/v1/lms/ket-qua/{kq_id}")
         assert resp.status_code == 200
         assert resp.json()["data"]["chi_tiet"] is not None
+
+    async def test_ket_qua_tat_ca_giang_vien(self, client, admin_user):
+        """GET /bai-kiem-tra/{id}/ket-qua-tat-ca → admin/giang vien co the xem tat ca ket qua."""
+        setup = await _setup_exam(client)
+
+        # CBCC 1 thi
+        cbcc1 = _make_user("CHUYEN_VIEN", [], idx=4)
+        _set_user(cbcc1)
+        await client.post(f"/api/v1/lms/khoa-hoc/{setup['kh_id']}/dang-ky")
+        start1 = await client.post(f"/api/v1/lms/bai-kiem-tra/{setup['bkt_id']}/bat-dau")
+        kq_id1 = start1.json()["data"]["ket_qua_id"]
+        await client.post(f"/api/v1/lms/bai-kiem-tra/{setup['bkt_id']}/nop-bai", json={
+            "ket_qua_id": kq_id1,
+            "tra_loi": [
+                {"cau_hoi_id": setup["ch_ids"][0], "dap_an": "B"},
+                {"cau_hoi_id": setup["ch_ids"][1], "dap_an": True},
+                {"cau_hoi_id": setup["ch_ids"][2], "dap_an": "Bai 1"},
+            ],
+        })
+
+        # CBCC 2 thi
+        cbcc2 = _make_user("CHUYEN_VIEN", [], idx=5)
+        _set_user(cbcc2)
+        await client.post(f"/api/v1/lms/khoa-hoc/{setup['kh_id']}/dang-ky")
+        start2 = await client.post(f"/api/v1/lms/bai-kiem-tra/{setup['bkt_id']}/bat-dau")
+        kq_id2 = start2.json()["data"]["ket_qua_id"]
+        await client.post(f"/api/v1/lms/bai-kiem-tra/{setup['bkt_id']}/nop-bai", json={
+            "ket_qua_id": kq_id2,
+            "tra_loi": [
+                {"cau_hoi_id": setup["ch_ids"][0], "dap_an": "A"},
+                {"cau_hoi_id": setup["ch_ids"][1], "dap_an": False},
+                {"cau_hoi_id": setup["ch_ids"][2], "dap_an": "Bai 2"},
+            ],
+        })
+
+        # Admin xem tat ca ket qua
+        _set_user(admin_user)
+        resp = await client.get(f"/api/v1/lms/bai-kiem-tra/{setup['bkt_id']}/ket-qua-tat-ca")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == 2
+
+        # Verify fields exist
+        for item in data:
+            assert "id" in item
+            assert "cong_chuc_id" in item
+            assert "ho_ten" in item
+            assert "ma_cc" in item
+            assert "don_vi_ten" in item
+            assert "lan_thu" in item
+            assert "diem" in item
+            assert "so_cau_dung" in item
+            assert "so_cau_sai" in item
+            assert "thoi_gian_lam_giay" in item
+            assert "dat_yeu_cau" in item
+            assert "so_lan_vi_pham" in item
+            assert "ngay_lam" in item
+
+        # Verify different users
+        cc_ids = {item["cong_chuc_id"] for item in data}
+        assert len(cc_ids) == 2
+
+    async def test_ket_qua_tat_ca_cbcc_no_access(self, client, admin_user):
+        """CBCC thuong khong co quyen xem tat ca ket qua → 403."""
+        setup = await _setup_exam(client)
+        cbcc = _make_user("CHUYEN_VIEN", [], idx=4)
+        _set_user(cbcc)
+        resp = await client.get(f"/api/v1/lms/bai-kiem-tra/{setup['bkt_id']}/ket-qua-tat-ca")
+        assert resp.status_code == 403

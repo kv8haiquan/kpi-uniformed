@@ -274,6 +274,14 @@ class BaiHocService:
                 detail={"success": False, "error": {"code": "LMS_ERR_003", "message": "Bạn chưa đăng ký khóa học này"}},
             )
 
+        # Block truy cap khi chua duoc phe duyet hoac bi loai
+        if dk.trang_thai in ("CHO_PHE_DUYET", "TU_CHOI", "BI_LOAI"):
+            status_labels = {"CHO_PHE_DUYET": "chờ phê duyệt", "TU_CHOI": "bị từ chối", "BI_LOAI": "đã bị loại"}
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Không thể truy cập bài học. Đăng ký {status_labels.get(dk.trang_thai, dk.trang_thai)}."}},
+            )
+
         now = datetime.utcnow()
 
         # Side effect: lan dau xem bai → chuyen dang_ky sang DANG_HOC

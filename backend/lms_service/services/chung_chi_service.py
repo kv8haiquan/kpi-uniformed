@@ -5,7 +5,9 @@ Business logic cho chung chi + khao sat.
 Bao gom helper tu_dong_cap_chung_chi duoc goi tu bai_hoc_service va bai_kiem_tra_service.
 """
 
+import logging
 import math
+import os
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -15,7 +17,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lms_service.models.base import CongChucRef
+from lms_service.config import settings
+from lms_service.models.base import CongChucRef, DonViRef
 from lms_service.models.chung_chi import ChungChi
 from lms_service.models.khao_sat import KhaoSat
 from lms_service.models.khoa_hoc import KhoaHoc
@@ -23,7 +26,11 @@ from lms_service.models.dang_ky_khoa_hoc import DangKyKhoaHoc
 from lms_service.models.ket_qua_bai_kiem_tra import KetQuaBaiKiemTra
 from lms_service.models.bai_kiem_tra import BaiKiemTra
 from lms_service.schemas.chung_chi import tinh_xep_loai, KhaoSatCreate
+from lms_service.services.chung_chi_pdf import generate_certificate_pdf
+from lms_service.services.thong_bao_helper import gui_thong_bao
 from shared.auth import TokenPayload
+
+logger = logging.getLogger(__name__)
 
 
 class ChungChiService:
@@ -118,16 +125,50 @@ class ChungChiService:
         }
 
     # =========================================================================
-    # 3. TAI CHUNG CHI (placeholder)
+    # 3. TAI CHUNG CHI (PDF)
     # =========================================================================
-    async def tai_chung_chi(self, chung_chi_id: uuid.UUID, user: TokenPayload) -> dict:
+    async def tai_chung_chi(self, chung_chi_id: uuid.UUID, user: TokenPayload) -> tuple[bytes, str]:
+        """Tra ve (pdf_bytes, filename). Sinh lai PDF neu file khong ton tai."""
         result = await self.db.execute(select(ChungChi).where(ChungChi.id == chung_chi_id))
         cc = result.scalar_one_or_none()
         if cc is None:
             raise HTTPException(status_code=404, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Không tìm thấy chứng chỉ"}})
         if cc.cong_chuc_id != uuid.UUID(user.sub) and not self._is_manager(user):
             raise HTTPException(status_code=403, detail={"success": False, "error": {"code": "LMS_ERR_008", "message": "Không có quyền tải chứng chỉ này"}})
-        return {"download_url": cc.file_url, "message": "Chức năng tải PDF đang phát triển"}
+
+        # Thu doc file tu disk
+        pdf_bytes: Optional[bytes] = None
+        if cc.file_url:
+            # file_url co dang "/uploads/lms/chung-chi/{year}/{ma}.pdf"
+            rel = cc.file_url.replace("/uploads/lms/", "", 1)
+            full_path = os.path.join(settings.upload_dir, rel)
+            if os.path.exists(full_path):
+                with open(full_path, "rb") as f:
+                    pdf_bytes = f.read()
+
+        # Neu khong co file, sinh lai
+        if pdf_bytes is None:
+            cc_table = CongChucRef.__table__
+            dv_table = DonViRef.__table__
+            info_r = await self.db.execute(
+                select(cc_table.c.ho_ten, cc_table.c.ma_cc, dv_table.c.ten_don_vi, KhoaHoc.ten_khoa_hoc)
+                .outerjoin(dv_table, cc_table.c.don_vi_id == dv_table.c.id)
+                .select_from(cc_table)
+                .join(KhoaHoc, KhoaHoc.id == cc.khoa_hoc_id)
+                .where(cc_table.c.id == cc.cong_chuc_id)
+            )
+            row = info_r.first()
+            pdf_bytes = generate_certificate_pdf(
+                ma_chung_chi=cc.ma_chung_chi,
+                ho_ten=row.ho_ten if row else "",
+                ma_cc=row.ma_cc if row else "",
+                ten_khoa_hoc=row.ten_khoa_hoc if row else "",
+                diem_dat=cc.diem_dat or Decimal("0"),
+                ngay_cap=cc.ngay_cap,
+                don_vi=row.ten_don_vi if row else None,
+            )
+
+        return pdf_bytes, f"chung-chi-{cc.ma_chung_chi}.pdf"
 
     # =========================================================================
     # 4. TU DONG CAP CHUNG CHI (helper — goi tu service khac)
@@ -173,8 +214,22 @@ class ChungChiService:
         kh_r = await self.db.execute(select(KhoaHoc.ten_khoa_hoc).where(KhoaHoc.id == dk.khoa_hoc_id))
         ten_kh = kh_r.scalar() or ""
 
+        # Lay thong tin cong chuc (ho ten + don vi)
+        cc_table = CongChucRef.__table__
+        dv_table = DonViRef.__table__
+        cc_info_r = await self.db.execute(
+            select(cc_table.c.ho_ten, cc_table.c.ma_cc, dv_table.c.ten_don_vi)
+            .outerjoin(dv_table, cc_table.c.don_vi_id == dv_table.c.id)
+            .where(cc_table.c.id == dk.cong_chuc_id)
+        )
+        cc_row = cc_info_r.first()
+        ho_ten = cc_row.ho_ten if cc_row else ""
+        ma_cc = cc_row.ma_cc if cc_row else ""
+        don_vi_ten = cc_row.ten_don_vi if cc_row else None
+
         # Sinh ma chung chi: CC-{year}-{seq:06d}
-        year = datetime.utcnow().year
+        ngay_cap = datetime.utcnow()
+        year = ngay_cap.year
         prefix = f"CC-{year}-"
         seq_r = await self.db.execute(
             select(func.count(ChungChi.id)).where(ChungChi.ma_chung_chi.like(f"{prefix}%"))
@@ -182,17 +237,53 @@ class ChungChiService:
         seq = (seq_r.scalar() or 0) + 1
         ma_chung_chi = f"{prefix}{seq:06d}"
 
+        # Sinh PDF + luu file (fire-and-forget: loi khong anh huong cap chung chi)
+        file_url = None
+        try:
+            pdf_bytes = generate_certificate_pdf(
+                ma_chung_chi=ma_chung_chi,
+                ho_ten=ho_ten,
+                ma_cc=ma_cc,
+                ten_khoa_hoc=ten_kh,
+                diem_dat=diem_tong_ket,
+                ngay_cap=ngay_cap,
+                don_vi=don_vi_ten,
+            )
+            # Luu vao uploads/lms/chung-chi/{year}/{ma_chung_chi}.pdf
+            rel_path = f"chung-chi/{year}/{ma_chung_chi}.pdf"
+            full_path = os.path.join(settings.upload_dir, rel_path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, "wb") as f:
+                f.write(pdf_bytes)
+            file_url = f"/uploads/lms/{rel_path}"
+        except Exception as e:
+            logger.warning("Sinh PDF chung chi that bai: %s", e)
+
         chung_chi = ChungChi(
             cong_chuc_id=dk.cong_chuc_id,
             khoa_hoc_id=dk.khoa_hoc_id,
             ma_chung_chi=ma_chung_chi,
             ten_chung_chi=f"Chứng nhận hoàn thành: {ten_kh}",
             diem_dat=diem_tong_ket,
-            ngay_cap=datetime.utcnow(),
+            ngay_cap=ngay_cap,
+            file_url=file_url,
         )
         self.db.add(chung_chi)
         await self.db.flush()
         await self.db.refresh(chung_chi)
+
+        # Gui thong bao (fire-and-forget)
+        xep_loai = tinh_xep_loai(diem_tong_ket) or ""
+        await gui_thong_bao(
+            nguoi_nhan_id=dk.cong_chuc_id,
+            tieu_de=f"Bạn đã được cấp chứng chỉ: {ten_kh}",
+            noi_dung=f"Chúc mừng! Bạn đã hoàn thành khóa học \"{ten_kh}\" với điểm {float(diem_tong_ket):.2f} — xếp loại {xep_loai}. Mã chứng chỉ: {ma_chung_chi}",
+            muc_do="QUAN_TRONG",
+            link_url="/dao-tao/chung-chi",
+            doi_tuong_type="CHUNG_CHI",
+            doi_tuong_id=chung_chi.id,
+        )
+
         return chung_chi
 
     # =========================================================================

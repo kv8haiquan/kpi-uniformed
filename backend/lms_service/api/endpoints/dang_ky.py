@@ -23,6 +23,8 @@ from lms_service.schemas.dang_ky import (
     GiaoBaiRequest,
     GiaoBaiResponse,
     HocVienListItem,
+    PheDuyetRequest,
+    RemoveStudentRequest,
 )
 from lms_service.services.dang_ky_service import DangKyService
 from shared.auth import TokenPayload
@@ -139,3 +141,49 @@ async def huy_dang_ky(
         "data": None,
         "message": "Hủy đăng ký thành công",
     }
+
+
+@router.post("/dang-ky/{dang_ky_id}/phe-duyet")
+async def phe_duyet_dang_ky(
+    dang_ky_id: UUID,
+    data: PheDuyetRequest,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Phê duyệt hoặc từ chối đăng ký khóa học."""
+    service = DangKyService(db)
+    dk = await service.phe_duyet_dang_ky(dang_ky_id, data.phe_duyet, data.ly_do_tu_choi, user)
+    await db.commit()
+    return {
+        "success": True,
+        "data": DangKyResponse.model_validate(dk).model_dump(mode="json"),
+        "message": "Đã phê duyệt" if data.phe_duyet else "Đã từ chối",
+    }
+
+
+@router.delete("/dang-ky/{dang_ky_id}/loai-hoc-vien")
+async def loai_hoc_vien(
+    dang_ky_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+    ly_do: Optional[str] = Query(None, max_length=500),
+):
+    """Loại học viên khỏi khóa học."""
+    service = DangKyService(db)
+    await service.remove_student(dang_ky_id, ly_do, user)
+    await db.commit()
+    return {"success": True, "data": None, "message": "Đã loại học viên khỏi khóa học"}
+
+
+@router.get("/dang-ky/cho-phe-duyet")
+async def danh_sach_cho_phe_duyet(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    khoa_hoc_id: Optional[UUID] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Danh sách đăng ký chờ phê duyệt."""
+    service = DangKyService(db)
+    result = await service.danh_sach_cho_phe_duyet(user, page, page_size, khoa_hoc_id)
+    return {"success": True, "data": result["items"], "pagination": result["pagination"]}

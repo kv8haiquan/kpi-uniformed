@@ -46,12 +46,13 @@ class KhoaHocService:
         """Tao base query voi LEFT JOIN va subquery dem hoc vien."""
         # Alias cho giang_vien va nguoi_duyet
         gv = CongChucRef.__table__.alias("gv")
-        # Subquery dem so hoc vien active
+        # Subquery dem so hoc vien active (tru BI_LOAI va TU_CHOI)
         so_hv_subq = (
             select(
                 DangKyKhoaHoc.khoa_hoc_id,
                 func.count(DangKyKhoaHoc.id).label("so_hoc_vien"),
             )
+            .where(DangKyKhoaHoc.trang_thai.notin_(["BI_LOAI", "TU_CHOI"]))
             .group_by(DangKyKhoaHoc.khoa_hoc_id)
             .subquery()
         )
@@ -249,6 +250,7 @@ class KhoaHocService:
                 DangKyKhoaHoc.khoa_hoc_id,
                 func.count(DangKyKhoaHoc.id).label("so_hoc_vien"),
             )
+            .where(DangKyKhoaHoc.trang_thai.notin_(["BI_LOAI", "TU_CHOI"]))
             .group_by(DangKyKhoaHoc.khoa_hoc_id)
             .subquery()
         )

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from lms_service.models.khoa_hoc import KhoaHoc
     from lms_service.models.chuyen_de import ChuyenDe
     from lms_service.models.bai_kiem_tra import BaiKiemTra
+    from lms_service.models.linh_vuc import LinhVuc
 
 
 class CauHoi(Base):
@@ -62,6 +63,11 @@ class CauHoi(Base):
     diem: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), server_default="1.0")
     do_kho: Mapped[Optional[str]] = mapped_column(String(20), server_default="TRUNG_BINH")
 
+    # FK den linh_vuc — dung cho ky thi DGNL (nullable, cau hoi cu khong co)
+    linh_vuc_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("lms.linh_vuc.id"), nullable=True
+    )
+
     # Cross-module reference den legal.van_ban
     van_ban_lien_quan_ids: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
@@ -86,3 +92,4 @@ class CauHoi(Base):
     bai_kiem_tra: Mapped[Optional[BaiKiemTra]] = relationship(
         foreign_keys=[bai_kiem_tra_id], lazy="selectin"
     )
+    linh_vuc: Mapped[Optional[LinhVuc]] = relationship(lazy="selectin")

@@ -38,6 +38,9 @@ class BaiKiemTraCreate(BaseModel):
     # Cau hinh hien thi ket qua sau khi nop bai
     che_do_xem_ket_qua: str = "XEM_DIEM_VA_DAP_AN"
     hien_giai_thich: bool = True
+    # Khung gio thi hang ngay
+    gio_mo: Optional[str] = None
+    gio_dong: Optional[str] = None
     # cau_hoi_ids: chon tu ngan hang (co the rong neu dung cau_hoi_moi)
     cau_hoi_ids: Optional[list[UUID]] = None
     # cau_hoi_moi: tao moi inline ngay khi tao BKT
@@ -56,6 +59,9 @@ class BaiKiemTraUpdate(BaseModel):
     # Cau hinh hien thi ket qua
     che_do_xem_ket_qua: Optional[str] = None
     hien_giai_thich: Optional[bool] = None
+    # Khung gio thi hang ngay
+    gio_mo: Optional[str] = None
+    gio_dong: Optional[str] = None
     cau_hoi_ids: Optional[list[UUID]] = None
     cau_hoi_moi: Optional[list[CauHoiInline]] = None
 
@@ -79,6 +85,8 @@ class BaiKiemTraResponse(BaseModel):
     hien_giai_thich: bool = True
     ngay_mo: Optional[str] = None
     ngay_dong: Optional[str] = None
+    gio_mo: Optional[str] = None
+    gio_dong: Optional[str] = None
     nguoi_tao_id: Optional[UUID] = None
     is_active: Optional[bool] = True
     created_at: Optional[datetime] = None
@@ -86,6 +94,7 @@ class BaiKiemTraResponse(BaseModel):
     so_lan_da_lam: Optional[int] = None
     diem_cao_nhat: Optional[Decimal] = None
     da_dat: Optional[bool] = None
+    so_lan_con_lai: Optional[int] = None
 
 
 class LichSuThiItem(BaseModel):
@@ -119,6 +128,11 @@ class BatDauResponse(BaseModel):
     thoi_gian_phut: Optional[int] = None
     so_cau: int
     cau_hoi: list[CauHoiForExam]
+    so_lan_con_lai: Optional[int] = None
+    dang_tiep_tuc: bool = False
+    chi_tiet_nhap: Optional[list] = None
+    thoi_gian_da_lam_giay: Optional[int] = None
+    so_lan_vi_pham: int = 0
 
 
 class TraLoiItem(BaseModel):
@@ -131,6 +145,13 @@ class NopBaiRequest(BaseModel):
     """Request nop bai kiem tra."""
     ket_qua_id: UUID
     tra_loi: list[TraLoiItem]
+
+
+class LuuNhapRequest(BaseModel):
+    """Request luu bai lam nhap."""
+    ket_qua_id: UUID
+    tra_loi: list[TraLoiItem]
+    so_lan_vi_pham: int = 0
 
 
 class KetQuaChiTietItem(BaseModel):

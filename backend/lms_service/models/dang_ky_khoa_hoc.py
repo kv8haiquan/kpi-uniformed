@@ -11,7 +11,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Date, DateTime, Integer, Numeric, String, ForeignKey, UniqueConstraint, text
+from sqlalchemy import Date, DateTime, Integer, Numeric, String, Text, ForeignKey, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -56,7 +56,14 @@ class DangKyKhoaHoc(Base):
     )
     han_hoan_thanh: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
-    # Tien do: CHUA_BAT_DAU, DANG_HOC, HOAN_THANH, KHONG_DAT, QUA_HAN
+    # Phe duyet dang ky (chi ap dung cho TU_NGUYEN)
+    nguoi_phe_duyet_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=True
+    )
+    ngay_phe_duyet: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ly_do_tu_choi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Tien do: CHO_PHE_DUYET, CHUA_BAT_DAU, DANG_HOC, HOAN_THANH, TU_CHOI, BI_LOAI, QUA_HAN
     trang_thai: Mapped[Optional[str]] = mapped_column(
         String(50), server_default="CHUA_BAT_DAU"
     )

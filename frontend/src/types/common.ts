@@ -1,12 +1,12 @@
 /**
  * src/types/common.ts
  * ====================
- * TypeScript interfaces cho module Common (Thong bao, Tim kiem, Knowledge Base).
- * Map tu backend common_service/schemas/*.py
+ * TypeScript interfaces cho module Common (Thông báo, Tìm kiếm, Knowledge Base).
+ * Map từ backend common_service/schemas/*.py
  */
 
 // =============================================================================
-// THONG BAO (Notification)
+// THÔNG BÁO (Notification)
 // =============================================================================
 
 export type LoaiThongBao = 'KPI' | 'LMS' | 'FORUM' | 'LEGAL' | 'PORTAL' | 'HE_THONG';
@@ -53,7 +53,7 @@ export interface IThongBaoParams {
 }
 
 // =============================================================================
-// TIM KIEM (Unified Search)
+// TÌM KIẾM (Unified Search)
 // =============================================================================
 
 export type SearchModule = 'LEGAL' | 'FORUM' | 'LMS' | 'PORTAL' | 'COMMON';
@@ -147,30 +147,30 @@ export interface IKBParams {
 
 export const LOAI_THONG_BAO_LABELS: Record<LoaiThongBao, string> = {
   KPI: 'KPI',
-  LMS: 'Dao tao',
-  FORUM: 'Dien dan',
-  LEGAL: 'Phap luat',
-  PORTAL: 'Tin tuc',
-  HE_THONG: 'He thong',
+  LMS: 'Đào tạo',
+  FORUM: 'Diễn đàn',
+  LEGAL: 'Pháp luật',
+  PORTAL: 'Tin tức',
+  HE_THONG: 'Hệ thống',
 };
 
 export const MUC_DO_CONFIG: Record<MucDoThongBao, { label: string; cls: string }> = {
-  KHAN: { label: 'Khan cap', cls: 'bg-red-100 text-red-700' },
-  QUAN_TRONG: { label: 'Quan trong', cls: 'bg-orange-100 text-orange-700' },
-  BINH_THUONG: { label: 'Binh thuong', cls: 'bg-gray-100 text-gray-600' },
+  KHAN: { label: 'Khẩn cấp', cls: 'bg-red-100 text-red-700' },
+  QUAN_TRONG: { label: 'Quan trọng', cls: 'bg-orange-100 text-orange-700' },
+  BINH_THUONG: { label: 'Bình thường', cls: 'bg-gray-100 text-gray-600' },
 };
 
 export const TRANG_THAI_KB_CONFIG: Record<TrangThaiKB, { label: string; cls: string }> = {
-  NHAP: { label: 'Nhap', cls: 'bg-gray-100 text-gray-600' },
-  CHO_DUYET: { label: 'Cho duyet', cls: 'bg-yellow-100 text-yellow-700' },
-  DA_XUAT_BAN: { label: 'Da xuat ban', cls: 'bg-green-100 text-green-700' },
-  CAN_CAP_NHAT: { label: 'Can cap nhat', cls: 'bg-orange-100 text-orange-700' },
+  NHAP: { label: 'Nháp', cls: 'bg-gray-100 text-gray-600' },
+  CHO_DUYET: { label: 'Chờ duyệt', cls: 'bg-yellow-100 text-yellow-700' },
+  DA_XUAT_BAN: { label: 'Đã xuất bản', cls: 'bg-green-100 text-green-700' },
+  CAN_CAP_NHAT: { label: 'Cần cập nhật', cls: 'bg-orange-100 text-orange-700' },
 };
 
 export const SEARCH_MODULE_LABELS: Record<SearchModule, string> = {
-  LEGAL: 'Phap luat',
-  FORUM: 'Dien dan',
-  LMS: 'Dao tao',
-  PORTAL: 'Tin tuc',
-  COMMON: 'Kho tri thuc',
+  LEGAL: 'Pháp luật',
+  FORUM: 'Diễn đàn',
+  LMS: 'Đào tạo',
+  PORTAL: 'Tin tức',
+  COMMON: 'Kho tri thức',
 };

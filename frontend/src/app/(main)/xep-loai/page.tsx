@@ -1,9 +1,9 @@
 /**
  * src/app/(main)/xep-loai/page.tsx
  * =================================
- * Trang "Phê duyệt" thống nhất với 5 tabs quản lý.
- * 
- * Version: 3.3.3 - REMOVED DDE TAB (30/01/2026)
+ * Trang "Phê duyệt" thống nhất với 7 tabs quản lý.
+ *
+ * Version: 3.7.0 - ADD: TabQuy (15/04/2026)
  */
 
 'use client';
@@ -26,7 +26,7 @@ import {
 } from '@/types/xep-loai';
 
 import { MonthYearSelector, TabBadge, ViewOnlyBadge } from '@/components/xep-loai/shared';
-import { TabCongViec, TabTieuChi, TabDanhGiaLD, TabNghiPhep, TabBaoCao } from '@/components/xep-loai/tabs';
+import { TabCongViec, TabTieuChi, TabDanhGiaLD, TabNghiPhep, TabBaoCao, TabTamTinh, TabQuy } from '@/components/xep-loai/tabs';
 
 const Icons = {
   back: (
@@ -94,6 +94,8 @@ export default function XepLoaiPage() {
   const onDanhGiaLDCountChange = useCallback((count: number) => handlePendingCountChange('danh-gia-ld', count), [handlePendingCountChange]);
   const onNghiPhepCountChange = useCallback((count: number) => handlePendingCountChange('nghi-phep', count), [handlePendingCountChange]);
   const onBaoCaoCountChange = useCallback((count: number) => handlePendingCountChange('bao-cao', count), [handlePendingCountChange]);
+  const onTamTinhCountChange = useCallback((count: number) => handlePendingCountChange('tam-tinh', count), [handlePendingCountChange]);
+  const onQuýCountChange = useCallback((count: number) => handlePendingCountChange('quy', count), [handlePendingCountChange]);
 
   if (accessibleTabs.length === 0) {
     return (
@@ -164,6 +166,8 @@ export default function XepLoaiPage() {
         {activeTab === 'danh-gia-ld' && <TabDanhGiaLD thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onDanhGiaLDCountChange} />}
         {activeTab === 'nghi-phep' && <TabNghiPhep thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onNghiPhepCountChange} />}
         {activeTab === 'bao-cao' && <TabBaoCao thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onBaoCaoCountChange} />}
+        {activeTab === 'tam-tinh' && <TabTamTinh thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onTamTinhCountChange} />}
+        {activeTab === 'quy' && <TabQuy thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onQuýCountChange} />}
       </main>
 
       <footer className="bg-white border-t border-gray-200 mt-auto">

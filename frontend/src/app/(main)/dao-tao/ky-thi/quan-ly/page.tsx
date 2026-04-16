@@ -1,0 +1,1464 @@
+/**
+ * src/app/(main)/dao-tao/ky-thi/quan-ly/page.tsx
+ * ===============================================
+ * Trang quan ly ky thi DGNL — QT_DAO_TAO.
+ * Tabs: Danh sach ky thi | Tao moi.
+ */
+
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
+import { kyThiApi, linhVucApi, viTriApi, nganHangDgnlApi, cbccApi } from '@/services/lms';
+import type { IKyThi, ILinhVuc, IViTriViecLam, ICauTrucDeByViTri, IDgnlValidateResponse, ICauHoiDgnl, IThongKeNganHang } from '@/types/lms';
+
+const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+  NHAP: { label: 'Nháp', bg: 'bg-gray-100', text: 'text-gray-600' },
+  CHO_DUYET: { label: 'Chờ duyệt', bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  DANG_MO: { label: 'Đang mở', bg: 'bg-green-100', text: 'text-green-700' },
+  DA_DONG: { label: 'Đã đóng', bg: 'bg-red-100', text: 'text-red-600' },
+};
+
+type Tab = 'danh-sach' | 'ngan-hang' | 'linh-vuc' | 'tao-moi';
+
+export default function QuanLyKyThiPage() {
+  const [tab, setTab] = useState<Tab>('danh-sach');
+  const [kyThiList, setKyThiList] = useState<IKyThi[]>([]);
+  const [linhVucList, setLinhVucList] = useState<ILinhVuc[]>([]);
+  const [viTriList, setViTriList] = useState<IViTriViecLam[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Form tao moi
+  const [form, setForm] = useState({
+    ma_ky_thi: '', ten_ky_thi: '', mo_ta: '',
+    ngay_bat_dau: '', ngay_ket_thuc: '',
+    thoi_gian_lam_bai_phut: 60, diem_dat: 50,
+    so_lan_thi_toi_da: 1,
+  });
+  const [creating, setCreating] = useState(false);
+
+  // Cau truc de modal
+  const [selectedKyThi, setSelectedKyThi] = useState<IKyThi | null>(null);
+  const [showCauTrucModal, setShowCauTrucModal] = useState(false);
+  const [cauTrucDe, setCauTrucDe] = useState<ICauTrucDeByViTri[]>([]);
+  const [validateResult, setValidateResult] = useState<IDgnlValidateResponse | null>(null);
+
+  // Giao thi sinh modal
+  const [showGiaoThiSinh, setShowGiaoThiSinh] = useState(false);
+  const [giaoKyThi, setGiaoKyThi] = useState<IKyThi | null>(null);
+
+  // Sua ky thi modal
+  const [editKyThi, setEditKyThi] = useState<IKyThi | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [ktRes, lvRes, vtRes] = await Promise.all([
+        kyThiApi.danhSach({ page_size: 100 }),
+        linhVucApi.danhSach({ page_size: 100 }),
+        viTriApi.danhSach({ page_size: 100 }),
+      ]);
+      setKyThiList(ktRes.data.data || []);
+      setLinhVucList(lvRes.data.data || []);
+      setViTriList(vtRes.data.data || []);
+    } catch (err: any) {
+      setError('Không thể tải dữ liệu');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const clearMessages = () => { setError(null); setSuccess(null); };
+
+  // Tao ky thi
+  const handleCreate = async () => {
+    clearMessages();
+    if (!form.ma_ky_thi || !form.ten_ky_thi || !form.ngay_bat_dau || !form.ngay_ket_thuc) {
+      setError('Vui lòng điền đầy đủ thông tin bắt buộc');
+      return;
+    }
+    setCreating(true);
+    try {
+      await kyThiApi.taoMoi(form);
+      setSuccess('Tạo kỳ thi thành công!');
+      setForm({ ma_ky_thi: '', ten_ky_thi: '', mo_ta: '', ngay_bat_dau: '', ngay_ket_thuc: '', thoi_gian_lam_bai_phut: 60, diem_dat: 50, so_lan_thi_toi_da: 1 });
+      setTab('danh-sach');
+      await loadData();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi tạo kỳ thi');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Chuyen trang thai
+  const handleChuyenTrangThai = async (kt: IKyThi, newState: string) => {
+    clearMessages();
+    try {
+      await kyThiApi.chuyenTrangThai(kt.id, newState);
+      setSuccess(`Chuyển trạng thái thành ${TRANG_THAI_CONFIG[newState]?.label} thành công`);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi chuyển trạng thái');
+    }
+  };
+
+  // Xoa ky thi
+  const handleXoa = async (kt: IKyThi) => {
+    if (!confirm(`Bạn có chắc muốn xóa kỳ thi "${kt.ten_ky_thi}"?`)) return;
+    clearMessages();
+    try {
+      await kyThiApi.xoa(kt.id);
+      setSuccess('Đã xóa kỳ thi');
+      await loadData();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa kỳ thi');
+    }
+  };
+
+  // Validate
+  const handleValidate = async (kt: IKyThi) => {
+    clearMessages();
+    try {
+      const res = await kyThiApi.validate(kt.id);
+      setValidateResult(res.data.data);
+      setSelectedKyThi(kt);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi validate');
+    }
+  };
+
+  // Mo cau truc de modal
+  const handleOpenCauTruc = async (kt: IKyThi) => {
+    clearMessages();
+    setSelectedKyThi(kt);
+    try {
+      const res = await kyThiApi.layCauTrucDe(kt.id);
+      setCauTrucDe(res.data.data || []);
+      setShowCauTrucModal(true);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi lấy cấu trúc đề');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-1">
+        <Link href="/dao-tao" className="hover:text-blue-600">Đào tạo</Link>
+        <span>/</span>
+        <Link href="/dao-tao/quan-ly" className="hover:text-blue-600">Quản lý</Link>
+        <span>/</span>
+        <span className="text-gray-900">Kỳ thi ĐGNL</span>
+      </div>
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý kỳ thi ĐGNL</h1>
+          <p className="text-sm text-gray-500">Tạo, cấu hình và quản lý kỳ thi đánh giá năng lực</p>
+        </div>
+        <div className="flex gap-2">
+          <Link href="/dao-tao/ky-thi" className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+            Xem danh sách (CBCC)
+          </Link>
+          <Link href="/dao-tao/quan-ly" className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+            Quay lại quản lý
+          </Link>
+        </div>
+      </div>
+
+      {/* Messages */}
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+      {success && <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b">
+        {[
+          { key: 'danh-sach' as Tab, label: 'Danh sách kỳ thi' },
+          { key: 'ngan-hang' as Tab, label: 'Ngân hàng đề' },
+          { key: 'linh-vuc' as Tab, label: 'Lĩnh vực' },
+          { key: 'tao-moi' as Tab, label: 'Tạo kỳ thi mới' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => { setTab(t.key); clearMessages(); }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* TAB: Danh sach */}
+      {tab === 'danh-sach' && (
+        <div className="bg-white rounded-xl border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b text-left text-gray-500">
+                  <th className="py-3 px-4">Mã</th>
+                  <th className="py-3 px-4">Tên kỳ thi</th>
+                  <th className="py-3 px-4 text-center">Trạng thái</th>
+                  <th className="py-3 px-4 text-center">Thí sinh</th>
+                  <th className="py-3 px-4 text-center">Vị trí</th>
+                  <th className="py-3 px-4">Thời gian</th>
+                  <th className="py-3 px-4 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {kyThiList.length === 0 ? (
+                  <tr><td colSpan={7} className="py-8 text-center text-gray-400">Chưa có kỳ thi nào</td></tr>
+                ) : kyThiList.map(kt => {
+                  const cfg = TRANG_THAI_CONFIG[kt.trang_thai] || TRANG_THAI_CONFIG.NHAP;
+                  return (
+                    <tr key={kt.id} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-4 font-mono text-xs">{kt.ma_ky_thi}</td>
+                      <td className="py-3 px-4 font-medium">{kt.ten_ky_thi}</td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`${cfg.bg} ${cfg.text} px-2 py-0.5 rounded-full text-xs`}>{cfg.label}</span>
+                      </td>
+                      <td className="py-3 px-4 text-center">{kt.tong_thi_sinh}</td>
+                      <td className="py-3 px-4 text-center">{kt.so_vi_tri}</td>
+                      <td className="py-3 px-4 text-xs text-gray-500">
+                        {new Date(kt.ngay_bat_dau).toLocaleDateString('vi-VN')} - {new Date(kt.ngay_ket_thuc).toLocaleDateString('vi-VN')}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex gap-1 justify-end flex-wrap">
+                          {/* Sua — moi trang thai */}
+                          <button onClick={() => setEditKyThi(kt)} className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200">Sửa</button>
+                          {/* Cau truc de + Giao thi sinh — NHAP, CHO_DUYET, DANG_MO */}
+                          {kt.trang_thai !== 'DA_DONG' && (
+                            <>
+                              <button onClick={() => handleOpenCauTruc(kt)} className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200">Cấu trúc đề</button>
+                              <button onClick={() => { setGiaoKyThi(kt); setShowGiaoThiSinh(true); }} className="px-2 py-1 text-xs bg-teal-100 text-teal-700 rounded hover:bg-teal-200">Giao thí sinh</button>
+                            </>
+                          )}
+                          {kt.trang_thai === 'NHAP' && (
+                            <>
+                              <button onClick={() => handleValidate(kt)} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Validate</button>
+                              <button onClick={() => handleChuyenTrangThai(kt, 'CHO_DUYET')} className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200">Gửi duyệt</button>
+                              <button onClick={() => handleXoa(kt)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">Xóa</button>
+                            </>
+                          )}
+                          {kt.trang_thai === 'CHO_DUYET' && (
+                            <>
+                              <button onClick={() => handleChuyenTrangThai(kt, 'DANG_MO')} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">Duyệt</button>
+                              <button onClick={() => handleChuyenTrangThai(kt, 'NHAP')} className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">Trả lại</button>
+                            </>
+                          )}
+                          {kt.trang_thai === 'DANG_MO' && (
+                            <button onClick={() => handleChuyenTrangThai(kt, 'DA_DONG')} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">Đóng</button>
+                          )}
+                          {kt.trang_thai === 'DA_DONG' && (
+                            <>
+                              <button onClick={() => handleChuyenTrangThai(kt, 'DANG_MO')} className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200">Mở lại</button>
+                              <button onClick={() => handleChuyenTrangThai(kt, 'NHAP')} className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">Về nháp</button>
+                            </>
+                          )}
+                          {(kt.trang_thai === 'DANG_MO' || kt.trang_thai === 'DA_DONG') && (
+                            <Link href={`/dao-tao/ky-thi/${kt.id}/thong-ke`} className="px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200">Thống kê</Link>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: Tao moi */}
+      {/* TAB: Ngan hang de */}
+      {tab === 'ngan-hang' && (
+        <NganHangDeTab linhVucList={linhVucList} />
+      )}
+
+      {/* TAB: Linh vuc */}
+      {tab === 'linh-vuc' && (
+        <LinhVucTab linhVucList={linhVucList} onReload={loadData} />
+      )}
+
+      {tab === 'tao-moi' && (
+        <div className="bg-white rounded-xl border p-6 max-w-2xl">
+          <h3 className="font-semibold text-gray-700 mb-4">Thông tin kỳ thi</h3>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Mã kỳ thi *</label>
+                <input value={form.ma_ky_thi} onChange={e => setForm({...form, ma_ky_thi: e.target.value})}
+                  placeholder="VD: KT-Q2-2026" className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Điểm đạt (%)</label>
+                <input type="number" value={form.diem_dat} onChange={e => setForm({...form, diem_dat: +e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tên kỳ thi *</label>
+              <input value={form.ten_ky_thi} onChange={e => setForm({...form, ten_ky_thi: e.target.value})}
+                placeholder="VD: Kỳ thi ĐGNL Quý 2/2026" className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
+              <textarea value={form.mo_ta} onChange={e => setForm({...form, mo_ta: e.target.value})}
+                rows={2} className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu *</label>
+                <input type="datetime-local" value={form.ngay_bat_dau}
+                  onChange={e => setForm({...form, ngay_bat_dau: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ngày kết thúc *</label>
+                <input type="datetime-local" value={form.ngay_ket_thuc}
+                  onChange={e => setForm({...form, ngay_ket_thuc: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Thời gian làm bài (phút)</label>
+                <input type="number" value={form.thoi_gian_lam_bai_phut}
+                  onChange={e => setForm({...form, thoi_gian_lam_bai_phut: +e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Số lần thi tối đa</label>
+                <input type="number" value={form.so_lan_thi_toi_da}
+                  onChange={e => setForm({...form, so_lan_thi_toi_da: +e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <button
+              onClick={handleCreate}
+              disabled={creating}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              {creating ? 'Đang tạo...' : 'Tạo kỳ thi'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Validate result modal */}
+      {validateResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">
+                Kết quả Validate — {selectedKyThi?.ma_ky_thi}
+              </h3>
+              <button onClick={() => setValidateResult(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div className={`p-3 rounded-lg mb-4 text-sm font-medium ${
+              validateResult.tat_ca_du ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+            }`}>
+              {validateResult.tat_ca_du ? 'Ngân hàng câu hỏi ĐỦ cho tất cả vị trí' : 'Ngân hàng câu hỏi CHƯA ĐỦ — xem chi tiết bên dưới'}
+            </div>
+            {validateResult.theo_vi_tri.map((vt, idx) => (
+              <div key={idx} className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`w-2 h-2 rounded-full ${vt.du_cau_hoi ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span className="font-semibold text-sm">{vt.vi_tri_ten}</span>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b">
+                      <th className="py-1 px-2 text-left">Lĩnh vực</th>
+                      <th className="py-1 px-2 text-center">Độ khó</th>
+                      <th className="py-1 px-2 text-center">Yêu cầu</th>
+                      <th className="py-1 px-2 text-center">Có sẵn</th>
+                      <th className="py-1 px-2 text-center">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vt.chi_tiet.map((ct, j) => (
+                      <tr key={j} className="border-b">
+                        <td className="py-1 px-2">{ct.linh_vuc_ten}</td>
+                        <td className="py-1 px-2 text-center">{ct.do_kho}</td>
+                        <td className="py-1 px-2 text-center">{ct.yeu_cau}</td>
+                        <td className="py-1 px-2 text-center">{ct.co_san}</td>
+                        <td className="py-1 px-2 text-center">
+                          {ct.du ? <span className="text-green-600">OK</span> : <span className="text-red-600 font-bold">Thiếu {ct.yeu_cau - ct.co_san}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cau truc de modal */}
+      {showCauTrucModal && selectedKyThi && (
+        <CauTrucDeModal
+          kyThi={selectedKyThi}
+          linhVucList={linhVucList}
+          viTriList={viTriList}
+          cauTrucDe={cauTrucDe}
+          onClose={() => { setShowCauTrucModal(false); loadData(); }}
+        />
+      )}
+
+      {/* Sua ky thi modal */}
+      {editKyThi && (
+        <SuaKyThiModal
+          kyThi={editKyThi}
+          onClose={() => { setEditKyThi(null); loadData(); }}
+        />
+      )}
+
+      {/* Giao thi sinh modal */}
+      {showGiaoThiSinh && giaoKyThi && (
+        <GiaoThiSinhModal
+          kyThi={giaoKyThi}
+          viTriList={viTriList}
+          onClose={() => { setShowGiaoThiSinh(false); setGiaoKyThi(null); loadData(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// CauTrucDeModal
+// =============================================================================
+
+function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
+  kyThi: IKyThi;
+  linhVucList: ILinhVuc[];
+  viTriList: IViTriViecLam[];
+  cauTrucDe: ICauTrucDeByViTri[];
+  onClose: () => void;
+}) {
+  const [data, setData] = useState(cauTrucDe);
+  const [selectedViTri, setSelectedViTri] = useState('');
+  const [items, setItems] = useState<{ linh_vuc_id: string; so_cau_de: number; so_cau_trung_binh: number; so_cau_kho: number }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAddLinhVuc = () => {
+    setItems([...items, { linh_vuc_id: '', so_cau_de: 0, so_cau_trung_binh: 0, so_cau_kho: 0 }]);
+  };
+
+  const handleSave = async () => {
+    if (!selectedViTri || items.length === 0) {
+      setError('Vui lòng chọn vị trí và thêm ít nhất 1 lĩnh vực');
+      return;
+    }
+    const validItems = items.filter(i => i.linh_vuc_id);
+    if (validItems.length === 0) {
+      setError('Vui lòng chọn lĩnh vực');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await kyThiApi.upsertCauTrucDe(kyThi.id, {
+        vi_tri_id: selectedViTri,
+        cau_truc: validItems,
+      });
+      setData(res.data.data || []);
+      setSelectedViTri('');
+      setItems([]);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi lưu cấu trúc đề');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteViTri = async (viTriId: string) => {
+    try {
+      await kyThiApi.xoaCauTrucDe(kyThi.id, viTriId);
+      setData(data.filter(d => d.vi_tri_id !== viTriId));
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-3xl w-full max-h-[85vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg">Cấu trúc đề — {kyThi.ma_ky_thi}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+
+        {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+
+        {/* Cau truc hien tai */}
+        {data.length > 0 && (
+          <div className="mb-6">
+            <h4 className="text-sm font-semibold text-gray-600 mb-2">Cấu trúc hiện tại:</h4>
+            {data.map(vt => (
+              <div key={vt.vi_tri_id} className="border rounded-lg p-3 mb-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-sm">{vt.vi_tri_ten} — {vt.tong_cau} câu</span>
+                  <button onClick={() => handleDeleteViTri(vt.vi_tri_id)} className="text-red-500 text-xs hover:underline">Xóa</button>
+                </div>
+                <div className="text-xs text-gray-500 space-y-1">
+                  {vt.chi_tiet.map(ct => (
+                    <div key={ct.id} className="flex gap-4">
+                      <span className="w-40">{ct.linh_vuc_ten}</span>
+                      <span>Dễ: {ct.so_cau_de}</span>
+                      <span>TB: {ct.so_cau_trung_binh}</span>
+                      <span>Khó: {ct.so_cau_kho}</span>
+                      <span className="font-medium">= {ct.so_cau_de + ct.so_cau_trung_binh + ct.so_cau_kho}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Them cau truc */}
+        <div className="border-t pt-4">
+          <h4 className="text-sm font-semibold text-gray-600 mb-3">Thêm/Cập nhật cấu trúc cho vị trí:</h4>
+          <div className="mb-3">
+            <select
+              value={selectedViTri}
+              onChange={e => setSelectedViTri(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">-- Chọn vị trí --</option>
+              {viTriList.map(vt => (
+                <option key={vt.id} value={vt.id}>{vt.ten_vi_tri}</option>
+              ))}
+            </select>
+          </div>
+
+          {items.map((item, idx) => (
+            <div key={idx} className="grid grid-cols-5 gap-2 mb-2 items-end">
+              <div>
+                <label className="text-xs text-gray-500">Lĩnh vực</label>
+                <select value={item.linh_vuc_id}
+                  onChange={e => { const n = [...items]; n[idx].linh_vuc_id = e.target.value; setItems(n); }}
+                  className="w-full border rounded px-2 py-1 text-sm">
+                  <option value="">-- Chọn --</option>
+                  {linhVucList.map(lv => (
+                    <option key={lv.id} value={lv.id}>{lv.ten_linh_vuc}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Dễ</label>
+                <input type="number" value={item.so_cau_de} min={0}
+                  onChange={e => { const n = [...items]; n[idx].so_cau_de = +e.target.value; setItems(n); }}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">TB</label>
+                <input type="number" value={item.so_cau_trung_binh} min={0}
+                  onChange={e => { const n = [...items]; n[idx].so_cau_trung_binh = +e.target.value; setItems(n); }}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500">Khó</label>
+                <input type="number" value={item.so_cau_kho} min={0}
+                  onChange={e => { const n = [...items]; n[idx].so_cau_kho = +e.target.value; setItems(n); }}
+                  className="w-full border rounded px-2 py-1 text-sm" />
+              </div>
+              <button onClick={() => setItems(items.filter((_, i) => i !== idx))} className="text-red-500 text-sm pb-1">Xóa</button>
+            </div>
+          ))}
+
+          <div className="flex gap-2 mt-3">
+            <button onClick={handleAddLinhVuc} className="px-3 py-1.5 text-xs border border-dashed border-gray-300 rounded-lg hover:bg-gray-50">
+              + Thêm lĩnh vực
+            </button>
+            {items.length > 0 && (
+              <button onClick={handleSave} disabled={saving}
+                className="px-4 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Đang lưu...' : 'Lưu cấu trúc'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// SuaKyThiModal — Sua thong tin ky thi
+// =============================================================================
+
+function SuaKyThiModal({ kyThi, onClose }: { kyThi: IKyThi; onClose: () => void }) {
+  const toLocalDatetime = (iso: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const [form, setForm] = useState({
+    ma_ky_thi: kyThi.ma_ky_thi,
+    ten_ky_thi: kyThi.ten_ky_thi,
+    mo_ta: kyThi.mo_ta || '',
+    ngay_bat_dau: toLocalDatetime(kyThi.ngay_bat_dau),
+    ngay_ket_thuc: toLocalDatetime(kyThi.ngay_ket_thuc),
+    thoi_gian_lam_bai_phut: kyThi.thoi_gian_lam_bai_phut,
+    diem_dat: kyThi.diem_dat,
+    so_lan_thi_toi_da: kyThi.so_lan_thi_toi_da,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!form.ten_ky_thi.trim() || !form.ngay_bat_dau || !form.ngay_ket_thuc) {
+      setError('Vui lòng điền đầy đủ thông tin bắt buộc');
+      return;
+    }
+    setSaving(true); setError(null);
+    try {
+      await kyThiApi.capNhat(kyThi.id, form);
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi cập nhật kỳ thi');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg">Sửa kỳ thi — {kyThi.ma_ky_thi}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+
+        {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mã kỳ thi</label>
+              <input value={form.ma_ky_thi} onChange={e => setForm({...form, ma_ky_thi: e.target.value})}
+                className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Điểm đạt (%)</label>
+              <input type="number" value={form.diem_dat} onChange={e => setForm({...form, diem_dat: +e.target.value})}
+                className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tên kỳ thi *</label>
+            <input value={form.ten_ky_thi} onChange={e => setForm({...form, ten_ky_thi: e.target.value})}
+              className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
+            <textarea value={form.mo_ta} onChange={e => setForm({...form, mo_ta: e.target.value})}
+              rows={2} className="w-full border rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ngày bắt đầu *</label>
+              <input type="datetime-local" value={form.ngay_bat_dau}
+                onChange={e => setForm({...form, ngay_bat_dau: e.target.value})}
+                className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ngày kết thúc *</label>
+              <input type="datetime-local" value={form.ngay_ket_thuc}
+                onChange={e => setForm({...form, ngay_ket_thuc: e.target.value})}
+                className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Thời gian làm bài (phút)</label>
+              <input type="number" value={form.thoi_gian_lam_bai_phut}
+                onChange={e => setForm({...form, thoi_gian_lam_bai_phut: +e.target.value})}
+                className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Số lần thi tối đa</label>
+              <input type="number" value={form.so_lan_thi_toi_da}
+                onChange={e => setForm({...form, so_lan_thi_toi_da: +e.target.value})}
+                className="w-full border rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2 border-t">
+            <button onClick={handleSave} disabled={saving}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+            </button>
+            <button onClick={onClose} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Hủy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// LinhVucTab — CRUD linh vuc
+// =============================================================================
+
+function LinhVucTab({ linhVucList, onReload }: { linhVucList: ILinhVuc[]; onReload: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({ ma_linh_vuc: '', ten_linh_vuc: '', mo_ta: '', thu_tu: 0 });
+  const [saving, setSaving] = useState(false);
+
+  const resetForm = () => {
+    setForm({ ma_linh_vuc: '', ten_linh_vuc: '', mo_ta: '', thu_tu: 0 });
+    setEditId(null);
+  };
+
+  const handleEdit = (lv: ILinhVuc) => {
+    setEditId(lv.id);
+    setForm({ ma_linh_vuc: lv.ma_linh_vuc, ten_linh_vuc: lv.ten_linh_vuc, mo_ta: lv.mo_ta || '', thu_tu: lv.thu_tu });
+    setError(null); setSuccess(null);
+  };
+
+  const handleSave = async () => {
+    if (!form.ma_linh_vuc.trim() || !form.ten_linh_vuc.trim()) {
+      setError('Mã và tên lĩnh vực không được để trống');
+      return;
+    }
+    setSaving(true); setError(null); setSuccess(null);
+    try {
+      if (editId) {
+        await linhVucApi.capNhat(editId, {
+          ma_linh_vuc: form.ma_linh_vuc.trim(),
+          ten_linh_vuc: form.ten_linh_vuc.trim(),
+          mo_ta: form.mo_ta.trim() || null,
+          thu_tu: form.thu_tu,
+        });
+        setSuccess('Cập nhật lĩnh vực thành công');
+      } else {
+        await linhVucApi.taoMoi({
+          ma_linh_vuc: form.ma_linh_vuc.trim(),
+          ten_linh_vuc: form.ten_linh_vuc.trim(),
+          mo_ta: form.mo_ta.trim() || null,
+          thu_tu: form.thu_tu,
+        });
+        setSuccess('Tạo lĩnh vực thành công');
+      }
+      resetForm();
+      onReload();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi lưu lĩnh vực');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (lv: ILinhVuc) => {
+    if (!confirm(`Xóa lĩnh vực "${lv.ten_linh_vuc}"?`)) return;
+    setError(null); setSuccess(null);
+    try {
+      await linhVucApi.xoa(lv.id);
+      setSuccess('Đã xóa lĩnh vực');
+      onReload();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa lĩnh vực');
+    }
+  };
+
+  return (
+    <div>
+      {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+      {success && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
+
+      {/* Form them/sua */}
+      <div className="bg-white rounded-xl border p-4 mb-4">
+        <h3 className="font-semibold text-gray-700 mb-3">
+          {editId ? 'Sửa lĩnh vực' : 'Thêm lĩnh vực mới'}
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600">Mã lĩnh vực *</label>
+            <input value={form.ma_linh_vuc} onChange={e => setForm({...form, ma_linh_vuc: e.target.value})}
+              placeholder="VD: CNTT" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600">Tên lĩnh vực *</label>
+            <input value={form.ten_linh_vuc} onChange={e => setForm({...form, ten_linh_vuc: e.target.value})}
+              placeholder="VD: Công nghệ thông tin" className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600">Mô tả</label>
+            <input value={form.mo_ta} onChange={e => setForm({...form, mo_ta: e.target.value})}
+              className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+          </div>
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="text-xs font-medium text-gray-600">Thứ tự</label>
+              <input type="number" value={form.thu_tu} onChange={e => setForm({...form, thu_tu: +e.target.value})}
+                className="w-full border rounded-lg px-3 py-2 text-sm mt-1" />
+            </div>
+            <button onClick={handleSave} disabled={saving}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50 whitespace-nowrap">
+              {saving ? '...' : editId ? 'Cập nhật' : 'Thêm'}
+            </button>
+            {editId && (
+              <button onClick={resetForm} className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">Hủy</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Danh sach */}
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b text-left text-gray-500">
+              <th className="py-2 px-3 w-12">TT</th>
+              <th className="py-2 px-3">Mã</th>
+              <th className="py-2 px-3">Tên lĩnh vực</th>
+              <th className="py-2 px-3">Mô tả</th>
+              <th className="py-2 px-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhVucList.length === 0 ? (
+              <tr><td colSpan={5} className="py-8 text-center text-gray-400">Chưa có lĩnh vực nào</td></tr>
+            ) : linhVucList.map(lv => (
+              <tr key={lv.id} className={`border-b hover:bg-gray-50 ${editId === lv.id ? 'bg-purple-50' : ''}`}>
+                <td className="py-2 px-3 text-gray-400">{lv.thu_tu}</td>
+                <td className="py-2 px-3 font-mono text-xs">{lv.ma_linh_vuc}</td>
+                <td className="py-2 px-3 font-medium">{lv.ten_linh_vuc}</td>
+                <td className="py-2 px-3 text-gray-500 text-xs">{lv.mo_ta || '—'}</td>
+                <td className="py-2 px-3 text-right">
+                  <div className="flex gap-1 justify-end">
+                    <button onClick={() => handleEdit(lv)}
+                      className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Sửa</button>
+                    <button onClick={() => handleDelete(lv)}
+                      className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">Xóa</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// GiaoThiSinhModal — Giao thi sinh cho ky thi
+// =============================================================================
+
+function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
+  kyThi: IKyThi;
+  viTriList: IViTriViecLam[];
+  onClose: () => void;
+}) {
+  const [mode, setMode] = useState<'don-vi' | 'ca-nhan'>('don-vi');
+  const [donViList, setDonViList] = useState<{ id: string; ten_don_vi: string }[]>([]);
+  const [selectedDonVi, setSelectedDonVi] = useState<string[]>([]);
+  const [selectedViTri, setSelectedViTri] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [danhSach, setDanhSach] = useState<{ cong_chuc_id: string; vi_tri_id: string; ho_ten: string }[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<any>(null);
+
+  // Load existing thi sinh
+  const [existingTS, setExistingTS] = useState<any[]>([]);
+  const [loadingTS, setLoadingTS] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const [dvRes, tsRes] = await Promise.allSettled([
+        cbccApi.getDonVi(),
+        kyThiApi.danhSachThiSinh(kyThi.id, { page_size: 200 }),
+      ]);
+      if (dvRes.status === 'fulfilled') {
+        setDonViList(dvRes.value.data.data || []);
+      } else {
+        console.error('getDonVi error:', dvRes.reason);
+        setError('Không thể tải danh sách đơn vị');
+      }
+      if (tsRes.status === 'fulfilled') {
+        setExistingTS(tsRes.value.data.data || []);
+      }
+      setLoadingTS(false);
+    };
+    load();
+  }, [kyThi.id]);
+
+  // Search CBCC
+  const handleSearch = async () => {
+    if (!searchText.trim()) return;
+    try {
+      const res = await cbccApi.searchCBCC({ q: searchText, page_size: 20 });
+      setSearchResults(res.data.data || []);
+    } catch { /* ignore */ }
+  };
+
+  const handleAddCBCC = (cc: any) => {
+    if (danhSach.find(d => d.cong_chuc_id === cc.id)) return;
+    if (!selectedViTri) { setError('Vui lòng chọn vị trí thi trước'); return; }
+    setDanhSach([...danhSach, { cong_chuc_id: cc.id, vi_tri_id: selectedViTri, ho_ten: cc.ho_ten || cc.ma_cc }]);
+    setError(null);
+  };
+
+  const handleRemove = (ccId: string) => {
+    setDanhSach(danhSach.filter(d => d.cong_chuc_id !== ccId));
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true); setError(null); setResult(null);
+    try {
+      let body: any;
+      if (mode === 'don-vi') {
+        if (selectedDonVi.length === 0 || !selectedViTri) {
+          setError('Vui lòng chọn đơn vị và vị trí thi');
+          setSaving(false);
+          return;
+        }
+        body = { don_vi_ids: selectedDonVi, vi_tri_id: selectedViTri };
+      } else {
+        if (danhSach.length === 0) {
+          setError('Vui lòng thêm ít nhất 1 thí sinh');
+          setSaving(false);
+          return;
+        }
+        body = { danh_sach: danhSach.map(d => ({ cong_chuc_id: d.cong_chuc_id, vi_tri_id: d.vi_tri_id })) };
+      }
+      const res = await kyThiApi.giaoThiSinh(kyThi.id, body);
+      setResult(res.data.data);
+      setDanhSach([]);
+      setSelectedDonVi([]);
+      // Reload existing — tach rieng de khong ghi de ket qua thanh cong
+      try {
+        const tsRes = await kyThiApi.danhSachThiSinh(kyThi.id, { page_size: 200 });
+        setExistingTS(tsRes.data.data || []);
+      } catch { /* reload fail khong anh huong */ }
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi giao thí sinh');
+    } finally { setSaving(false); }
+  };
+
+  // Xoa thi sinh
+  const handleDeleteTS = async (ccId: string) => {
+    try {
+      await kyThiApi.xoaThiSinh(kyThi.id, ccId);
+      setExistingTS(existingTS.filter(t => t.cong_chuc_id !== ccId));
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Không thể xóa thí sinh');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-lg">Giao thí sinh — {kyThi.ten_ky_thi}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+        </div>
+
+        {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+        {result && (
+          <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">
+            Thành công: {result.thanh_cong} | Bỏ qua (trùng): {result.bo_qua} | Tổng: {result.tong}
+          </div>
+        )}
+
+        {/* Danh sach thi sinh hien tai */}
+        <div className="mb-4">
+          <h4 className="text-sm font-semibold text-gray-600 mb-2">
+            Thí sinh hiện tại ({existingTS.length})
+          </h4>
+          {loadingTS ? (
+            <div className="text-xs text-gray-400">Đang tải...</div>
+          ) : existingTS.length === 0 ? (
+            <div className="text-xs text-gray-400 py-2">Chưa có thí sinh nào</div>
+          ) : (
+            <div className="max-h-40 overflow-y-auto border rounded-lg">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr className="text-gray-500">
+                    <th className="py-1 px-2 text-left">Mã CC</th>
+                    <th className="py-1 px-2 text-left">Họ tên</th>
+                    <th className="py-1 px-2 text-left">Đơn vị</th>
+                    <th className="py-1 px-2 text-left">Vị trí</th>
+                    <th className="py-1 px-2 text-center">Trạng thái</th>
+                    <th className="py-1 px-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {existingTS.map(ts => (
+                    <tr key={ts.id} className="border-t">
+                      <td className="py-1 px-2 font-mono">{ts.ma_cc}</td>
+                      <td className="py-1 px-2">{ts.ho_ten}</td>
+                      <td className="py-1 px-2 text-gray-500">{ts.don_vi_ten}</td>
+                      <td className="py-1 px-2">{ts.vi_tri_ten}</td>
+                      <td className="py-1 px-2 text-center">{ts.trang_thai}</td>
+                      <td className="py-1 px-2 text-center">
+                        {ts.trang_thai === 'CHUA_THI' && (
+                          <button onClick={() => handleDeleteTS(ts.cong_chuc_id)} className="text-red-500 hover:underline">Xóa</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <hr className="mb-4" />
+
+        {/* Mode switch */}
+        <div className="flex gap-2 mb-4">
+          <button onClick={() => setMode('don-vi')}
+            className={`px-4 py-2 text-sm rounded-lg ${mode === 'don-vi' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            Giao theo đơn vị
+          </button>
+          <button onClick={() => setMode('ca-nhan')}
+            className={`px-4 py-2 text-sm rounded-lg ${mode === 'ca-nhan' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            Giao từng người
+          </button>
+        </div>
+
+        {/* Vi tri chung */}
+        <div className="mb-4">
+          <label className="text-xs font-medium text-gray-600">Vị trí thi *</label>
+          <select value={selectedViTri} onChange={e => setSelectedViTri(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm mt-1">
+            <option value="">-- Chọn vị trí --</option>
+            {viTriList.map(vt => <option key={vt.id} value={vt.id}>{vt.ten_vi_tri}</option>)}
+          </select>
+        </div>
+
+        {/* Mode: don vi */}
+        {mode === 'don-vi' && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-gray-600">Chọn đơn vị (có thể chọn nhiều)</label>
+              {donViList.length > 0 && (
+                <div className="flex gap-2">
+                  <button onClick={() => setSelectedDonVi(donViList.map(d => d.id))}
+                    className="text-xs text-blue-600 hover:underline">Chọn tất cả</button>
+                  <button onClick={() => setSelectedDonVi([])}
+                    className="text-xs text-gray-500 hover:underline">Bỏ chọn</button>
+                </div>
+              )}
+            </div>
+            {donViList.length === 0 ? (
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
+                Không tải được danh sách đơn vị. Vui lòng đóng và mở lại.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
+                {donViList.map(dv => (
+                  <label key={dv.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
+                    <input type="checkbox"
+                      checked={selectedDonVi.includes(dv.id)}
+                      onChange={e => {
+                        if (e.target.checked) setSelectedDonVi([...selectedDonVi, dv.id]);
+                        else setSelectedDonVi(selectedDonVi.filter(id => id !== dv.id));
+                      }} />
+                    {dv.ten_don_vi}
+                  </label>
+                ))}
+              </div>
+            )}
+            {selectedDonVi.length > 0 && (
+              <div className="text-xs text-gray-500 mt-1">Đã chọn {selectedDonVi.length} đơn vị</div>
+            )}
+          </div>
+        )}
+
+        {/* Mode: ca nhan */}
+        {mode === 'ca-nhan' && (
+          <div className="mb-4">
+            <label className="text-xs font-medium text-gray-600">Tìm kiếm CBCC</label>
+            <div className="flex gap-2 mt-1">
+              <input value={searchText} onChange={e => setSearchText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                placeholder="Nhập tên hoặc mã CC..."
+                className="flex-1 border rounded-lg px-3 py-2 text-sm" />
+              <button onClick={handleSearch} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Tìm</button>
+            </div>
+
+            {/* Search results */}
+            {searchResults.length > 0 && (
+              <div className="mt-2 border rounded-lg max-h-32 overflow-y-auto">
+                {searchResults.map(cc => (
+                  <div key={cc.id} className="flex items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-50 border-b last:border-b-0">
+                    <span>{cc.ma_cc} — {cc.ho_ten} ({cc.don_vi_ten || ''})</span>
+                    <button onClick={() => handleAddCBCC(cc)} className="text-blue-600 text-xs hover:underline">Thêm</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Danh sach da chon */}
+            {danhSach.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs font-medium text-gray-600 mb-1">Đã chọn ({danhSach.length}):</div>
+                <div className="flex flex-wrap gap-1">
+                  {danhSach.map(d => (
+                    <span key={d.cong_chuc_id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                      {d.ho_ten}
+                      <button onClick={() => handleRemove(d.cong_chuc_id)} className="text-blue-500 hover:text-red-500">&times;</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-2 pt-2 border-t">
+          <button onClick={handleSubmit} disabled={saving}
+            className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 text-sm">
+            {saving ? 'Đang giao...' : 'Giao thí sinh'}
+          </button>
+          <button onClick={onClose} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
+            Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// NganHangDeTab — Quan ly ngan hang cau hoi DGNL
+// =============================================================================
+
+const DO_KHO_LABEL: Record<string, string> = { DE: 'Dễ', TRUNG_BINH: 'Trung bình', KHO: 'Khó' };
+const LOAI_LABEL: Record<string, string> = { TRAC_NGHIEM_1: 'Trắc nghiệm 1', TRAC_NGHIEM_NHIEU: 'Trắc nghiệm nhiều', DUNG_SAI: 'Đúng/Sai', TU_LUAN: 'Tự luận' };
+
+function NganHangDeTab({ linhVucList }: { linhVucList: ILinhVuc[] }) {
+  const [thongKe, setThongKe] = useState<IThongKeNganHang[]>([]);
+  const [cauHoiList, setCauHoiList] = useState<ICauHoiDgnl[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterLV, setFilterLV] = useState('');
+  const [filterDK, setFilterDK] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Form tao cau hoi
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ linh_vuc_id: '', noi_dung: '', loai: 'TRAC_NGHIEM_1', do_kho: 'TRUNG_BINH', diem: '1', giai_thich: '',
+    dap_an_a: '', dap_an_b: '', dap_an_c: '', dap_an_d: '', dap_an_dung: '' });
+  const [saving, setSaving] = useState(false);
+
+  // Import
+  const [importing, setImporting] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [tkRes, chRes] = await Promise.all([
+        nganHangDgnlApi.thongKe(),
+        nganHangDgnlApi.danhSach({ linh_vuc_id: filterLV || undefined, do_kho: filterDK || undefined, page, page_size: 20 }),
+      ]);
+      setThongKe(tkRes.data.data || []);
+      setCauHoiList(chRes.data.data || []);
+      setTotalPages(chRes.data.pagination?.total_pages || 0);
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }, [filterLV, filterDK, page]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleCreateCauHoi = async () => {
+    if (!form.linh_vuc_id || !form.noi_dung.trim()) { setError('Vui lòng chọn lĩnh vực và nhập nội dung'); return; }
+    setSaving(true); setError(null);
+    try {
+      const lua_chon = [
+        form.dap_an_a && { key: 'A', noi_dung: form.dap_an_a },
+        form.dap_an_b && { key: 'B', noi_dung: form.dap_an_b },
+        form.dap_an_c && { key: 'C', noi_dung: form.dap_an_c },
+        form.dap_an_d && { key: 'D', noi_dung: form.dap_an_d },
+      ].filter(Boolean);
+
+      let dap_an: any = {};
+      if (form.loai === 'TRAC_NGHIEM_1') {
+        dap_an = { lua_chon, dap_an_dung: form.dap_an_dung.trim().toUpperCase() };
+      } else if (form.loai === 'TRAC_NGHIEM_NHIEU') {
+        dap_an = { lua_chon, dap_an_dung: form.dap_an_dung.split(',').map(s => s.trim().toUpperCase()) };
+      } else if (form.loai === 'DUNG_SAI') {
+        dap_an = { lua_chon: [{ key: 'A', noi_dung: 'Đúng' }, { key: 'B', noi_dung: 'Sai' }], dap_an_dung: form.dap_an_dung.trim().toUpperCase() };
+      } else {
+        dap_an = { goi_y: form.dap_an_dung };
+      }
+
+      await nganHangDgnlApi.taoMoi({
+        linh_vuc_id: form.linh_vuc_id,
+        noi_dung: form.noi_dung.trim(),
+        loai: form.loai, do_kho: form.do_kho,
+        diem: Number(form.diem) || 1,
+        dap_an,
+        ...(form.giai_thich.trim() && { giai_thich: form.giai_thich.trim() }),
+      });
+      setSuccess('Tạo câu hỏi thành công!');
+      setForm({ linh_vuc_id: '', noi_dung: '', loai: 'TRAC_NGHIEM_1', do_kho: 'TRUNG_BINH', diem: '1', giai_thich: '', dap_an_a: '', dap_an_b: '', dap_an_c: '', dap_an_d: '', dap_an_dung: '' });
+      setShowForm(false);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi tạo câu hỏi');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Xóa câu hỏi này?')) return;
+    try {
+      await nganHangDgnlApi.xoa(id);
+      await loadData();
+    } catch (err: any) { setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa'); }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true); setError(null);
+    try {
+      const res = await nganHangDgnlApi.importFile(file);
+      const data = res.data.data;
+      setSuccess(`Import hoàn tất: ${data.thanh_cong}/${data.tong} câu thành công`);
+      if (data.loi_chi_tiet?.length > 0) {
+        setError(`${data.that_bai} lỗi: ${data.loi_chi_tiet.map((l: any) => `Dòng ${l.dong}: ${l.loi}`).join('; ')}`);
+      }
+      await loadData();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi import');
+    } finally { setImporting(false); e.target.value = ''; }
+  };
+
+  const handleDownloadMau = async () => {
+    try {
+      const res = await nganHangDgnlApi.downloadMau();
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'mau_import_cau_hoi_dgnl.xlsx'; a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { setError('Lỗi tải file mẫu'); }
+  };
+
+  if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600" /></div>;
+
+  return (
+    <div>
+      {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
+      {success && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">{success}</div>}
+
+      {/* Thong ke */}
+      <div className="bg-white rounded-xl border p-4 mb-4">
+        <h3 className="font-semibold text-gray-700 mb-3">Thống kê ngân hàng câu hỏi</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-gray-500">
+                <th className="py-2 px-3">Lĩnh vực</th>
+                <th className="py-2 px-3 text-center">Dễ</th>
+                <th className="py-2 px-3 text-center">TB</th>
+                <th className="py-2 px-3 text-center">Khó</th>
+                <th className="py-2 px-3 text-center font-bold">Tổng</th>
+              </tr>
+            </thead>
+            <tbody>
+              {thongKe.map(tk => (
+                <tr key={tk.linh_vuc_id} className="border-b hover:bg-gray-50">
+                  <td className="py-2 px-3 font-medium">{tk.linh_vuc_ten}</td>
+                  <td className="py-2 px-3 text-center">{tk.so_cau_de}</td>
+                  <td className="py-2 px-3 text-center">{tk.so_cau_trung_binh}</td>
+                  <td className="py-2 px-3 text-center">{tk.so_cau_kho}</td>
+                  <td className="py-2 px-3 text-center font-bold">{tk.tong}</td>
+                </tr>
+              ))}
+              <tr className="bg-gray-50 font-bold">
+                <td className="py-2 px-3">Tổng cộng</td>
+                <td className="py-2 px-3 text-center">{thongKe.reduce((s, t) => s + t.so_cau_de, 0)}</td>
+                <td className="py-2 px-3 text-center">{thongKe.reduce((s, t) => s + t.so_cau_trung_binh, 0)}</td>
+                <td className="py-2 px-3 text-center">{thongKe.reduce((s, t) => s + t.so_cau_kho, 0)}</td>
+                <td className="py-2 px-3 text-center">{thongKe.reduce((s, t) => s + t.tong, 0)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div className="flex gap-2">
+          <select value={filterLV} onChange={e => { setFilterLV(e.target.value); setPage(1); }}
+            className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">Tất cả lĩnh vực</option>
+            {linhVucList.map(lv => <option key={lv.id} value={lv.id}>{lv.ten_linh_vuc}</option>)}
+          </select>
+          <select value={filterDK} onChange={e => { setFilterDK(e.target.value); setPage(1); }}
+            className="border rounded-lg px-3 py-2 text-sm">
+            <option value="">Tất cả độ khó</option>
+            <option value="DE">Dễ</option>
+            <option value="TRUNG_BINH">Trung bình</option>
+            <option value="KHO">Khó</option>
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleDownloadMau} className="px-3 py-2 text-xs border border-gray-300 rounded-lg hover:bg-gray-50">
+            Tải file mẫu
+          </button>
+          <label className={`px-3 py-2 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 cursor-pointer ${importing ? 'opacity-50' : ''}`}>
+            {importing ? 'Đang import...' : 'Import Excel'}
+            <input type="file" accept=".xlsx,.csv" className="hidden" onChange={handleImport} disabled={importing} />
+          </label>
+          <button onClick={() => setShowForm(true)} className="px-3 py-2 text-xs bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+            + Tạo câu hỏi
+          </button>
+        </div>
+      </div>
+
+      {/* Danh sach cau hoi */}
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b text-left text-gray-500">
+              <th className="py-2 px-3 w-8">STT</th>
+              <th className="py-2 px-3">Nội dung</th>
+              <th className="py-2 px-3">Lĩnh vực</th>
+              <th className="py-2 px-3 text-center">Loại</th>
+              <th className="py-2 px-3 text-center">Độ khó</th>
+              <th className="py-2 px-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cauHoiList.length === 0 ? (
+              <tr><td colSpan={6} className="py-8 text-center text-gray-400">Chưa có câu hỏi nào</td></tr>
+            ) : cauHoiList.map((ch, idx) => (
+              <tr key={ch.id} className="border-b hover:bg-gray-50">
+                <td className="py-2 px-3 text-gray-400">{(page - 1) * 20 + idx + 1}</td>
+                <td className="py-2 px-3 max-w-xs truncate" dangerouslySetInnerHTML={{ __html: ch.noi_dung }} />
+                <td className="py-2 px-3 text-xs">{ch.linh_vuc_ten}</td>
+                <td className="py-2 px-3 text-center text-xs">{LOAI_LABEL[ch.loai] || ch.loai}</td>
+                <td className="py-2 px-3 text-center">
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${
+                    ch.do_kho === 'DE' ? 'bg-green-100 text-green-700' :
+                    ch.do_kho === 'KHO' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'
+                  }`}>{DO_KHO_LABEL[ch.do_kho] || ch.do_kho}</span>
+                </td>
+                <td className="py-2 px-3 text-right">
+                  <button onClick={() => handleDelete(ch.id)} className="text-red-500 text-xs hover:underline">Xóa</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 p-3 border-t">
+            <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}
+              className="px-3 py-1 text-xs border rounded hover:bg-gray-50 disabled:opacity-30">Trước</button>
+            <span className="text-xs text-gray-500">Trang {page}/{totalPages}</span>
+            <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages}
+              className="px-3 py-1 text-xs border rounded hover:bg-gray-50 disabled:opacity-30">Tiếp</button>
+          </div>
+        )}
+      </div>
+
+      {/* Form tao cau hoi modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg">Tạo câu hỏi ĐGNL</h3>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600">Lĩnh vực *</label>
+                  <select value={form.linh_vuc_id} onChange={e => setForm({...form, linh_vuc_id: e.target.value})}
+                    className="w-full border rounded-lg px-3 py-2 text-sm">
+                    <option value="">-- Chọn --</option>
+                    {linhVucList.map(lv => <option key={lv.id} value={lv.id}>{lv.ten_linh_vuc}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">Loại</label>
+                    <select value={form.loai} onChange={e => setForm({...form, loai: e.target.value})}
+                      className="w-full border rounded px-2 py-2 text-sm">
+                      {Object.entries(LOAI_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">Độ khó</label>
+                    <select value={form.do_kho} onChange={e => setForm({...form, do_kho: e.target.value})}
+                      className="w-full border rounded px-2 py-2 text-sm">
+                      {Object.entries(DO_KHO_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-600">Điểm</label>
+                    <input type="number" value={form.diem} onChange={e => setForm({...form, diem: e.target.value})}
+                      className="w-full border rounded px-2 py-2 text-sm" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600">Nội dung câu hỏi *</label>
+                <textarea value={form.noi_dung} onChange={e => setForm({...form, noi_dung: e.target.value})}
+                  rows={3} className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              {(form.loai === 'TRAC_NGHIEM_1' || form.loai === 'TRAC_NGHIEM_NHIEU') && (
+                <div className="grid grid-cols-2 gap-2">
+                  {['A', 'B', 'C', 'D'].map(k => (
+                    <div key={k}>
+                      <label className="text-xs text-gray-500">Đáp án {k}</label>
+                      <input value={(form as any)[`dap_an_${k.toLowerCase()}`]}
+                        onChange={e => setForm({...form, [`dap_an_${k.toLowerCase()}`]: e.target.value})}
+                        className="w-full border rounded px-2 py-1.5 text-sm" />
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div>
+                <label className="text-xs font-medium text-gray-600">
+                  Đáp án đúng * {form.loai === 'TRAC_NGHIEM_NHIEU' ? '(VD: A,C)' : '(VD: A)'}
+                </label>
+                <input value={form.dap_an_dung} onChange={e => setForm({...form, dap_an_dung: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600">Giải thích</label>
+                <textarea value={form.giai_thich} onChange={e => setForm({...form, giai_thich: e.target.value})}
+                  rows={2} className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <button onClick={handleCreateCauHoi} disabled={saving}
+                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                {saving ? 'Đang tạo...' : 'Tạo câu hỏi'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

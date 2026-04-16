@@ -173,125 +173,40 @@ const nghiPhepApi = {
 };
 
 // =============================================================================
-// SUB COMPONENTS
+// HELPER FUNCTIONS
 // =============================================================================
 
-interface NghiPhepCardProps {
-  item: INghiPhepItem;
-  isSelected: boolean;
-  onSelect: (id: string, selected: boolean) => void;
-  onApprove: (id: string) => void;
-  onReject: (id: string) => void;
-  onTraLai: (item: INghiPhepItem) => void;
-  canApprove: boolean;
-}
+const getBadgeColor = (loai: string): string => {
+  if (['PHEP_NAM'].includes(loai)) return 'bg-blue-100 text-blue-700';
+  if (['NGHI_OM'].includes(loai)) return 'bg-red-100 text-red-700';
+  if (['NGHI_LE', 'NGHI_TET'].includes(loai)) return 'bg-amber-100 text-amber-700';
+  if (['NGHI_TUAN'].includes(loai)) return 'bg-green-100 text-green-700';
+  return 'bg-gray-100 text-gray-700';
+};
 
-function NghiPhepCard({ item, isSelected, onSelect, onApprove, onReject, onTraLai, canApprove }: NghiPhepCardProps) {
-  const isPending = item.trang_thai === 'CHO_PHE_DUYET';
-  const isApproved = item.trang_thai === 'DA_PHE_DUYET';
-  const isRejected = item.trang_thai === 'TU_CHOI';
+const getStatusBadge = (trangThai: string) => {
+  if (trangThai === 'DA_PHE_DUYET') {
+    return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">Đã duyệt</span>;
+  }
+  if (trangThai === 'TU_CHOI') {
+    return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">Từ chối</span>;
+  }
+  if (trangThai === 'CHO_PHE_DUYET') {
+    return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-700">Chờ duyệt</span>;
+  }
+  return null;
+};
 
-  const getBadgeColor = (loai: string): string => {
-    if (['PHEP_NAM'].includes(loai)) return 'bg-blue-100 text-blue-700';
-    if (['NGHI_OM'].includes(loai)) return 'bg-red-100 text-red-700';
-    if (['NGHI_LE', 'NGHI_TET'].includes(loai)) return 'bg-amber-100 text-amber-700';
-    if (['NGHI_TUAN'].includes(loai)) return 'bg-green-100 text-green-700';
-    return 'bg-gray-100 text-gray-700';
-  };
-
-  const getStatusBadge = () => {
-    if (isApproved) {
-      return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">Đã duyệt</span>;
-    }
-    if (isRejected) {
-      return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">Từ chối</span>;
-    }
-    if (isPending) {
-      return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-700">Chờ duyệt</span>;
-    }
-    return null;
-  };
-
-  return (
-    <div className={`bg-white rounded-lg border p-4 transition-all ${isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-300'}`}>
-      <div className="flex items-start gap-3">
-        {canApprove && isPending && (
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={(e) => onSelect(item.id, e.target.checked)}
-            className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-          />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div>
-              <h4 className="font-medium text-gray-900">{item.cong_chuc?.ho_ten || 'N/A'}</h4>
-              <p className="text-xs text-gray-500">{item.cong_chuc?.ma_cc}</p>
-              {item.cong_chuc?.don_vi_ten && (
-                <p className="text-xs text-gray-400">{item.cong_chuc.don_vi_ten}</p>
-              )}
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getBadgeColor(item.loai_nghi)}`}>
-                {LOAI_NGHI_LABELS[item.loai_nghi] || item.loai_nghi}
-              </span>
-              {getStatusBadge()}
-            </div>
-          </div>
-
-          <div className="space-y-1 text-sm">
-            <p className="text-gray-700">
-              <span className="font-medium">Thời gian:</span>{' '}
-              {getNgayBatDau(item) ? format(parseISO(getNgayBatDau(item)!), 'dd/MM/yyyy') : 'N/A'}
-              {getNgayKetThuc(item) && getNgayKetThuc(item) !== getNgayBatDau(item) && (
-                <> - {format(parseISO(getNgayKetThuc(item)!), 'dd/MM/yyyy')}</>
-              )}
-            </p>
-            <p className="text-gray-600">Số ngày: <strong>{item.so_ngay}</strong></p>
-            {item.ly_do && <p className="text-gray-600 text-xs">Lý do: {item.ly_do}</p>}
-          </div>
-
-          {/* Action buttons - chỉ hiện khi pending */}
-          {canApprove && isPending && (
-            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
-              <button 
-                onClick={() => onApprove(item.id)} 
-                className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
-              >
-                Duyệt
-              </button>
-              <button 
-                onClick={() => onReject(item.id)} 
-                className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-              >
-                Từ chối
-              </button>
-            </div>
-          )}
-
-          {/* Nút trả lại - chỉ hiện khi đã duyệt */}
-          {canApprove && isApproved && (
-            <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
-              <button
-                onClick={() => onTraLai(item)}
-                className="flex-1 px-3 py-1.5 text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg transition-colors"
-              >
-                ↩ Trả lại đã duyệt
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+/** Số ngày trong tháng */
+const soNgayTrongThang = (thang: number, nam: number): number => {
+  return new Date(nam, thang, 0).getDate();
+};
 
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
 
-export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabProps) {
+export default function TabNghiPhep({ thang, nam, canApprove, onPendingCountChange }: ITabProps) {
   const [data, setData] = useState<INghiPhepItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -309,6 +224,23 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
   const [lyDo, setLyDo] = useState('');
   const [ghiChu, setGhiChu] = useState('');
 
+  // Filter theo tháng/năm dựa trên thang_ap_dung hoặc tu_ngay
+  const filterTheoThangNam = useCallback((items: INghiPhepItem[]): INghiPhepItem[] => {
+    return items.filter(item => {
+      // Ưu tiên thang_ap_dung/nam_ap_dung
+      if (item.thang_ap_dung && item.nam_ap_dung) {
+        return item.thang_ap_dung === thang && item.nam_ap_dung === nam;
+      }
+      // Fallback: lấy tháng/năm từ tu_ngay
+      const ngayBD = getNgayBatDau(item);
+      if (ngayBD) {
+        const d = parseISO(ngayBD);
+        return (d.getMonth() + 1) === thang && d.getFullYear() === nam;
+      }
+      return false;
+    });
+  }, [thang, nam]);
+
   // Load counts
   const loadCounts = useCallback(async () => {
     try {
@@ -316,34 +248,38 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
         nghiPhepApi.getChoPheDuyet(),
         nghiPhepApi.getLichSu(),
       ]);
-      
-      const pendingCount = pendingRes.length;
-      const approvedCount = lichSuRes.filter(d => d.trang_thai === 'DA_PHE_DUYET').length;
-      const rejectedCount = lichSuRes.filter(d => d.trang_thai === 'TU_CHOI').length;
-      
+
+      // Filter theo tháng/năm
+      const pendingFiltered = filterTheoThangNam(pendingRes);
+      const lichSuFiltered = filterTheoThangNam(lichSuRes);
+
+      const pendingCount = pendingFiltered.length;
+      const approvedCount = lichSuFiltered.filter(d => d.trang_thai === 'DA_PHE_DUYET').length;
+      const rejectedCount = lichSuFiltered.filter(d => d.trang_thai === 'TU_CHOI').length;
+
       setCounts({
         pending: pendingCount,
         approved: approvedCount,
         rejected: rejectedCount,
         total: pendingCount + approvedCount + rejectedCount,
       });
-      
+
       if (onPendingCountChange) {
         onPendingCountChange(pendingCount);
       }
     } catch (err) {
       console.error('[TabNghiPhep] Error loading counts:', err);
     }
-  }, [onPendingCountChange]);
+  }, [onPendingCountChange, filterTheoThangNam]);
 
   // Load data theo statusFilter
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       let items: INghiPhepItem[] = [];
-      
+
       if (statusFilter === 'pending') {
         items = await nghiPhepApi.getChoPheDuyet();
       } else if (statusFilter === 'approved') {
@@ -358,8 +294,9 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
         ]);
         items = [...pending, ...lichSu];
       }
-      
-      setData(items);
+
+      // Filter theo tháng/năm đang chọn
+      setData(filterTheoThangNam(items));
     } catch (err) {
       const error = err as Error;
       setError(error.message || 'Có lỗi xảy ra khi tải dữ liệu');
@@ -367,7 +304,7 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, filterTheoThangNam]);
 
   useEffect(() => {
     loadData();
@@ -376,6 +313,11 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
   useEffect(() => {
     loadCounts();
   }, [loadCounts]);
+
+  // Clear selected items when filter changes
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [statusFilter, congChucFilter]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([loadData(), loadCounts()]);
@@ -386,11 +328,6 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
     const newSelected = new Set(selectedIds);
     selected ? newSelected.add(id) : newSelected.delete(id);
     setSelectedIds(newSelected);
-  };
-
-  const handleSelectAll = () => {
-    const pendingItems = data.filter(d => d.trang_thai === 'CHO_PHE_DUYET');
-    setSelectedIds(selectedIds.size === pendingItems.length ? new Set() : new Set(pendingItems.map(d => d.id)));
   };
 
   const handleApprove = (id: string) => {
@@ -482,8 +419,6 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
     }
   };
 
-  const pendingItems = data.filter(d => d.trang_thai === 'CHO_PHE_DUYET');
-
   // ✅ Danh sách công chức unique để filter
   const uniqueCongChuc = React.useMemo(() => {
     const map = new Map<string, { id: string; ho_ten: string; ma_cc: string }>();
@@ -509,6 +444,21 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
     });
   }, [data, congChucFilter]);
 
+  // ✅ Counts theo filteredData (theo CC đã chọn)
+  const filteredCounts = React.useMemo(() => {
+    const pending = filteredData.filter(d => d.trang_thai === 'CHO_PHE_DUYET').length;
+    const approved = filteredData.filter(d => d.trang_thai === 'DA_PHE_DUYET').length;
+    const rejected = filteredData.filter(d => d.trang_thai === 'TU_CHOI').length;
+    return { pending, approved, rejected, total: filteredData.length };
+  }, [filteredData]);
+
+  // ✅ pendingItems từ filteredData (theo CC đã chọn)
+  const pendingItems = filteredData.filter(d => d.trang_thai === 'CHO_PHE_DUYET');
+
+  const handleSelectAll = () => {
+    setSelectedIds(selectedIds.size === pendingItems.length ? new Set() : new Set(pendingItems.map(d => d.id)));
+  };
+
   // Render
   if (isLoading) {
     return <div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" /></div>;
@@ -523,7 +473,7 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-white rounded-lg p-4 border border-gray-200">
         <div className="flex items-center gap-4">
-          {/* Status Filter */}
+          {/* Status Filter - counts theo CC đã chọn */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Trạng thái:</span>
             <select
@@ -531,15 +481,15 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
               onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">Tất cả ({counts.total})</option>
-              <option value="pending">Chờ duyệt ({counts.pending})</option>
-              <option value="approved">Đã duyệt ({counts.approved})</option>
-              <option value="rejected">Từ chối ({counts.rejected})</option>
+              <option value="all">Tất cả ({filteredCounts.total})</option>
+              <option value="pending">Chờ duyệt ({filteredCounts.pending})</option>
+              <option value="approved">Đã duyệt ({filteredCounts.approved})</option>
+              <option value="rejected">Từ chối ({filteredCounts.rejected})</option>
             </select>
           </div>
 
-          {/* ✅ Công chức Filter */}
-          {uniqueCongChuc.length > 1 && (
+          {/* Công chức Filter - luôn hiển thị */}
+          {uniqueCongChuc.length > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Công chức:</span>
               <select
@@ -557,8 +507,8 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
             </div>
           )}
         </div>
-        
-        {canApprove && counts.pending > 0 && statusFilter !== 'approved' && statusFilter !== 'rejected' && (
+
+        {canApprove && pendingItems.length > 0 && statusFilter !== 'approved' && statusFilter !== 'rejected' && (
           <div className="flex items-center gap-3">
             <button
               onClick={handleSelectAll}
@@ -579,26 +529,196 @@ export default function TabNghiPhep({ canApprove, onPendingCountChange }: ITabPr
         )}
       </div>
 
-      {/* List */}
+      {/* Table */}
       {filteredData.length === 0 ? (
-        <EmptyState 
-          title="Không có đơn nghỉ" 
-          description={statusFilter === 'pending' ? 'Không có đơn nghỉ phép nào chờ phê duyệt' : congChucFilter !== 'all' ? 'Không có dữ liệu cho công chức đã chọn' : 'Không có dữ liệu'} 
+        <EmptyState
+          title="Không có đơn nghỉ"
+          description={statusFilter === 'pending' ? 'Không có đơn nghỉ phép nào chờ phê duyệt' : congChucFilter !== 'all' ? 'Không có dữ liệu cho công chức đã chọn' : 'Không có dữ liệu'}
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredData.map((item) => (
-            <NghiPhepCard
-              key={item.id}
-              item={item}
-              isSelected={selectedIds.has(item.id)}
-              onSelect={handleSelect}
-              onApprove={handleApprove}
-              onReject={handleReject}
-              onTraLai={handleTraLai}
-              canApprove={canApprove}
-            />
-          ))}
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {canApprove && (
+                    <th className="w-10 px-3 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size > 0 && selectedIds.size === pendingItems.length}
+                        onChange={handleSelectAll}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        title="Chọn tất cả chờ duyệt"
+                      />
+                    </th>
+                  )}
+                  <th className="px-3 py-3 text-left font-medium text-gray-700">Công chức</th>
+                  <th className="px-3 py-3 text-center font-medium text-gray-700 whitespace-nowrap">Thời gian</th>
+                  <th className="px-3 py-3 text-center font-medium text-gray-700 w-20">Số ngày</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-700 min-w-[150px]">Lý do</th>
+                  <th className="px-3 py-3 text-center font-medium text-gray-700">Loại nghỉ</th>
+                  <th className="px-3 py-3 text-center font-medium text-gray-700">Trạng thái</th>
+                  {canApprove && (
+                    <th className="px-3 py-3 text-center font-medium text-gray-700">Thao tác</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredData.map((item) => {
+                  const isPending = item.trang_thai === 'CHO_PHE_DUYET';
+                  const isApproved = item.trang_thai === 'DA_PHE_DUYET';
+                  return (
+                    <tr key={item.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(item.id) ? 'bg-blue-50' : ''}`}>
+                      {canApprove && (
+                        <td className="w-10 px-3 py-3 text-center">
+                          {isPending && (
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(item.id)}
+                              onChange={(e) => handleSelect(item.id, e.target.checked)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                          )}
+                        </td>
+                      )}
+                      {/* Công chức */}
+                      <td className="px-3 py-3">
+                        <div>
+                          <p className="font-medium text-gray-900 text-sm">{item.cong_chuc?.ho_ten || 'N/A'}</p>
+                          <p className="text-xs text-gray-500">{item.cong_chuc?.ma_cc}</p>
+                          {item.cong_chuc?.don_vi_ten && (
+                            <p className="text-xs text-gray-400">{item.cong_chuc.don_vi_ten}</p>
+                          )}
+                        </div>
+                      </td>
+                      {/* Thời gian */}
+                      <td className="px-3 py-3 text-center text-sm text-gray-600 whitespace-nowrap">
+                        {getNgayBatDau(item) ? format(parseISO(getNgayBatDau(item)!), 'dd/MM/yyyy') : 'N/A'}
+                        {getNgayKetThuc(item) && getNgayKetThuc(item) !== getNgayBatDau(item) && (
+                          <>
+                            <br />
+                            <span className="text-gray-400">→</span> {format(parseISO(getNgayKetThuc(item)!), 'dd/MM/yyyy')}
+                          </>
+                        )}
+                      </td>
+                      {/* Số ngày */}
+                      <td className="px-3 py-3 text-center">
+                        <span className="font-semibold text-blue-600">{item.so_ngay}</span>
+                      </td>
+                      {/* Lý do */}
+                      <td className="px-3 py-3">
+                        {item.ly_do ? (
+                          <p className="text-xs text-gray-700 whitespace-pre-wrap break-words max-w-[250px]">{item.ly_do}</p>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                      {/* Loại nghỉ */}
+                      <td className="px-3 py-3 text-center">
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full whitespace-nowrap ${getBadgeColor(item.loai_nghi)}`}>
+                          {LOAI_NGHI_LABELS[item.loai_nghi] || item.loai_nghi}
+                        </span>
+                      </td>
+                      {/* Trạng thái */}
+                      <td className="px-3 py-3 text-center">
+                        {getStatusBadge(item.trang_thai)}
+                      </td>
+                      {/* Thao tác */}
+                      {canApprove && (
+                        <td className="px-3 py-3">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {isPending && (
+                              <>
+                                <button
+                                  onClick={() => handleApprove(item.id)}
+                                  className="px-2.5 py-1 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                                >
+                                  Duyệt
+                                </button>
+                                <button
+                                  onClick={() => handleReject(item.id)}
+                                  className="px-2.5 py-1 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
+                                >
+                                  Từ chối
+                                </button>
+                              </>
+                            )}
+                            {isApproved && (
+                              <button
+                                onClick={() => handleTraLai(item)}
+                                className="px-2 py-1 text-xs font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded transition-colors whitespace-nowrap"
+                              >
+                                ↩ Trả lại
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Tổng kết khi chọn công chức cụ thể */}
+          {congChucFilter !== 'all' && filteredData.length > 0 && (() => {
+            const soNgayThang = soNgayTrongThang(thang, nam);
+            const approvedItems = filteredData.filter(d => d.trang_thai === 'DA_PHE_DUYET');
+            const pendingItems2 = filteredData.filter(d => d.trang_thai === 'CHO_PHE_DUYET');
+            const ngayNghiThucTe = approvedItems.reduce((sum, d) => sum + d.so_ngay, 0);
+            const ngayNghiTamTinh = pendingItems2.reduce((sum, d) => sum + d.so_ngay, 0);
+            const ngayLamViecThucTe = soNgayThang - ngayNghiThucTe;
+            const ngayLamViecTamTinh = soNgayThang - ngayNghiThucTe - ngayNghiTamTinh;
+            const ccInfo = filteredData[0]?.cong_chuc;
+            return (
+              <div className="border-t-2 border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="text-sm text-gray-700">
+                    <span className="font-medium">{ccInfo?.ho_ten}</span>
+                    <span className="text-gray-400 mx-1">•</span>
+                    <span className="text-gray-500">T{thang}/{nam} ({soNgayThang} ngày)</span>
+                    <span className="text-gray-400 mx-1">•</span>
+                    <span className="text-gray-500">{filteredData.length} đơn nghỉ</span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {/* Thực tế (đã duyệt) */}
+                    <div className="text-center px-3 py-1 bg-white rounded-lg border border-gray-200">
+                      <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Thực tế</p>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <div>
+                          <p className="text-xs text-gray-500">Nghỉ</p>
+                          <p className="text-base font-bold text-red-600">{ngayNghiThucTe}</p>
+                        </div>
+                        <div className="text-gray-300">|</div>
+                        <div>
+                          <p className="text-xs text-gray-500">Làm việc</p>
+                          <p className="text-base font-bold text-green-600">{ngayLamViecThucTe}</p>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Tạm tính (bao gồm chờ duyệt) */}
+                    {ngayNghiTamTinh > 0 && (
+                      <div className="text-center px-3 py-1 bg-amber-50 rounded-lg border border-amber-200">
+                        <p className="text-[10px] text-amber-600 font-medium uppercase tracking-wide">Tạm tính</p>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <div>
+                            <p className="text-xs text-gray-500">Nghỉ</p>
+                            <p className="text-base font-bold text-red-600">{ngayNghiThucTe + ngayNghiTamTinh}</p>
+                          </div>
+                          <div className="text-gray-300">|</div>
+                          <div>
+                            <p className="text-xs text-gray-500">Làm việc</p>
+                            <p className={`text-base font-bold ${ngayLamViecTamTinh >= 0 ? 'text-amber-600' : 'text-red-600'}`}>{ngayLamViecTamTinh}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

@@ -12,8 +12,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { cauHoiApi, khoaHocApi } from '@/services/lms';
-import type { ICauHoi, ICauHoiCreate, IPagination, IKhoaHoc } from '@/types/lms';
+import { cauHoiApi, khoaHocApi, baiKiemTraApi } from '@/services/lms';
+import type { ICauHoi, ICauHoiCreate, IPagination, IKhoaHoc, IBaiKiemTra } from '@/types/lms';
 import ImportCauHoiDialog from '@/components/lms/ImportCauHoiDialog';
 
 // =============================================================================
@@ -50,6 +50,7 @@ interface FormState {
   do_kho:         string;
   diem:           string;
   khoa_hoc_id:    string;
+  bai_kiem_tra_id: string;
   giai_thich:     string;
   // TRAC_NGHIEM_1 / TRAC_NGHIEM_NHIEU
   options:        string[];
@@ -67,6 +68,7 @@ const DEFAULT_FORM: FormState = {
   do_kho: 'TRUNG_BINH',
   diem: '1',
   khoa_hoc_id: '',
+  bai_kiem_tra_id: '',
   giai_thich: '',
   options: ['', ''],
   correctSingle: 0,
@@ -285,6 +287,7 @@ function CauHoiModal({ mode, init, khoaHocs, onClose, onSuccess }: CauHoiModalPr
         do_kho:      init.do_kho,
         diem:        String(init.diem),
         khoa_hoc_id: init.khoa_hoc_id ?? '',
+        bai_kiem_tra_id: init.bai_kiem_tra_id ?? '',
         giai_thich:  init.giai_thich ?? '',
         ...parsed,
       };
@@ -293,6 +296,8 @@ function CauHoiModal({ mode, init, khoaHocs, onClose, onSuccess }: CauHoiModalPr
   });
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg]         = useState('');
+  const [baiKiemTras, setBaiKiemTras] = useState<IBaiKiemTra[]>([]);
+  const [loadingBkt, setLoadingBkt] = useState(false);
 
   // Khi đổi loại câu hỏi → reset phần đáp án về mặc định
   const handleLoaiChange = (loai: string) => {
@@ -307,6 +312,27 @@ function CauHoiModal({ mode, init, khoaHocs, onClose, onSuccess }: CauHoiModalPr
     });
   };
 
+  // Load bai_kiem_tra when khoa_hoc_id changes
+  useEffect(() => {
+    if (!form.khoa_hoc_id) {
+      setBaiKiemTras([]);
+      setForm(prev => ({ ...prev, bai_kiem_tra_id: '' }));
+      return;
+    }
+    const loadBkt = async () => {
+      setLoadingBkt(true);
+      try {
+        const res = await baiKiemTraApi.danhSach(form.khoa_hoc_id);
+        setBaiKiemTras(res.data.data || []);
+      } catch {
+        setBaiKiemTras([]);
+      } finally {
+        setLoadingBkt(false);
+      }
+    };
+    loadBkt();
+  }, [form.khoa_hoc_id]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -315,6 +341,8 @@ function CauHoiModal({ mode, init, khoaHocs, onClose, onSuccess }: CauHoiModalPr
 
   const handleSubmit = async () => {
     if (!form.noi_dung.trim()) { setErrMsg('Nội dung câu hỏi là bắt buộc'); return; }
+    if (!form.khoa_hoc_id) { setErrMsg('Vui lòng chọn khóa học'); return; }
+    if (!form.bai_kiem_tra_id) { setErrMsg('Vui lòng chọn bài kiểm tra'); return; }
     // Validate lựa chọn trắc nghiệm
     if ((form.loai === 'TRAC_NGHIEM_1' || form.loai === 'TRAC_NGHIEM_NHIEU')
         && form.options.some((o) => !o.trim())) {
@@ -334,8 +362,8 @@ function CauHoiModal({ mode, init, khoaHocs, onClose, onSuccess }: CauHoiModalPr
         do_kho:      form.do_kho,
         diem:        Number(form.diem) || 1,
         dap_an:      buildDapAn(form),
-        // Luôn gửi khoa_hoc_id: null khi chọn "Câu hỏi chung", uuid khi chọn khóa cụ thể
         khoa_hoc_id: form.khoa_hoc_id || null,
+        bai_kiem_tra_id: form.bai_kiem_tra_id,
         ...(form.giai_thich.trim() && { giai_thich: form.giai_thich.trim() }),
       };
       if (mode === 'tao') {
@@ -411,21 +439,41 @@ function CauHoiModal({ mode, init, khoaHocs, onClose, onSuccess }: CauHoiModalPr
             </div>
           </div>
 
-          {/* Khóa học (optional) */}
+          {/* Khóa học */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Thuộc khóa học <span className="text-gray-400 font-normal">(không bắt buộc)</span>
+              Thuộc khóa học <span className="text-red-500">*</span>
             </label>
             <select
               value={form.khoa_hoc_id}
-              onChange={(e) => setForm({ ...form, khoa_hoc_id: e.target.value })}
+              onChange={(e) => setForm({ ...form, khoa_hoc_id: e.target.value, bai_kiem_tra_id: '' })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">— Câu hỏi chung (không gắn khóa học) —</option>
+              <option value="">— Chọn khóa học —</option>
               {khoaHocs.map((kh) => (
                 <option key={kh.id} value={kh.id}>[{kh.ma_khoa_hoc}] {kh.ten_khoa_hoc}</option>
               ))}
             </select>
+          </div>
+
+          {/* Bài kiểm tra */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Thuộc bài kiểm tra <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={form.bai_kiem_tra_id}
+              onChange={(e) => setForm({ ...form, bai_kiem_tra_id: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={!form.khoa_hoc_id || loadingBkt}
+            >
+              <option value="">— Chọn bài kiểm tra —</option>
+              {baiKiemTras.map((bkt) => (
+                <option key={bkt.id} value={bkt.id}>{bkt.tieu_de}</option>
+              ))}
+            </select>
+            {!form.khoa_hoc_id && <p className="text-xs text-gray-400 mt-1">Chọn khóa học trước</p>}
+            {loadingBkt && <p className="text-xs text-gray-400 mt-1">Đang tải danh sách bài kiểm tra...</p>}
           </div>
 
           {/* Phần đáp án động */}
@@ -481,6 +529,7 @@ function CauHoiModal({ mode, init, khoaHocs, onClose, onSuccess }: CauHoiModalPr
 export default function CauHoiManager() {
   const [list, setList]           = useState<ICauHoi[]>([]);
   const [khoaHocs, setKhoaHocs]   = useState<IKhoaHoc[]>([]);
+  const [baiKiemTras, setBaiKiemTras] = useState<IBaiKiemTra[]>([]);
   const [pagination, setPagination] = useState<IPagination | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
@@ -490,6 +539,7 @@ export default function CauHoiManager() {
   const [filterLoai, setFilterLoai]   = useState('');
   const [filterDoKho, setFilterDoKho] = useState('');
   const [filterKhoaHocId, setFilterKhoaHocId] = useState('');
+  const [filterBaiKiemTraId, setFilterBaiKiemTraId] = useState('');
 
   // Modals
   const [showCreate, setShowCreate]   = useState(false);
@@ -497,6 +547,24 @@ export default function CauHoiManager() {
   const [editItem, setEditItem]       = useState<ICauHoi | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ICauHoi | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Load bai_kiem_tra when filterKhoaHocId changes
+  useEffect(() => {
+    if (!filterKhoaHocId) {
+      setBaiKiemTras([]);
+      setFilterBaiKiemTraId('');
+      return;
+    }
+    const loadBkt = async () => {
+      try {
+        const res = await baiKiemTraApi.danhSach(filterKhoaHocId);
+        setBaiKiemTras(res.data.data || []);
+      } catch {
+        setBaiKiemTras([]);
+      }
+    };
+    loadBkt();
+  }, [filterKhoaHocId]);
 
   // Load danh sách câu hỏi
   const loadList = useCallback(async () => {
@@ -507,6 +575,7 @@ export default function CauHoiManager() {
       if (filterLoai)      params.loai          = filterLoai;
       if (filterDoKho)     params.do_kho        = filterDoKho;
       if (filterKhoaHocId) params.khoa_hoc_id   = filterKhoaHocId;
+      if (filterBaiKiemTraId) params.bai_kiem_tra_id = filterBaiKiemTraId;
 
       const [chRes, khRes] = await Promise.all([
         cauHoiApi.danhSach(params as any),
@@ -525,7 +594,7 @@ export default function CauHoiManager() {
     } finally {
       setLoading(false);
     }
-  }, [page, filterLoai, filterDoKho, filterKhoaHocId]);
+  }, [page, filterLoai, filterDoKho, filterKhoaHocId, filterBaiKiemTraId]);
 
   useEffect(() => { loadList(); }, [loadList]);
 
@@ -578,12 +647,24 @@ export default function CauHoiManager() {
 
         <select
           value={filterKhoaHocId}
-          onChange={(e) => { setFilterKhoaHocId(e.target.value); setPage(1); }}
+          onChange={(e) => { setFilterKhoaHocId(e.target.value); setFilterBaiKiemTraId(''); setPage(1); }}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
         >
           <option value="">Tất cả khóa học</option>
           {khoaHocs.map((kh) => (
             <option key={kh.id} value={kh.id}>[{kh.ma_khoa_hoc}] {kh.ten_khoa_hoc}</option>
+          ))}
+        </select>
+
+        <select
+          value={filterBaiKiemTraId}
+          onChange={(e) => { setFilterBaiKiemTraId(e.target.value); setPage(1); }}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+          disabled={!filterKhoaHocId}
+        >
+          <option value="">Tất cả bài kiểm tra</option>
+          {baiKiemTras.map((bkt) => (
+            <option key={bkt.id} value={bkt.id}>{bkt.tieu_de}</option>
           ))}
         </select>
 

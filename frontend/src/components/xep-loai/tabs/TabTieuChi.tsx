@@ -96,6 +96,31 @@ type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 type ApprovalLevel = 'all' | 'cap1' | 'cap2' | 'thang';
 
 // =============================================================================
+// HELPER - Fetch tất cả pages (copy từ TabCongViec)
+// =============================================================================
+
+async function fetchAllPages<T>(
+  fetchFn: (page: number, pageSize: number) => Promise<{ data: T[]; total: number }>,
+  pageSize: number = 100
+): Promise<T[]> {
+  const allData: T[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const result = await fetchFn(page, pageSize);
+    allData.push(...result.data);
+    hasMore = allData.length < result.total;
+    page++;
+
+    // Safety limit
+    if (page > 50) break;
+  }
+
+  return allData;
+}
+
+// =============================================================================
 // API FUNCTIONS - VERIFIED ENDPOINTS
 // =============================================================================
 
@@ -104,27 +129,37 @@ const tieuChiApi = {
    * GET /danh-gia/tieu-chi/cho-phe-duyet
    */
   async getChoPheDuyet(params?: { thang?: number; nam?: number }): Promise<ITieuChiItem[]> {
-    console.log('[TabTieuChi] Calling GET /danh-gia/tieu-chi/cho-phe-duyet');
-    const response = await apiClient.get('/danh-gia/tieu-chi/cho-phe-duyet', { params });
-    console.log('[TabTieuChi] Response cho-phe-duyet:', response.data);
-    
-    // Handle nhiều format response
-    let data: ITieuChiItem[] = [];
-    if (Array.isArray(response.data)) {
-      data = response.data;
-    } else if (response.data?.data?.danh_sach && Array.isArray(response.data.data.danh_sach)) {
-      // Backend trả về format { data: { danh_sach: [...] } }
-      data = response.data.data.danh_sach;
-    } else if (response.data?.data && Array.isArray(response.data.data)) {
-      data = response.data.data;
-    } else if (response.data?.danh_sach && Array.isArray(response.data.danh_sach)) {
-      data = response.data.danh_sach;
-    } else if (response.data?.success && response.data?.data) {
-      data = Array.isArray(response.data.data) ? response.data.data : [];
-    }
-    
-    console.log('[TabTieuChi] Parsed pending data:', data.length, 'items');
-    return data;
+    console.log('[TabTieuChi] Calling GET /danh-gia/tieu-chi/cho-phe-duyet - ALL PAGES');
+    const allData = await fetchAllPages<ITieuChiItem>(async (page, pageSize) => {
+      const response = await apiClient.get('/danh-gia/tieu-chi/cho-phe-duyet', {
+        params: { ...params, page, page_size: pageSize }
+      });
+
+      let data: ITieuChiItem[] = [];
+      let total = 0;
+
+      if (Array.isArray(response.data)) {
+        data = response.data;
+        total = data.length;
+      } else if (response.data?.data?.danh_sach && Array.isArray(response.data.data.danh_sach)) {
+        data = response.data.data.danh_sach;
+        total = response.data.data.tong_so || data.length;
+      } else if (response.data?.data && Array.isArray(response.data.data)) {
+        data = response.data.data;
+        total = response.data?.pagination?.total_items || data.length;
+      } else if (response.data?.danh_sach && Array.isArray(response.data.danh_sach)) {
+        data = response.data.danh_sach;
+        total = response.data?.tong_so || data.length;
+      } else if (response.data?.success && response.data?.data) {
+        data = Array.isArray(response.data.data) ? response.data.data : [];
+        total = data.length;
+      }
+
+      return { data, total };
+    });
+
+    console.log('[TabTieuChi] Parsed pending data:', allData.length, 'items (all pages)');
+    return allData;
   },
 
   /**
@@ -132,31 +167,42 @@ const tieuChiApi = {
    * Lấy lịch sử phê duyệt tiêu chí (đã duyệt + từ chối)
    */
   async getLichSu(params?: { thang?: number; nam?: number; trang_thai?: string }): Promise<ITieuChiItem[]> {
-    console.log('[TabTieuChi] Calling GET /danh-gia/tieu-chi/lich-su with params:', params);
-    
+    console.log('[TabTieuChi] Calling GET /danh-gia/tieu-chi/lich-su - ALL PAGES', params);
+
     try {
-      const response = await apiClient.get('/danh-gia/tieu-chi/lich-su', { params });
-      console.log('[TabTieuChi] Response lich-su:', response.data);
-      
-      let data: ITieuChiItem[] = [];
-      
-      if (Array.isArray(response.data)) {
-        data = response.data;
-      } else if (response.data?.data?.items && Array.isArray(response.data.data.items)) {
-        data = response.data.data.items;
-      } else if (response.data?.data?.danh_sach && Array.isArray(response.data.data.danh_sach)) {
-        // Backend trả về format { data: { danh_sach: [...] } }
-        data = response.data.data.danh_sach;
-      } else if (response.data?.data && Array.isArray(response.data.data)) {
-        data = response.data.data;
-      } else if (response.data?.items && Array.isArray(response.data.items)) {
-        data = response.data.items;
-      } else if (response.data?.danh_sach && Array.isArray(response.data.danh_sach)) {
-        data = response.data.danh_sach;
-      }
-      
-      console.log('[TabTieuChi] Parsed lich-su data:', data.length, 'items');
-      return data.map(item => ({
+      const allData = await fetchAllPages<ITieuChiItem>(async (page, pageSize) => {
+        const response = await apiClient.get('/danh-gia/tieu-chi/lich-su', {
+          params: { ...params, page, page_size: pageSize }
+        });
+
+        let data: ITieuChiItem[] = [];
+        let total = 0;
+
+        if (Array.isArray(response.data)) {
+          data = response.data;
+          total = data.length;
+        } else if (response.data?.data?.items && Array.isArray(response.data.data.items)) {
+          data = response.data.data.items;
+          total = response.data.data.pagination?.total_items || data.length;
+        } else if (response.data?.data?.danh_sach && Array.isArray(response.data.data.danh_sach)) {
+          data = response.data.data.danh_sach;
+          total = response.data.data.tong_so || data.length;
+        } else if (response.data?.data && Array.isArray(response.data.data)) {
+          data = response.data.data;
+          total = response.data?.pagination?.total_items || data.length;
+        } else if (response.data?.items && Array.isArray(response.data.items)) {
+          data = response.data.items;
+          total = response.data?.pagination?.total_items || data.length;
+        } else if (response.data?.danh_sach && Array.isArray(response.data.danh_sach)) {
+          data = response.data.danh_sach;
+          total = response.data?.tong_so || data.length;
+        }
+
+        return { data, total };
+      });
+
+      console.log('[TabTieuChi] Parsed lich-su data:', allData.length, 'items (all pages)');
+      return allData.map(item => ({
         ...item,
         ho_ten: item.ho_ten || item.cong_chuc?.ho_ten || '',
         ma_cc: item.ma_cc || item.cong_chuc?.ma_cc || '',
@@ -618,6 +664,11 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
     loadData();
   }, [loadData]);
 
+  // ✅ FIX: Clear selectedIds khi filter thay đổi (tránh bulk approve items không hiển thị)
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [statusFilter, levelFilter, congChucFilter]);
+
   // Refresh data
   const refreshAll = useCallback(async () => {
     await loadData();
@@ -631,7 +682,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
   };
 
   const handleSelectAll = () => {
-    setSelectedIds(selectedIds.size === finalFilteredData.length ? new Set() : new Set(finalFilteredData.map(d => d.danh_gia_thang_id)));
+    // FIX: Chỉ select items user có thể duyệt (pending + thuộc quyền), không select items đã duyệt/từ chối
+    const selectableItems = finalFilteredData.filter(canUserApproveItem);
+    if (selectedIds.size === selectableItems.length && selectableItems.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(selectableItems.map(d => d.danh_gia_thang_id)));
+    }
   };
 
   const handleViewDetail = async (id: string) => {
@@ -1003,7 +1060,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
               onClick={handleSelectAll}
               className="px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              {selectedIds.size === approvableItems.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+              {selectedIds.size > 0 && selectedIds.size === finalFilteredData.filter(canUserApproveItem).length ? 'Bỏ chọn tất cả' : `Chọn tất cả (${finalFilteredData.filter(canUserApproveItem).length})`}
             </button>
             {selectedIds.size > 0 && (
               <button
@@ -1032,7 +1089,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                     }) && (
                       <input
                         type="checkbox"
-                        checked={selectedIds.size > 0 && selectedIds.size === finalFilteredData.length}
+                        checked={selectedIds.size > 0 && selectedIds.size === finalFilteredData.filter(canUserApproveItem).length}
                         onChange={handleSelectAll}
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded"
                         title="Chọn tất cả"
@@ -1082,7 +1139,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
       {/* Detail Modal */}
       {selectedItem && modalAction === 'detail' && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 max-w-5xl w-full mx-4 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Chi tiết tiêu chí chung</h3>
               <button onClick={() => { setSelectedItem(null); setModalAction(null); }} className="p-1 text-gray-400 hover:text-gray-600">✕</button>
@@ -1113,12 +1170,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
               <table className="w-full text-sm">
                 <thead className="bg-gray-100">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium text-gray-700">Mã</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700 w-14">Mã</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Tiêu chí</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-700">Tối đa</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-700">CC tự chấm</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-700">Phó duyệt</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-700">Trưởng duyệt</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700 w-16">Tối đa</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700 w-20">CC tự chấm</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700 w-20">Phó duyệt</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700 w-24">Trưởng duyệt</th>
+                    <th className="px-3 py-2 text-left font-medium text-gray-700 min-w-[200px]">Ghi chú CC</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1154,6 +1212,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                             <span className="text-gray-300">-</span>
                           )}
                         </td>
+                        <td className="px-3 py-2">
+                          {tc.ghi_chu_cc ? (
+                            <p className="text-xs text-gray-700 whitespace-pre-wrap break-words">{tc.ghi_chu_cc}</p>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -1181,6 +1246,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                         : '-'
                       }
                     </td>
+                    <td></td>
                   </tr>
                 </tfoot>
               </table>
@@ -1198,7 +1264,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
       {/* Approve/Reject Modal */}
       {selectedItem && (modalAction === 'approve' || modalAction === 'reject') && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl p-6 max-w-5xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {modalAction === 'approve' ? 'Phê duyệt tiêu chí' : 'Từ chối tiêu chí'}
             </h3>
@@ -1233,12 +1299,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                       <table className="w-full text-sm">
                         <thead className="bg-gray-100">
                           <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700 w-16">Mã</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700 w-14">Mã</th>
                             <th className="px-3 py-2 text-left font-medium text-gray-700">Tiêu chí</th>
                             <th className="px-3 py-2 text-center font-medium text-gray-700 w-16">Tối đa</th>
                             <th className="px-3 py-2 text-center font-medium text-gray-700 w-20">CC chấm</th>
                             <th className="px-3 py-2 text-center font-medium text-gray-700 w-20">LĐ duyệt</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700 w-48">Lý do điều chỉnh</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700 min-w-[180px]">Ghi chú CC</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700 w-44">Lý do điều chỉnh</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -1260,7 +1327,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                                 <React.Fragment key={tc.id}>
                                   {showNhomHeader && (
                                     <tr className="bg-blue-50">
-                                      <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold text-blue-700">
+                                      <td colSpan={7} className="px-3 py-1.5 text-xs font-semibold text-blue-700">
                                         {nhomNames[tc.nhom_tieu_chi] || `Nhóm ${tc.nhom_tieu_chi}`}
                                       </td>
                                     </tr>
@@ -1301,6 +1368,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                                       </label>
                                     </td>
                                     <td className="px-3 py-2">
+                                      {tc.ghi_chu_cc ? (
+                                        <p className="text-xs text-gray-700 whitespace-pre-wrap break-words">{tc.ghi_chu_cc}</p>
+                                      ) : (
+                                        <span className="text-gray-300 text-xs">—</span>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
                                       {hasChange ? (
                                         <input
                                           type="text"
@@ -1336,6 +1410,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                                 return sum + (isAchieved ? tc.diem_toi_da : 0);
                               }, 0)}
                             </td>
+                            <td></td>
                             <td></td>
                           </tr>
                         </tfoot>

@@ -119,6 +119,12 @@ export const dangKyApi = {
     lmsApi.get(`/khoa-hoc/${khoaHocId}/hoc-vien`, { params }),
   huy: (khoaHocId: string) =>
     lmsApi.delete(`/khoa-hoc/${khoaHocId}/dang-ky`),
+  pheDuyet: (dangKyId: string, data: { phe_duyet: boolean; ly_do_tu_choi?: string }) =>
+    lmsApi.post(`/dang-ky/${dangKyId}/phe-duyet`, data),
+  loaiHocVien: (dangKyId: string, ly_do?: string) =>
+    lmsApi.delete(`/dang-ky/${dangKyId}/loai-hoc-vien`, { params: { ly_do } }),
+  choPheDuyetList: (params?: { page?: number; page_size?: number; khoa_hoc_id?: string }) =>
+    lmsApi.get('/dang-ky/cho-phe-duyet', { params }),
 };
 
 // =============================================================================
@@ -190,6 +196,8 @@ export const baiKiemTraApi = {
     lmsApi.post(`/bai-kiem-tra/${id}/bat-dau`),
   nopBai: (id: string, data: any) =>
     lmsApi.post(`/bai-kiem-tra/${id}/nop-bai`, data),
+  luuNhap: (id: string, data: { ket_qua_id: string; tra_loi: any[]; so_lan_vi_pham: number }) =>
+    lmsApi.post(`/bai-kiem-tra/${id}/luu-nhap`, data),
   ketQua: (id: string) =>
     lmsApi.get(`/ket-qua/${id}`),
   /** Lịch sử làm bài của user cho 1 BKT — GET /bai-kiem-tra/{id}/ket-qua */
@@ -198,6 +206,9 @@ export const baiKiemTraApi = {
   /** Danh sách câu hỏi của BKT (kèm đáp án, cho giảng viên) — GET /bai-kiem-tra/{id}/cau-hoi */
   danhSachCauHoi: (id: string) =>
     lmsApi.get(`/bai-kiem-tra/${id}/cau-hoi`),
+  /** Tất cả kết quả thi của 1 BKT (cho giảng viên/QT) — GET /bai-kiem-tra/{id}/ket-qua-tat-ca */
+  ketQuaTatCa: (id: string) =>
+    lmsApi.get(`/bai-kiem-tra/${id}/ket-qua-tat-ca`),
 };
 
 // =============================================================================
@@ -210,7 +221,7 @@ export const chungChiApi = {
   xacMinh: (ma: string) =>
     lmsApi.get(`/chung-chi/xac-minh/${ma}`),
   tai: (id: string) =>
-    lmsApi.get(`/chung-chi/${id}/tai`),
+    lmsApi.get(`/chung-chi/${id}/tai`, { responseType: 'blob' }),
 };
 
 export const khaoSatApi = {
@@ -304,6 +315,80 @@ export const cbccApi = {
    */
   getDonVi: () =>
     lmsApi.get('/don-vi'),
+};
+
+// =============================================================================
+// ĐGNL — LĨNH VỰC
+// =============================================================================
+
+export const linhVucApi = {
+  danhSach: (params?: any) => lmsApi.get('/linh-vuc', { params }),
+  taoMoi: (data: any) => lmsApi.post('/linh-vuc', data),
+  capNhat: (id: string, data: any) => lmsApi.put(`/linh-vuc/${id}`, data),
+  xoa: (id: string) => lmsApi.delete(`/linh-vuc/${id}`),
+};
+
+// =============================================================================
+// ĐGNL — VỊ TRÍ VIỆC LÀM
+// =============================================================================
+
+export const viTriApi = {
+  danhSach: (params?: any) => lmsApi.get('/vi-tri-viec-lam', { params }),
+  taoMoi: (data: any) => lmsApi.post('/vi-tri-viec-lam', data),
+  capNhat: (id: string, data: any) => lmsApi.put(`/vi-tri-viec-lam/${id}`, data),
+  xoa: (id: string) => lmsApi.delete(`/vi-tri-viec-lam/${id}`),
+};
+
+// =============================================================================
+// ĐGNL — KỲ THI
+// =============================================================================
+
+export const kyThiApi = {
+  danhSach: (params?: any) => lmsApi.get('/ky-thi', { params }),
+  chiTiet: (id: string) => lmsApi.get(`/ky-thi/${id}`),
+  taoMoi: (data: any) => lmsApi.post('/ky-thi', data),
+  capNhat: (id: string, data: any) => lmsApi.put(`/ky-thi/${id}`, data),
+  chuyenTrangThai: (id: string, trang_thai: string) =>
+    lmsApi.patch(`/ky-thi/${id}/trang-thai`, { trang_thai }),
+  xoa: (id: string) => lmsApi.delete(`/ky-thi/${id}`),
+  validate: (id: string) => lmsApi.post(`/ky-thi/${id}/validate`),
+  thongKe: (id: string) => lmsApi.get(`/ky-thi/${id}/thong-ke`),
+  // Cau truc de
+  layCauTrucDe: (id: string) => lmsApi.get(`/ky-thi/${id}/cau-truc-de`),
+  upsertCauTrucDe: (id: string, data: any) => lmsApi.post(`/ky-thi/${id}/cau-truc-de`, data),
+  xoaCauTrucDe: (id: string, viTriId: string) =>
+    lmsApi.delete(`/ky-thi/${id}/cau-truc-de/${viTriId}`),
+  // Thi sinh
+  giaoThiSinh: (id: string, data: any) => lmsApi.post(`/ky-thi/${id}/thi-sinh`, data),
+  danhSachThiSinh: (id: string, params?: any) => lmsApi.get(`/ky-thi/${id}/thi-sinh`, { params }),
+  xoaThiSinh: (id: string, ccId: string) => lmsApi.delete(`/ky-thi/${id}/thi-sinh/${ccId}`),
+  // Lam thi
+  batDau: (id: string) => lmsApi.post(`/ky-thi/${id}/bat-dau`),
+  nopBai: (id: string, data: any) => lmsApi.post(`/ky-thi/${id}/nop-bai`, data),
+  ketQua: (id: string) => lmsApi.get(`/ky-thi/${id}/ket-qua`),
+  ketQuaCBCC: (id: string, ccId: string) => lmsApi.get(`/ky-thi/${id}/ket-qua/${ccId}`),
+  exportExcel: (id: string) => lmsApi.get(`/ky-thi/${id}/export`, { responseType: 'blob' }),
+};
+
+// =============================================================================
+// ĐGNL — NGÂN HÀNG CÂU HỎI
+// =============================================================================
+
+export const nganHangDgnlApi = {
+  danhSach: (params?: any) => lmsApi.get('/dgnl/ngan-hang', { params }),
+  chiTiet: (id: string) => lmsApi.get(`/dgnl/ngan-hang/${id}`),
+  taoMoi: (data: any) => lmsApi.post('/dgnl/ngan-hang', data),
+  capNhat: (id: string, data: any) => lmsApi.put(`/dgnl/ngan-hang/${id}`, data),
+  xoa: (id: string) => lmsApi.delete(`/dgnl/ngan-hang/${id}`),
+  thongKe: () => lmsApi.get('/dgnl/ngan-hang/thong-ke'),
+  downloadMau: () => lmsApi.get('/dgnl/ngan-hang/import/mau', { responseType: 'blob' }),
+  importFile: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return lmsApi.post('/dgnl/ngan-hang/import', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 export default lmsApi;

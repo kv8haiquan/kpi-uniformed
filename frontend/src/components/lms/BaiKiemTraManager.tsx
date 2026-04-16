@@ -60,6 +60,8 @@ interface BktFormBase {
   so_lan_lam_toi_da:     string;
   diem_dat:              string;
   tron_de:               boolean;
+  gio_mo:                string;
+  gio_dong:              string;
   che_do_xem_ket_qua:   string;
   hien_giai_thich:       boolean;
 }
@@ -70,6 +72,8 @@ const BKT_BASE_DEFAULT: BktFormBase = {
   so_lan_lam_toi_da:     '3',
   diem_dat:              '70',
   tron_de:               true,
+  gio_mo:                '',
+  gio_dong:              '',
   che_do_xem_ket_qua:   'XEM_DIEM_VA_DAP_AN',
   hien_giai_thich:       true,
 };
@@ -470,6 +474,8 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
           so_lan_lam_toi_da:     String(init.so_lan_lam_toi_da ?? 3),
           diem_dat:              String(init.diem_dat ?? 70),
           tron_de:               init.tron_de ?? true,
+          gio_mo:                init.gio_mo ?? '',
+          gio_dong:              init.gio_dong ?? '',
           che_do_xem_ket_qua:   init.che_do_xem_ket_qua ?? 'XEM_DIEM_VA_DAP_AN',
           hien_giai_thich:       init.hien_giai_thich ?? true,
         }
@@ -554,6 +560,8 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
         hien_giai_thich:     base.hien_giai_thich,
         ...(base.thoi_gian_lam_bai_phut && { thoi_gian_lam_bai_phut: Number(base.thoi_gian_lam_bai_phut) }),
         ...(base.so_lan_lam_toi_da      && { so_lan_lam_toi_da:      Number(base.so_lan_lam_toi_da) }),
+        ...(base.gio_mo                 && { gio_mo:                  base.gio_mo }),
+        ...(base.gio_dong               && { gio_dong:                base.gio_dong }),
         ...(cau_hoi_ids.length > 0      && { cau_hoi_ids }),
         ...(cau_hoi_moi.length > 0      && { cau_hoi_moi }),
       };
@@ -635,6 +643,22 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                 />
                 <span className="text-sm text-gray-700">Trộn đề (ngẫu nhiên)</span>
               </label>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Khung giờ mở (HH:MM)</label>
+              <input type="time"
+                value={base.gio_mo}
+                onChange={(e) => setBase({ ...base, gio_mo: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Khung giờ đóng (HH:MM)</label>
+              <input type="time"
+                value={base.gio_dong}
+                onChange={(e) => setBase({ ...base, gio_dong: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
           </div>
 

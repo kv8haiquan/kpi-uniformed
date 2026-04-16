@@ -82,16 +82,16 @@ export async function fetchKPISummary(): Promise<IKPIDashboardSummary | null> {
 }
 
 // =============================================================================
-// LMS — port 8001 (qua Next.js rewrite /api/lms/v1/*)
+// LMS — port 8001 (qua Next.js rewrite /api/v1/lms/*)
 // =============================================================================
 
 /**
  * Lấy tóm tắt học tập cá nhân.
- * Endpoint: GET /api/lms/v1/bao-cao/ca-nhan
+ * Endpoint: GET /api/v1/lms/bao-cao/ca-nhan
  */
 export async function fetchLMSSummary(): Promise<ILMSDashboardSummary | null> {
   try {
-    const res = await axios.get('/api/lms/v1/bao-cao/ca-nhan', {
+    const res = await axios.get('/api/v1/lms/bao-cao/ca-nhan', {
       headers: authHeaders(),
       timeout: TIMEOUT_MS,
     });

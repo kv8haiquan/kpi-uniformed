@@ -236,10 +236,15 @@ apiClient.interceptors.response.use(
     }
 
     // Trả về lỗi mặc định
-    const errorData = error.response.data?.error;
+    const responseData = error.response.data as any;
+    const errorData = responseData?.error;
+    // FastAPI HTTPException trả {detail: "string"} — extract message từ detail nếu không có error object
+    const detailMessage = typeof responseData?.detail === 'string'
+      ? responseData.detail
+      : responseData?.detail?.message;
     return Promise.reject({
       code: errorData?.code || 'UNKNOWN_ERROR',
-      message: errorData?.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.',
+      message: errorData?.message || detailMessage || 'Đã có lỗi xảy ra. Vui lòng thử lại.',
       originalError: error,
     });
   }

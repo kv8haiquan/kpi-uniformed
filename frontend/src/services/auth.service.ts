@@ -11,6 +11,7 @@
 import apiClient, { setStoredToken, removeStoredToken, IApiError } from '@/lib/axios';
 import { ILoginRequest, ILoginResponse, IUser } from '@/types/auth';
 import { IDataResponse } from '@/types/api';
+import { ChangePasswordFormData } from '@/lib/validations/auth';
 
 // =============================================================================
 // AUTH SERVICE
@@ -116,6 +117,29 @@ class AuthService {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('redirect_after_login');
     }
+  }
+
+  /**
+   * Đổi mật khẩu user hiện tại.
+   */
+  async changePassword(data: ChangePasswordFormData): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post('/auth/change-password', {
+      current_password: data.currentPassword,
+      new_password: data.newPassword,
+    });
+    return response.data;
+  }
+
+  /**
+   * Cập nhật thông tin liên hệ (email, số điện thoại).
+   */
+  async updateProfile(data: { email?: string; so_dien_thoai?: string }): Promise<{
+    success: boolean;
+    message: string;
+    data: { email: string | null; so_dien_thoai: string | null };
+  }> {
+    const response = await apiClient.put('/auth/update-profile', data);
+    return response.data;
   }
 
   /**

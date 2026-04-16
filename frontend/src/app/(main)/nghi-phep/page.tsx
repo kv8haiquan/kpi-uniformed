@@ -79,11 +79,10 @@ export default function NghiPhepPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'normal' | 'bulk'>('normal');
 
-  // Form - Nghỉ thường
+  // Form - Nghỉ thường (calendar multi-select)
   const [formLoaiNghi, setFormLoaiNghi] = useState<LoaiNghi>(LoaiNghi.PHEP_NAM);
-  const [formTuNgay, setFormTuNgay] = useState('');
-  const [formDenNgay, setFormDenNgay] = useState('');
-  const [formSoNgay, setFormSoNgay] = useState(1);
+  const [formSelectedDates, setFormSelectedDates] = useState<Date[]>([]);
+  const [formCalendarMonth, setFormCalendarMonth] = useState(new Date());
   const [formLyDo, setFormLyDo] = useState('');
   const [formNguoiPheDuyet, setFormNguoiPheDuyet] = useState('');
 
@@ -99,6 +98,10 @@ export default function NghiPhepPage() {
   // Delete confirm state
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; info: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Multi-select for bulk delete
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
 
   // ===========================================================================
   // AUTH CHECK
@@ -167,9 +170,10 @@ export default function NghiPhepPage() {
     loadData();
   }, [loadData]);
 
-  // Reset filter khi đổi tháng/năm
+  // Reset filter và selection khi đổi tháng/năm
   useEffect(() => {
     setActiveStatusFilter(null);
+    setSelectedIds(new Set());
   }, [selectedThang, selectedNam]);
 
   // Computed: danh sách sau khi filter theo status card
@@ -204,9 +208,7 @@ export default function NghiPhepPage() {
 
   const resetForm = () => {
     setFormLoaiNghi(LoaiNghi.PHEP_NAM);
-    setFormTuNgay('');
-    setFormDenNgay('');
-    setFormSoNgay(1);
+    setFormSelectedDates([]);
     setFormLyDo('');
     setFormNguoiPheDuyet(nguoiPheDuyetList.length === 1 ? nguoiPheDuyetList[0].id : '');
     setBulkSelectedDates([]);
@@ -215,69 +217,73 @@ export default function NghiPhepPage() {
   };
 
   // ===========================================================================
-  // SUBMIT - Nghỉ thường
+  // TOGGLE DATE - Nghỉ thường (calendar multi-select)
+  // ===========================================================================
+  const handleToggleFormDate = (date: Date) => {
+    const exists = formSelectedDates.some((d) => isSameDay(d, date));
+    if (exists) {
+      setFormSelectedDates(formSelectedDates.filter((d) => !isSameDay(d, date)));
+    } else {
+      if (formSelectedDates.length >= 31) {
+        alert('Chỉ được chọn tối đa 31 ngày.');
+        return;
+      }
+      setFormSelectedDates([...formSelectedDates, date]);
+    }
+  };
+
+  // ===========================================================================
+  // SUBMIT - Nghỉ thường (dùng bulk API)
   // ===========================================================================
   const handleSubmitNormal = async () => {
-    if (!formTuNgay || !formDenNgay) {
-      alert('Vui lòng chọn ngày bắt đầu và kết thúc.');
-      return;
-    }
-
-    if (formSoNgay <= 0) {
-      alert('Số ngày phải lớn hơn 0.');
+    if (formSelectedDates.length === 0) {
+      alert('Vui lòng chọn ít nhất 1 ngày nghỉ.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await leaveService.create({
+      const danh_sach_ngay = formSelectedDates
+        .sort((a, b) => a.getTime() - b.getTime())
+        .map((d) => format(d, 'yyyy-MM-dd'));
+
+      const result = await leaveService.createBulk({
         loai_nghi: formLoaiNghi,
-        tu_ngay: formTuNgay,
-        den_ngay: formDenNgay,
-        so_ngay: formSoNgay,
+        danh_sach_ngay,
         ly_do: formLyDo || undefined,
         nguoi_phe_duyet_id: formNguoiPheDuyet || undefined,
       });
 
-      alert('✅ Đăng ký nghỉ phép thành công!');
+      let message = '';
+      if (result.tong_don_tao > 0) {
+        message = `Đã đăng ký ${result.tong_don_tao} ngày nghỉ thành công!`;
+      }
+      if (result.ngay_da_ton_tai.length > 0) {
+        if (result.tong_don_tao === 0) {
+          message = `Tất cả ${result.ngay_da_ton_tai.length} ngày đã được đăng ký trước đó, không tạo đơn mới.`;
+        } else {
+          message += `\n\nCác ngày đã tồn tại (bỏ qua): ${result.ngay_da_ton_tai.join(', ')}`;
+        }
+      }
+      if (!message) {
+        message = 'Đăng ký nghỉ phép thành công!';
+      }
+
+      alert(message);
       handleCloseModal();
       loadData();
     } catch (err: any) {
-      // ⚠️ FIX v3.1: Xử lý lỗi trùng ngày LEAVE_005
-      //
-      // LƯU Ý QUAN TRỌNG: Có 2 nơi error code có thể nằm:
-      // 1. err.code → Từ Axios interceptor (đã transform)
-      // 2. err.originalError.response.data.detail.error.code → Raw từ FastAPI
-      //    (FastAPI HTTPException wrap trong "detail" key)
-      //
-      // Interceptor hiện KHÔNG handle HTTP 400, nên rơi vào block default:
-      //   error.response.data?.error?.code → undefined (vì data = { detail: { error: {...} } })
-      //   → code = 'UNKNOWN_ERROR', message generic
-      //
-      // Giải pháp: Check tất cả các path có thể chứa error code
-      
-      const interceptorCode = err?.code || '';
-      const interceptorMsg = err?.message || '';
-      
-      // Path 1: Interceptor đã parse (cho 400 block default)
-      // Path 2: Raw response từ FastAPI (backup)
       const rawResponse = err?.originalError?.response?.data || err?.response?.data;
       const rawError = rawResponse?.detail?.error || rawResponse?.error;
-      const rawCode = rawError?.code || '';
-      const rawMsg = rawError?.message || '';
-      
-      const finalCode = interceptorCode || rawCode;
-      const finalMsg = rawMsg || interceptorMsg; // Ưu tiên raw message (chi tiết hơn)
-      
-      if (finalCode === 'LEAVE_005') {
-        // ✅ Trùng ngày → Hiện thông báo rõ ràng, thân thiện
-        alert(`⚠️ Trùng ngày nghỉ!\n\n${finalMsg}\n\nVui lòng chọn ngày khác hoặc xóa đơn cũ trước.`);
-      } else if (finalCode === 'VAL_001' || finalCode === 'VALID_001') {
-        alert(`❌ Dữ liệu không hợp lệ: ${finalMsg}`);
-      } else if (finalMsg) {
-        alert(`❌ Lỗi: ${finalMsg}`);
+      const errorCode = err?.code || rawError?.code || '';
+      const errorMsg = rawError?.message || err?.message || '';
+
+      if (errorCode === 'LEAVE_005') {
+        alert(`Trùng ngày nghỉ!\n\n${errorMsg}\n\nVui lòng chọn ngày khác hoặc xóa đơn cũ trước.`);
+      } else if (errorMsg) {
+        alert(`Lỗi: ${errorMsg}`);
       } else {
-        alert('❌ Có lỗi xảy ra khi đăng ký nghỉ');
+        alert('Có lỗi xảy ra khi đăng ký nghỉ');
       }
     } finally {
       setIsSubmitting(false);
@@ -378,13 +384,76 @@ export default function NghiPhepPage() {
   };
 
   // ===========================================================================
+  // BULK DELETE HANDLER
+  // ===========================================================================
+  // Danh sách đơn nghỉ có thể xóa (CHO_PHE_DUYET hoặc TU_CHOI)
+  const deletableItems = filteredLeaveList.filter((item) => canEditNghiPhep(item.trang_thai));
+  const allDeletableSelected = deletableItems.length > 0 && deletableItems.every((item) => selectedIds.has(item.id));
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = () => {
+    if (allDeletableSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(deletableItems.map((item) => item.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+
+    setIsDeleting(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const id of selectedIds) {
+      try {
+        await leaveService.delete(id);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+
+    setIsDeleting(false);
+    setBulkDeleteConfirm(false);
+    setSelectedIds(new Set());
+
+    if (failCount === 0) {
+      alert(`Đã xóa ${successCount} đơn nghỉ thành công!`);
+    } else {
+      alert(`Đã xóa ${successCount} đơn, ${failCount} đơn lỗi.`);
+    }
+    loadData();
+  };
+
+  // ===========================================================================
   // CALENDAR HELPERS
   // ===========================================================================
+  // Nghỉ thường calendar
+  const formCalendarDays = eachDayOfInterval({
+    start: startOfMonth(formCalendarMonth),
+    end: endOfMonth(formCalendarMonth),
+  });
+  const formFirstDayOfMonth = getDay(startOfMonth(formCalendarMonth));
+  const formPaddingDays = Array(formFirstDayOfMonth).fill(null);
+
+  // Nghỉ tuần calendar
   const calendarDays = eachDayOfInterval({
     start: startOfMonth(bulkCalendarMonth),
     end: endOfMonth(bulkCalendarMonth),
   });
-
   const firstDayOfMonth = getDay(startOfMonth(bulkCalendarMonth));
   const paddingDays = Array(firstDayOfMonth).fill(null);
 
@@ -562,14 +631,38 @@ export default function NghiPhepPage() {
                   </span>
                 )}
               </h3>
-              <span className="text-sm text-gray-500">
-                Hiển thị: {filteredLeaveList.length} / {leaveList.length} bản
-              </span>
+              <div className="flex items-center gap-3">
+                {selectedIds.size > 0 && (
+                  <button
+                    onClick={() => setBulkDeleteConfirm(true)}
+                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                  >
+                    <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    Xóa {selectedIds.size} đơn
+                  </button>
+                )}
+                <span className="text-sm text-gray-500">
+                  Hiển thị: {filteredLeaveList.length} / {leaveList.length} bản
+                </span>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
+                    <th className="w-10 text-center">
+                      {deletableItems.length > 0 && (
+                        <input
+                          type="checkbox"
+                          checked={allDeletableSelected}
+                          onChange={handleToggleSelectAll}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          title="Chọn tất cả đơn có thể xóa"
+                        />
+                      )}
+                    </th>
                     <th>Loại nghỉ</th>
                     <th>Thời gian</th>
                     <th className="text-center">Số ngày</th>
@@ -581,10 +674,22 @@ export default function NghiPhepPage() {
                 </thead>
                 <tbody>
                   {filteredLeaveList.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50">
+                    <tr key={item.id} className={`hover:bg-gray-50 ${selectedIds.has(item.id) ? 'bg-blue-50' : ''}`}>
+                      <td className="text-center">
+                        {canEditNghiPhep(item.trang_thai) ? (
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(item.id)}
+                            onChange={() => handleToggleSelect(item.id)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        ) : (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </td>
                       <td>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getLoaiNghiBadgeClass(item.loai_nghi)}`}>
-                          {getLoaiNghiLabel(item.loai_nghi)}
+                          {getLoaiNghiLabel(item.loai_nghi) || item.loai_nghi_ten || item.loai_nghi}
                         </span>
                       </td>
                       <td>
@@ -703,7 +808,7 @@ export default function NghiPhepPage() {
                         className="input"
                       >
                         {Object.values(LoaiNghi)
-                          .filter((l) => l !== LoaiNghi.NGHI_TUAN) // Nghỉ tuần dùng tab Bulk
+                          .filter((l) => l !== LoaiNghi.NGHI_TUAN)
                           .map((loai) => (
                             <option key={loai} value={loai}>
                               {getLoaiNghiLabel(loai)}
@@ -712,50 +817,124 @@ export default function NghiPhepPage() {
                       </select>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Từ ngày <span className="text-red-500">*</span>
+                    {/* Calendar chọn ngày */}
+                    <div className="flex flex-col lg:flex-row gap-6">
+                      <div className="flex-1">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Chọn ngày nghỉ <span className="text-red-500">*</span>
                         </label>
-                        <input
-                          type="date"
-                          value={formTuNgay}
-                          onChange={(e) => {
-                            setFormTuNgay(e.target.value);
-                            if (!formDenNgay || e.target.value > formDenNgay) {
-                              setFormDenNgay(e.target.value);
-                            }
-                          }}
-                          className="input"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Đến ngày <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="date"
-                          value={formDenNgay}
-                          min={formTuNgay}
-                          onChange={(e) => setFormDenNgay(e.target.value)}
-                          className="input"
-                        />
-                      </div>
-                    </div>
+                        {/* Calendar Navigation */}
+                        <div className="flex items-center justify-between mb-4">
+                          <button
+                            onClick={() => setFormCalendarMonth(subMonths(formCalendarMonth, 1))}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                          </button>
+                          <span className="font-semibold text-gray-900">
+                            {format(formCalendarMonth, 'MMMM yyyy', { locale: vi })}
+                          </span>
+                          <button
+                            onClick={() => setFormCalendarMonth(addMonths(formCalendarMonth, 1))}
+                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Số ngày <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="0.5"
-                        step="0.5"
-                        value={formSoNgay}
-                        onChange={(e) => setFormSoNgay(parseFloat(e.target.value) || 1)}
-                        className="input w-32"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">💡 Nhập 0.5 nếu nghỉ nửa ngày (buổi sáng/chiều)</p>
+                        {/* Day Headers */}
+                        <div className="grid grid-cols-7 gap-1 mb-2">
+                          {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map((day, idx) => (
+                            <div
+                              key={day}
+                              className={`text-center text-xs font-medium py-2 ${
+                                idx === 0 || idx === 6 ? 'text-red-500' : 'text-gray-500'
+                              }`}
+                            >
+                              {day}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="grid grid-cols-7 gap-1">
+                          {formPaddingDays.map((_, idx) => (
+                            <div key={`fpad-${idx}`} className="h-10" />
+                          ))}
+
+                          {formCalendarDays.map((day) => {
+                            const isSelected = formSelectedDates.some((d) => isSameDay(d, day));
+                            const isToday = isSameDay(day, new Date());
+                            const isWeekendDay = isWeekend(day);
+
+                            return (
+                              <button
+                                key={day.toISOString()}
+                                onClick={() => handleToggleFormDate(day)}
+                                className={`h-10 rounded-lg text-sm font-medium transition-all ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white shadow-md'
+                                    : isToday
+                                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                                    : isWeekendDay
+                                    ? 'text-red-500 hover:bg-red-50'
+                                    : 'text-gray-700 hover:bg-gray-100'
+                                }`}
+                              >
+                                {format(day, 'd')}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Selected Dates Panel */}
+                      <div className="w-full lg:w-56">
+                        <div className="bg-gray-50 rounded-lg p-4">
+                          <h4 className="font-medium text-gray-900 mb-3">
+                            Đã chọn ({formSelectedDates.length} ngày)
+                          </h4>
+                          <div className="max-h-48 overflow-y-auto space-y-1">
+                            {formSelectedDates.length === 0 ? (
+                              <p className="text-sm text-gray-400 italic">Chưa chọn ngày nào</p>
+                            ) : (
+                              formSelectedDates
+                                .sort((a, b) => a.getTime() - b.getTime())
+                                .map((date) => (
+                                  <div
+                                    key={date.toISOString()}
+                                    className="flex items-center justify-between bg-white rounded-lg px-3 py-2 shadow-sm"
+                                  >
+                                    <span className="text-sm font-medium">
+                                      {format(date, 'dd/MM/yyyy')}
+                                    </span>
+                                    <button
+                                      onClick={() => handleToggleFormDate(date)}
+                                      className="text-red-500 hover:text-red-700 p-1"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ))
+                            )}
+                          </div>
+
+                          {formSelectedDates.length > 0 && (
+                            <button
+                              onClick={() => setFormSelectedDates([])}
+                              className="mt-3 text-sm text-red-600 hover:text-red-800 font-medium"
+                            >
+                              Xóa tất cả
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
                     <div>
@@ -772,21 +951,19 @@ export default function NghiPhepPage() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Người phê duyệt</label>
                       {autoApprove ? (
-                        // ✅ CCT tự phê duyệt - Hiển thị thông báo
                         <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                           <p className="text-sm text-green-700">
-                            ✅ Bạn là Chi cục trưởng - Đơn sẽ được <strong>tự động phê duyệt</strong>.
+                            Bạn là Chi cục trưởng - Đơn sẽ được <strong>tự động phê duyệt</strong>.
                           </p>
                         </div>
                       ) : nguoiPheDuyetList.length === 1 ? (
-                        // ✅ FIX v3.0: Chỉ có 1 người (Đội trưởng) → Hiện tên luôn
                         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                           <div className="flex items-center gap-2">
                             <svg className="w-5 h-5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                             </svg>
                             <p className="text-sm text-blue-700">
-                              👤 Người phê duyệt: <strong>{nguoiPheDuyetList[0].ho_ten}</strong>
+                              Người phê duyệt: <strong>{nguoiPheDuyetList[0].ho_ten}</strong>
                               {nguoiPheDuyetList[0].chuc_vu && (
                                 <span className="text-blue-500"> ({nguoiPheDuyetList[0].chuc_vu})</span>
                               )}
@@ -794,7 +971,6 @@ export default function NghiPhepPage() {
                           </div>
                         </div>
                       ) : nguoiPheDuyetList.length > 1 ? (
-                        // Nhiều người → dropdown chọn
                         <select
                           value={formNguoiPheDuyet}
                           onChange={(e) => setFormNguoiPheDuyet(e.target.value)}
@@ -808,10 +984,9 @@ export default function NghiPhepPage() {
                           ))}
                         </select>
                       ) : (
-                        // Không có ai → fallback
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                           <p className="text-sm text-yellow-700">
-                            ⚠️ Hệ thống sẽ tự động gán người phê duyệt phù hợp.
+                            Hệ thống sẽ tự động gán người phê duyệt phù hợp.
                           </p>
                         </div>
                       )}
@@ -1027,7 +1202,7 @@ export default function NghiPhepPage() {
                       Đang xử lý...
                     </>
                   ) : activeTab === 'normal' ? (
-                    'Đăng ký nghỉ'
+                    `Đăng ký ${formSelectedDates.length > 0 ? formSelectedDates.length + ' ngày' : ''} nghỉ`
                   ) : (
                     `Đăng ký ${bulkSelectedDates.length} ngày nghỉ tuần`
                   )}
@@ -1038,13 +1213,13 @@ export default function NghiPhepPage() {
         </div>
       )}
 
-      {/* Confirm Delete Dialog */}
+      {/* Confirm Delete Dialog (single) */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="fixed inset-0 bg-black/50" onClick={() => setDeleteConfirm(null)} />
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">⚠️ Xác nhận xóa</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Xác nhận xóa</h3>
               <p className="text-gray-600 mb-4">
                 Bạn có chắc muốn xóa đơn nghỉ <strong className="text-gray-900">{deleteConfirm.info}</strong>?
               </p>
@@ -1054,6 +1229,41 @@ export default function NghiPhepPage() {
                 </button>
                 <button onClick={handleDelete} className="btn-danger" disabled={isDeleting}>
                   {isDeleting ? 'Đang xóa...' : 'Xóa'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Bulk Delete Dialog */}
+      {bulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50" onClick={() => !isDeleting && setBulkDeleteConfirm(false)} />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Xác nhận xóa hàng loạt</h3>
+              <p className="text-gray-600 mb-3">
+                Bạn có chắc muốn xóa <strong className="text-red-600">{selectedIds.size} đơn nghỉ</strong> đã chọn?
+              </p>
+              <div className="bg-gray-50 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
+                <ul className="space-y-1 text-sm text-gray-700">
+                  {filteredLeaveList
+                    .filter((item) => selectedIds.has(item.id))
+                    .map((item) => (
+                      <li key={item.id} className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 bg-red-400 rounded-full flex-shrink-0" />
+                        {getLoaiNghiLabel(item.loai_nghi)} - {format(parseISO(item.tu_ngay), 'dd/MM/yyyy')}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setBulkDeleteConfirm(false)} className="btn-outline" disabled={isDeleting}>
+                  Hủy
+                </button>
+                <button onClick={handleBulkDelete} className="btn-danger" disabled={isDeleting}>
+                  {isDeleting ? 'Đang xóa...' : `Xóa ${selectedIds.size} đơn`}
                 </button>
               </div>
             </div>

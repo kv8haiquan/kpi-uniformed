@@ -15,7 +15,7 @@ import ChuyenDeManager from '@/components/lms/ChuyenDeManager';
 import KhoaHocEditor from '@/components/lms/KhoaHocEditor';
 import CauHoiManager from '@/components/lms/CauHoiManager';
 import GiaoBaiForm from '@/components/lms/GiaoBaiForm';
-import BaoCaoPanel from '@/components/lms/BaoCaoPanel';
+import KetQuaBaoCaoPanel from '@/components/lms/KetQuaBaoCaoPanel';
 
 const TT_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   NHAP: { label: 'Nháp', bg: 'bg-gray-100', text: 'text-gray-600' },
@@ -25,7 +25,7 @@ const TT_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   DA_DONG: { label: 'Đã đóng', bg: 'bg-red-100', text: 'text-red-700' },
 };
 
-type Tab = 'khoa-hoc' | 'tao-moi' | 'giao-bai' | 'chuyen-de' | 'cau-hoi' | 'bao-cao';
+type Tab = 'khoa-hoc' | 'chuyen-de' | 'cau-hoi' | 'ket-qua';
 
 export default function QuanLyPage() {
   const [tab, setTab] = useState<Tab>('khoa-hoc');
@@ -40,6 +40,9 @@ export default function QuanLyPage() {
 
   // ID khóa học đang sửa (null = chế độ tạo mới)
   const [editKhoaHocId, setEditKhoaHocId] = useState<string | null>(null);
+  // Modal states cho "Tạo khóa học" và "Giao bài"
+  const [showEditor, setShowEditor] = useState(false);
+  const [showGiaoBai, setShowGiaoBai] = useState(false);
 
   // Modal từ chối duyệt — yêu cầu ghi_chu bắt buộc
   const [rejectTarget, setRejectTarget] = useState<{ id: string; ten: string } | null>(null);
@@ -103,22 +106,16 @@ export default function QuanLyPage() {
         </div>
         <h1 className="text-2xl font-bold text-gray-900 mb-6">Quản lý đào tạo</h1>
 
-        {/* Tabs — label của tao-moi thay đổi tuỳ theo chế độ tạo/sửa */}
+        {/* Tabs — 4 tabs: Khóa học, Chuyên đề, Ngân hàng đề, Kết quả & Báo cáo */}
         <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1">
           {([
             ['khoa-hoc',  '📚 Khóa học'],
-            ['tao-moi',   editKhoaHocId ? '✏️ Sửa khóa học' : '➕ Tạo mới'],
-            ['giao-bai',  '📋 Giao bài'],
             ['chuyen-de', '📂 Chuyên đề'],
-            ['cau-hoi',   '📚 Ngân hàng đề'],
-            ['bao-cao',   '📊 Báo cáo'],
+            ['cau-hoi',   '❓ Ngân hàng đề'],
+            ['ket-qua',   '📊 Kết quả & Báo cáo'],
           ] as [Tab, string][]).map(([k, label]) => (
             <button key={k}
-              onClick={() => {
-                setTab(k as Tab);
-                // Khi click thẳng vào "Tạo mới" → reset về chế độ tạo mới
-                if (k === 'tao-moi') setEditKhoaHocId(null);
-              }}
+              onClick={() => setTab(k as Tab)}
               className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                 tab === k ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
               }`}>{label}</button>
@@ -128,15 +125,32 @@ export default function QuanLyPage() {
         {/* Tab: Khoa hoc */}
         {tab === 'khoa-hoc' && (
           <>
-            <div className="flex gap-3 mb-4">
-              <input type="text" placeholder="Tìm kiếm..." value={search}
-                onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm" />
-              <select value={filterTT} onChange={(e) => { setFilterTT(e.target.value); setPage(1); }}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-                <option value="">Tất cả</option>
-                {Object.entries(TT_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
+            {/* Toolbar với Tạo khóa học + Giao bài */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex gap-3 flex-1">
+                <input type="text" placeholder="Tìm kiếm..." value={search}
+                  onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm" />
+                <select value={filterTT} onChange={(e) => { setFilterTT(e.target.value); setPage(1); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">Tất cả</option>
+                  {Object.entries(TT_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-2 ml-3">
+                <button onClick={() => { setEditKhoaHocId(null); setShowEditor(true); }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 whitespace-nowrap">
+                  ➕ Tạo khóa học
+                </button>
+                <button onClick={() => setShowGiaoBai(true)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 whitespace-nowrap">
+                  📋 Giao bài
+                </button>
+                <Link href="/dao-tao/ky-thi/quan-ly"
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 whitespace-nowrap">
+                  📝 Kỳ thi ĐGNL
+                </Link>
+              </div>
             </div>
 
             {loading ? (
@@ -172,9 +186,9 @@ export default function QuanLyPage() {
                           <td className="px-4 py-3 text-center text-gray-600">{kh.so_hoc_vien}</td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex justify-end gap-1">
-                              {/* Nút Sửa — mở KhoaHocEditor với khóa học này */}
+                              {/* Nút Sửa — mở KhoaHocEditor modal */}
                               <button
-                                onClick={() => { setEditKhoaHocId(kh.id); setTab('tao-moi'); }}
+                                onClick={() => { setEditKhoaHocId(kh.id); setShowEditor(true); }}
                                 className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
                               >Sửa</button>
                               {kh.trang_thai === 'NHAP' && (
@@ -226,36 +240,59 @@ export default function QuanLyPage() {
           </>
         )}
 
-        {/* Tab: Tạo / Sửa khóa học — dùng KhoaHocEditor multi-step */}
-        {tab === 'tao-moi' && (
-          <KhoaHocEditor
-            key={editKhoaHocId ?? 'new'}
-            khoaHocId={editKhoaHocId}
-            chuyenDes={chuyenDes}
-            onSuccess={() => {
-              setEditKhoaHocId(null);
-              setTab('khoa-hoc');
-              loadList();
-            }}
-            onBack={() => {
-              setEditKhoaHocId(null);
-              setTab('khoa-hoc');
-            }}
-          />
-        )}
-
         {/* Tab: Chuyen de — dùng component ChuyenDeManager */}
         {tab === 'chuyen-de' && <ChuyenDeManager />}
 
         {/* Tab: Câu hỏi — Ngân hàng câu hỏi */}
         {tab === 'cau-hoi' && <CauHoiManager />}
 
-        {/* Tab: Giao bai — dùng GiaoBaiForm thân thiện (combobox + CBCC search) */}
-        {tab === 'giao-bai' && <GiaoBaiForm />}
-
-        {/* Tab: Báo cáo — BaoCaoPanel với 3 sub-tabs */}
-        {tab === 'bao-cao' && <BaoCaoPanel />}
+        {/* Tab: Kết quả & Báo cáo — KetQuaBaoCaoPanel với 3 sub-tabs */}
+        {tab === 'ket-qua' && <KetQuaBaoCaoPanel />}
       </div>
+
+      {/* Modal: KhoaHocEditor (Tạo / Sửa khóa học) */}
+      {showEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setShowEditor(false); setEditKhoaHocId(null); }} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-4 my-8 max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                {editKhoaHocId ? '✏️ Sửa khóa học' : '➕ Tạo khóa học mới'}
+              </h3>
+              <button onClick={() => { setShowEditor(false); setEditKhoaHocId(null); }}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <KhoaHocEditor
+              key={editKhoaHocId ?? 'new'}
+              khoaHocId={editKhoaHocId}
+              chuyenDes={chuyenDes}
+              onSuccess={() => {
+                setShowEditor(false);
+                setEditKhoaHocId(null);
+                loadList();
+              }}
+              onBack={() => {
+                setShowEditor(false);
+                setEditKhoaHocId(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Modal: GiaoBaiForm (Giao bài cho CBCC) */}
+      {showGiaoBai && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowGiaoBai(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">📋 Giao bài cho CBCC</h3>
+              <button onClick={() => setShowGiaoBai(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+            </div>
+            <GiaoBaiForm />
+          </div>
+        </div>
+      )}
 
       {/* Modal từ chối duyệt — ghi_chu bắt buộc */}
       {rejectTarget && (

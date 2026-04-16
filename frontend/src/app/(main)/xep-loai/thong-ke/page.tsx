@@ -240,6 +240,7 @@ export default function ThongKeXepLoaiPage() {
   const [thongKe, setThongKe] = useState<IThongKeXepLoai | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isExportingZip, setIsExportingZip] = useState(false);
 
   // Month/Year selector
   const currentDate = new Date();
@@ -274,6 +275,21 @@ export default function ThongKeXepLoaiPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Handler: Xuất báo cáo tổng hợp (ZIP)
+  const handleExportBaoCaoTongHop = async () => {
+    setIsExportingZip(true);
+    try {
+      await exportService.exportBaoCaoTongHop({
+        thang: selectedThang,
+        nam: selectedNam,
+      });
+    } catch (err: any) {
+      setError(err.message || 'Lỗi khi xuất báo cáo tổng hợp');
+    } finally {
+      setIsExportingZip(false);
+    }
+  };
 
   // Không có quyền
   if (!hasAccess) {
@@ -364,17 +380,25 @@ export default function ThongKeXepLoaiPage() {
                   });
                 }}
               />
-              <ExportButton
-                label="Xuất Mẫu 05 (Đổi mới)"
-                size="sm"
-                onExport={async (format: ExportFormat) => {
-                  await exportService.exportMau05DoiMoi({
-                    thang: selectedThang,
-                    nam: selectedNam,
-                    format,
-                  });
-                }}
-              />
+              <button
+                onClick={handleExportBaoCaoTongHop}
+                disabled={isExportingZip}
+                className="px-3 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+              >
+                {isExportingZip ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    <span>Đang xuất...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Xuất báo cáo tổng hợp</span>
+                  </>
+                )}
+              </button>
             </>
           )}
           </div>

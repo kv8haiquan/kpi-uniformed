@@ -2,7 +2,7 @@
  * src/services/portal.ts
  * ======================
  * Service cho module Portal (Tin tức CMS + Thư viện tài liệu).
- * Dùng axios instance riêng trỏ đến Portal backend (port 8004).
+ * Dùng axios instance qua Next.js rewrite → Portal backend (port 8004).
  * Token lấy chung từ localStorage (SSO với KPI).
  */
 
@@ -29,7 +29,7 @@ import type {
 // =============================================================================
 
 const PORTAL_API_URL =
-  process.env.NEXT_PUBLIC_PORTAL_API_URL || 'http://localhost:8004/api/v1';
+  process.env.NEXT_PUBLIC_PORTAL_API_URL || '/api/portal/v1';
 const TOKEN_KEY = 'kpi_access_token';
 
 const portalAxios: AxiosInstance = axios.create({

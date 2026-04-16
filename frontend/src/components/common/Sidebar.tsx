@@ -38,9 +38,11 @@ import {
   X,
   LayoutDashboard,
   LogOut,
+  User,
   type LucideIcon,
 } from 'lucide-react';
 import { useCurrentUser, useIsAdmin, useIsQLDV, useAuthStore } from '@/stores/useAuthStore';
+import { thongBaoApi } from '@/services/common';
 
 // =============================================================================
 // TYPES
@@ -63,9 +65,27 @@ interface MenuSection {
 // MENU CONFIG
 // =============================================================================
 
+function useThongBaoCount(): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    thongBaoApi.demChuaDoc()
+      .then((res) => setCount(res.data?.data?.count || 0))
+      .catch(() => {});
+    // Refresh mỗi 60s
+    const interval = setInterval(() => {
+      thongBaoApi.demChuaDoc()
+        .then((res) => setCount(res.data?.data?.count || 0))
+        .catch(() => {});
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+  return count;
+}
+
 function useMenuSections(): MenuSection[] {
   const isAdmin = useIsAdmin();
   const isQldv = useIsQLDV();
+  const thongBaoCount = useThongBaoCount();
 
   // KPI menu items — QLDV: ẩn "Kê khai công việc" (không có quyền tạo)
   const kpiItems: MenuItem[] = [
@@ -109,7 +129,7 @@ function useMenuSections(): MenuSection[] {
     {
       title: 'Hệ thống',
       items: [
-        { label: 'Thông báo', href: '/thong-bao', icon: Bell },
+        { label: 'Thông báo', href: '/thong-bao', icon: Bell, badge: thongBaoCount },
         { label: 'Tìm kiếm', href: '/tim-kiem', icon: Search },
       ],
     },
@@ -175,7 +195,7 @@ function SidebarItem({
           ? 'bg-blue-50 text-blue-700 font-medium'
           : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
         }
-        ${collapsed ? 'justify-center' : ''}
+        ${collapsed ? 'justify-center relative' : ''}
       `}
       title={collapsed ? item.label : undefined}
     >
@@ -282,6 +302,14 @@ export default function Sidebar() {
             </div>
           </div>
         )}
+        <Link
+          href="/ho-so"
+          className={`flex items-center w-full gap-2 px-3 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors mb-1 ${collapsed ? 'justify-center' : ''} ${pathname === '/ho-so' ? 'bg-blue-50 text-blue-700 font-medium' : ''}`}
+          title={collapsed ? 'Hồ sơ' : undefined}
+        >
+          <User className="w-4 h-4 flex-shrink-0" />
+          {!collapsed && <span>Hồ sơ</span>}
+        </Link>
         <button
           onClick={logout}
           className={`flex items-center w-full gap-2 px-3 py-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors mb-1 ${collapsed ? 'justify-center' : ''}`}

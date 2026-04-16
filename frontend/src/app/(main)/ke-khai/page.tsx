@@ -624,6 +624,7 @@ export default function KeKhaiPage() {
                 <thead>
                   <tr>
                     <th className="w-12">STT</th>
+                    <th className="w-24">Ngày</th>
                     <th>Nội dung công việc</th>
                     <th className="min-w-[200px]">Mô tả</th>
                     <th className="w-24">Cấp độ</th>
@@ -631,6 +632,7 @@ export default function KeKhaiPage() {
                     <th className="w-32 text-center">SP quy đổi</th>
                     {/* v2.7.4: Cột lỗi CL/TĐ */}
                     <th className="w-28 text-center">Lỗi CL/TĐ</th>
+                    <th className="w-32">LĐ Phê duyệt</th>
                     <th className="w-28 text-center">Trạng thái</th>
                     <th className="w-32 text-center">Thao tác</th>
                   </tr>
@@ -641,6 +643,7 @@ export default function KeKhaiPage() {
                     const itemFull = item as IKeKhaiBrief & {
                       danh_muc_sp?: { ten_cong_viec?: string; ma_danh_muc?: string; mo_ta?: string };
                       cap_do?: { ma_cap_do?: string };
+                      nguoi_phe_duyet?: { id?: string; ho_ten?: string; chuc_vu?: string };
                       mo_ta_cong_viec?: string;
                       // Tự đánh giá
                       tu_danh_gia_chat_luong?: number;
@@ -675,6 +678,11 @@ export default function KeKhaiPage() {
                       <>
                         <tr key={item.id} className={isExpanded ? 'bg-gray-50' : ''}>
                           <td className="text-center text-gray-500">{index + 1}</td>
+                          <td className="text-center text-sm text-gray-600 whitespace-nowrap">
+                            {item.ngay_thuc_hien
+                              ? new Date(item.ngay_thuc_hien).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
+                              : '-'}
+                          </td>
                           <td>
                             <div>
                               <p className="font-medium text-gray-900">
@@ -737,6 +745,13 @@ export default function KeKhaiPage() {
                               <span className="text-gray-300 text-xs">—</span>
                             )}
                           </td>
+                          <td>
+                            {itemFull.nguoi_phe_duyet?.ho_ten ? (
+                              <span className="text-sm text-gray-700">{itemFull.nguoi_phe_duyet.ho_ten}</span>
+                            ) : (
+                              <span className="text-gray-300 text-xs">—</span>
+                            )}
+                          </td>
                           <td className="text-center">
                             <span className={getStatusBadgeClass(item.trang_thai)}>
                               {getStatusLabel(item.trang_thai)}
@@ -776,7 +791,7 @@ export default function KeKhaiPage() {
                         {/* v2.7.4: Expandable row - chi tiết mô tả lỗi */}
                         {isExpanded && hasAnyError && (
                           <tr key={`${item.id}-detail`} className="bg-gray-50">
-                            <td colSpan={9} className="px-6 py-3">
+                            <td colSpan={11} className="px-6 py-3">
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                 {/* Tự đánh giá */}
                                 {(tuDgCl > 0 || tuDgTd > 0) && (

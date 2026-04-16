@@ -1,7 +1,7 @@
 /**
  * src/app/(main)/kien-thuc/page.tsx
  * ====================================
- * Kho tri thuc SOP/FAQ — danh sach, tabs, tim kiem, loc theo tags/chuyen de.
+ * Kho tri thức SOP/FAQ — danh sách, tabs, tìm kiếm, lọc theo tags/chuyên đề.
  */
 
 'use client';
@@ -18,9 +18,9 @@ import { TRANG_THAI_KB_CONFIG } from '@/types/common';
 // =============================================================================
 
 const LOAI_TABS: { value: LoaiKB | ''; label: string; icon: string }[] = [
-  { value: '', label: 'Tat ca', icon: '📋' },
-  { value: 'SOP', label: 'SOP (Quy trinh)', icon: '📑' },
-  { value: 'FAQ', label: 'FAQ (Hoi dap)', icon: '❓' },
+  { value: '', label: 'Tất cả', icon: '📋' },
+  { value: 'SOP', label: 'SOP (Quy trình)', icon: '📑' },
+  { value: 'FAQ', label: 'FAQ (Hỏi đáp)', icon: '❓' },
 ];
 
 // =============================================================================
@@ -71,7 +71,7 @@ export default function KienThucPage() {
       });
       setAllTags(Array.from(tags).sort());
     } catch (err: any) {
-      setError(err?.response?.data?.error?.message || 'Khong the tai du lieu');
+      setError(err?.response?.data?.error?.message || 'Không thể tải dữ liệu');
     } finally {
       setLoading(false);
     }
@@ -96,9 +96,9 @@ export default function KienThucPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Kho tri thuc</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Kho tri thức</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Quy trinh nghiep vu (SOP) va cau hoi thuong gap (FAQ)
+            Quy trình nghiệp vụ (SOP) và câu hỏi thường gặp (FAQ)
           </p>
         </div>
 
@@ -124,12 +124,12 @@ export default function KienThucPage() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-xs text-gray-500 mb-1">Tim kiem</label>
+              <label className="block text-xs text-gray-500 mb-1">Tìm kiếm</label>
               <input
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Tim theo tieu de, noi dung..."
+                placeholder="Tìm theo tiêu đề, nội dung..."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
@@ -141,7 +141,7 @@ export default function KienThucPage() {
                   onChange={(e) => { setSelectedTag(e.target.value); setPage(1); }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="">Tat ca tags</option>
+                  <option value="">Tất cả tags</option>
                   {allTags.map((tag) => (
                     <option key={tag} value={tag}>{tag}</option>
                   ))}
@@ -155,7 +155,7 @@ export default function KienThucPage() {
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-center">
             <p className="text-red-700">{error}</p>
-            <p className="text-sm text-red-500 mt-1">Hay dam bao Common backend dang chay tren port 8005</p>
+            <p className="text-sm text-red-500 mt-1">Hãy đảm bảo Common backend đang chạy trên port 8005</p>
           </div>
         )}
 
@@ -172,7 +172,7 @@ export default function KienThucPage() {
             {items.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm text-center py-16 text-gray-500">
                 <span className="text-4xl block mb-2">📭</span>
-                Chua co bai viet nao
+                Chưa có bài viết nào
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -190,7 +190,7 @@ export default function KienThucPage() {
                   disabled={page <= 1}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Truoc
+                  Trước
                 </button>
                 <span className="text-sm text-gray-600">
                   Trang {page} / {totalPages}
@@ -200,7 +200,7 @@ export default function KienThucPage() {
                   disabled={page >= totalPages}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Tiep
+                  Tiếp
                 </button>
               </div>
             )}
@@ -257,7 +257,7 @@ function KBCard({ item }: { item: IKBListItem }) {
 
       {/* Footer */}
       <div className="mt-auto pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
-        <span>{item.chu_so_huu?.ho_ten || 'Khong ro'}</span>
+        <span>{item.chu_so_huu?.ho_ten || 'Không rõ'}</span>
         <span>{new Date(item.updated_at).toLocaleDateString('vi-VN')}</span>
       </div>
     </Link>

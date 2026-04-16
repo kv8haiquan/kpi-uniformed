@@ -47,6 +47,21 @@ export default function ChungChiPage() {
     load();
   }, [page]);
 
+  const handleTaiPDF = async (cc: IChungChi) => {
+    try {
+      const res = await chungChiApi.tai(cc.id);
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chung-chi-${cc.ma_chung_chi}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Không thể tải chứng chỉ');
+    }
+  };
+
   const handleXacMinh = async () => {
     if (!maXacMinh.trim()) return;
     setXacMinhLoading(true);
@@ -118,7 +133,8 @@ export default function ChungChiPage() {
                         className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 text-center">
                         Xác minh
                       </button>
-                      <button className="flex-1 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs hover:bg-blue-100 text-center">
+                      <button onClick={() => handleTaiPDF(cc)}
+                        className="flex-1 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs hover:bg-blue-100 text-center">
                         Tải PDF
                       </button>
                     </div>

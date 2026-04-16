@@ -172,17 +172,38 @@ class ExportService {
    */
   async exportMau05DoiMoi(options: IExportOptions): Promise<void> {
     const { thang, nam, format = 'docx' } = options;
-    
+
     try {
       const response = await apiClient.get(
         `${this.BASE_URL}/mau05-doi-moi/thang/${thang}/nam/${nam}`,
         { params: { format }, responseType: 'blob' }
       );
-      
+
       const fallback = `Mau05_DoiMoiSangTao_${thang.toString().padStart(2, '0')}_${nam}.${format}`;
       await downloadBlob(response, fallback);
     } catch (error: any) {
       console.error('[Export] Error exporting mau 05:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Xuất báo cáo tổng hợp (ZIP chứa tất cả báo cáo).
+   * Quyền: Chỉ CCT và PCCT.
+   */
+  async exportBaoCaoTongHop(options: Omit<IExportOptions, 'format'>): Promise<void> {
+    const { thang, nam } = options;
+
+    try {
+      const response = await apiClient.get(
+        `${this.BASE_URL}/bao-cao-tong-hop/thang/${thang}/nam/${nam}`,
+        { responseType: 'blob' }
+      );
+
+      const fallback = `BaoCaoTongHop_${thang.toString().padStart(2, '0')}_${nam}.zip`;
+      await downloadBlob(response, fallback);
+    } catch (error: any) {
+      console.error('[Export] Error exporting bao cao tong hop:', error);
       throw error;
     }
   }

@@ -22,10 +22,13 @@ const TIEN_DO_ICON: Record<string, string> = {
 };
 
 const DK_TT_CONFIG: Record<string, { label: string; cls: string }> = {
-  HOAN_THANH:   { label: 'Hoàn thành',   cls: 'bg-green-100 text-green-700' },
-  QUA_HAN:      { label: 'Quá hạn',      cls: 'bg-red-100 text-red-700' },
-  DANG_HOC:     { label: 'Đang học',     cls: 'bg-blue-100 text-blue-700' },
-  CHUA_BAT_DAU: { label: 'Chưa bắt đầu', cls: 'bg-gray-100 text-gray-600' },
+  HOAN_THANH:    { label: 'Hoàn thành',    cls: 'bg-green-100 text-green-700' },
+  QUA_HAN:       { label: 'Quá hạn',       cls: 'bg-red-100 text-red-700' },
+  DANG_HOC:      { label: 'Đang học',      cls: 'bg-blue-100 text-blue-700' },
+  CHUA_BAT_DAU:  { label: 'Chưa bắt đầu',  cls: 'bg-gray-100 text-gray-600' },
+  CHO_PHE_DUYET: { label: 'Chờ phê duyệt', cls: 'bg-yellow-100 text-yellow-700' },
+  TU_CHOI:       { label: 'Bị từ chối',    cls: 'bg-red-100 text-red-700' },
+  BI_LOAI:       { label: 'Đã bị loại',    cls: 'bg-gray-100 text-gray-700' },
 };
 
 type DetailTab = 'noi-dung' | 'kiem-tra' | 'thong-tin' | 'khao-sat' | 'hoc-vien';
@@ -112,6 +115,40 @@ export default function KhoaHocDetailPage() {
       alert(msg);
     } finally {
       setDangKyLoading(false);
+    }
+  };
+
+  const handlePheDuyet = async (dangKyId: string, approve: boolean, hoTen: string) => {
+    let ly_do_tu_choi: string | undefined;
+    if (!approve) {
+      ly_do_tu_choi = prompt('Nhập lý do từ chối:') || undefined;
+      if (!ly_do_tu_choi) return;
+    }
+    if (!confirm(`Xác nhận ${approve ? 'phê duyệt' : 'từ chối'} đăng ký của ${hoTen}?`)) return;
+    try {
+      await dangKyApi.pheDuyet(dangKyId, { phe_duyet: approve, ly_do_tu_choi });
+      alert(approve ? 'Đã phê duyệt thành công' : 'Đã từ chối đăng ký');
+      // Reload học viên list
+      await loadHocViens();
+      setHocViensLoaded(false);
+      await loadHocViens();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail?.error?.message || 'Có lỗi xảy ra');
+    }
+  };
+
+  const handleLoaiHocVien = async (dangKyId: string, hoTen: string) => {
+    const ly_do = prompt(`Lý do loại ${hoTen} khỏi khóa học (tùy chọn):`);
+    if (ly_do === null) return;
+    if (!confirm(`Xác nhận loại ${hoTen} khỏi khóa học?`)) return;
+    try {
+      await dangKyApi.loaiHocVien(dangKyId, ly_do || undefined);
+      alert('Đã loại học viên khỏi khóa học');
+      // Reload học viên list
+      setHocViensLoaded(false);
+      await loadHocViens();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail?.error?.message || 'Có lỗi xảy ra');
     }
   };
 
@@ -258,6 +295,43 @@ export default function KhoaHocDetailPage() {
           </div>
         </div>
 
+        {/* Status banners for student — after hero card */}
+        {kh.dang_ky?.trang_thai === 'CHO_PHE_DUYET' && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⏳</span>
+              <div>
+                <p className="font-medium text-yellow-800">Đang chờ phê duyệt</p>
+                <p className="text-sm text-yellow-700 mt-0.5">Đăng ký của bạn đang chờ phê duyệt. Bạn sẽ nhận thông báo khi được duyệt.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {kh.dang_ky?.trang_thai === 'TU_CHOI' && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">❌</span>
+              <div>
+                <p className="font-medium text-red-800">Đăng ký bị từ chối</p>
+                {kh.dang_ky.ly_do_tu_choi && <p className="text-sm text-red-700 mt-0.5">Lý do: {kh.dang_ky.ly_do_tu_choi}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {kh.dang_ky?.trang_thai === 'BI_LOAI' && (
+          <div className="bg-gray-50 border border-gray-300 rounded-xl px-5 py-4 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🚫</span>
+              <div>
+                <p className="font-medium text-gray-800">Bạn đã bị loại khỏi khóa học này</p>
+                {kh.dang_ky.ly_do_tu_choi && <p className="text-sm text-gray-600 mt-0.5">Lý do: {kh.dang_ky.ly_do_tu_choi}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Info Bar */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
@@ -307,6 +381,7 @@ export default function KhoaHocDetailPage() {
                   {baiHocs.map((bh) => {
                     const td = bh.tien_do_ca_nhan;
                     const icon = TIEN_DO_ICON[td?.trang_thai || 'CHUA_XEM'] || '⚪';
+                    const canAccessLesson = kh.dang_ky && !['CHO_PHE_DUYET', 'TU_CHOI', 'BI_LOAI'].includes(kh.dang_ky.trang_thai);
                     const inner = (
                       <>
                         <span className="text-lg shrink-0">{icon}</span>
@@ -321,12 +396,12 @@ export default function KhoaHocDetailPage() {
                         {td?.trang_thai === 'DA_HOAN_THANH' && (
                           <span className="text-xs text-green-600 font-medium shrink-0">✓ Hoàn thành</span>
                         )}
-                        {kh.dang_ky && (
+                        {canAccessLesson && (
                           <span className="text-gray-300 shrink-0 text-xs">›</span>
                         )}
                       </>
                     );
-                    return kh.dang_ky ? (
+                    return canAccessLesson ? (
                       <Link
                         key={bh.id}
                         href={`/dao-tao/khoa-hoc/${id}/bai-hoc/${bh.id}`}
@@ -337,7 +412,7 @@ export default function KhoaHocDetailPage() {
                     ) : (
                       <div
                         key={bh.id}
-                        title="Đăng ký khóa học để xem nội dung"
+                        title={!kh.dang_ky ? "Đăng ký khóa học để xem nội dung" : "Đăng ký của bạn chưa được phê duyệt hoặc bị từ chối"}
                         className="flex items-center gap-3 p-3 rounded-lg opacity-70 cursor-not-allowed"
                       >
                         {inner}
@@ -567,15 +642,18 @@ export default function KhoaHocDetailPage() {
                         <th className="px-4 py-3 text-center font-medium text-gray-500">Trạng thái</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-500">Tiến độ</th>
                         <th className="px-4 py-3 text-center font-medium text-gray-500">Hạn HT</th>
+                        <th className="px-4 py-3 text-center font-medium text-gray-500">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {hocViens.map((hv: any, i: number) => {
                         const dkTT = DK_TT_CONFIG[hv.trang_thai] ?? DK_TT_CONFIG.CHUA_BAT_DAU;
+                        const hoTen = hv.ho_ten ?? hv.cong_chuc_ho_ten ?? '—';
+                        const dangKyId = hv.dang_ky_id;
                         return (
                           <tr key={hv.id ?? i} className="hover:bg-gray-50">
                             <td className="px-4 py-3 font-medium text-gray-900">
-                              {hv.ho_ten ?? hv.cong_chuc_ho_ten ?? '—'}
+                              {hoTen}
                             </td>
                             <td className="px-4 py-3 text-center">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -608,6 +686,39 @@ export default function KhoaHocDetailPage() {
                               {hv.han_hoan_thanh
                                 ? new Date(hv.han_hoan_thanh).toLocaleDateString('vi-VN')
                                 : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center gap-1 justify-center">
+                                {/* Nút phê duyệt/từ chối cho trạng thái CHO_PHE_DUYET */}
+                                {hv.trang_thai === 'CHO_PHE_DUYET' && dangKyId && (
+                                  <>
+                                    <button
+                                      onClick={() => handlePheDuyet(dangKyId, true, hoTen)}
+                                      className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
+                                      title="Duyệt"
+                                    >
+                                      ✓ Duyệt
+                                    </button>
+                                    <button
+                                      onClick={() => handlePheDuyet(dangKyId, false, hoTen)}
+                                      className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700 transition-colors"
+                                      title="Từ chối"
+                                    >
+                                      ✗ Từ chối
+                                    </button>
+                                  </>
+                                )}
+                                {/* Nút loại khỏi khóa cho các trạng thái khác (trừ BI_LOAI) */}
+                                {hv.trang_thai !== 'BI_LOAI' && hv.trang_thai !== 'CHO_PHE_DUYET' && dangKyId && (
+                                  <button
+                                    onClick={() => handleLoaiHocVien(dangKyId, hoTen)}
+                                    className="px-2 py-1 bg-gray-600 text-white rounded text-xs hover:bg-gray-700 transition-colors"
+                                    title="Loại khỏi khóa"
+                                  >
+                                    🚫 Loại
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

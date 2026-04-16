@@ -584,14 +584,24 @@ export default function TuChamDiemPage() {
       {isDisabled && (
         <div className="bg-gray-100 rounded-lg p-4 mt-6">
           <p className="text-gray-600">
-            {trangThai === TrangThaiTieuChiChung.CHO_PHE_DUYET && (
-              // Phân biệt: gửi thẳng ĐT (không có cap2) vs gửi Phó ĐT (có cap2)
-              (ketQua as unknown as Record<string, unknown>)?.nguoi_phe_duyet_tc_cap2_id
-                ? '⏳ Đang chờ Phó Đội trưởng phê duyệt cấp 1. Bạn không thể sửa đổi.'
-                : '⏳ Đang chờ Đội trưởng phê duyệt (duyệt thẳng). Bạn không thể sửa đổi.'
-            )}
-            {trangThai === ('CHO_CAP2' as TrangThaiTieuChiChung) && '⏳ Phó ĐT đã duyệt cấp 1. Đang chờ Đội trưởng phê duyệt cấp 2. Bạn không thể sửa đổi.'}
-            {trangThai === TrangThaiTieuChiChung.DA_PHE_DUYET && '✅ Đã được phê duyệt.'}
+            {trangThai === TrangThaiTieuChiChung.CHO_PHE_DUYET && (() => {
+              const cap1 = (ketQua as unknown as Record<string, unknown>)?.nguoi_phe_duyet_tc_cap1 as { ho_ten?: string } | null;
+              const cap2 = (ketQua as unknown as Record<string, unknown>)?.nguoi_phe_duyet_tc_cap2 as { ho_ten?: string } | null;
+              if (cap2?.ho_ten) {
+                return `⏳ Đang chờ ${cap1?.ho_ten || 'Phó Đội trưởng'} phê duyệt cấp 1. Bạn không thể sửa đổi.`;
+              }
+              return `⏳ Đang chờ ${cap1?.ho_ten || 'Đội trưởng'} phê duyệt. Bạn không thể sửa đổi.`;
+            })()}
+            {trangThai === ('CHO_CAP2' as TrangThaiTieuChiChung) && (() => {
+              const cap2 = (ketQua as unknown as Record<string, unknown>)?.nguoi_phe_duyet_tc_cap2 as { ho_ten?: string } | null;
+              return `⏳ Phó ĐT đã duyệt cấp 1. Đang chờ ${cap2?.ho_ten || 'Đội trưởng'} phê duyệt cấp 2. Bạn không thể sửa đổi.`;
+            })()}
+            {trangThai === TrangThaiTieuChiChung.DA_PHE_DUYET && (() => {
+              const cap2 = (ketQua as unknown as Record<string, unknown>)?.nguoi_phe_duyet_tc_cap2 as { ho_ten?: string } | null;
+              const cap1 = (ketQua as unknown as Record<string, unknown>)?.nguoi_phe_duyet_tc_cap1 as { ho_ten?: string } | null;
+              const nguoiDuyet = cap2?.ho_ten || cap1?.ho_ten;
+              return nguoiDuyet ? `✅ Đã được phê duyệt bởi ${nguoiDuyet}.` : '✅ Đã được phê duyệt.';
+            })()}
             {!isStatusLocked && isDeadlinePassed && `⏰ Đã hết hạn tự đánh giá tháng ${selectedThang}/${selectedNam}.`}
           </p>
         </div>

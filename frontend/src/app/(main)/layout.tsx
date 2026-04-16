@@ -8,7 +8,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
 import Sidebar from '@/components/common/Sidebar';
 
@@ -18,7 +18,12 @@ interface MainLayoutProps {
 
 export default function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isAuthenticated, isLoading } = useAuthStore();
+
+  // Detect exam mode to hide sidebar
+  const isExamMode = /\/dao-tao\/khoa-hoc\/[^/]+\/kiem-tra\//.test(pathname)
+    || /\/dao-tao\/ky-thi\/[^/]+\/thi/.test(pathname);
 
   // Redirect về login nếu chưa đăng nhập
   useEffect(() => {
@@ -66,8 +71,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+    <div className={`flex h-screen overflow-hidden ${isExamMode ? 'exam-mode' : ''}`}>
+      {!isExamMode && <Sidebar />}
       <main className="flex-1 overflow-y-auto">
         {children}
       </main>

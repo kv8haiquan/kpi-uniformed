@@ -20,8 +20,9 @@ import { kpiService, IPendingStats } from '@/services/kpi.service';
 import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
 import { baoCaoXepLoaiService } from '@/services/bao-cao-xep-loai.service';
 import { adminService } from '@/services/admin.service';
-import { 
-  IKetQuaTieuChiChungResponse, 
+import { thongBaoApi } from '@/services/common';
+import {
+  IKetQuaTieuChiChungResponse,
   TrangThaiTieuChiChung,
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
@@ -365,6 +366,11 @@ export default function DashboardPage() {
   const [pendingXepLoaiCount, setPendingXepLoaiCount] = useState(0);
   const [isLoadingPending, setIsLoadingPending] = useState(true);
   
+  // Thong bao
+  const [thongBaoList, setThongBaoList] = useState<any[]>([]);
+  const [thongBaoChuaDoc, setThongBaoChuaDoc] = useState(0);
+  const [isLoadingTB, setIsLoadingTB] = useState(true);
+
   // Admin stats
   const [adminStats, setAdminStats] = useState<IAdminStats | null>(null);
   const [isLoadingAdminStats, setIsLoadingAdminStats] = useState(false);
@@ -424,6 +430,19 @@ export default function DashboardPage() {
     }
   }, [isLanhDao, canApproveXepLoai, isAdmin]);
 
+  // Load Thong bao
+  useEffect(() => {
+    if (isAdmin) { setIsLoadingTB(false); return; }
+    setIsLoadingTB(true);
+    Promise.all([
+      thongBaoApi.danhSach({ page_size: 5 }).catch(() => null),
+      thongBaoApi.demChuaDoc().catch(() => null),
+    ]).then(([listRes, countRes]) => {
+      if (listRes?.data?.data) setThongBaoList(listRes.data.data);
+      if (countRes?.data?.data) setThongBaoChuaDoc(countRes.data.data.count || 0);
+    }).finally(() => setIsLoadingTB(false));
+  }, [isAdmin]);
+
   // Load Admin Stats
   useEffect(() => {
     if (isAdmin) {
@@ -481,6 +500,9 @@ export default function DashboardPage() {
                   <p className="text-sm font-medium text-gray-900">{getUserDisplayName(user)}</p>
                   <p className="text-xs text-gray-500">Quản trị hệ thống</p>
                 </div>
+                <button onClick={() => router.push('/ho-so')} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                  Hồ sơ
+                </button>
                 <button onClick={handleLogout} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
                   Đăng xuất
                 </button>
@@ -576,6 +598,9 @@ export default function DashboardPage() {
                 <p className="text-sm font-medium text-gray-900">{getUserDisplayName(user)}</p>
                 <p className="text-xs text-gray-500">{getRoleDisplayName()}</p>
               </div>
+              <button onClick={() => router.push('/ho-so')} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                Hồ sơ
+              </button>
               <button onClick={handleLogout} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
                 Đăng xuất
               </button>
@@ -616,6 +641,7 @@ export default function DashboardPage() {
             <QuickActionCard icon="✍️" title="Tự chấm điểm" description="Tiêu chí chung (30đ)" href="/danh-gia/tu-cham-diem" color="purple" />
             <QuickActionCard icon="📊" title="Xem đánh giá" description="Kết quả KPI của bạn" href="/danh-gia" color="green" />
             <QuickActionCard icon="🗓️" title="Nghỉ phép" description="Đăng ký và quản lý" href="/nghi-phep" color="cyan" />
+            <QuickActionCard icon="🖨️" title="In Bảng kê" description="Xuất phiếu đánh giá & bảng kê CV" href="/in-bang-ke" color="orange" />
           </div>
         </div>
 
@@ -637,7 +663,9 @@ export default function DashboardPage() {
           <div className="mb-8">
             <SectionHeader icon="📋" title="Quản lý đơn vị" subtitle={canEditManageUnit ? "Báo cáo và thống kê xếp loại công chức" : "Xem báo cáo xếp loại công chức (chỉ xem)"} />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <QuickActionCard icon="📊" title="Báo cáo Xếp loại" description={canEditManageUnit ? "Lập báo cáo xếp loại CC" : "Xem báo cáo xếp loại CC"} href="/xep-loai?tab=bao-cao" color="indigo" size="large" viewOnly={!canEditManageUnit} />
+              <QuickActionCard icon="📊" title="Báo cáo Xếp loại" description={canEditManageUnit ? "Lập báo cáo xếp loại CC" : "Xem báo cáo xếp loại CC"} href="/xep-loai?tab=bao-cao" color="indigo" size="large" viewOnly={!canEditManageUnit} />
+              <QuickActionCard icon="📐" title="Tạm tính KPI" description="Tổng hợp tạm tính điểm KPI tháng" href="/xep-loai?tab=tam-tinh" color="cyan" size="large" viewOnly={!canEditManageUnit} />
+              <QuickActionCard icon="🏆" title="Xếp loại quý" description="Tổng hợp đánh giá và xếp loại quý" href="/xep-loai?tab=quy" color="purple" size="large" viewOnly={!canEditManageUnit} />
             </div>
           </div>
         )}
@@ -685,22 +713,59 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-green-50 to-teal-50">
+              <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-green-50 to-teal-50 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">🔔</span>
                   <h3 className="font-medium text-gray-900">Thông báo</h3>
+                  {thongBaoChuaDoc > 0 && (
+                    <span className="text-xs text-white bg-red-500 px-2 py-0.5 rounded-full font-medium">{thongBaoChuaDoc}</span>
+                  )}
                 </div>
+                <button onClick={() => router.push('/thong-bao')} className="text-xs text-blue-600 hover:underline">Xem tất cả</button>
               </div>
               <div className="p-5">
-                <div className="text-center py-6">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg className="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                    </svg>
+                {isLoadingTB ? (
+                  <div className="flex items-center justify-center py-6">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
                   </div>
-                  <p className="text-gray-500 font-medium">Chưa có thông báo mới</p>
-                  <p className="text-sm text-gray-400 mt-1">Các thông báo sẽ hiển thị tại đây</p>
-                </div>
+                ) : thongBaoList.length === 0 ? (
+                  <div className="text-center py-6">
+                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                      </svg>
+                    </div>
+                    <p className="text-gray-500 text-sm">Chưa có thông báo mới</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {thongBaoList.map((tb: any) => (
+                      <div
+                        key={tb.id}
+                        onClick={() => {
+                          if (tb.link_url) router.push(tb.link_url);
+                          if (!tb.da_doc) thongBaoApi.danhDauDaDoc(tb.id).catch(() => {});
+                        }}
+                        className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                          tb.da_doc ? 'bg-white border-gray-100 hover:bg-gray-50' : 'bg-blue-50 border-blue-200 hover:bg-blue-100'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <span className="text-sm shrink-0 mt-0.5">
+                            {tb.muc_do === 'KHAN' ? '🔴' : tb.muc_do === 'QUAN_TRONG' ? '🟠' : '🔵'}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm truncate ${tb.da_doc ? 'text-gray-700' : 'text-gray-900 font-medium'}`}>{tb.tieu_de}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {new Date(tb.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                          {!tb.da_doc && <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0 mt-1.5" />}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -75,7 +75,7 @@ export default function WidgetLMS({ data, loading }: WidgetLMSProps) {
               <div className="text-xs text-purple-700 font-medium mt-1">Khóa học</div>
             </Link>
             <Link
-              href="/dao-tao/cua-toi"
+              href="/dao-tao/khoa-hoc"
               className="block text-center rounded-lg bg-green-50 hover:bg-green-100 border border-green-200 p-2 transition-colors"
             >
               <div className="text-lg">🏅</div>

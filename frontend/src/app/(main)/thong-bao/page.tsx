@@ -1,7 +1,7 @@
 /**
  * src/app/(main)/thong-bao/page.tsx
  * ===================================
- * Trang thong bao day du — danh sach, loc, phan trang, danh dau da doc.
+ * Trang thông báo đầy đủ — danh sách, lọc, phân trang, đánh dấu đã đọc.
  */
 
 'use client';
@@ -26,19 +26,19 @@ import {
 // =============================================================================
 
 const LOAI_FILTERS: { value: LoaiThongBao | ''; label: string }[] = [
-  { value: '', label: 'Tat ca' },
+  { value: '', label: 'Tất cả' },
   { value: 'KPI', label: 'KPI' },
-  { value: 'LMS', label: 'Dao tao' },
-  { value: 'FORUM', label: 'Dien dan' },
-  { value: 'LEGAL', label: 'Phap luat' },
-  { value: 'PORTAL', label: 'Tin tuc' },
-  { value: 'HE_THONG', label: 'He thong' },
+  { value: 'LMS', label: 'Đào tạo' },
+  { value: 'FORUM', label: 'Diễn đàn' },
+  { value: 'LEGAL', label: 'Pháp luật' },
+  { value: 'PORTAL', label: 'Tin tức' },
+  { value: 'HE_THONG', label: 'Hệ thống' },
 ];
 
 const DA_DOC_FILTERS: { value: string; label: string }[] = [
-  { value: '', label: 'Tat ca' },
-  { value: 'false', label: 'Chua doc' },
-  { value: 'true', label: 'Da doc' },
+  { value: '', label: 'Tất cả' },
+  { value: 'false', label: 'Chưa đọc' },
+  { value: 'true', label: 'Đã đọc' },
 ];
 
 const LOAI_ICON: Record<string, string> = {
@@ -57,12 +57,12 @@ const LOAI_ICON: Record<string, string> = {
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Vua xong';
-  if (mins < 60) return `${mins} phut truoc`;
+  if (mins < 1) return 'Vừa xong';
+  if (mins < 60) return `${mins} phút trước`;
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} gio truoc`;
+  if (hours < 24) return `${hours} giờ trước`;
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} ngay truoc`;
+  if (days < 30) return `${days} ngày trước`;
   return new Date(dateStr).toLocaleDateString('vi-VN');
 }
 
@@ -106,7 +106,7 @@ export default function ThongBaoPage() {
       setTotalPages(listRes.data.pagination?.total_pages || 1);
       setCount(countRes.data.data);
     } catch (err: any) {
-      setError(err?.response?.data?.error?.message || 'Khong the tai thong bao');
+      setError(err?.response?.data?.error?.message || 'Không thể tải thông báo');
     } finally {
       setLoading(false);
     }
@@ -152,9 +152,9 @@ export default function ThongBaoPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Thong bao</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Thông báo</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {count ? `${count.count} thong bao chua doc` : 'Dang tai...'}
+              {count ? `${count.count} thông báo chưa đọc` : 'Đang tải...'}
             </p>
           </div>
           {count && count.count > 0 && (
@@ -162,7 +162,7 @@ export default function ThongBaoPage() {
               onClick={handleMarkAllRead}
               className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
             >
-              Danh dau tat ca da doc
+              Đánh dấu tất cả đã đọc
             </button>
           )}
         </div>
@@ -172,15 +172,15 @@ export default function ThongBaoPage() {
           <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
               <div className="text-xl font-bold text-red-700">{count.khan}</div>
-              <div className="text-xs text-red-600">Khan cap</div>
+              <div className="text-xs text-red-600">Khẩn cấp</div>
             </div>
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-center">
               <div className="text-xl font-bold text-orange-700">{count.quan_trong}</div>
-              <div className="text-xs text-orange-600">Quan trong</div>
+              <div className="text-xs text-orange-600">Quan trọng</div>
             </div>
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-center">
               <div className="text-xl font-bold text-gray-700">{count.binh_thuong}</div>
-              <div className="text-xs text-gray-600">Binh thuong</div>
+              <div className="text-xs text-gray-600">Bình thường</div>
             </div>
           </div>
         )}
@@ -189,7 +189,7 @@ export default function ThongBaoPage() {
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-4">
           <div className="flex flex-wrap gap-4">
             <div className="flex-1 min-w-[160px]">
-              <label className="block text-xs text-gray-500 mb-1">Loai</label>
+              <label className="block text-xs text-gray-500 mb-1">Loại</label>
               <select
                 value={loai}
                 onChange={(e) => { setLoai(e.target.value as any); setPage(1); }}
@@ -201,7 +201,7 @@ export default function ThongBaoPage() {
               </select>
             </div>
             <div className="flex-1 min-w-[160px]">
-              <label className="block text-xs text-gray-500 mb-1">Trang thai</label>
+              <label className="block text-xs text-gray-500 mb-1">Trạng thái</label>
               <select
                 value={daDoc}
                 onChange={(e) => { setDaDoc(e.target.value); setPage(1); }}
@@ -219,7 +219,7 @@ export default function ThongBaoPage() {
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-center">
             <p className="text-red-700">{error}</p>
-            <p className="text-sm text-red-500 mt-1">Hay dam bao Common backend dang chay tren port 8005</p>
+            <p className="text-sm text-red-500 mt-1">Hãy đảm bảo Common backend đang chạy trên port 8005</p>
           </div>
         )}
 
@@ -236,7 +236,7 @@ export default function ThongBaoPage() {
             {items.length === 0 ? (
               <div className="text-center py-16 text-gray-500">
                 <span className="text-4xl block mb-2">📭</span>
-                Khong co thong bao nao
+                Không có thông báo nào
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
@@ -285,7 +285,7 @@ export default function ThongBaoPage() {
                         }}
                         className="text-xs text-blue-600 hover:underline shrink-0"
                       >
-                        Da doc
+                        Đã đọc
                       </button>
                     )}
                   </div>
@@ -303,7 +303,7 @@ export default function ThongBaoPage() {
               disabled={page <= 1}
               className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Truoc
+              Trước
             </button>
             <span className="text-sm text-gray-600">
               Trang {page} / {totalPages}
@@ -313,7 +313,7 @@ export default function ThongBaoPage() {
               disabled={page >= totalPages}
               className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Tiep
+              Tiếp
             </button>
           </div>
         )}

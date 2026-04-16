@@ -40,10 +40,13 @@ export interface IChuyenDeUpdate {
 // =============================================================================
 
 export interface IDangKyInfo {
-  trang_thai: string;            // CHUA_BAT_DAU | DANG_HOC | HOAN_THANH | QUA_HAN
+  trang_thai: string;            // CHUA_BAT_DAU | DANG_HOC | HOAN_THANH | QUA_HAN | CHO_PHE_DUYET | TU_CHOI | BI_LOAI
   phan_tram_hoan_thanh: number;
   loai_dang_ky: string;          // TU_NGUYEN | GIAO_BAI
   han_hoan_thanh: string | null;
+  nguoi_phe_duyet_id?: string | null;
+  ngay_phe_duyet?: string | null;
+  ly_do_tu_choi?: string | null;
 }
 
 export interface IKhoaHoc {
@@ -122,6 +125,9 @@ export interface IDangKyKhoaHoc {
   khoa_hoc_ma: string | null;
   khoa_hoc_loai: string | null;
   giang_vien_ho_ten: string | null;
+  nguoi_phe_duyet_id?: string | null;
+  ngay_phe_duyet?: string | null;
+  ly_do_tu_choi?: string | null;
 }
 
 // =============================================================================
@@ -161,6 +167,7 @@ export interface ICauHoiCreate {
   do_kho: string;
   diem: number;
   khoa_hoc_id?: string | null;
+  bai_kiem_tra_id: string;
   dap_an: Record<string, unknown>;
   giai_thich?: string;
 }
@@ -176,6 +183,8 @@ export interface IBaiKiemTraCreate {
   so_lan_lam_toi_da?: number;        // default 3
   diem_dat?: number;                 // default 70
   tron_de?: boolean;                 // default true
+  gio_mo?: string;                   // HH:MM format
+  gio_dong?: string;                 // HH:MM format
   // Cấu hình hiển thị kết quả sau khi nộp bài
   che_do_xem_ket_qua?: string;       // XEM_DIEM_VA_DAP_AN | CHI_XEM_DIEM | CHI_XEM_CAU_SAI | XEM_KHI_LAN_CUOI | KHONG_CHO_XEM
   hien_giai_thich?: boolean;         // default true
@@ -194,6 +203,8 @@ export interface IBaiKiemTra {
   diem_dat: number;
   tron_de?: boolean;
   tron_dap_an?: boolean;
+  gio_mo?: string | null;
+  gio_dong?: string | null;
   // Cấu hình hiển thị kết quả
   che_do_xem_ket_qua?: string;
   hien_giai_thich?: boolean;
@@ -241,6 +252,11 @@ export interface IBatDauResponse {
   thoi_gian_phut: number | null;
   so_cau: number;
   cau_hoi: ICauHoiForExam[];
+  dang_tiep_tuc?: boolean;
+  chi_tiet_nhap?: any[] | null;
+  thoi_gian_da_lam_giay?: number;
+  so_lan_vi_pham?: number;
+  so_lan_con_lai?: number | null;
 }
 
 export interface IKetQuaResponse {
@@ -255,6 +271,7 @@ export interface IKetQuaResponse {
   // Thông báo khi XEM_KHI_LAN_CUOI chưa đến lần cuối
   thong_bao?: string;
   chi_tiet: any[] | null;
+  so_lan_con_lai?: number | null;
 }
 
 // =============================================================================
@@ -291,6 +308,224 @@ export interface IBaoCaoCaNhan {
   tong_gio_hoc: number;
   khoa_hoc_gan_day: { ten: string; trang_thai: string; phan_tram: number }[];
   chung_chi_gan_day: { ma: string; ten_khoa: string; xep_loai: string; ngay_cap: string }[];
+}
+
+// =============================================================================
+// ĐGNL — LĨNH VỰC
+// =============================================================================
+
+export interface ILinhVuc {
+  id: string;
+  ma_linh_vuc: string;
+  ten_linh_vuc: string;
+  mo_ta: string | null;
+  thu_tu: number;
+  is_active: boolean;
+}
+
+// =============================================================================
+// ĐGNL — VỊ TRÍ VIỆC LÀM
+// =============================================================================
+
+export interface IViTriViecLam {
+  id: string;
+  ma_vi_tri: string;
+  ten_vi_tri: string;
+  mo_ta: string | null;
+  linh_vuc_ids: string[];
+  thu_tu: number;
+  is_active: boolean;
+}
+
+// =============================================================================
+// ĐGNL — KỲ THI
+// =============================================================================
+
+export interface IKyThi {
+  id: string;
+  ma_ky_thi: string;
+  ten_ky_thi: string;
+  mo_ta: string | null;
+  ngay_bat_dau: string;
+  ngay_ket_thuc: string;
+  thoi_gian_lam_bai_phut: number;
+  diem_dat: number;
+  so_lan_thi_toi_da: number;
+  tron_cau_hoi: boolean;
+  tron_dap_an: boolean;
+  hien_ket_qua: boolean;
+  hien_dap_an: boolean;
+  trang_thai: string; // NHAP | CHO_DUYET | DANG_MO | DA_DONG
+  nguoi_tao_id: string;
+  nguoi_duyet_id: string | null;
+  ngay_duyet: string | null;
+  nguoi_tao_ho_ten: string | null;
+  nguoi_duyet_ho_ten: string | null;
+  tong_thi_sinh: number;
+  so_vi_tri: number;
+  created_at: string;
+}
+
+export interface IKyThiCreate {
+  ma_ky_thi: string;
+  ten_ky_thi: string;
+  mo_ta?: string;
+  ngay_bat_dau: string;
+  ngay_ket_thuc: string;
+  thoi_gian_lam_bai_phut?: number;
+  diem_dat?: number;
+  so_lan_thi_toi_da?: number;
+  tron_cau_hoi?: boolean;
+  tron_dap_an?: boolean;
+  hien_ket_qua?: boolean;
+  hien_dap_an?: boolean;
+}
+
+// =============================================================================
+// ĐGNL — CẤU TRÚC ĐỀ
+// =============================================================================
+
+export interface ICauTrucDeItem {
+  linh_vuc_id: string;
+  so_cau_de: number;
+  so_cau_trung_binh: number;
+  so_cau_kho: number;
+}
+
+export interface ICauTrucDeResponse {
+  id: string;
+  ky_thi_id: string;
+  vi_tri_id: string;
+  linh_vuc_id: string;
+  so_cau_de: number;
+  so_cau_trung_binh: number;
+  so_cau_kho: number;
+  vi_tri_ten: string | null;
+  linh_vuc_ten: string | null;
+}
+
+export interface ICauTrucDeByViTri {
+  vi_tri_id: string;
+  vi_tri_ten: string;
+  tong_cau: number;
+  chi_tiet: ICauTrucDeResponse[];
+}
+
+// =============================================================================
+// ĐGNL — THÍ SINH
+// =============================================================================
+
+export interface IThiSinh {
+  id: string;
+  ky_thi_id: string;
+  cong_chuc_id: string;
+  vi_tri_id: string;
+  trang_thai: string; // CHUA_THI | DANG_THI | DA_NOP | VANG
+  lan_thi_hien_tai: number;
+  diem_tong: number | null;
+  xep_loai: string | null;
+  so_cau_dung: number | null;
+  so_cau_sai: number | null;
+  tong_so_cau: number | null;
+  diem_theo_linh_vuc: Record<string, { dung: number; tong: number; phan_tram: number }> | null;
+  thoi_gian_bat_dau: string | null;
+  thoi_gian_nop: string | null;
+  thoi_gian_lam_giay: number | null;
+  ho_ten: string | null;
+  ma_cc: string | null;
+  don_vi_ten: string | null;
+  vi_tri_ten: string | null;
+}
+
+export interface IDgnlBatDauResponse {
+  thi_sinh_id: string;
+  thoi_gian_con_lai_giay: number;
+  tong_so_cau: number;
+  cau_hoi: IDgnlCauHoi[];
+}
+
+export interface IDgnlCauHoi {
+  id: string;
+  thu_tu: number;
+  noi_dung: string;
+  loai: string;
+  diem: number;
+  lua_chon: { key: string; noi_dung: string }[] | null;
+  linh_vuc: string | null;
+}
+
+export interface IDgnlKetQua {
+  ky_thi: { id: string; ten_ky_thi: string; diem_dat: number };
+  thi_sinh: { ho_ten: string; ma_cc: string; don_vi: string; vi_tri_thi: string };
+  ket_qua: {
+    diem_tong: number;
+    xep_loai: string;
+    so_cau_dung: number;
+    so_cau_sai: number;
+    tong_so_cau: number;
+    thoi_gian_lam_giay: number;
+    lan_thi: number;
+  };
+  diem_theo_linh_vuc: { linh_vuc: string; so_cau_dung: number; tong_cau: number; phan_tram: number }[];
+  chi_tiet: any[] | null;
+  lich_su_thi: any[] | null;
+}
+
+export interface IDgnlValidateResponse {
+  ky_thi_id: string;
+  tat_ca_du: boolean;
+  theo_vi_tri: {
+    vi_tri_ten: string;
+    du_cau_hoi: boolean;
+    chi_tiet: { linh_vuc_ten: string; do_kho: string; yeu_cau: number; co_san: number; du: boolean }[];
+  }[];
+}
+
+export interface IDgnlThongKe {
+  tong_quan: {
+    tong_thi_sinh: number;
+    da_thi: number;
+    chua_thi: number;
+    dang_thi: number;
+    vang: number;
+    dat: number;
+    khong_dat: number;
+    ti_le_dat: number;
+    diem_trung_binh: number;
+    diem_cao_nhat: number;
+    diem_thap_nhat: number;
+  };
+  theo_vi_tri: { vi_tri: string; tong: number; dat: number; khong_dat: number; diem_tb: number }[];
+  theo_don_vi: { don_vi: string; tong: number; dat: number; ti_le_dat: number; diem_tb: number }[];
+}
+
+// =============================================================================
+// ĐGNL — NGÂN HÀNG CÂU HỎI
+// =============================================================================
+
+export interface ICauHoiDgnl {
+  id: string;
+  linh_vuc_id: string;
+  noi_dung: string;
+  giai_thich: string | null;
+  loai: string;
+  dap_an: Record<string, unknown>;
+  diem: number;
+  do_kho: string;
+  nguoi_tao_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  linh_vuc_ten: string | null;
+  nguoi_tao_ho_ten: string | null;
+}
+
+export interface IThongKeNganHang {
+  linh_vuc_id: string;
+  linh_vuc_ten: string;
+  so_cau_de: number;
+  so_cau_trung_binh: number;
+  so_cau_kho: number;
+  tong: number;
 }
 
 // =============================================================================

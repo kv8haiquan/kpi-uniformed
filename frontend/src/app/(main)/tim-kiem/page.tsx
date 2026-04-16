@@ -1,7 +1,7 @@
 /**
  * src/app/(main)/tim-kiem/page.tsx
  * ==================================
- * Trang tim kiem hop nhat — ket qua tu nhieu module, tab loc theo module.
+ * Trang tìm kiếm hợp nhất — kết quả từ nhiều module, tab lọc theo module.
  */
 
 'use client';
@@ -61,7 +61,7 @@ export default function TimKiemPage() {
       const res = await searchApi.timKiem(searchParams);
       setResults(res.data.data);
     } catch (err: any) {
-      setError(err?.response?.data?.error?.message || 'Khong the tim kiem');
+      setError(err?.response?.data?.error?.message || 'Không thể tìm kiếm');
     } finally {
       setLoading(false);
     }
@@ -126,8 +126,8 @@ export default function TimKiemPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Tim kiem</h1>
-          <p className="text-sm text-gray-500 mt-1">Tim kiem tren toan bo nen tang</p>
+          <h1 className="text-2xl font-bold text-gray-900">Tìm kiếm</h1>
+          <p className="text-sm text-gray-500 mt-1">Tìm kiếm trên toàn bộ nền tảng</p>
         </div>
 
         {/* Search box */}
@@ -143,7 +143,7 @@ export default function TimKiemPage() {
               }}
               onFocus={() => setShowSuggestions(true)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-              placeholder="Nhap tu khoa tim kiem (toi thieu 2 ky tu)..."
+              placeholder="Nhập từ khóa tìm kiếm (tối thiểu 2 ký tự)..."
               className="w-full border border-gray-300 rounded-xl pl-12 pr-4 py-3 text-base focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
             />
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-lg">
@@ -153,7 +153,7 @@ export default function TimKiemPage() {
               type="submit"
               className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Tim
+              Tìm
             </button>
           </div>
 
@@ -204,7 +204,7 @@ export default function TimKiemPage() {
                       {SEARCH_MODULE_LABELS[mod]}
                     </>
                   ) : (
-                    'Tat ca'
+                    'Tất cả'
                   )}
                   <span className="ml-1 opacity-70">({cnt})</span>
                 </button>
@@ -217,7 +217,7 @@ export default function TimKiemPage() {
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-center">
             <p className="text-red-700">{error}</p>
-            <p className="text-sm text-red-500 mt-1">Hay dam bao Common backend dang chay tren port 8005</p>
+            <p className="text-sm text-red-500 mt-1">Hãy đảm bảo Common backend đang chạy trên port 8005</p>
           </div>
         )}
 
@@ -234,7 +234,7 @@ export default function TimKiemPage() {
             {results.results.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm text-center py-16 text-gray-500">
                 <span className="text-4xl block mb-2">🔍</span>
-                Khong tim thay ket qua nao cho &ldquo;{query}&rdquo;
+                Không tìm thấy kết quả nào cho &ldquo;{query}&rdquo;
               </div>
             ) : (
               <div className="space-y-3">
@@ -252,7 +252,7 @@ export default function TimKiemPage() {
                   disabled={page <= 1}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Truoc
+                  Trước
                 </button>
                 <span className="text-sm text-gray-600">
                   Trang {page} / {totalPages}
@@ -262,7 +262,7 @@ export default function TimKiemPage() {
                   disabled={page >= totalPages}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Tiep
+                  Tiếp
                 </button>
               </div>
             )}
@@ -273,8 +273,8 @@ export default function TimKiemPage() {
         {!loading && !results && !error && (
           <div className="text-center py-20 text-gray-500">
             <span className="text-5xl block mb-3">🔍</span>
-            <p className="text-lg font-medium text-gray-700">Tim kiem tren toan nen tang</p>
-            <p className="text-sm mt-1">Phap luat, Dao tao, Dien dan, Tin tuc, Kho tri thuc</p>
+            <p className="text-lg font-medium text-gray-700">Tìm kiếm trên toàn nền tảng</p>
+            <p className="text-sm mt-1">Pháp luật, Đào tạo, Diễn đàn, Tin tức, Kho tri thức</p>
           </div>
         )}
       </div>

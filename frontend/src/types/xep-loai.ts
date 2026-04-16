@@ -2,8 +2,8 @@
  * src/types/xep-loai.ts
  * ======================
  * Type definitions cho module Xếp loại.
- * 
- * Version: 3.3.4 - FIX: CCT approverRoles tab cong-viec (01/02/2026)
+ *
+ * Version: 3.4.0 - ADD: Tab Tạm tính (04/03/2026)
  */
 
 import type { IUser } from '@/types/auth';
@@ -12,7 +12,7 @@ import type { IUser } from '@/types/auth';
 // ENUMS & CONSTANTS
 // =============================================================================
 
-export type TabId = 'cong-viec' | 'tieu-chi' | 'danh-gia-ld' | 'nghi-phep' | 'bao-cao';
+export type TabId = 'cong-viec' | 'tieu-chi' | 'danh-gia-ld' | 'nghi-phep' | 'bao-cao' | 'tam-tinh' | 'quy';
 
 /**
  * Cấp bậc vai trò - mapping từ ma_vai_tro
@@ -86,6 +86,24 @@ export const TABS_CONFIG: ITabConfig[] = [
     allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG],
     approverRoles: [CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG], // Chỉ ĐT và CCT duyệt
   },
+  {
+    id: 'tam-tinh',
+    label: 'Tạm tính',
+    shortLabel: 'Tạm tính',
+    icon: '📊',
+    description: 'Tổng hợp tạm tính điểm KPI công chức (bao gồm công việc chờ duyệt)',
+    allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG],
+    approverRoles: [], // Không có quyền phê duyệt, chỉ xem
+  },
+  {
+    id: 'quy',
+    label: 'Xếp loại quý',
+    shortLabel: 'Quý',
+    icon: '📊',
+    description: 'Tổng hợp xếp loại quý (đọc từ báo cáo tháng đã duyệt)',
+    allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG],
+    approverRoles: [], // Không có quyền phê duyệt, chỉ xem
+  },
 ];
 
 // =============================================================================
@@ -106,6 +124,8 @@ export interface IPendingCounts {
   'danh-gia-ld': number;
   'nghi-phep': number;
   'bao-cao': number;
+  'tam-tinh': number;
+  'quy': number;
 }
 
 // =============================================================================
@@ -188,5 +208,7 @@ export function createDefaultPendingCounts(): IPendingCounts {
     'danh-gia-ld': 0,
     'nghi-phep': 0,
     'bao-cao': 0,
+    'tam-tinh': 0,
+    'quy': 0,
   };
 }

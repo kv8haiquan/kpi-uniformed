@@ -434,6 +434,12 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
   const [traLaiLyDo, setTraLaiLyDo] = useState('');
   const [isTraLai, setIsTraLai] = useState(false);
   
+  // Chi tiết mô tả popup
+  const [hoverItem, setHoverItem] = useState<IKeKhai | null>(null);
+  const [pinnedItem, setPinnedItem] = useState<IKeKhai | null>(null);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const detailItem = pinnedItem || hoverItem;
+
   // Inline edit
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{
@@ -531,6 +537,11 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
     setCurrentPage(1);
   }, [statusFilter, pageSize, congChucFilter]);
 
+  // Reset selectedIds when filter changes (FIX BUG: xung đột filter)
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [statusFilter, congChucFilter]);
+
   useEffect(() => {
     loadCounts();
   }, [loadCounts]);
@@ -554,12 +565,15 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
     setSelectedIds(newSet);
   };
 
-  // Chọn tất cả pending items (cả CC + LD)
+  // Chọn tất cả pending items (cả CC + LD) — FIX BUG: dùng filtered data thay vì pendingItems
   const handleSelectAll = () => {
-    if (selectedIds.size === pendingItems.length && pendingItems.length > 0) {
+    // Lấy pending items từ filteredAllData (đã apply congChucFilter)
+    const filteredPendingItems = filteredAllData.filter(d => d.trang_thai === 'CHO_PHE_DUYET');
+
+    if (selectedIds.size === filteredPendingItems.length && filteredPendingItems.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(pendingItems.map(d => d.id)));
+      setSelectedIds(new Set(filteredPendingItems.map(d => d.id)));
     }
   };
 
@@ -828,6 +842,11 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
     });
   }, [allData, congChucFilter]);
 
+  // Filtered pending items (FIX BUG: dùng cho button "Chọn tất cả")
+  const filteredPendingItems = React.useMemo(() => {
+    return filteredAllData.filter(d => d.trang_thai === 'CHO_PHE_DUYET');
+  }, [filteredAllData]);
+
   // Paginated data từ filteredAllData
   const filteredTotalItems = filteredAllData.length;
   const filteredTotalPages = Math.ceil(filteredTotalItems / pageSize);
@@ -912,7 +931,7 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
           </div>
 
           {/* Quick select buttons */}
-          {canApprove && pendingItems.length > 0 && (
+          {canApprove && filteredPendingItems.length > 0 && (
             <div className="flex items-center gap-2">
               <button
                 onClick={handleSelectPage}
@@ -924,7 +943,7 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
                 onClick={handleSelectAll}
                 className="px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 border border-blue-300 rounded-lg transition-colors"
               >
-                {selectedIds.size === pendingItems.length ? 'Bỏ chọn tất cả' : `Chọn tất cả (${pendingItems.length})`}
+                {selectedIds.size === filteredPendingItems.length ? 'Bỏ chọn tất cả' : `Chọn tất cả (${filteredPendingItems.length})`}
               </button>
             </div>
           )}
@@ -1028,7 +1047,25 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
                   const isLD = item.source === 'LD';
                   
                   return (
-                    <tr key={`${item.source}-${item.id}`} className={`hover:bg-gray-50 ${selectedIds.has(item.id) ? 'bg-blue-50' : ''} ${editingId === item.id ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : ''}`}>
+                    <tr
+                      key={`${item.source}-${item.id}`}
+                      className={`hover:bg-gray-50 ${selectedIds.has(item.id) ? 'bg-blue-50' : ''} ${editingId === item.id ? 'bg-blue-50 ring-1 ring-inset ring-blue-300' : ''}`}
+                      onMouseEnter={(e) => {
+                        if (!pinnedItem) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setPopupPos({ top: rect.top, left: rect.left + rect.width / 2 });
+                          setHoverItem(item);
+                        }
+                      }}
+                      onMouseLeave={() => { if (!pinnedItem) setHoverItem(null); }}
+                      onClick={(e) => {
+                        if (!pinnedItem) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setPopupPos({ top: rect.top, left: rect.left + rect.width / 2 });
+                          setPinnedItem(item);
+                        }
+                      }}
+                    >
                       {canApprove && (
                         <td className="px-3 py-3">
                           {isPending && (
@@ -1067,7 +1104,7 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
                       </td>
                       {/* Kết quả = Mô tả công việc mà CC kê khai */}
                       <td className="px-3 py-3">
-                        <div className="text-sm text-gray-600 max-w-[200px] line-clamp-2" title={item.mo_ta_cong_viec || item.mo_ta || item.ket_qua || ''}>
+                        <div className="text-sm text-gray-600 max-w-[200px] line-clamp-2">
                           {item.mo_ta_cong_viec || item.mo_ta || item.ket_qua || <span className="text-gray-400">-</span>}
                         </div>
                       </td>
@@ -1503,6 +1540,49 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
             </div>
           </div>
         </div>
+      )}
+      {/* Popup mô tả công việc - hiện cạnh row khi hover, ghim khi click */}
+      {detailItem && (
+        <>
+          {/* Overlay khi pinned */}
+          {pinnedItem && (
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => { setPinnedItem(null); setHoverItem(null); }}
+            />
+          )}
+          <div
+            className={`fixed z-50 ${pinnedItem ? '' : 'pointer-events-none'}`}
+            style={{
+              top: popupPos.top,
+              left: popupPos.left,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            <div className="bg-white rounded-lg shadow-xl border-2 border-blue-300 w-[360px] max-h-[280px] flex flex-col">
+              <div className="flex items-center justify-between px-3 py-2 border-b bg-gray-50 rounded-t-lg">
+                <h3 className="text-xs font-semibold text-gray-700 truncate pr-2">
+                  {detailItem.danh_muc_ten || detailItem.ten_cong_viec || '-'}
+                </h3>
+                {pinnedItem && (
+                  <button
+                    onClick={() => { setPinnedItem(null); setHoverItem(null); }}
+                    className="p-0.5 rounded hover:bg-gray-200 transition-colors flex-shrink-0"
+                  >
+                    <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <div className="px-3 py-2 overflow-y-auto text-sm">
+                <p className="text-gray-900 whitespace-pre-wrap">
+                  {detailItem.mo_ta_cong_viec || detailItem.mo_ta || detailItem.ket_qua || 'Không có mô tả'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

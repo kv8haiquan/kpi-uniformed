@@ -8,8 +8,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { khoaHocApi, chuyenDeApi } from '@/services/lms';
-import type { IKhoaHoc, IChuyenDe, IPagination } from '@/types/lms';
+import { khoaHocApi, chuyenDeApi, dangKyApi } from '@/services/lms';
+import type { IKhoaHoc, IChuyenDe, IPagination, IDangKyKhoaHoc } from '@/types/lms';
 
 const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   NHAP: { label: 'Nháp', bg: 'bg-gray-100', text: 'text-gray-600' },
@@ -17,6 +17,16 @@ const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: strin
   DA_XUAT_BAN: { label: 'Đang mở', bg: 'bg-green-100', text: 'text-green-700' },
   TAM_DUNG: { label: 'Tạm dừng', bg: 'bg-orange-100', text: 'text-orange-700' },
   DA_DONG: { label: 'Đã đóng', bg: 'bg-red-100', text: 'text-red-700' },
+};
+
+const ENROLLMENT_STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+  CHUA_BAT_DAU: { label: 'Chưa bắt đầu', bg: 'bg-gray-100', text: 'text-gray-600' },
+  DANG_HOC: { label: 'Đang học', bg: 'bg-blue-100', text: 'text-blue-700' },
+  HOAN_THANH: { label: 'Hoàn thành', bg: 'bg-green-100', text: 'text-green-700' },
+  QUA_HAN: { label: 'Quá hạn', bg: 'bg-red-100', text: 'text-red-700' },
+  CHO_PHE_DUYET: { label: 'Chờ phê duyệt', bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  TU_CHOI: { label: 'Bị từ chối', bg: 'bg-red-100', text: 'text-red-700' },
+  BI_LOAI: { label: 'Đã bị loại', bg: 'bg-gray-100', text: 'text-gray-700' },
 };
 
 const LOAI_CONFIG: Record<string, { label: string; icon: string }> = {
@@ -32,6 +42,9 @@ const GRADIENTS = [
 ];
 
 export default function KhoaHocListPage() {
+  const [activeTab, setActiveTab] = useState<'my-courses' | 'all-courses'>('all-courses');
+
+  // All courses tab
   const [khoaHocs, setKhoaHocs] = useState<IKhoaHoc[]>([]);
   const [chuyenDes, setChuyenDes] = useState<IChuyenDe[]>([]);
   const [pagination, setPagination] = useState<IPagination | null>(null);
@@ -41,6 +54,26 @@ export default function KhoaHocListPage() {
   const [chuyenDeId, setChuyenDeId] = useState('');
   const [loai, setLoai] = useState('');
   const [page, setPage] = useState(1);
+
+  // My courses tab
+  const [enrolledCourses, setEnrolledCourses] = useState<IDangKyKhoaHoc[]>([]);
+  const [enrolledLoading, setEnrolledLoading] = useState(false);
+  const [enrolledFilter, setEnrolledFilter] = useState<string>('');
+
+  const [enrolledError, setEnrolledError] = useState<string | null>(null);
+
+  const loadEnrolledCourses = useCallback(async () => {
+    setEnrolledLoading(true);
+    setEnrolledError(null);
+    try {
+      const res = await dangKyApi.cuaToi();
+      setEnrolledCourses(res.data.data || []);
+    } catch (err: any) {
+      setEnrolledError('Không thể tải khóa học của bạn.');
+    } finally {
+      setEnrolledLoading(false);
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -65,6 +98,8 @@ export default function KhoaHocListPage() {
     }
   }, [page, search, chuyenDeId, loai]);
 
+  // Load ca 2 tab data khi trang mo
+  useEffect(() => { loadEnrolledCourses(); }, [loadEnrolledCourses]);
   useEffect(() => { loadData(); }, [loadData]);
 
   if (error) {
@@ -77,6 +112,11 @@ export default function KhoaHocListPage() {
       </div>
     );
   }
+
+  const filteredEnrolled = enrolledCourses.filter((ec) => {
+    if (!enrolledFilter) return true;
+    return ec.trang_thai === enrolledFilter;
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -91,28 +131,148 @@ export default function KhoaHocListPage() {
           <h1 className="text-2xl font-bold text-gray-900">Danh sách khóa học</h1>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-6">
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input type="text" placeholder="Tìm kiếm khóa học..." value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
-            <select value={chuyenDeId} onChange={(e) => { setChuyenDeId(e.target.value); setPage(1); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-              <option value="">Tất cả chuyên đề</option>
-              {chuyenDes.map((cd) => <option key={cd.id} value={cd.id}>{cd.ten_chuyen_de}</option>)}
-            </select>
-            <select value={loai} onChange={(e) => { setLoai(e.target.value); setPage(1); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
-              <option value="">Tất cả loại</option>
-              {Object.entries(LOAI_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
-            </select>
-          </div>
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('my-courses')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'my-courses'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Khóa học của tôi
+            {enrolledCourses.length > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">{enrolledCourses.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('all-courses')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'all-courses'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Tất cả khóa học
+          </button>
         </div>
 
-        {/* Loading */}
-        {loading && (
+        {/* My Courses Tab */}
+        {activeTab === 'my-courses' && (
+          <>
+            {enrolledError && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4 text-sm text-yellow-700">
+                {enrolledError} Vui lòng kiểm tra kết nối LMS backend.
+              </div>
+            )}
+            {/* Sub-filters */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-6">
+              <div className="flex gap-2 flex-wrap">
+                {['', 'DANG_HOC', 'CHUA_BAT_DAU', 'HOAN_THANH', 'CHO_PHE_DUYET', 'TU_CHOI'].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setEnrolledFilter(status)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      enrolledFilter === status
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {status === '' ? 'Tất cả' : ENROLLMENT_STATUS_CONFIG[status]?.label || status}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Enrolled courses list */}
+            {enrolledLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="bg-white rounded-xl border animate-pulse">
+                    <div className="h-28 bg-gray-200 rounded-t-xl" />
+                    <div className="p-4 space-y-2"><div className="h-4 bg-gray-200 rounded w-3/4" /><div className="h-3 bg-gray-200 rounded w-1/2" /></div>
+                  </div>
+                ))}
+              </div>
+            ) : filteredEnrolled.length === 0 ? (
+              <div className="text-center py-16">
+                <span className="text-5xl block mb-4">📚</span>
+                <h3 className="text-lg font-medium text-gray-900">Chưa có khóa học nào</h3>
+                <p className="text-gray-500 mt-1">
+                  {enrolledFilter ? 'Không có khóa học với trạng thái này' : 'Bạn chưa đăng ký khóa học nào'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredEnrolled.map((ec, idx) => {
+                  const statusCfg = ENROLLMENT_STATUS_CONFIG[ec.trang_thai] || ENROLLMENT_STATUS_CONFIG.CHUA_BAT_DAU;
+                  const lo = LOAI_CONFIG[ec.khoa_hoc_loai || 'TU_HOC'] || LOAI_CONFIG.TU_HOC;
+                  return (
+                    <Link key={ec.id} href={`/dao-tao/khoa-hoc/${ec.khoa_hoc_id}`}
+                      className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group">
+                      <div className={`h-28 bg-gradient-to-br ${GRADIENTS[idx % GRADIENTS.length]} p-4 flex flex-col justify-between`}>
+                        <div className="flex justify-between items-start">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusCfg.bg} ${statusCfg.text}`}>
+                            {statusCfg.label}
+                          </span>
+                          <span className="text-white/80 text-xs">{lo.icon} {lo.label}</span>
+                        </div>
+                        <div className="text-white font-bold text-sm line-clamp-2 group-hover:underline">{ec.khoa_hoc_ten}</div>
+                      </div>
+                      <div className="p-4">
+                        <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+                          <span>👨‍🏫 {ec.giang_vien_ho_ten || '—'}</span>
+                          <span className="font-medium">{ec.loai_dang_ky === 'TU_NGUYEN' ? '✋ Tự nguyện' : ec.loai_dang_ky === 'BAT_BUOC' ? '📋 Bắt buộc' : '📝 Giao việc'}</span>
+                        </div>
+                        {ec.trang_thai === 'DANG_HOC' && (
+                          <div className="mt-2">
+                            <div className="flex justify-between text-xs text-gray-600 mb-1">
+                              <span>Tiến độ</span>
+                              <span className="font-medium">{ec.phan_tram_hoan_thanh}%</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${ec.phan_tram_hoan_thanh}%` }} />
+                            </div>
+                          </div>
+                        )}
+                        {ec.han_hoan_thanh && (
+                          <div className="text-xs text-orange-600 mt-2">📅 Hạn: {new Date(ec.han_hoan_thanh).toLocaleDateString('vi-VN')}</div>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* All Courses Tab */}
+        {activeTab === 'all-courses' && (
+          <>
+            {/* Filters */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-6">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input type="text" placeholder="Tìm kiếm khóa học..." value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm" />
+                <select value={chuyenDeId} onChange={(e) => { setChuyenDeId(e.target.value); setPage(1); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">Tất cả chuyên đề</option>
+                  {chuyenDes.map((cd) => <option key={cd.id} value={cd.id}>{cd.ten_chuyen_de}</option>)}
+                </select>
+                <select value={loai} onChange={(e) => { setLoai(e.target.value); setPage(1); }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white">
+                  <option value="">Tất cả loại</option>
+                  {Object.entries(LOAI_CONFIG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Loading */}
+            {loading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="bg-white rounded-xl border animate-pulse">
@@ -123,8 +283,8 @@ export default function KhoaHocListPage() {
           </div>
         )}
 
-        {/* Empty */}
-        {!loading && khoaHocs.length === 0 && (
+            {/* Empty */}
+            {!loading && khoaHocs.length === 0 && (
           <div className="text-center py-16">
             <span className="text-5xl block mb-4">📭</span>
             <h3 className="text-lg font-medium text-gray-900">Không tìm thấy khóa học</h3>
@@ -132,8 +292,8 @@ export default function KhoaHocListPage() {
           </div>
         )}
 
-        {/* Grid */}
-        {!loading && khoaHocs.length > 0 && (
+            {/* Grid */}
+            {!loading && khoaHocs.length > 0 && (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
               {khoaHocs.map((kh, idx) => {
@@ -171,6 +331,8 @@ export default function KhoaHocListPage() {
                 <button onClick={() => setPage(Math.min(pagination.total_pages, page + 1))} disabled={page >= pagination.total_pages}
                   className="px-3 py-1.5 border rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50">Sau</button>
               </div>
+            )}
+              </>
             )}
           </>
         )}

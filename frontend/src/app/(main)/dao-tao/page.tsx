@@ -8,10 +8,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { baoCaoApi, dangKyApi } from '@/services/lms';
-import type { IBaoCaoCaNhan, IDangKyKhoaHoc } from '@/types/lms';
+import { baoCaoApi, dangKyApi, khoaHocApi } from '@/services/lms';
+import type { IBaoCaoCaNhan, IDangKyKhoaHoc, IKhoaHoc } from '@/types/lms';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 // =============================================================================
@@ -40,22 +39,29 @@ function StatCard({ icon, label, value, color }: {
   );
 }
 
+const TRANG_THAI_LABEL: Record<string, { label: string; bg: string; text: string }> = {
+  CHUA_BAT_DAU: { label: 'Chưa bắt đầu', bg: 'bg-gray-100', text: 'text-gray-600' },
+  DANG_HOC: { label: 'Đang học', bg: 'bg-blue-100', text: 'text-blue-700' },
+  HOAN_THANH: { label: 'Hoàn thành', bg: 'bg-green-100', text: 'text-green-700' },
+  QUA_HAN: { label: 'Quá hạn', bg: 'bg-red-100', text: 'text-red-700' },
+};
+
+const GRADIENTS = [
+  'from-blue-500 to-indigo-600', 'from-green-500 to-teal-600',
+  'from-purple-500 to-pink-600', 'from-orange-500 to-red-600', 'from-cyan-500 to-blue-600',
+];
+
 // =============================================================================
 // MAIN
 // =============================================================================
 
 export default function DaoTaoPage() {
-  const router = useRouter();
   const [report, setReport] = useState<IBaoCaoCaNhan | null>(null);
-  const [dangHoc, setDangHoc] = useState<IDangKyKhoaHoc[]>([]);
+  const [enrolledCourses, setEnrolledCourses] = useState<IDangKyKhoaHoc[]>([]);
+  const [allCourses, setAllCourses] = useState<IKhoaHoc[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Lấy thông tin user từ store để kiểm tra quyền quản lý
   const user = useAuthStore((state) => state.user);
-
-  // Quyền quản lý đào tạo: GIANG_VIEN, QT_DAO_TAO, hoặc System Admin
-  // platform_roles chưa có trong JWT (chưa implement), dùng optional chaining để tương thích tương lai
   const platformRoles: string[] = (user as any)?.platform_roles ?? [];
   const coQuyenQuanLy =
     user?.is_system_admin === true ||
@@ -64,18 +70,23 @@ export default function DaoTaoPage() {
 
   useEffect(() => {
     const load = async () => {
-      try {
-        const [rptRes, dkRes] = await Promise.all([
-          baoCaoApi.caNhan(),
-          dangKyApi.cuaToi({ trang_thai: 'DANG_HOC', page_size: 5 }),
-        ]);
-        setReport(rptRes.data.data);
-        setDangHoc(dkRes.data.data || []);
-      } catch (err: any) {
-        setError(err?.response?.data?.detail?.error?.message || 'Không thể tải dữ liệu');
-      } finally {
-        setLoading(false);
+      // Load song song, khong de 1 API loi lam crash ca trang
+      const [rptRes, dkRes, khRes] = await Promise.allSettled([
+        baoCaoApi.caNhan(),
+        dangKyApi.cuaToi({ page_size: 50 }),
+        khoaHocApi.danhSach({ page_size: 12 }),
+      ]);
+
+      if (rptRes.status === 'fulfilled') {
+        setReport(rptRes.value.data.data);
       }
+      if (dkRes.status === 'fulfilled') {
+        setEnrolledCourses(dkRes.value.data.data || []);
+      }
+      if (khRes.status === 'fulfilled') {
+        setAllCourses(khRes.value.data.data || []);
+      }
+      setLoading(false);
     };
     load();
   }, []);
@@ -88,19 +99,10 @@ export default function DaoTaoPage() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-8">
-        <div className="max-w-4xl mx-auto bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-          <span className="text-3xl">⚠️</span>
-          <p className="mt-2 text-red-700">{error}</p>
-          <p className="mt-1 text-sm text-red-500">Hãy đảm bảo LMS backend đang chạy trên port 8001</p>
-        </div>
-      </div>
-    );
-  }
-
   const r = report;
+  const dangHoc = enrolledCourses.filter((dk) => dk.trang_thai === 'DANG_HOC');
+  const chuaBatDau = enrolledCourses.filter((dk) => dk.trang_thai === 'CHUA_BAT_DAU');
+  const hoanThanh = enrolledCourses.filter((dk) => dk.trang_thai === 'HOAN_THANH');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -113,17 +115,16 @@ export default function DaoTaoPage() {
 
         {/* Stat Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatCard icon="📖" label="Khóa đang học" value={r?.khoa_dang_hoc ?? 0} color="blue" />
-          <StatCard icon="✅" label="Đã hoàn thành" value={r?.khoa_hoan_thanh ?? 0} color="green" />
+          <StatCard icon="📖" label="Đang học" value={(r?.khoa_dang_hoc ?? dangHoc.length) + (r?.khoa_chua_bat_dau ?? chuaBatDau.length)} color="blue" />
+          <StatCard icon="✅" label="Hoàn thành" value={r?.khoa_hoan_thanh ?? hoanThanh.length} color="green" />
           <StatCard icon="🏅" label="Chứng chỉ" value={r?.tong_chung_chi ?? 0} color="purple" />
-          <StatCard icon="⏱️" label="Giờ học" value={r?.tong_gio_hoc ?? 0} color="orange" />
+          <StatCard icon="📚" label="Tổng đăng ký" value={r?.tong_khoa_da_dang_ky ?? enrolledCourses.length} color="orange" />
         </div>
 
-        {/* Section Quản lý đào tạo — chỉ hiển thị cho GIANG_VIEN, QT_DAO_TAO, Admin */}
+        {/* Section Quản lý đào tạo */}
         {coQuyenQuanLy && (
           <div className="border-l-4 border-blue-600 bg-blue-50 rounded-xl p-5 mb-6">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              {/* Nội dung trái: icon, tiêu đề, mô tả, quick links */}
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0 mt-0.5">
                   <span className="text-xl">⚙️</span>
@@ -133,34 +134,21 @@ export default function DaoTaoPage() {
                   <p className="text-sm text-gray-600 mt-0.5">
                     Tạo khóa học, quản lý nội dung, giao bài và theo dõi tiến độ học viên
                   </p>
-                  {/* Quick action links nhỏ */}
                   <div className="flex flex-wrap gap-4 mt-3">
-                    <Link
-                      href="/dao-tao/quan-ly"
-                      className="text-xs text-blue-700 hover:underline flex items-center gap-1"
-                    >
+                    <Link href="/dao-tao/quan-ly" className="text-xs text-blue-700 hover:underline flex items-center gap-1">
                       <span>➕</span> Tạo khóa học mới
                     </Link>
-                    <Link
-                      href="/dao-tao/quan-ly"
-                      className="text-xs text-blue-700 hover:underline flex items-center gap-1"
-                    >
-                      <span>⏳</span> Khóa chờ duyệt
-                    </Link>
-                    <Link
-                      href="/dao-tao/quan-ly"
-                      className="text-xs text-blue-700 hover:underline flex items-center gap-1"
-                    >
+                    <Link href="/dao-tao/quan-ly" className="text-xs text-blue-700 hover:underline flex items-center gap-1">
                       <span>📋</span> Giao bài cho đơn vị
+                    </Link>
+                    <Link href="/dao-tao/ky-thi/quan-ly" className="text-xs text-purple-700 hover:underline flex items-center gap-1">
+                      <span>📝</span> Quản lý kỳ thi ĐGNL
                     </Link>
                   </div>
                 </div>
               </div>
-              {/* Nút chính bên phải */}
-              <Link
-                href="/dao-tao/quan-ly"
-                className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap self-start"
-              >
+              <Link href="/dao-tao/quan-ly"
+                className="shrink-0 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap self-start">
                 Đi đến trang quản lý
               </Link>
             </div>
@@ -168,12 +156,19 @@ export default function DaoTaoPage() {
         )}
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Link href="/dao-tao/khoa-hoc" className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl p-4 flex items-center gap-3 transition-colors">
             <span className="text-2xl">📚</span>
             <div>
               <div className="font-medium">Danh sách khóa học</div>
               <div className="text-sm text-blue-100">Tìm và đăng ký khóa học</div>
+            </div>
+          </Link>
+          <Link href="/dao-tao/ky-thi" className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl p-4 flex items-center gap-3 transition-colors">
+            <span className="text-2xl">📝</span>
+            <div>
+              <div className="font-medium">Kỳ thi ĐGNL</div>
+              <div className="text-sm text-purple-100">Đánh giá năng lực</div>
             </div>
           </Link>
           <Link href="/dao-tao/chung-chi" className="bg-white border border-gray-200 hover:border-green-300 hover:bg-green-50 rounded-xl p-4 flex items-center gap-3 transition-colors">
@@ -183,7 +178,7 @@ export default function DaoTaoPage() {
               <div className="text-sm text-gray-500">Xem và tải chứng chỉ</div>
             </div>
           </Link>
-          <Link href="/dao-tao/khoa-hoc?tab=dang-hoc" className="bg-white border border-gray-200 hover:border-purple-300 hover:bg-purple-50 rounded-xl p-4 flex items-center gap-3 transition-colors">
+          <Link href="/dao-tao/khoa-hoc" className="bg-white border border-gray-200 hover:border-orange-300 hover:bg-orange-50 rounded-xl p-4 flex items-center gap-3 transition-colors">
             <span className="text-2xl">📊</span>
             <div>
               <div className="font-medium text-gray-900">Khóa đang học</div>
@@ -192,47 +187,93 @@ export default function DaoTaoPage() {
           </Link>
         </div>
 
-        {/* Khóa đang học */}
+        {/* Khóa đang học + Chưa bắt đầu */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-              <span>📖</span> Khóa học đang tham gia
+              <span>📖</span> Khóa học của tôi
+              {enrolledCourses.length > 0 && (
+                <span className="text-xs font-normal text-gray-400">({enrolledCourses.length} khóa)</span>
+              )}
             </h2>
             <Link href="/dao-tao/khoa-hoc" className="text-sm text-blue-600 hover:underline">Xem tất cả</Link>
           </div>
           <div className="p-5">
-            {dangHoc.length === 0 ? (
+            {enrolledCourses.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <span className="text-4xl block mb-2">📭</span>
-                Chưa đăng ký khóa học nào
+                <p>Chưa đăng ký khóa học nào</p>
+                <Link href="/dao-tao/khoa-hoc" className="text-sm text-blue-600 hover:underline mt-2 inline-block">
+                  Xem danh sách khóa học
+                </Link>
               </div>
             ) : (
               <div className="space-y-3">
-                {dangHoc.map((dk) => (
-                  <Link key={dk.id} href={`/dao-tao/khoa-hoc/${dk.khoa_hoc_id}`}
-                    className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
-                      <span className="text-lg">📘</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">{dk.khoa_hoc_ten}</div>
-                      <div className="text-xs text-gray-500">{dk.giang_vien_ho_ten || 'Chưa có giảng viên'}</div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-sm font-semibold text-blue-600">{dk.phan_tram_hoan_thanh}%</div>
-                      <div className="w-20 h-1.5 bg-gray-200 rounded-full mt-1">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${dk.phan_tram_hoan_thanh}%` }} />
+                {enrolledCourses.slice(0, 6).map((dk) => {
+                  const st = TRANG_THAI_LABEL[dk.trang_thai] || TRANG_THAI_LABEL.CHUA_BAT_DAU;
+                  return (
+                    <Link key={dk.id} href={`/dao-tao/khoa-hoc/${dk.khoa_hoc_id}`}
+                      className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                        <span className="text-lg">📘</span>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 truncate">{dk.khoa_hoc_ten}</div>
+                        <div className="text-xs text-gray-500 flex items-center gap-2">
+                          <span>{dk.giang_vien_ho_ten || 'Chưa có giảng viên'}</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-xs ${st.bg} ${st.text}`}>{st.label}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-semibold text-blue-600">{dk.phan_tram_hoan_thanh}%</div>
+                        <div className="w-20 h-1.5 bg-gray-200 rounded-full mt-1">
+                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${dk.phan_tram_hoan_thanh}%` }} />
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
+        {/* Danh sách khóa học (tất cả) */}
+        {allCourses.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <span>📚</span> Khóa học hiện có
+              </h2>
+              <Link href="/dao-tao/khoa-hoc" className="text-sm text-blue-600 hover:underline">Xem tất cả</Link>
+            </div>
+            <div className="p-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {allCourses.slice(0, 6).map((kh, idx) => (
+                  <Link key={kh.id} href={`/dao-tao/khoa-hoc/${kh.id}`}
+                    className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group">
+                    <div className={`h-24 bg-gradient-to-br ${GRADIENTS[idx % GRADIENTS.length]} p-3 flex flex-col justify-between`}>
+                      <div className="flex justify-between items-start">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Đang mở</span>
+                      </div>
+                      <div className="text-white font-bold text-sm line-clamp-2 group-hover:underline">{kh.ten_khoa_hoc}</div>
+                    </div>
+                    <div className="p-3">
+                      <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <span>👨‍🏫 {kh.giang_vien_ho_ten || '—'}</span>
+                        <span>📚 {kh.so_bai_hoc}</span>
+                        <span>👥 {kh.so_hoc_vien}</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Chứng chỉ gần đây */}
-        {r && r.chung_chi_gan_day.length > 0 && (
+        {r && r.chung_chi_gan_day && r.chung_chi_gan_day.length > 0 && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="font-semibold text-gray-900 flex items-center gap-2">

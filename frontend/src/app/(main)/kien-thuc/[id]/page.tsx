@@ -1,7 +1,7 @@
 /**
  * src/app/(main)/kien-thuc/[id]/page.tsx
  * ========================================
- * Chi tiet Knowledge Base — noi dung, tags, lien ket cross-module.
+ * Chi tiết Knowledge Base — nội dung, tags, liên kết cross-module.
  */
 
 'use client';
@@ -32,7 +32,7 @@ export default function KienThucDetailPage() {
         const res = await knowledgeBaseApi.chiTiet(id);
         setItem(res.data.data);
       } catch (err: any) {
-        setError(err?.response?.data?.error?.message || 'Khong tim thay bai viet');
+        setError(err?.response?.data?.error?.message || 'Không tìm thấy bài viết');
       } finally {
         setLoading(false);
       }
@@ -53,12 +53,12 @@ export default function KienThucDetailPage() {
       <div className="min-h-screen bg-gray-50 p-8">
         <div className="max-w-3xl mx-auto bg-red-50 border border-red-200 rounded-xl p-6 text-center">
           <span className="text-3xl">⚠️</span>
-          <p className="mt-2 text-red-700">{error || 'Khong tim thay'}</p>
+          <p className="mt-2 text-red-700">{error || 'Không tìm thấy'}</p>
           <button
             onClick={() => router.push('/kien-thuc')}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
           >
-            Quay lai
+            Quay lại
           </button>
         </div>
       </div>
@@ -73,7 +73,7 @@ export default function KienThucDetailPage() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-gray-500 mb-6">
-          <Link href="/kien-thuc" className="hover:text-blue-600">Kho tri thuc</Link>
+          <Link href="/kien-thuc" className="hover:text-blue-600">Kho tri thức</Link>
           <span>/</span>
           <span className="text-gray-900 truncate">{item.tieu_de}</span>
         </nav>
@@ -92,10 +92,10 @@ export default function KienThucDetailPage() {
                     {ttConfig.label}
                   </span>
                   <span className="text-xs text-gray-400">{item.loai}</span>
-                  <span className="text-xs text-gray-400">Phien ban {item.phien_ban}</span>
+                  <span className="text-xs text-gray-400">Phiên bản {item.phien_ban}</span>
                   {item.chu_so_huu && (
                     <span className="text-xs text-gray-400">
-                      boi {item.chu_so_huu.ho_ten}
+                      bởi {item.chu_so_huu.ho_ten}
                     </span>
                   )}
                 </div>
@@ -130,10 +130,10 @@ export default function KienThucDetailPage() {
 
             {/* Meta */}
             <div className="flex flex-wrap gap-4 mt-4 text-xs text-gray-400">
-              <span>Tao: {new Date(item.created_at).toLocaleDateString('vi-VN')}</span>
-              <span>Cap nhat: {new Date(item.updated_at).toLocaleDateString('vi-VN')}</span>
+              <span>Tạo: {new Date(item.created_at).toLocaleDateString('vi-VN')}</span>
+              <span>Cập nhật: {new Date(item.updated_at).toLocaleDateString('vi-VN')}</span>
               {item.ngay_cap_nhat_cuoi && (
-                <span>Cap nhat cuoi: {new Date(item.ngay_cap_nhat_cuoi).toLocaleDateString('vi-VN')}</span>
+                <span>Cập nhật cuối: {new Date(item.ngay_cap_nhat_cuoi).toLocaleDateString('vi-VN')}</span>
               )}
             </div>
           </div>
@@ -153,14 +153,14 @@ export default function KienThucDetailPage() {
         {(item.van_ban_lien_quan?.length || item.chu_de_forum_lien_quan?.length) && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm mb-6">
             <div className="px-6 py-4 border-b border-gray-100">
-              <h2 className="font-semibold text-gray-900">Lien ket</h2>
+              <h2 className="font-semibold text-gray-900">Liên kết</h2>
             </div>
             <div className="p-6 space-y-4">
               {/* Van ban lien quan */}
               {item.van_ban_lien_quan && item.van_ban_lien_quan.length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
-                    <span>⚖️</span> Van ban phap luat lien quan
+                    <span>⚖️</span> Văn bản pháp luật liên quan
                   </h3>
                   <div className="space-y-1.5">
                     {item.van_ban_lien_quan.map((vbId) => (
@@ -169,7 +169,7 @@ export default function KienThucDetailPage() {
                         href={`/phap-luat/van-ban/${vbId}`}
                         className="block px-3 py-2 text-sm bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors"
                       >
-                        Van ban #{vbId.slice(0, 8)}...
+                        Văn bản #{vbId.slice(0, 8)}...
                       </Link>
                     ))}
                   </div>
@@ -180,7 +180,7 @@ export default function KienThucDetailPage() {
               {item.chu_de_forum_lien_quan && item.chu_de_forum_lien_quan.length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
-                    <span>💬</span> Chu de dien dan lien quan
+                    <span>💬</span> Chủ đề diễn đàn liên quan
                   </h3>
                   <div className="space-y-1.5">
                     {item.chu_de_forum_lien_quan.map((cdId) => (
@@ -189,7 +189,7 @@ export default function KienThucDetailPage() {
                         href={`/dien-dan/chu-de/${cdId}`}
                         className="block px-3 py-2 text-sm bg-gray-50 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors"
                       >
-                        Chu de #{cdId.slice(0, 8)}...
+                        Chủ đề #{cdId.slice(0, 8)}...
                       </Link>
                     ))}
                   </div>
@@ -205,7 +205,7 @@ export default function KienThucDetailPage() {
             href="/kien-thuc"
             className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
           >
-            ← Quay lai kho tri thuc
+            ← Quay lại kho tri thức
           </Link>
         </div>
       </div>

@@ -18,7 +18,7 @@ import io
 import logging
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, status
@@ -27,14 +27,17 @@ from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+from docx.shared import Pt
 
 from app.api.deps import DatabaseDep, ActiveUserDep
-from app.models.user_org import CongChuc
+from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.kpi_assessment import DanhGiaThang, TieuChiChungDanhGia, LanhDaoChiSo
 from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, TrangThaiHoanThanh
+from app.models.phieu_danh_gia import PhieuDanhGiaQuy, TrangThaiPhieuDanhGia
 from app.models.task_catalog import DanhMucSpCongViec
 
 logger = logging.getLogger(__name__)
@@ -201,6 +204,159 @@ def replace_placeholder_in_docx(doc: Document, placeholder: str, value: str):
                             set_times_new_roman(para.runs[0])
                         else:
                             para.text = full_text.replace(placeholder, value)
+
+
+# =============================================================================
+# HELPERS cho phiếu tháng & quý (v4.1.0)
+# =============================================================================
+
+DIA_DIEM_MAC_DINH = "Quảng Ninh"
+
+
+def _format_ngay_dia_diem(dt: Optional[datetime]) -> str:
+    """'Quảng Ninh, ngày DD tháng MM năm YYYY' — dùng dt nếu có, mặc định hôm nay."""
+    d = dt.date() if dt else date.today()
+    return f"{DIA_DIEM_MAC_DINH}, ngày {d.day:02d} tháng {d.month:02d} năm {d.year}"
+
+
+def _fill_footer_date(doc: Document, dia_diem_str: str) -> None:
+    """Thay '....., ngày.... tháng.... năm.....' trong footer (Table cuối)."""
+    if len(doc.tables) < 3:
+        return
+    tbl = doc.tables[2]
+    for row in tbl.rows:
+        for cell in row.cells:
+            for p in cell.paragraphs:
+                t = p.text
+                if "ngày" in t and "tháng" in t and "năm" in t and "....." in t:
+                    for run in p.runs:
+                        run.text = ""
+                    if p.runs:
+                        p.runs[0].text = dia_diem_str
+                        set_times_new_roman(p.runs[0])
+                    else:
+                        r = p.add_run(dia_diem_str)
+                        set_times_new_roman(r)
+
+
+def _them_ten_ky(cell, ten: str, bold: bool = True, italic: bool = False) -> None:
+    """Append 1 paragraph chứa tên ký tên vào cuối cell (sau '(Ký, ghi rõ họ tên)')."""
+    p = cell.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(ten)
+    run.bold = bold
+    run.italic = italic
+    set_times_new_roman(run)
+
+
+def _fill_footer_signers(
+    doc: Document,
+    ten_cong_chuc: str,
+    ten_nguoi_duyet: Optional[str],
+) -> None:
+    """Chèn tên CC (trái) và tên người duyệt (phải) phía dưới '(Ký, ghi rõ họ tên)'."""
+    if len(doc.tables) < 3:
+        return
+    row = doc.tables[2].rows[0]
+    if len(row.cells) >= 1 and ten_cong_chuc:
+        _them_ten_ky(row.cells[0], ten_cong_chuc)
+    if len(row.cells) >= 2 and ten_nguoi_duyet:
+        _them_ten_ky(row.cells[1], ten_nguoi_duyet)
+
+
+def _fill_section_after_heading(doc: Document, heading_prefix: str, content: str) -> bool:
+    """Tìm paragraph bắt đầu bằng heading_prefix, ghi content vào paragraph trống kế tiếp."""
+    if not content:
+        return False
+    paras = doc.paragraphs
+    for i, p in enumerate(paras):
+        if p.text.strip().startswith(heading_prefix):
+            if i + 1 < len(paras):
+                target = paras[i + 1]
+                for run in target.runs:
+                    run.text = ""
+                if target.runs:
+                    target.runs[0].text = content
+                    set_times_new_roman(target.runs[0])
+                else:
+                    r = target.add_run(content)
+                    set_times_new_roman(r)
+                return True
+    return False
+
+
+async def _tim_nguoi_duyet_auto(db, cc: CongChuc) -> Optional[CongChuc]:
+    """
+    Xác định người duyệt mặc định theo cấp bậc CC (dùng cho auto-fill tên
+    'Cấp có thẩm quyền' khi phiếu chưa được duyệt hoặc phiếu tháng).
+
+    - CONG_CHUC / PHO_DON_VI             → TRUONG_DON_VI cùng đơn vị
+    - TRUONG_DON_VI / PHO_CHI_CUC_TRUONG → CHI_CUC_TRUONG
+    - CHI_CUC_TRUONG                     → None (tự ký)
+    """
+    cb = cc.vai_tro.cap_bac if cc.vai_tro else None
+    if cb in (CapBacVaiTro.CONG_CHUC, CapBacVaiTro.PHO_DON_VI):
+        stmt = (
+            select(CongChuc)
+            .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+            .where(
+                CongChuc.don_vi_id == cc.don_vi_id,
+                CongChuc.is_active == True,
+                VaiTro.cap_bac == CapBacVaiTro.TRUONG_DON_VI,
+            )
+            .limit(1)
+        )
+        return (await db.execute(stmt)).scalar_one_or_none()
+    if cb in (CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG):
+        stmt = (
+            select(CongChuc)
+            .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+            .where(
+                CongChuc.is_active == True,
+                VaiTro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG,
+            )
+            .limit(1)
+        )
+        return (await db.execute(stmt)).scalar_one_or_none()
+    return None
+
+
+async def _lay_phieu_quy(
+    db, cong_chuc_id, quy: int, nam: int
+) -> Optional[PhieuDanhGiaQuy]:
+    """Lấy phiếu đánh giá quý của CC (None nếu chưa tạo)."""
+    stmt = (
+        select(PhieuDanhGiaQuy)
+        .options(selectinload(PhieuDanhGiaQuy.nguoi_phe_duyet))
+        .where(PhieuDanhGiaQuy.cong_chuc_id == cong_chuc_id)
+        .where(PhieuDanhGiaQuy.quy == quy)
+        .where(PhieuDanhGiaQuy.nam == nam)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def _apply_auto_fill_chung(
+    doc: Document,
+    db,
+    cong_chuc: CongChuc,
+    ngay_ky: Optional[datetime] = None,
+    ten_nguoi_duyet_override: Optional[str] = None,
+) -> None:
+    """
+    Áp dụng auto-fill chung cho cả phiếu tháng & quý:
+    - Footer: địa điểm + ngày
+    - Bottom-left: tên CC
+    - Bottom-right: tên TDV/CCT (auto hoặc override)
+    """
+    _fill_footer_date(doc, _format_ngay_dia_diem(ngay_ky))
+
+    if ten_nguoi_duyet_override is not None:
+        ten_nguoi_duyet = ten_nguoi_duyet_override
+    else:
+        nd = await _tim_nguoi_duyet_auto(db, cong_chuc)
+        ten_nguoi_duyet = nd.ho_ten if nd else ""
+
+    _fill_footer_signers(doc, cong_chuc.ho_ten or "", ten_nguoi_duyet)
 
 
 # =============================================================================
@@ -575,6 +731,9 @@ async def export_phieu_danh_gia(
                             tong_nhom_3 += diem
 
                         tc_idx += 1
+
+    # Auto-fill ngày + tên CC/TDV/CCT vào footer (phiếu tháng — không có phiếu DB)
+    await _apply_auto_fill_chung(doc, db, cc, ngay_ky=None)
 
     # Lưu vào buffer
     buffer = io.BytesIO()
@@ -1242,6 +1401,42 @@ async def export_phieu_danh_gia_quy(
                             tong_nhom_3 += diem
 
                         tc_idx += 1
+
+    # === Load phiếu quý từ DB (nếu có) và fill mục 4/5/6 ===
+    phieu = await _lay_phieu_quy(db, cc.id, quy, nam)
+    ngay_ky: Optional[datetime] = None
+    ten_nguoi_duyet_override: Optional[str] = None
+
+    if phieu is not None:
+        # Fill nội dung mục 4/5/6 (nếu có)
+        if phieu.uu_diem:
+            _fill_section_after_heading(doc, "4. Ưu điểm", phieu.uu_diem)
+        if phieu.han_che:
+            _fill_section_after_heading(doc, "5. Hạn chế", phieu.han_che)
+        if phieu.y_kien_lanh_dao and phieu.trang_thai == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value:
+            _fill_section_after_heading(doc, "6. Ý kiến", phieu.y_kien_lanh_dao)
+
+        # Ngày ký footer theo trạng thái
+        if phieu.trang_thai == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value:
+            ngay_ky = phieu.ngay_phe_duyet
+        elif phieu.trang_thai == TrangThaiPhieuDanhGia.CHO_PHE_DUYET.value:
+            ngay_ky = phieu.ngay_gui_duyet
+
+        # Tên người duyệt:
+        # - DA_PHE_DUYET / BI_TU_CHOI: đã có nguoi_phe_duyet → dùng luôn
+        # - NHAP / CHO_PHE_DUYET: auto-tra theo rule (để trống nếu không có)
+        if phieu.trang_thai in (
+            TrangThaiPhieuDanhGia.DA_PHE_DUYET.value,
+            TrangThaiPhieuDanhGia.BI_TU_CHOI.value,
+        ) and phieu.nguoi_phe_duyet is not None:
+            ten_nguoi_duyet_override = phieu.nguoi_phe_duyet.ho_ten or ""
+
+    # Auto-fill footer: ngày + tên CC + tên TDV/CCT
+    await _apply_auto_fill_chung(
+        doc, db, cc,
+        ngay_ky=ngay_ky,
+        ten_nguoi_duyet_override=ten_nguoi_duyet_override,
+    )
 
     # Lưu vào buffer
     buffer = io.BytesIO()

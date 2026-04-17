@@ -240,13 +240,47 @@ def _fill_footer_date(doc: Document, dia_diem_str: str) -> None:
 
 
 def _them_ten_ky(cell, ten: str, bold: bool = True, italic: bool = False) -> None:
-    """Append 1 paragraph chứa tên ký tên vào cuối cell (sau '(Ký, ghi rõ họ tên)')."""
-    p = cell.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run(ten)
-    run.bold = bold
-    run.italic = italic
-    set_times_new_roman(run)
+    """
+    Ghi tên ký ngay sau paragraph '(Ký, ghi rõ họ tên)' — ưu tiên dùng blank
+    paragraph kế tiếp (nếu có) để tránh bị đẩy xuống cuối cell.
+
+    Lý do: Cell trái (CC) thường có 8 blank paragraph dùng làm khoảng trắng
+    chữ ký. Nếu append vào cuối thì tên rơi sâu ~8 dòng so với cell phải
+    → lệch nhau. Ghi vào blank đầu tiên sau '(Ký…)' thì tên nằm sát header.
+    """
+    # Tìm index paragraph chứa '(Ký'
+    idx_ky = -1
+    for i, p in enumerate(cell.paragraphs):
+        if "Ký" in p.text and "ghi rõ" in p.text:
+            idx_ky = i
+            break
+
+    target_idx = idx_ky + 1 if idx_ky >= 0 else len(cell.paragraphs)
+
+    if 0 <= target_idx < len(cell.paragraphs):
+        target = cell.paragraphs[target_idx]
+        # Clear old runs
+        for run in target.runs:
+            run.text = ""
+        target.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if target.runs:
+            target.runs[0].text = ten
+            target.runs[0].bold = bold
+            target.runs[0].italic = italic
+            set_times_new_roman(target.runs[0])
+        else:
+            run = target.add_run(ten)
+            run.bold = bold
+            run.italic = italic
+            set_times_new_roman(run)
+    else:
+        # Cell không có blank paragraph phía sau → append mới
+        p = cell.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(ten)
+        run.bold = bold
+        run.italic = italic
+        set_times_new_roman(run)
 
 
 def _fill_footer_signers(
@@ -1068,6 +1102,9 @@ async def export_bang_ke_cong_viec(
                 new_row.cells[9].text = ghi_chu.strip()
                 set_cell_font_times_new_roman(new_row.cells[9])
 
+    # Auto-fill footer (Quảng Ninh + ngày + tên NGƯỜI TỔNG HỢP + THỦ TRƯỞNG ĐƠN VỊ)
+    await _apply_auto_fill_chung(doc, db, cc, ngay_ky=None)
+
     # Lưu vào buffer
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -1733,6 +1770,9 @@ async def export_bang_ke_cong_viec_quy(
                     ghi_chu += f"Lỗi TĐ: {cv.ghi_chu_loi_tien_do}."
                 new_row.cells[9].text = ghi_chu.strip()
                 set_cell_font_times_new_roman(new_row.cells[9])
+
+    # Auto-fill footer (Quảng Ninh + ngày + tên NGƯỜI TỔNG HỢP + THỦ TRƯỞNG ĐƠN VỊ)
+    await _apply_auto_fill_chung(doc, db, cc, ngay_ky=None)
 
     # Lưu vào buffer
     buffer = io.BytesIO()

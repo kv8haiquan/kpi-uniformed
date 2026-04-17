@@ -56,11 +56,17 @@ async def tinh_diem_kpi_70(
     """
     Tính điểm KPI 70 điểm từ kê khai công việc đã duyệt (hoặc tạm tính).
 
-    Công thức:
+    Công thức (theo Phụ lục I NĐ 335/2025/NĐ-CP):
     - a = SP_hoàn_thành / SP_được_giao (tỷ lệ số lượng)
-    - b = SP_chất_lượng / SP_hoàn_thành (tỷ lệ chất lượng)
-    - c = SP_tiến_độ / SP_hoàn_thành (tỷ lệ tiến độ)
+    - b = SP_đúng_tiến_độ / SP_được_giao (tỷ lệ tiến độ — key "b_chat_luong" giữ nguyên vì lý do backward-compat, xem note bên dưới)
+    - c = SP_đạt_chất_lượng / SP_được_giao (tỷ lệ chất lượng — key "c_tien_do" giữ nguyên)
+    - Mỗi tỷ lệ cap tại 1.0 (100%)
     - Điểm = (a + b + c) / 3 × 70
+
+    NOTE về naming (legacy):
+      Các key trả về `b_chat_luong` và `c_tien_do` đặt ngược với quy ước spec
+      (spec: b=tiến độ, c=chất lượng). Không đổi tên để tránh phá frontend.
+      Caller cần đảo key khi ánh xạ sang template.
 
     Params:
     - tam_tinh: Nếu True, tính cả công việc CHỜ PHÊ DUYỆT và nghỉ phép CHỜ PHÊ DUYỆT
@@ -160,11 +166,17 @@ async def tinh_diem_kpi_70(
     sp_chat_luong = float(sp_chat_luong)
     sp_tien_do = float(sp_tien_do)
     
-    # Tính tỷ lệ
-    a_so_luong = tong_sp / sp_duoc_giao if sp_duoc_giao > 0 else 0
-    b_chat_luong = sp_chat_luong / tong_sp if tong_sp > 0 else 0
-    c_tien_do = sp_tien_do / tong_sp if tong_sp > 0 else 0
-    
+    # Tỷ lệ — CẢ 3 ĐỀU chia cho sp_duoc_giao (TARGET) theo Phụ lục I NĐ 335/2025/NĐ-CP
+    # và cap riêng ≤ 1.0 để không vượt 100% dù kê khai hơn mức được giao.
+    if sp_duoc_giao > 0:
+        a_so_luong = min(1.0, tong_sp / sp_duoc_giao)
+        b_chat_luong = min(1.0, sp_chat_luong / sp_duoc_giao)
+        c_tien_do = min(1.0, sp_tien_do / sp_duoc_giao)
+    else:
+        a_so_luong = 0
+        b_chat_luong = 0
+        c_tien_do = 0
+
     # Điểm KPI = (a + b + c) / 3 × 70
     diem_kpi = (a_so_luong + b_chat_luong + c_tien_do) / 3
     diem_70 = min(70, diem_kpi * 70)  # Cap at 70
@@ -241,12 +253,14 @@ async def tinh_diem_kpi_70_lanh_dao(
 
     for row in rows:
         (trang_thai_ht, loi_cl, loi_td) = row
-        # a: Đếm hoàn thành
-        if trang_thai_ht == TrangThaiHoanThanh.DA_HOAN_THANH:
-            tong_hoan_thanh += 1
-        # b, c: Điểm tiến độ/chất lượng mỗi CV = max(0, 1 - lỗi × 0.25)
+        # Phụ lục I NĐ 335: chỉ CV ĐÃ HOÀN THÀNH đóng góp vào số lượng / tiến độ / chất lượng.
+        # CV chưa hoàn thành không tính (không thể gọi là đúng TĐ / đạt CL).
+        if trang_thai_ht != TrangThaiHoanThanh.DA_HOAN_THANH:
+            continue
+        tong_hoan_thanh += 1
         tong_loi_chat_luong += loi_cl
         tong_loi_tien_do += loi_td
+        # Mỗi CV đóng góp max(0, 1 - lỗi × 0.25) cho điểm TĐ/CL
         tong_diem_chat_luong += max(0.0, 1.0 - loi_cl * 0.25)
         tong_diem_tien_do += max(0.0, 1.0 - loi_td * 0.25)
 

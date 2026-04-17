@@ -956,7 +956,6 @@ async def export_phieu_danh_gia_quy(
     """
     # Import helper
     from app.api.v1.endpoints.xep_loai_quy_helpers import tinh_diem_quy, QUY_TO_THANG
-    from app.api.v1.endpoints.xep_loai_moi import tinh_diem_kpi_70, tinh_diem_kpi_70_lanh_dao
 
     # Validation
     if not (1 <= quy <= 4):
@@ -986,59 +985,21 @@ async def export_phieu_danh_gia_quy(
     # Lấy 3 tháng trong quý
     thang_list = QUY_TO_THANG.get(quy, [])
 
-    # Điểm tiêu chí chung
-    diem_tieu_chi = ket_qua.get("diem_tc_quy", 0)
-    diem_kpi_nhiem_vu = ket_qua.get("diem_kpi_quy", 0)
-    diem_tong = ket_qua.get("diem_tong_quy", 0)
+    # Điểm tổng hợp — đều lấy trực tiếp từ `tinh_diem_quy` (SINGLE SOURCE OF TRUTH).
+    # Công thức lũy kế theo Phụ lục I đã nằm trong hàm đó; ở đây chỉ format cho template.
+    diem_tieu_chi = ket_qua.get("diem_tc_quy") or 0
+    diem_kpi_nhiem_vu = ket_qua.get("diem_kpi_quy") or 0
+    diem_tong = ket_qua.get("diem_tong_quy") or 0
 
-    # === Tính điểm a,b,c,d,đ,e cho quý (trung bình 3 tháng, thiếu tính 0) ===
-    # CC thường: diem_a, diem_b, diem_c (tỷ lệ 0-100%)
-    # Lãnh đạo: diem_a, b, c, d, đ, e (tỷ lệ 0-100%)
-    diem_a = None
-    diem_b = None
-    diem_c = None
-    diem_d = None
-    diem_dd = None
-    diem_e = None
-
-    try:
-        if is_lanh_dao:
-            # Lãnh đạo: tính từng tháng, rồi lấy trung bình
-            a_values, b_values, c_values = [], [], []
-            d_values, dd_values, e_values = [], [], []
-
-            for thang in thang_list:
-                kpi_data = await tinh_diem_kpi_70_lanh_dao(db, cc.id, thang, nam, tam_tinh=False)
-                a_values.append(kpi_data.get("a_so_luong", 0) * 100)  # Scale 0-1 → 0-100%
-                b_values.append(kpi_data.get("b_tien_do", 0) * 100)
-                c_values.append(kpi_data.get("c_chat_luong", 0) * 100)
-                d_values.append(kpi_data.get("d_ket_qua", 0) * 100)
-                dd_values.append(kpi_data.get("dd_to_chuc", 0) * 100)
-                e_values.append(kpi_data.get("e_doan_ket", 0) * 100)
-
-            # Trung bình LUÔN chia 3 (thiếu tháng tính 0)
-            diem_a = min(sum(a_values) / 3, 100.0) if len(a_values) == 3 else 0
-            diem_b = min(sum(b_values) / 3, 100.0) if len(b_values) == 3 else 0
-            diem_c = min(sum(c_values) / 3, 100.0) if len(c_values) == 3 else 0
-            diem_d = min(sum(d_values) / 3, 100.0) if len(d_values) == 3 else 0
-            diem_dd = min(sum(dd_values) / 3, 100.0) if len(dd_values) == 3 else 0
-            diem_e = min(sum(e_values) / 3, 100.0) if len(e_values) == 3 else 0
-        else:
-            # CC thường: tính từng tháng, lấy TB a, b (c_tien_do), c (b_chat_luong)
-            a_values, b_values, c_values = [], [], []
-
-            for thang in thang_list:
-                kpi_data = await tinh_diem_kpi_70(db, cc.id, thang, nam, tam_tinh=False)
-                a_values.append(kpi_data.get("a_so_luong", 0) * 100)  # Scale 0-1 → 0-100%
-                c_values.append(kpi_data.get("c_tien_do", 0) * 100)  # Key là c_tien_do
-                b_values.append(kpi_data.get("b_chat_luong", 0) * 100)  # Key là b_chat_luong
-
-            # Trung bình LUÔN chia 3 (thiếu tháng tính 0)
-            diem_a = min(sum(a_values) / 3, 100.0) if len(a_values) == 3 else 0
-            diem_b = min(sum(c_values) / 3, 100.0) if len(c_values) == 3 else 0  # Tỷ lệ tiến độ
-            diem_c = min(sum(b_values) / 3, 100.0) if len(b_values) == 3 else 0  # Tỷ lệ chất lượng
-    except Exception as e:
-        logger.warning(f"Lỗi tính điểm KPI quý cho {cc.ma_cc} quý {quy}/{nam}: {e}")
+    # a/b/c/d/đ/e quý: 0-1 → đổi sang % cho template.
+    # - `tinh_diem_quy` dùng quy ước spec (b=tiến độ, c=chất lượng).
+    # - Với CC thường, d/đ/e = None.
+    diem_a = (ket_qua.get("a_so_luong") or 0) * 100
+    diem_b = (ket_qua.get("b_tien_do") or 0) * 100
+    diem_c = (ket_qua.get("c_chat_luong") or 0) * 100
+    diem_d = (ket_qua.get("d_ket_qua") * 100) if ket_qua.get("d_ket_qua") is not None else None
+    diem_dd = (ket_qua.get("dd_to_chuc") * 100) if ket_qua.get("dd_to_chuc") is not None else None
+    diem_e = (ket_qua.get("e_doan_ket") * 100) if ket_qua.get("e_doan_ket") is not None else None
 
     # Chọn template
     template_name = "PL-Mẫu số 01B-LĐ.docx" if is_lanh_dao else "PL-Mẫu số 01A-CC.docx"

@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     export_bao_cao,  # v2.8.0: Xuất báo cáo DOCX/PDF
     in_bang_ke,  # v3.7.0: In bảng kê cá nhân (phiếu đánh giá + bảng kê CV)
     bao_cao_xep_loai_quy,  # v3.9.0: Báo cáo xếp loại quý
+    phieu_danh_gia_quy,  # v4.1.0 (17/04/2026): Phiếu đánh giá cá nhân quý + workflow 1 cấp
 )
 
 # =============================================================================
@@ -191,4 +192,11 @@ api_router.include_router(
     in_bang_ke.router,
     prefix="/in-bang-ke",
     tags=["In Bảng kê"],
+)
+
+# Phiếu đánh giá cá nhân quý + workflow 1 cấp (v4.1.0 - 17/04/2026)
+api_router.include_router(
+    phieu_danh_gia_quy.router,
+    prefix="/phieu-danh-gia-quy",
+    tags=["Phiếu đánh giá cá nhân quý"],
 )

@@ -115,6 +115,12 @@ from app.models.lich_su_dieu_chinh import (
     LichSuDieuChinh,
 )
 
+# Phiếu đánh giá cá nhân theo quý (v4.1.0 - 17/04/2026)
+from app.models.phieu_danh_gia import (
+    PhieuDanhGiaQuy,
+    TrangThaiPhieuDanhGia,
+)
+
 __all__ = [
     # ==========================================================================
     # BASE CLASSES
@@ -213,7 +219,13 @@ __all__ = [
 
     # ==========================================================================
     # LICH SU DIEU CHINH
-    # ==========================================================================    
+    # ==========================================================================
     "LoaiDoiTuongDieuChinh",
     "LichSuDieuChinh",
+
+    # ==========================================================================
+    # PHIEU DANH GIA CA NHAN THEO QUY (v4.1.0)
+    # ==========================================================================
+    "PhieuDanhGiaQuy",
+    "TrangThaiPhieuDanhGia",
 ]

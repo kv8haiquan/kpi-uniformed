@@ -695,8 +695,24 @@ async def kiem_tra_du_dieu_kien(
     tong_cv_chua = 0
     tong_tc_chua = 0
 
+    # Chỉ đếm các trạng thái "đang trong quy trình chưa chốt" — loại trừ
+    # TU_CHOI/HUY (đã chốt không duyệt, CC đã từ bỏ hoặc bị từ chối chính thức).
+    cv_cc_dang_tam_tinh = [
+        TrangThaiKeKhai.NHAP,
+        TrangThaiKeKhai.CHO_PHE_DUYET,
+    ]
+    cv_ld_dang_tam_tinh = [
+        TrangThaiKeKhaiLD.NHAP.value,
+        TrangThaiKeKhaiLD.CHO_PHE_DUYET.value,
+    ]
+    tc_dang_tam_tinh = [
+        TrangThaiTieuChi.NHAP,
+        TrangThaiTieuChi.CHO_PHE_DUYET,
+        TrangThaiTieuChi.CHO_CAP2,
+    ]
+
     for thang in thang_list:
-        # Đếm công việc chưa duyệt (chỉ tính khác DA_PHE_DUYET và chưa xoá)
+        # Đếm công việc đang tạm tính trong tháng.
         if is_lanh_dao:
             cv_stmt = (
                 select(func.count())
@@ -705,9 +721,7 @@ async def kiem_tra_du_dieu_kien(
                 .where(KeKhaiLanhDao.thang == thang)
                 .where(KeKhaiLanhDao.nam == nam)
                 .where(KeKhaiLanhDao.is_deleted == False)
-                .where(
-                    KeKhaiLanhDao.trang_thai != TrangThaiKeKhaiLD.DA_PHE_DUYET.value
-                )
+                .where(KeKhaiLanhDao.trang_thai.in_(cv_ld_dang_tam_tinh))
             )
         else:
             cv_stmt = (
@@ -717,11 +731,11 @@ async def kiem_tra_du_dieu_kien(
                 .where(KeKhaiCongViec.thang == thang)
                 .where(KeKhaiCongViec.nam == nam)
                 .where(KeKhaiCongViec.is_deleted == False)
-                .where(KeKhaiCongViec.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET)
+                .where(KeKhaiCongViec.trang_thai.in_(cv_cc_dang_tam_tinh))
             )
         cv_chua = (await db.scalar(cv_stmt)) or 0
 
-        # Đếm tiêu chí chưa duyệt (dựa trên danh_gia_thang của chính CC)
+        # Đếm tiêu chí đang tạm tính (dựa trên danh_gia_thang của CC).
         tc_stmt = (
             select(func.count())
             .select_from(TieuChiChungDanhGia)
@@ -730,7 +744,7 @@ async def kiem_tra_du_dieu_kien(
             .where(DanhGiaThang.thang == thang)
             .where(DanhGiaThang.nam == nam)
             .where(DanhGiaThang.is_deleted == False)
-            .where(TieuChiChungDanhGia.trang_thai != TrangThaiTieuChi.DA_PHE_DUYET)
+            .where(TieuChiChungDanhGia.trang_thai.in_(tc_dang_tam_tinh))
         )
         tc_chua = (await db.scalar(tc_stmt)) or 0
 

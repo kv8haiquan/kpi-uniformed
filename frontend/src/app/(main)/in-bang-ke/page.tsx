@@ -203,6 +203,10 @@ function KeKhaiTab({
   const [warnOpen, setWarnOpen] = useState(false);
   const [warnInfo, setWarnInfo] = useState<KiemTraDuDieuKienResponse | null>(null);
 
+  // Kết quả kiểm tra tự động: hiện banner cảnh báo nếu còn kê khai tạm tính.
+  const [preCheck, setPreCheck] = useState<KiemTraDuDieuKienResponse | null>(null);
+  const [checkingPre, setCheckingPre] = useState(false);
+
   const loadPhieu = useCallback(async () => {
     if (loaiKy !== 'quy' || !canHavePhieu) {
       setPhieu(null);
@@ -224,6 +228,43 @@ function KeKhaiTab({
   useEffect(() => {
     loadPhieu();
   }, [loadPhieu]);
+
+  // Tự động kiểm tra điều kiện (chế độ quý) để hiện cảnh báo nếu cần.
+  useEffect(() => {
+    if (loaiKy !== 'quy' || !canHavePhieu) {
+      setPreCheck(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        setCheckingPre(true);
+        const r = await phieuDanhGiaService.kiemTraDuDieuKien(quy, nam);
+        if (!cancelled) setPreCheck(r);
+      } catch (err) {
+        console.error('Pre-check error:', err);
+        if (!cancelled) setPreCheck(null);
+      } finally {
+        if (!cancelled) setCheckingPre(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loaiKy, canHavePhieu, quy, nam]);
+
+  const refreshPreCheck = useCallback(async () => {
+    if (loaiKy !== 'quy' || !canHavePhieu) return;
+    try {
+      setCheckingPre(true);
+      const r = await phieuDanhGiaService.kiemTraDuDieuKien(quy, nam);
+      setPreCheck(r);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCheckingPre(false);
+    }
+  }, [loaiKy, canHavePhieu, quy, nam]);
 
   const canEditPhieu = useMemo(() => {
     if (!phieu) return true;
@@ -417,7 +458,7 @@ function KeKhaiTab({
       </div>
 
       {/* Thông tin */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-8 border border-blue-100">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-4 border border-blue-100">
         <p className="text-2xl font-bold text-blue-600">
           {loaiKy === 'thang' ? `Tháng ${thang}/${nam}` : `Quý ${quy}/${nam}`}
         </p>
@@ -427,11 +468,56 @@ function KeKhaiTab({
         <p className="text-sm text-gray-600">
           Đơn vị: <span className="font-medium text-gray-900">{user?.don_vi?.ten_don_vi || 'N/A'}</span>
         </p>
-        <p className="mt-3 text-xs text-gray-500 italic">
-          ⚠️ Bảng in chỉ lấy công việc và tiêu chí đã được phê duyệt. Hãy chắc chắn mọi kê khai
-          đã duyệt trước khi gửi phiếu đánh giá quý.
-        </p>
       </div>
+
+      {/* Banner cảnh báo — chỉ hiện khi thực sự còn CV/TC chưa duyệt trong quý. */}
+      {loaiKy === 'quy' && canHavePhieu && preCheck?.co_van_de && (
+        <div className="mb-8 bg-amber-50 border border-amber-300 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-900">
+                Còn kê khai chưa được phê duyệt trong Quý {quy}/{nam}
+              </p>
+              <p className="text-xs text-amber-800 mt-1">
+                Bảng in chỉ tổng hợp dữ liệu đã phê duyệt. Hiện còn:{' '}
+                <strong>{preCheck.so_cv_chua_duyet}</strong> công việc và{' '}
+                <strong>{preCheck.so_tc_chua_duyet}</strong> tiêu chí chưa duyệt. Hãy chờ
+                cấp trên phê duyệt trước khi gửi phiếu.
+              </p>
+              {preCheck.chi_tiet_thang.some(
+                (ct) => ct.cv_chua_duyet > 0 || ct.tc_chua_duyet > 0,
+              ) && (
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-amber-800">
+                  {preCheck.chi_tiet_thang
+                    .filter((ct) => ct.cv_chua_duyet > 0 || ct.tc_chua_duyet > 0)
+                    .map((ct) => (
+                      <span key={ct.thang}>
+                        Tháng {ct.thang}: <b>{ct.cv_chua_duyet}</b> CV ·{' '}
+                        <b>{ct.tc_chua_duyet}</b> TC
+                      </span>
+                    ))}
+                </div>
+              )}
+              <button
+                onClick={refreshPreCheck}
+                disabled={checkingPre}
+                className="mt-2 text-xs text-amber-800 underline hover:text-amber-900 disabled:opacity-50"
+              >
+                {checkingPre ? 'Đang kiểm tra…' : '🔄 Kiểm tra lại'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loaiKy === 'quy' && canHavePhieu && preCheck && !preCheck.co_van_de && (
+        <div className="mb-8 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+          <p className="text-sm text-green-800">
+            ✅ Toàn bộ công việc và tiêu chí của Quý {quy}/{nam} đã được phê duyệt.
+          </p>
+        </div>
+      )}
 
       {/* Phiếu tự nhập (chỉ quý + có phiếu) */}
       {loaiKy === 'quy' && canHavePhieu && (

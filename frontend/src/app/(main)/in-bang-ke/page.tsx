@@ -732,6 +732,9 @@ function PheDuyetTab({ quy, setQuy, nam, setNam }: PheDuyetTabProps) {
   const [lyDo, setLyDo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Modal xem chi tiết ưu điểm / hạn chế / ý kiến LĐ
+  const [detailItem, setDetailItem] = useState<PhieuChoPheDuyetItem | null>(null);
+
   const currentYear = new Date().getFullYear();
 
   const load = useCallback(async () => {
@@ -934,6 +937,9 @@ function PheDuyetTab({ quy, setQuy, nam, setNam }: PheDuyetTabProps) {
               {items.map((it) => {
                 const isChoDuyet = it.trang_thai === 'CHO_PHE_DUYET';
                 const isDaDuyet = it.trang_thai === 'DA_PHE_DUYET';
+                const hasContent = Boolean(
+                  it.uu_diem || it.han_che || it.y_kien_lanh_dao,
+                );
                 return (
                   <tr key={it.id ?? `cc-${it.cong_chuc_id}`} className="hover:bg-gray-50">
                     <td className="px-3 py-2 align-top">
@@ -947,11 +953,29 @@ function PheDuyetTab({ quy, setQuy, nam, setNam }: PheDuyetTabProps) {
                     <td className="px-3 py-2 align-top text-gray-700 whitespace-nowrap">
                       {formatDate(it.ngay_gui_duyet) || <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="px-3 py-2 align-top text-gray-700 max-w-xs">
+                    <td
+                      className={`px-3 py-2 align-top text-gray-700 max-w-xs ${
+                        hasContent ? 'cursor-pointer hover:bg-blue-50' : ''
+                      }`}
+                      onClick={() => hasContent && setDetailItem(it)}
+                      title={hasContent ? 'Bấm để xem chi tiết' : undefined}
+                    >
                       <div className="line-clamp-3 whitespace-pre-wrap">{it.uu_diem || '-'}</div>
+                      {hasContent && it.uu_diem && it.uu_diem.length > 120 && (
+                        <div className="text-[10px] text-blue-600 mt-1">🔍 Xem đầy đủ</div>
+                      )}
                     </td>
-                    <td className="px-3 py-2 align-top text-gray-700 max-w-xs">
+                    <td
+                      className={`px-3 py-2 align-top text-gray-700 max-w-xs ${
+                        hasContent ? 'cursor-pointer hover:bg-blue-50' : ''
+                      }`}
+                      onClick={() => hasContent && setDetailItem(it)}
+                      title={hasContent ? 'Bấm để xem chi tiết' : undefined}
+                    >
                       <div className="line-clamp-3 whitespace-pre-wrap">{it.han_che || '-'}</div>
+                      {hasContent && it.han_che && it.han_che.length > 120 && (
+                        <div className="text-[10px] text-blue-600 mt-1">🔍 Xem đầy đủ</div>
+                      )}
                     </td>
                     <td className="px-3 py-2 align-top text-center whitespace-nowrap">
                       <button
@@ -1117,6 +1141,113 @@ function PheDuyetTab({ quy, setQuy, nam, setNam }: PheDuyetTabProps) {
           </div>
         </div>
       )}
+
+      {/* Modal xem chi tiết ưu điểm / hạn chế / ý kiến LĐ */}
+      {detailItem && (
+        <ChiTietPhieuModal item={detailItem} onClose={() => setDetailItem(null)} />
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// MODAL: Xem chi tiết ưu điểm / hạn chế / ý kiến LĐ
+// =============================================================================
+
+function ChiTietPhieuModal({
+  item,
+  onClose,
+}: {
+  item: PhieuChoPheDuyetItem;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">
+              📄 Chi tiết phiếu đánh giá
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              <strong>{item.ho_ten}</strong> ({item.ma_cc})
+              {item.chuc_vu ? ` · ${item.chuc_vu}` : ''} · Quý {item.quy}/{item.nam}
+            </p>
+            <div className="mt-2 flex items-center gap-2 text-xs">
+              <span
+                className={`inline-block px-2 py-0.5 rounded-full font-semibold ${
+                  TRANG_THAI_BADGE[item.trang_thai] || 'bg-gray-100 text-gray-700'
+                }`}
+              >
+                {TRANG_THAI_LABEL[item.trang_thai] || item.trang_thai}
+              </span>
+              {item.ngay_gui_duyet && (
+                <span className="text-gray-500">
+                  Gửi: {formatDate(item.ngay_gui_duyet)}
+                </span>
+              )}
+              {item.ngay_phe_duyet && (
+                <span className="text-gray-500">
+                  Duyệt: {formatDate(item.ngay_phe_duyet)}
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            aria-label="Đóng"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="space-y-4 mt-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              4. Ưu điểm
+            </label>
+            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 whitespace-pre-wrap min-h-[60px]">
+              {item.uu_diem || <span className="text-gray-400 italic">Chưa nhập</span>}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              5. Hạn chế, khuyết điểm
+            </label>
+            <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 whitespace-pre-wrap min-h-[60px]">
+              {item.han_che || <span className="text-gray-400 italic">Chưa nhập</span>}
+            </div>
+          </div>
+
+          {item.y_kien_lanh_dao && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                6. Ý kiến của cấp có thẩm quyền
+              </label>
+              <div className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-900 whitespace-pre-wrap">
+                {item.y_kien_lanh_dao}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg"
+          >
+            Đóng
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

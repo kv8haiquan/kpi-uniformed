@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -35,7 +36,12 @@ from docx.shared import Pt
 from app.api.deps import DatabaseDep, ActiveUserDep
 from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
-from app.models.kpi_assessment import DanhGiaThang, TieuChiChungDanhGia, LanhDaoChiSo
+from app.models.kpi_assessment import (
+    DanhGiaThang,
+    LanhDaoChiSo,
+    TieuChiChungDanhGia,
+    TrangThaiTieuChi,
+)
 from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, TrangThaiHoanThanh
 from app.models.phieu_danh_gia import PhieuDanhGiaQuy, TrangThaiPhieuDanhGia
 from app.models.task_catalog import DanhMucSpCongViec
@@ -455,20 +461,23 @@ async def export_phieu_danh_gia(
     danh_gia = result_dg.scalar_one_or_none()
 
     # Lấy tiêu chí chung (phải JOIN qua DanhGiaThang vì TieuChiChungDanhGia không có cong_chuc_id)
+    # CHÍNH SÁCH: Spec bắt buộc data phải đã được phê duyệt. Chỉ dùng diem_phe_duyet
+    # của các tiêu chí có trang_thai == DA_PHE_DUYET, KHÔNG fallback về tự chấm.
     tieu_chi_list = []
     diem_tieu_chi = 0
     if danh_gia:
         stmt_tc = (
             select(TieuChiChungDanhGia)
             .where(TieuChiChungDanhGia.danh_gia_thang_id == danh_gia.id)
+            .where(TieuChiChungDanhGia.trang_thai == TrangThaiTieuChi.DA_PHE_DUYET)
             .options(selectinload(TieuChiChungDanhGia.tieu_chi))
         )
         result_tc = await db.execute(stmt_tc)
         tieu_chi_list = result_tc.scalars().all()
 
-        # Tính điểm tiêu chí chung (dùng is_achieved_ld nếu có, không thì is_achieved_cc)
+        # Tính điểm tiêu chí chung — chỉ dùng diem_phe_duyet (đã lọc DA_PHE_DUYET)
         diem_tieu_chi = sum([
-            float(tc.diem_phe_duyet or tc.diem_tu_cham or 0)
+            float(tc.diem_phe_duyet or 0)
             for tc in tieu_chi_list
         ])
 
@@ -740,15 +749,15 @@ async def export_phieu_danh_gia(
                     expected_tt, ma_tc = ma_tieu_chi_list[tc_idx]
                     # Kiểm tra cell_tt có match không (cột TT chứa "1", "2", "3", ...)
                     if cell_tt == expected_tt:
-                        # Tìm điểm trong tc_map
+                        # Tìm điểm trong tc_map (đã lọc DA_PHE_DUYET ở trên)
                         diem = Decimal(0)
                         if ma_tc in tc_map:
                             tc_data = tc_map[ma_tc]
-                            # Dùng điểm phê duyệt (LD) nếu có, không thì tự chấm
-                            diem = tc_data.diem_phe_duyet or tc_data.diem_tu_cham or Decimal(0)
+                            # Chỉ dùng điểm phê duyệt chính thức
+                            diem = tc_data.diem_phe_duyet or Decimal(0)
                             row.cells[3].text = f"{float(diem):.2f}"
                         else:
-                            # Tiêu chí chưa có dữ liệu
+                            # Tiêu chí chưa được phê duyệt hoặc chưa có dữ liệu
                             row.cells[3].text = ""
 
                         # Set font Times New Roman
@@ -836,8 +845,8 @@ async def export_bang_ke_cong_viec(
     cong_viec_list = []
     cong_viec_lanh_dao_list = []
 
+    # CHÍNH SÁCH (17/04/2026): Bảng kê chính thức chỉ tổng hợp công việc ĐÃ PHÊ DUYỆT.
     if is_lanh_dao:
-        # Query KeKhaiLanhDao
         stmt_kkld = (
             select(KeKhaiLanhDao)
             .where(
@@ -846,6 +855,7 @@ async def export_bang_ke_cong_viec(
                     KeKhaiLanhDao.thang == thang,
                     KeKhaiLanhDao.nam == nam,
                     KeKhaiLanhDao.is_deleted == False,
+                    KeKhaiLanhDao.trang_thai == TrangThaiKeKhaiLD.DA_PHE_DUYET.value,
                 )
             )
             .order_by(KeKhaiLanhDao.ngay_thuc_hien.desc())
@@ -853,7 +863,6 @@ async def export_bang_ke_cong_viec(
         result_kkld = await db.execute(stmt_kkld)
         cong_viec_lanh_dao_list = result_kkld.scalars().all()
     else:
-        # Query KeKhaiCongViec
         stmt_kk = (
             select(KeKhaiCongViec)
             .options(
@@ -865,6 +874,7 @@ async def export_bang_ke_cong_viec(
                     KeKhaiCongViec.cong_chuc_id == cc.id,
                     KeKhaiCongViec.thang == thang,
                     KeKhaiCongViec.nam == nam,
+                    KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
                 )
             )
             .order_by(KeKhaiCongViec.ngay_thuc_hien.desc())
@@ -1175,8 +1185,8 @@ async def export_phieu_danh_gia_quy(
 
     is_lanh_dao = cc.is_lanh_dao or False
 
-    # Tính điểm quý
-    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam)
+    # Tính điểm quý — tam_tinh=False vì phiếu in chính thức yêu cầu data đã phê duyệt.
+    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam, tam_tinh=False)
 
     # Lấy 3 tháng trong quý
     thang_list = QUY_TO_THANG.get(quy, [])
@@ -1349,12 +1359,14 @@ async def export_phieu_danh_gia_quy(
         danh_gia_list = result_dg_quy.scalars().all()
         dg_ids = [dg.id for dg in danh_gia_list]
 
-        # Lấy tất cả TieuChiChungDanhGia của 3 tháng
+        # Lấy tất cả TieuChiChungDanhGia của 3 tháng — CHỈ tiêu chí đã phê duyệt.
+        # Tháng nào thiếu tiêu chí đã duyệt sẽ tính 0 cho tháng đó (TB /3 vẫn chia 3).
         tc_quy_map = {}  # ma_tieu_chi → list of (diem, nhom, danh_gia_thang_id)
         if dg_ids:
             stmt_tc_quy = (
                 select(TieuChiChungDanhGia)
                 .where(TieuChiChungDanhGia.danh_gia_thang_id.in_(dg_ids))
+                .where(TieuChiChungDanhGia.trang_thai == TrangThaiTieuChi.DA_PHE_DUYET)
                 .options(selectinload(TieuChiChungDanhGia.tieu_chi))
             )
             result_tc_quy = await db.execute(stmt_tc_quy)
@@ -1363,7 +1375,7 @@ async def export_phieu_danh_gia_quy(
             for tc in all_tc:
                 if tc.tieu_chi:
                     ma = tc.tieu_chi.ma_tieu_chi
-                    diem = tc.diem_phe_duyet or tc.diem_tu_cham or Decimal(0)
+                    diem = tc.diem_phe_duyet or Decimal(0)
                     nhom = tc.tieu_chi.nhom_tieu_chi  # 1, 2, 3
                     diem_toi_da = tc.tieu_chi.diem_toi_da or Decimal(0)
                     if ma not in tc_quy_map:
@@ -1545,8 +1557,8 @@ async def export_bang_ke_cong_viec_quy(
     cong_viec_list = []
     cong_viec_lanh_dao_list = []
 
+    # CHÍNH SÁCH (17/04/2026): Bảng kê quý chính thức chỉ tổng hợp công việc ĐÃ PHÊ DUYỆT.
     if is_lanh_dao:
-        # Query KeKhaiLanhDao cho 3 tháng
         stmt_kkld = (
             select(KeKhaiLanhDao)
             .where(
@@ -1555,6 +1567,7 @@ async def export_bang_ke_cong_viec_quy(
                     KeKhaiLanhDao.thang.in_(thang_list),
                     KeKhaiLanhDao.nam == nam,
                     KeKhaiLanhDao.is_deleted == False,
+                    KeKhaiLanhDao.trang_thai == TrangThaiKeKhaiLD.DA_PHE_DUYET.value,
                 )
             )
             .order_by(KeKhaiLanhDao.thang, KeKhaiLanhDao.ngay_thuc_hien.desc())
@@ -1562,7 +1575,6 @@ async def export_bang_ke_cong_viec_quy(
         result_kkld = await db.execute(stmt_kkld)
         cong_viec_lanh_dao_list = result_kkld.scalars().all()
     else:
-        # Query KeKhaiCongViec cho 3 tháng
         stmt_kk = (
             select(KeKhaiCongViec)
             .options(
@@ -1574,6 +1586,7 @@ async def export_bang_ke_cong_viec_quy(
                     KeKhaiCongViec.cong_chuc_id == cc.id,
                     KeKhaiCongViec.thang.in_(thang_list),
                     KeKhaiCongViec.nam == nam,
+                    KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
                 )
             )
             .order_by(KeKhaiCongViec.thang, KeKhaiCongViec.ngay_thuc_hien.desc())
@@ -1788,3 +1801,86 @@ async def export_bang_ke_cong_viec_quy(
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+# =============================================================================
+# ENDPOINTS DÀNH CHO TDV/CCT: TẢI BẢNG IN CỦA CÔNG CHỨC KHÁC
+# =============================================================================
+# Khi TDV duyệt phiếu quý, có thể cần tải về phiếu / bảng kê bản in của CC
+# để đính kèm hồ sơ. 2 endpoint sau reuse lại 2 route quý hiện có bằng cách
+# truyền `target_cc` thay cho `current_user` khi gọi hàm xử lý bên trong.
+
+
+async def _load_cc_cho_in_boi_tdv(
+    db,
+    nguoi_in: CongChuc,
+    target_cong_chuc_id: UUID,
+) -> CongChuc:
+    """
+    Load công chức đích và kiểm tra `nguoi_in` có quyền tải bảng in của CC đó không.
+
+    Quy tắc (đồng bộ với `phieu_danh_gia_quy._co_quyen_duyet`):
+    - TDV cùng đơn vị → tải được bảng in của CC / Phó ĐV trong đơn vị mình.
+    - CCT → tải được bảng in của TDV / Phó CCT toàn chi cục.
+    - Chính CC vẫn được tải bảng in của mình (phục vụ fallback).
+    """
+    stmt = (
+        select(CongChuc)
+        .options(
+            selectinload(CongChuc.don_vi),
+            selectinload(CongChuc.vai_tro),
+        )
+        .where(CongChuc.id == target_cong_chuc_id)
+    )
+    target_cc = (await db.execute(stmt)).scalar_one_or_none()
+    if target_cc is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy công chức đích")
+
+    if nguoi_in.id == target_cc.id:
+        return target_cc
+
+    cb_nguoi = nguoi_in.vai_tro.cap_bac if nguoi_in.vai_tro else None
+    cb_target = target_cc.vai_tro.cap_bac if target_cc.vai_tro else None
+
+    allowed = False
+    if cb_target in (CapBacVaiTro.CONG_CHUC, CapBacVaiTro.PHO_DON_VI):
+        allowed = (
+            cb_nguoi == CapBacVaiTro.TRUONG_DON_VI
+            and nguoi_in.don_vi_id == target_cc.don_vi_id
+        )
+    elif cb_target in (CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG):
+        allowed = cb_nguoi == CapBacVaiTro.CHI_CUC_TRUONG
+
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Bạn không có quyền tải bảng in của công chức này",
+        )
+
+    return target_cc
+
+
+@router.get("/phieu-danh-gia-quy/{quy}/{nam}/cua-cc/{cong_chuc_id}")
+async def export_phieu_danh_gia_quy_cua_cc(
+    quy: int,
+    nam: int,
+    cong_chuc_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """TDV/CCT tải phiếu đánh giá quý (PL-01A/01B) của CC cụ thể."""
+    target_cc = await _load_cc_cho_in_boi_tdv(db, current_user, cong_chuc_id)
+    return await export_phieu_danh_gia_quy(quy, nam, db, target_cc)
+
+
+@router.get("/bang-ke-cong-viec-quy/{quy}/{nam}/cua-cc/{cong_chuc_id}")
+async def export_bang_ke_cong_viec_quy_cua_cc(
+    quy: int,
+    nam: int,
+    cong_chuc_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """TDV/CCT tải bảng kê công việc quý (PL-02) của CC cụ thể."""
+    target_cc = await _load_cc_cho_in_boi_tdv(db, current_user, cong_chuc_id)
+    return await export_bang_ke_cong_viec_quy(quy, nam, db, target_cc)

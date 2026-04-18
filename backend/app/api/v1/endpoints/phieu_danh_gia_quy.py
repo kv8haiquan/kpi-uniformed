@@ -32,17 +32,29 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import ActiveUserDep, DatabaseDep
+from app.models.kpi_assessment import (
+    DanhGiaThang,
+    TieuChiChungDanhGia,
+    TrangThaiTieuChi,
+)
+from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
+from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD
 from app.models.phieu_danh_gia import PhieuDanhGiaQuy, TrangThaiPhieuDanhGia
 from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
 from app.schemas.common import error_response, success_response
 from app.schemas.phieu_danh_gia import (
+    ChiTietThangThieu,
+    KiemTraDuDieuKienResponse,
     NguoiKyResponse,
     PheDuyetPhieuRequest,
     PhieuChoPheDuyetItem,
     PhieuDanhGiaQuyResponse,
+    TraLaiPhieuRequest,
     TuChoiPhieuRequest,
     UpsertPhieuQuyRequest,
 )
+
+QUY_TO_THANG = {1: [1, 2, 3], 2: [4, 5, 6], 3: [7, 8, 9], 4: [10, 11, 12]}
 
 router = APIRouter()
 
@@ -305,14 +317,27 @@ async def list_phieu_cho_duyet(
     current_user: ActiveUserDep,
     quy: Optional[int] = Query(None, ge=1, le=4),
     nam: Optional[int] = Query(None, ge=2020, le=2100),
+    trang_thai: Optional[str] = Query(
+        None,
+        description=(
+            "Lọc theo trạng thái: CHO_PHE_DUYET (mặc định), DA_PHE_DUYET, "
+            "BI_TU_CHOI. Dùng DA_PHE_DUYET khi cần xem danh sách đã duyệt để "
+            "tải bảng in hoặc trả lại."
+        ),
+    ),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
 ) -> dict:
     """
-    TDV/CCT xem danh sách phiếu đang CHO_PHE_DUYET trong phạm vi mình duyệt.
+    TDV/CCT xem danh sách phiếu trong phạm vi mình duyệt.
 
     - TDV: chỉ thấy phiếu của CC + PDV cùng đơn vị.
     - CCT: thấy tất cả phiếu của TDV + PCCT trên toàn chi cục.
+    - Mặc định (không truyền `trang_thai`) + có `quy` + `nam`: trả về toàn bộ
+      CC trong phạm vi kèm trạng thái phiếu. CC chưa soạn phiếu sẽ được
+      hiển thị với `trang_thai=NHAP` và `id=null`.
+    - Truyền `trang_thai=CHO_PHE_DUYET/DA_PHE_DUYET/BI_TU_CHOI`: chỉ lấy phiếu
+      đã tồn tại với trạng thái đó.
     """
     cb = _cap_bac(current_user)
     if cb == CapBacVaiTro.TRUONG_DON_VI:
@@ -327,6 +352,136 @@ async def list_phieu_cho_duyet(
             detail=error_response(code="PHIEU_006", message="Chỉ TDV/CCT mới có danh sách phiếu chờ duyệt"),
         )
 
+    # Validate trang_thai. Nếu None → trả về tất cả 4 trạng thái (NHAP +
+    # CHO_PHE_DUYET + DA_PHE_DUYET + BI_TU_CHOI) để TDV xem bảng tổng hợp.
+    allowed_trang_thai = {t.value for t in TrangThaiPhieuDanhGia}
+    if trang_thai is None:
+        trang_thai_filter: Optional[str] = None
+    elif trang_thai in allowed_trang_thai:
+        trang_thai_filter = trang_thai
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="PHIEU_009",
+                message=f"Trạng thái không hợp lệ: {trang_thai}",
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # CHẾ ĐỘ HIỂN THỊ TOÀN BỘ CC (virtual NHAP):
+    # Khi FE xem bảng hỗn hợp 4 trạng thái (không truyền `trang_thai`) và
+    # đã chọn rõ quý/năm, ta JOIN-LEFT CC với phiếu để TDV thấy cả CC
+    # chưa soạn phiếu (hiển thị placeholder NHAP).
+    # ------------------------------------------------------------------
+    full_listing = (
+        trang_thai_filter is None
+        and quy is not None
+        and nam is not None
+    )
+
+    if full_listing:
+        # 1. Tất cả CC trong phạm vi duyệt.
+        cc_stmt = (
+            select(CongChuc)
+            .options(
+                selectinload(CongChuc.don_vi),
+                selectinload(CongChuc.vai_tro),
+            )
+            .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+            .where(CongChuc.is_active == True)
+            .where(VaiTro.cap_bac.in_(cap_bac_chu_phieu))
+        )
+        if don_vi_filter is not None:
+            cc_stmt = cc_stmt.where(CongChuc.don_vi_id == don_vi_filter)
+        all_cc = (await db.execute(cc_stmt)).scalars().all()
+
+        # 2. Phiếu đã tồn tại cho quý/năm này trong phạm vi đó.
+        phieu_stmt = (
+            select(PhieuDanhGiaQuy)
+            .options(selectinload(PhieuDanhGiaQuy.nguoi_phe_duyet))
+            .where(PhieuDanhGiaQuy.quy == quy)
+            .where(PhieuDanhGiaQuy.nam == nam)
+            .where(PhieuDanhGiaQuy.cong_chuc_id.in_([c.id for c in all_cc]))
+            if all_cc
+            else select(PhieuDanhGiaQuy).where(False)  # shortcut rỗng
+        )
+        phieus = (await db.execute(phieu_stmt)).scalars().all() if all_cc else []
+        phieu_by_cc = {p.cong_chuc_id: p for p in phieus}
+
+        # 3. Ghép virtual NHAP cho CC chưa có phiếu.
+        raw_items: list[tuple[Optional[datetime], PhieuChoPheDuyetItem]] = []
+        for cc in all_cc:
+            p = phieu_by_cc.get(cc.id)
+            if p is None:
+                item = PhieuChoPheDuyetItem(
+                    id=None,
+                    cong_chuc_id=cc.id,
+                    ma_cc=cc.ma_cc,
+                    ho_ten=cc.ho_ten,
+                    chuc_vu=cc.chuc_vu,
+                    don_vi_ten=cc.don_vi.ten_don_vi if cc.don_vi else None,
+                    quy=quy,
+                    nam=nam,
+                    trang_thai=TrangThaiPhieuDanhGia.NHAP.value,
+                )
+                sort_ts = None
+            else:
+                item = PhieuChoPheDuyetItem(
+                    id=p.id,
+                    cong_chuc_id=p.cong_chuc_id,
+                    ma_cc=cc.ma_cc,
+                    ho_ten=cc.ho_ten,
+                    chuc_vu=cc.chuc_vu,
+                    don_vi_ten=cc.don_vi.ten_don_vi if cc.don_vi else None,
+                    quy=p.quy,
+                    nam=p.nam,
+                    trang_thai=p.trang_thai,
+                    ngay_gui_duyet=p.ngay_gui_duyet,
+                    ngay_phe_duyet=p.ngay_phe_duyet,
+                    uu_diem=p.uu_diem,
+                    han_che=p.han_che,
+                    y_kien_lanh_dao=p.y_kien_lanh_dao,
+                )
+                sort_ts = p.ngay_gui_duyet or p.updated_at
+            raw_items.append((sort_ts, item))
+
+        # Sắp xếp: CHO_PHE_DUYET trước (ưu tiên duyệt), rồi DA, BI_TU_CHOI, NHAP;
+        # trong cùng nhóm sort theo ngày gửi/duyệt giảm dần.
+        group_order = {
+            TrangThaiPhieuDanhGia.CHO_PHE_DUYET.value: 0,
+            TrangThaiPhieuDanhGia.DA_PHE_DUYET.value: 1,
+            TrangThaiPhieuDanhGia.BI_TU_CHOI.value: 2,
+            TrangThaiPhieuDanhGia.NHAP.value: 3,
+        }
+        raw_items.sort(
+            key=lambda pair: (
+                group_order.get(pair[1].trang_thai, 99),
+                -(pair[0].timestamp() if pair[0] else 0),
+                pair[1].ho_ten or "",
+            )
+        )
+
+        total = len(raw_items)
+        start = (page - 1) * page_size
+        end = start + page_size
+        items = [it.model_dump(mode="json") for _, it in raw_items[start:end]]
+
+        return success_response(
+            data={
+                "items": items,
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_items": total,
+                    "total_pages": (total + page_size - 1) // page_size if page_size else 0,
+                },
+            }
+        )
+
+    # ------------------------------------------------------------------
+    # Chế độ lọc theo một trạng thái cụ thể — giữ nguyên query phiếu.
+    # ------------------------------------------------------------------
     stmt = (
         select(PhieuDanhGiaQuy)
         .options(
@@ -335,9 +490,10 @@ async def list_phieu_cho_duyet(
         )
         .join(CongChuc, CongChuc.id == PhieuDanhGiaQuy.cong_chuc_id)
         .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
-        .where(PhieuDanhGiaQuy.trang_thai == TrangThaiPhieuDanhGia.CHO_PHE_DUYET.value)
         .where(VaiTro.cap_bac.in_(cap_bac_chu_phieu))
     )
+    if trang_thai_filter is not None:
+        stmt = stmt.where(PhieuDanhGiaQuy.trang_thai == trang_thai_filter)
     if don_vi_filter is not None:
         stmt = stmt.where(CongChuc.don_vi_id == don_vi_filter)
     if quy is not None:
@@ -345,12 +501,16 @@ async def list_phieu_cho_duyet(
     if nam is not None:
         stmt = stmt.where(PhieuDanhGiaQuy.nam == nam)
 
-    # Count
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total = await db.scalar(count_stmt) or 0
 
-    # Page
-    stmt = stmt.order_by(PhieuDanhGiaQuy.ngay_gui_duyet.desc().nullslast())
+    if trang_thai_filter == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value:
+        stmt = stmt.order_by(PhieuDanhGiaQuy.ngay_phe_duyet.desc().nullslast())
+    else:
+        stmt = stmt.order_by(
+            PhieuDanhGiaQuy.ngay_gui_duyet.desc().nullslast(),
+            PhieuDanhGiaQuy.updated_at.desc(),
+        )
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     phieus = (await db.execute(stmt)).scalars().all()
 
@@ -368,8 +528,10 @@ async def list_phieu_cho_duyet(
                 nam=p.nam,
                 trang_thai=p.trang_thai,
                 ngay_gui_duyet=p.ngay_gui_duyet,
+                ngay_phe_duyet=p.ngay_phe_duyet,
                 uu_diem=p.uu_diem,
                 han_che=p.han_che,
+                y_kien_lanh_dao=p.y_kien_lanh_dao,
             ).model_dump(mode="json")
         )
 
@@ -449,6 +611,148 @@ async def tu_choi_phieu(
     await db.flush()
     phieu = await _lay_phieu_after_mutate(db, phieu.id)
     return success_response(data=_serialize(phieu), message="Đã từ chối phiếu")
+
+
+@router.post("/{phieu_id}/tra-lai", response_model=dict)
+async def tra_lai_phieu(
+    phieu_id: UUID,
+    payload: TraLaiPhieuRequest,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """
+    TDV/CCT trả lại phiếu đã phê duyệt (đảo ngược phê duyệt nhầm).
+
+    Chuyển từ DA_PHE_DUYET → NHAP để CC có thể sửa và gửi lại. Nếu có `ly_do`,
+    lưu vào `ly_do_tu_choi` để CC thấy ghi chú khi mở phiếu.
+    """
+    phieu = await _lay_phieu(db, phieu_id)
+
+    if phieu.trang_thai != TrangThaiPhieuDanhGia.DA_PHE_DUYET.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="PHIEU_010",
+                message="Chỉ trả lại được phiếu đang ở trạng thái 'Đã phê duyệt'",
+            ),
+        )
+
+    if not _co_quyen_duyet(current_user, phieu.cong_chuc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PHIEU_011",
+                message="Bạn không có quyền trả lại phiếu này",
+            ),
+        )
+
+    phieu.trang_thai = TrangThaiPhieuDanhGia.NHAP.value
+    phieu.y_kien_lanh_dao = None
+    phieu.ngay_gui_duyet = None
+    phieu.nguoi_phe_duyet_id = None
+    phieu.ngay_phe_duyet = None
+    phieu.ly_do_tu_choi = (payload.ly_do or "").strip() or None
+
+    await db.flush()
+    phieu = await _lay_phieu_after_mutate(db, phieu.id)
+    return success_response(data=_serialize(phieu), message="Đã trả lại phiếu")
+
+
+# =============================================================================
+# ENDPOINT — CC: KIỂM TRA ĐIỀU KIỆN GỬI DUYỆT
+# =============================================================================
+
+@router.get("/kiem-tra-du-dieu-kien", response_model=dict)
+async def kiem_tra_du_dieu_kien(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    quy: int = Query(..., ge=1, le=4),
+    nam: int = Query(..., ge=2020, le=2100),
+) -> dict:
+    """
+    CC kiểm tra điều kiện trước khi gửi phiếu quý đi duyệt.
+
+    Trả về số công việc + tiêu chí CHƯA phê duyệt trong 3 tháng của quý.
+    FE dùng kết quả để hiện cảnh báo nếu `co_van_de == True`.
+    """
+    if not _co_phieu(current_user):
+        return success_response(
+            data=KiemTraDuDieuKienResponse(
+                quy=quy, nam=nam, co_van_de=False
+            ).model_dump(mode="json"),
+            message="CCT không dùng phiếu",
+        )
+
+    thang_list = QUY_TO_THANG.get(quy, [])
+    if not thang_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code="PHIEU_012", message="Quý không hợp lệ"),
+        )
+
+    is_lanh_dao = bool(current_user.is_lanh_dao)
+    chi_tiet: list[ChiTietThangThieu] = []
+    tong_cv_chua = 0
+    tong_tc_chua = 0
+
+    for thang in thang_list:
+        # Đếm công việc chưa duyệt (chỉ tính khác DA_PHE_DUYET và chưa xoá)
+        if is_lanh_dao:
+            cv_stmt = (
+                select(func.count())
+                .select_from(KeKhaiLanhDao)
+                .where(KeKhaiLanhDao.cong_chuc_id == current_user.id)
+                .where(KeKhaiLanhDao.thang == thang)
+                .where(KeKhaiLanhDao.nam == nam)
+                .where(KeKhaiLanhDao.is_deleted == False)
+                .where(
+                    KeKhaiLanhDao.trang_thai != TrangThaiKeKhaiLD.DA_PHE_DUYET.value
+                )
+            )
+        else:
+            cv_stmt = (
+                select(func.count())
+                .select_from(KeKhaiCongViec)
+                .where(KeKhaiCongViec.cong_chuc_id == current_user.id)
+                .where(KeKhaiCongViec.thang == thang)
+                .where(KeKhaiCongViec.nam == nam)
+                .where(KeKhaiCongViec.is_deleted == False)
+                .where(KeKhaiCongViec.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET)
+            )
+        cv_chua = (await db.scalar(cv_stmt)) or 0
+
+        # Đếm tiêu chí chưa duyệt (dựa trên danh_gia_thang của chính CC)
+        tc_stmt = (
+            select(func.count())
+            .select_from(TieuChiChungDanhGia)
+            .join(DanhGiaThang, DanhGiaThang.id == TieuChiChungDanhGia.danh_gia_thang_id)
+            .where(DanhGiaThang.cong_chuc_id == current_user.id)
+            .where(DanhGiaThang.thang == thang)
+            .where(DanhGiaThang.nam == nam)
+            .where(DanhGiaThang.is_deleted == False)
+            .where(TieuChiChungDanhGia.trang_thai != TrangThaiTieuChi.DA_PHE_DUYET)
+        )
+        tc_chua = (await db.scalar(tc_stmt)) or 0
+
+        tong_cv_chua += cv_chua
+        tong_tc_chua += tc_chua
+        chi_tiet.append(
+            ChiTietThangThieu(
+                thang=thang,
+                cv_chua_duyet=cv_chua,
+                tc_chua_duyet=tc_chua,
+            )
+        )
+
+    resp = KiemTraDuDieuKienResponse(
+        quy=quy,
+        nam=nam,
+        co_van_de=(tong_cv_chua > 0 or tong_tc_chua > 0),
+        so_cv_chua_duyet=tong_cv_chua,
+        so_tc_chua_duyet=tong_tc_chua,
+        chi_tiet_thang=chi_tiet,
+    )
+    return success_response(data=resp.model_dump(mode="json"))
 
 
 # =============================================================================

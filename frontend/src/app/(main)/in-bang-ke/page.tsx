@@ -1,16 +1,13 @@
 /**
  * src/app/(main)/in-bang-ke/page.tsx
  * ====================================
- * Trang in bảng kê cá nhân + Workflow phiếu đánh giá QUÝ.
+ * Trang in bảng kê cá nhân + workflow phê duyệt phiếu đánh giá QUÝ.
  *
- * Tính năng:
- * 1. Chọn tháng/quý + năm
- * 2. Tải phiếu đánh giá (PL-01A/01B) và bảng kê công việc (PL-02)
- * 3. (v4.1.0) Với quý: tự nhập mục 4 (Ưu điểm) + mục 5 (Hạn chế), gửi
- *    duyệt TDV/CCT; khi duyệt → file docx có đủ mục 4/5/6.
- * 4. (v4.1.0) TDV/CCT: section phê duyệt danh sách phiếu chờ duyệt.
- *
- * Version: 2.0.0 (17/04/2026)
+ * v3.0.0 (18/04/2026):
+ * - Tách thành 2 tab: "Kê khai" (CC) và "Phê duyệt" (TDV/CCT).
+ * - Tab "Phê duyệt" hỗ trợ sub-filter CHO_PHE_DUYET / DA_PHE_DUYET, cho phép
+ *   TDV tải bảng in của CC và trả lại phiếu đã phê duyệt nhầm.
+ * - CC gửi duyệt: hiện cảnh báo nếu còn công việc / tiêu chí chưa được duyệt.
  */
 
 'use client';
@@ -19,11 +16,16 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import apiClient from '@/lib/axios';
 import { phieuDanhGiaService } from '@/services/phieu-danh-gia.service';
-import type { PhieuDanhGiaQuy, PhieuChoPheDuyetItem } from '@/types/phieu-danh-gia';
+import type { IUser } from '@/types/auth';
+import type {
+  KiemTraDuDieuKienResponse,
+  PhieuChoPheDuyetItem,
+  PhieuDanhGiaQuy,
+} from '@/types/phieu-danh-gia';
 
 type LoaiKy = 'thang' | 'quy';
+type MainTab = 'ke-khai' | 'phe-duyet';
 
-// Badge màu theo trạng thái phiếu
 const TRANG_THAI_BADGE: Record<string, string> = {
   NHAP: 'bg-gray-100 text-gray-700',
   CHO_PHE_DUYET: 'bg-amber-100 text-amber-800',
@@ -44,30 +46,152 @@ function formatDate(s: string | null): string {
   return d.toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+// =============================================================================
+// ROOT COMPONENT
+// =============================================================================
+
 export default function InBangKePage() {
   const { user } = useAuthStore();
 
-  // ===== Trạng thái chung =====
   const currentDate = new Date();
   const [loaiKy, setLoaiKy] = useState<LoaiKy>('thang');
   const [thang, setThang] = useState(currentDate.getMonth() + 1);
   const [quy, setQuy] = useState(Math.ceil((currentDate.getMonth() + 1) / 3));
   const [nam, setNam] = useState(currentDate.getFullYear());
-  const [downloading, setDownloading] = useState(false);
 
-  // ===== Phiếu đánh giá quý của CC =====
   const canHavePhieu = useMemo(() => {
-    // CCT không dùng phiếu
     return user?.vai_tro?.cap_bac !== 'CHI_CUC_TRUONG';
   }, [user]);
 
   const isDuyet = useMemo(() => {
-    // TDV hoặc CCT mới có quyền duyệt phiếu của người khác
     return (
       user?.vai_tro?.cap_bac === 'TRUONG_DON_VI' ||
       user?.vai_tro?.cap_bac === 'CHI_CUC_TRUONG'
     );
   }, [user]);
+
+  const [mainTabRaw, setMainTab] = useState<MainTab>('ke-khai');
+  // Nếu user không có quyền duyệt, luôn hiển thị tab kê khai.
+  const mainTab: MainTab = isDuyet ? mainTabRaw : 'ke-khai';
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-8 px-4">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 mb-6 p-8">
+          <div className="flex items-center gap-4 mb-2">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+              <span className="text-2xl text-white">📋</span>
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">In Bảng kê</h1>
+              <p className="text-sm text-gray-600 mt-1">
+                Phiếu đánh giá + bảng kê công việc. Với quý, tự nhập mục 4/5 rồi gửi duyệt.
+              </p>
+            </div>
+          </div>
+
+          {/* Main tabs */}
+          {isDuyet && (
+            <div className="mt-6 flex gap-1 border-b border-gray-200">
+              <TabButton
+                active={mainTab === 'ke-khai'}
+                onClick={() => setMainTab('ke-khai')}
+                icon="📝"
+                label="Kê khai cá nhân"
+              />
+              <TabButton
+                active={mainTab === 'phe-duyet'}
+                onClick={() => setMainTab('phe-duyet')}
+                icon="✅"
+                label="Phê duyệt"
+              />
+            </div>
+          )}
+        </div>
+
+        {mainTab === 'ke-khai' && (
+          <KeKhaiTab
+            user={user}
+            canHavePhieu={canHavePhieu}
+            loaiKy={loaiKy}
+            setLoaiKy={setLoaiKy}
+            thang={thang}
+            setThang={setThang}
+            quy={quy}
+            setQuy={setQuy}
+            nam={nam}
+            setNam={setNam}
+            currentYear={currentDate.getFullYear()}
+          />
+        )}
+
+        {mainTab === 'phe-duyet' && isDuyet && (
+          <PheDuyetTab quy={quy} setQuy={setQuy} nam={nam} setNam={setNam} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: string;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+        active
+          ? 'border-blue-600 text-blue-600'
+          : 'border-transparent text-gray-500 hover:text-gray-700'
+      }`}
+    >
+      <span>{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+// =============================================================================
+// TAB 1: KÊ KHAI CÁ NHÂN
+// =============================================================================
+
+interface KeKhaiTabProps {
+  user: IUser | null;
+  canHavePhieu: boolean;
+  loaiKy: LoaiKy;
+  setLoaiKy: (v: LoaiKy) => void;
+  thang: number;
+  setThang: (v: number) => void;
+  quy: number;
+  setQuy: (v: number) => void;
+  nam: number;
+  setNam: (v: number) => void;
+  currentYear: number;
+}
+
+function KeKhaiTab({
+  user,
+  canHavePhieu,
+  loaiKy,
+  setLoaiKy,
+  thang,
+  setThang,
+  quy,
+  setQuy,
+  nam,
+  setNam,
+  currentYear,
+}: KeKhaiTabProps) {
+  const [downloading, setDownloading] = useState(false);
 
   const [phieu, setPhieu] = useState<PhieuDanhGiaQuy | null>(null);
   const [uuDiem, setUuDiem] = useState('');
@@ -75,7 +199,10 @@ export default function InBangKePage() {
   const [loadingPhieu, setLoadingPhieu] = useState(false);
   const [savingPhieu, setSavingPhieu] = useState(false);
 
-  // Load phiếu khi đổi quý/năm (và đang ở chế độ quý)
+  // Modal cảnh báo khi gửi duyệt nhưng còn CV/TC chưa duyệt
+  const [warnOpen, setWarnOpen] = useState(false);
+  const [warnInfo, setWarnInfo] = useState<KiemTraDuDieuKienResponse | null>(null);
+
   const loadPhieu = useCallback(async () => {
     if (loaiKy !== 'quy' || !canHavePhieu) {
       setPhieu(null);
@@ -99,11 +226,12 @@ export default function InBangKePage() {
   }, [loadPhieu]);
 
   const canEditPhieu = useMemo(() => {
-    if (!phieu) return true; // chưa có phiếu → cho phép tạo mới
+    if (!phieu) return true;
     return phieu.trang_thai === 'NHAP' || phieu.trang_thai === 'BI_TU_CHOI';
   }, [phieu]);
 
-  const canSend = canEditPhieu && ((uuDiem.trim().length > 0) || (hanChe.trim().length > 0));
+  const canSend =
+    canEditPhieu && (uuDiem.trim().length > 0 || hanChe.trim().length > 0);
 
   const handleLuuNhap = async () => {
     try {
@@ -124,10 +252,9 @@ export default function InBangKePage() {
     }
   };
 
-  const handleGuiDuyet = async () => {
+  const doGuiDuyet = async () => {
     try {
       setSavingPhieu(true);
-      // Trước tiên save, sau đó gửi duyệt (đảm bảo nội dung trên UI đã lưu)
       const saved = await phieuDanhGiaService.upsertNhap({
         quy,
         nam,
@@ -145,7 +272,22 @@ export default function InBangKePage() {
     }
   };
 
-  // ===== Download file helper =====
+  const handleGuiDuyet = async () => {
+    // Kiểm tra điều kiện trước khi gửi duyệt
+    try {
+      const check = await phieuDanhGiaService.kiemTraDuDieuKien(quy, nam);
+      if (check.co_van_de) {
+        setWarnInfo(check);
+        setWarnOpen(true);
+        return;
+      }
+      await doGuiDuyet();
+    } catch (err) {
+      console.error(err);
+      alert(extractError(err, 'Không kiểm tra được điều kiện gửi duyệt'));
+    }
+  };
+
   const downloadFile = async (endpoint: string, filename: string) => {
     try {
       setDownloading(true);
@@ -200,169 +342,160 @@ export default function InBangKePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-8 px-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 mb-6 p-8">
-          <div className="flex items-center gap-4 mb-2">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-              <span className="text-2xl text-white">📋</span>
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">In Bảng kê</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                Phiếu đánh giá + bảng kê công việc. Với quý, tự nhập mục 4/5 rồi gửi duyệt.
-              </p>
-            </div>
-          </div>
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8">
+      {/* Chọn kỳ */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span className="text-xl">📅</span>
+          Chọn kỳ đánh giá
+        </h2>
+
+        <div className="flex gap-2 mb-6 bg-gray-100 p-1.5 rounded-xl">
+          <button
+            onClick={() => setLoaiKy('thang')}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${
+              loaiKy === 'thang'
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Theo Tháng
+          </button>
+          <button
+            onClick={() => setLoaiKy('quy')}
+            className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${
+              loaiKy === 'quy'
+                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Theo Quý
+          </button>
         </div>
 
-        {/* Main Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8">
-          {/* Chọn kỳ đánh giá */}
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="text-xl">📅</span>
-              Chọn kỳ đánh giá
-            </h2>
-
-            <div className="flex gap-2 mb-6 bg-gray-100 p-1.5 rounded-xl">
-              <button
-                onClick={() => setLoaiKy('thang')}
-                className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                  loaiKy === 'thang'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {loaiKy === 'thang' ? 'Tháng' : 'Quý'}
+            </label>
+            {loaiKy === 'thang' ? (
+              <select
+                value={thang}
+                onChange={(e) => setThang(Number(e.target.value))}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                Theo Tháng
-              </button>
-              <button
-                onClick={() => setLoaiKy('quy')}
-                className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${
-                  loaiKy === 'quy'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>Tháng {m}</option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={quy}
+                onChange={(e) => setQuy(Number(e.target.value))}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                Theo Quý
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {loaiKy === 'thang' ? 'Tháng' : 'Quý'}
-                </label>
-                {loaiKy === 'thang' ? (
-                  <select
-                    value={thang}
-                    onChange={(e) => setThang(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                      <option key={m} value={m}>Tháng {m}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <select
-                    value={quy}
-                    onChange={(e) => setQuy(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    {Array.from({ length: 4 }, (_, i) => i + 1).map((q) => (
-                      <option key={q} value={q}>Quý {q}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Năm</label>
-                <select
-                  value={nam}
-                  onChange={(e) => setNam(Number(e.target.value))}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  {Array.from({ length: 10 }, (_, i) => currentDate.getFullYear() - 5 + i).map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                {Array.from({ length: 4 }, (_, i) => i + 1).map((q) => (
+                  <option key={q} value={q}>Quý {q}</option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {/* Thông tin kỳ đánh giá */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-8 border border-blue-100">
-            <p className="text-2xl font-bold text-blue-600">
-              {loaiKy === 'thang' ? `Tháng ${thang}/${nam}` : `Quý ${quy}/${nam}`}
-            </p>
-            <p className="text-sm text-gray-600 mt-2">
-              Họ tên: <span className="font-medium text-gray-900">{user?.ho_ten || 'N/A'}</span>
-            </p>
-            <p className="text-sm text-gray-600">
-              Đơn vị: <span className="font-medium text-gray-900">{user?.don_vi?.ten_don_vi || 'N/A'}</span>
-            </p>
-          </div>
-
-          {/* === Phiếu tự nhận xét (chỉ cho quý + user có phiếu) === */}
-          {loaiKy === 'quy' && canHavePhieu && (
-            <PhieuTuNhapSection
-              phieu={phieu}
-              uuDiem={uuDiem}
-              setUuDiem={setUuDiem}
-              hanChe={hanChe}
-              setHanChe={setHanChe}
-              loading={loadingPhieu}
-              saving={savingPhieu}
-              canEdit={canEditPhieu}
-              canSend={canSend}
-              onSaveNhap={handleLuuNhap}
-              onGuiDuyet={handleGuiDuyet}
-            />
-          )}
-
-          {/* === Nút tải file === */}
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <span className="text-xl">🖨️</span>
-              Tải file về máy
-            </h2>
-
-            <button
-              onClick={handleInPhieuDanhGia}
-              disabled={downloading}
-              className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Năm</label>
+            <select
+              value={nam}
+              onChange={(e) => setNam(Number(e.target.value))}
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <span className="text-2xl">📝</span>
-              <span>Tải phiếu đánh giá (PL-01A/01B)</span>
-              {downloading && <span className="ml-2 animate-spin">⏳</span>}
-            </button>
-
-            <button
-              onClick={handleInBangKeCongViec}
-              disabled={downloading}
-              className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
-            >
-              <span className="text-2xl">📑</span>
-              <span>Tải bảng kê công việc (PL-02)</span>
-              {downloading && <span className="ml-2 animate-spin">⏳</span>}
-            </button>
+              {Array.from({ length: 10 }, (_, i) => currentYear - 5 + i).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
           </div>
-
-          {/* === Section phê duyệt (TDV/CCT) === */}
-          {isDuyet && (
-            <PheDuyetPhieuSection quy={quy} nam={nam} onReloadMine={loadPhieu} />
-          )}
         </div>
       </div>
+
+      {/* Thông tin */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-8 border border-blue-100">
+        <p className="text-2xl font-bold text-blue-600">
+          {loaiKy === 'thang' ? `Tháng ${thang}/${nam}` : `Quý ${quy}/${nam}`}
+        </p>
+        <p className="text-sm text-gray-600 mt-2">
+          Họ tên: <span className="font-medium text-gray-900">{user?.ho_ten || 'N/A'}</span>
+        </p>
+        <p className="text-sm text-gray-600">
+          Đơn vị: <span className="font-medium text-gray-900">{user?.don_vi?.ten_don_vi || 'N/A'}</span>
+        </p>
+        <p className="mt-3 text-xs text-gray-500 italic">
+          ⚠️ Bảng in chỉ lấy công việc và tiêu chí đã được phê duyệt. Hãy chắc chắn mọi kê khai
+          đã duyệt trước khi gửi phiếu đánh giá quý.
+        </p>
+      </div>
+
+      {/* Phiếu tự nhập (chỉ quý + có phiếu) */}
+      {loaiKy === 'quy' && canHavePhieu && (
+        <PhieuTuNhapSection
+          phieu={phieu}
+          uuDiem={uuDiem}
+          setUuDiem={setUuDiem}
+          hanChe={hanChe}
+          setHanChe={setHanChe}
+          loading={loadingPhieu}
+          saving={savingPhieu}
+          canEdit={canEditPhieu}
+          canSend={canSend}
+          onSaveNhap={handleLuuNhap}
+          onGuiDuyet={handleGuiDuyet}
+        />
+      )}
+
+      {/* Nút tải file */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <span className="text-xl">🖨️</span>
+          Tải file về máy
+        </h2>
+
+        <button
+          onClick={handleInPhieuDanhGia}
+          disabled={downloading}
+          className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+        >
+          <span className="text-2xl">📝</span>
+          <span>Tải phiếu đánh giá (PL-01A/01B)</span>
+          {downloading && <span className="ml-2 animate-spin">⏳</span>}
+        </button>
+
+        <button
+          onClick={handleInBangKeCongViec}
+          disabled={downloading}
+          className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white font-semibold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+        >
+          <span className="text-2xl">📑</span>
+          <span>Tải bảng kê công việc (PL-02)</span>
+          {downloading && <span className="ml-2 animate-spin">⏳</span>}
+        </button>
+      </div>
+
+      {/* Modal cảnh báo */}
+      {warnOpen && warnInfo && (
+        <CanhBaoChuaDuyetModal
+          info={warnInfo}
+          onClose={() => setWarnOpen(false)}
+          onConfirm={async () => {
+            setWarnOpen(false);
+            await doGuiDuyet();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-// ============================================================================
+// =============================================================================
 // SECTION: CC tự nhập mục 4/5 cho phiếu quý
-// ============================================================================
+// =============================================================================
 
 interface PhieuTuNhapProps {
   phieu: PhieuDanhGiaQuy | null;
@@ -413,18 +546,26 @@ function PhieuTuNhapSection({
         <p className="text-sm text-gray-500">Đang tải…</p>
       ) : (
         <>
-          {phieu?.trang_thai === 'BI_TU_CHOI' && phieu.ly_do_tu_choi && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-sm font-semibold text-red-800 mb-1">Lý do bị từ chối:</p>
-              <p className="text-sm text-red-700 whitespace-pre-wrap">{phieu.ly_do_tu_choi}</p>
-              {phieu.nguoi_phe_duyet && (
-                <p className="text-xs text-red-600 mt-2">
-                  Người từ chối: {phieu.nguoi_phe_duyet.ho_ten}
-                  {phieu.ngay_phe_duyet && <> · {formatDate(phieu.ngay_phe_duyet)}</>}
+          {(phieu?.trang_thai === 'BI_TU_CHOI' ||
+            (phieu?.trang_thai === 'NHAP' && phieu.ly_do_tu_choi)) &&
+            phieu?.ly_do_tu_choi && (
+              <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <p className="text-sm font-semibold text-amber-800 mb-1">
+                  {phieu.trang_thai === 'BI_TU_CHOI'
+                    ? 'Lý do bị từ chối:'
+                    : 'Ghi chú trả lại từ cấp trên:'}
                 </p>
-              )}
-            </div>
-          )}
+                <p className="text-sm text-amber-700 whitespace-pre-wrap">
+                  {phieu.ly_do_tu_choi}
+                </p>
+                {phieu.nguoi_phe_duyet && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    {phieu.nguoi_phe_duyet.ho_ten}
+                    {phieu.ngay_phe_duyet && <> · {formatDate(phieu.ngay_phe_duyet)}</>}
+                  </p>
+                )}
+              </div>
+            )}
 
           <div className="space-y-4">
             <div>
@@ -492,7 +633,7 @@ function PhieuTuNhapSection({
               {phieu.trang_thai === 'CHO_PHE_DUYET'
                 ? 'Phiếu đang chờ cấp trên duyệt — không thể sửa.'
                 : phieu.trang_thai === 'DA_PHE_DUYET'
-                  ? 'Phiếu đã được duyệt — không thể sửa.'
+                  ? 'Phiếu đã được duyệt — không thể sửa. Liên hệ cấp trên nếu cần trả lại.'
                   : 'Không thể sửa phiếu.'}
             </p>
           )}
@@ -502,55 +643,147 @@ function PhieuTuNhapSection({
   );
 }
 
-// ============================================================================
-// SECTION: TDV/CCT phê duyệt danh sách phiếu chờ duyệt
-// ============================================================================
+// =============================================================================
+// MODAL: Cảnh báo còn CV / TC chưa phê duyệt
+// =============================================================================
 
-interface PheDuyetProps {
-  quy: number;
-  nam: number;
-  onReloadMine: () => void;
+function CanhBaoChuaDuyetModal({
+  info,
+  onClose,
+  onConfirm,
+}: {
+  info: KiemTraDuDieuKienResponse;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl">
+        <h3 className="text-lg font-semibold mb-3 text-amber-700 flex items-center gap-2">
+          ⚠️ Còn kê khai chưa được phê duyệt
+        </h3>
+        <p className="text-sm text-gray-700 mb-3">
+          Phiếu đánh giá Quý {info.quy}/{info.nam} chỉ tổng hợp dữ liệu đã phê duyệt. Hiện tại:
+        </p>
+        <ul className="text-sm text-gray-800 list-disc list-inside mb-3 space-y-1">
+          <li>
+            <strong className="text-amber-700">{info.so_cv_chua_duyet}</strong> công việc chưa phê duyệt
+          </li>
+          <li>
+            <strong className="text-amber-700">{info.so_tc_chua_duyet}</strong> tiêu chí chung chưa phê duyệt
+          </li>
+        </ul>
+        {info.chi_tiet_thang.length > 0 && (
+          <div className="text-xs text-gray-600 border border-gray-200 rounded-lg p-3 mb-4 bg-gray-50">
+            <p className="font-semibold text-gray-700 mb-1">Chi tiết theo tháng:</p>
+            {info.chi_tiet_thang.map((ct) => (
+              <div key={ct.thang} className="flex justify-between">
+                <span>Tháng {ct.thang}</span>
+                <span>
+                  CV: <b>{ct.cv_chua_duyet}</b> · TC: <b>{ct.tc_chua_duyet}</b>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="text-sm text-gray-600 mb-4 italic">
+          Bạn nên chờ cấp trên phê duyệt các kê khai này trước khi gửi phiếu. Nếu vẫn muốn gửi
+          ngay, phần chưa duyệt sẽ không được tính vào bảng in.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+          >
+            Hủy — tôi đi duyệt trước
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg"
+          >
+            Vẫn gửi phiếu
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
+// =============================================================================
+// TAB 2: PHÊ DUYỆT (TDV/CCT)
+// =============================================================================
+
+interface PheDuyetTabProps {
+  quy: number;
+  setQuy: (v: number) => void;
+  nam: number;
+  setNam: (v: number) => void;
+}
+
+function PheDuyetTab({ quy, setQuy, nam, setNam }: PheDuyetTabProps) {
   const [items, setItems] = useState<PhieuChoPheDuyetItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const [total, setTotal] = useState(0);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
-  // Modal duyệt
+  // Modal action
   const [modalItem, setModalItem] = useState<PhieuChoPheDuyetItem | null>(null);
-  const [modalMode, setModalMode] = useState<'phe_duyet' | 'tu_choi'>('phe_duyet');
+  const [modalMode, setModalMode] = useState<'phe_duyet' | 'tu_choi' | 'tra_lai'>('phe_duyet');
   const [yKien, setYKien] = useState('');
   const [lyDo, setLyDo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const currentYear = new Date().getFullYear();
+
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await phieuDanhGiaService.getChoDuyet({ quy, nam, page: 1, page_size: 50 });
+      // Không truyền trang_thai → backend trả về cả 4 trạng thái
+      // (NHAP, CHO_PHE_DUYET, DA_PHE_DUYET, BI_TU_CHOI).
+      const res = await phieuDanhGiaService.getChoDuyet({
+        quy,
+        nam,
+        page: 1,
+        page_size: 500,
+      });
       setItems(res.items);
-      setTotal(res.pagination.total_items);
     } catch (err) {
       console.error(err);
+      alert(extractError(err, 'Không lấy được danh sách phiếu'));
     } finally {
       setLoading(false);
     }
   }, [quy, nam]);
 
+  // Thống kê nhanh theo trạng thái (hiển thị ở header).
+  const thongKe = useMemo(() => {
+    const base = { NHAP: 0, CHO_PHE_DUYET: 0, DA_PHE_DUYET: 0, BI_TU_CHOI: 0 };
+    for (const it of items) {
+      if (it.trang_thai in base) base[it.trang_thai as keyof typeof base] += 1;
+    }
+    return base;
+  }, [items]);
+
   useEffect(() => {
     load();
   }, [load]);
 
-  const openApprove = (it: PhieuChoPheDuyetItem) => {
+  const openPheDuyet = (it: PhieuChoPheDuyetItem) => {
     setModalItem(it);
     setModalMode('phe_duyet');
     setYKien('');
     setLyDo('');
   };
 
-  const openReject = (it: PhieuChoPheDuyetItem) => {
+  const openTuChoi = (it: PhieuChoPheDuyetItem) => {
     setModalItem(it);
     setModalMode('tu_choi');
+    setYKien('');
+    setLyDo('');
+  };
+
+  const openTraLai = (it: PhieuChoPheDuyetItem) => {
+    setModalItem(it);
+    setModalMode('tra_lai');
     setYKien('');
     setLyDo('');
   };
@@ -562,22 +795,32 @@ function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
   };
 
   const submit = async () => {
-    if (!modalItem) return;
+    if (!modalItem || !modalItem.id) return;
+    const phieuId = modalItem.id;
     try {
       setSubmitting(true);
       if (modalMode === 'phe_duyet') {
-        await phieuDanhGiaService.pheDuyet(modalItem.id, { y_kien_lanh_dao: yKien.trim() || null });
-      } else {
+        await phieuDanhGiaService.pheDuyet(phieuId, {
+          y_kien_lanh_dao: yKien.trim() || null,
+        });
+        alert('Đã duyệt phiếu');
+      } else if (modalMode === 'tu_choi') {
         if (!lyDo.trim()) {
           alert('Vui lòng nhập lý do từ chối');
           return;
         }
-        await phieuDanhGiaService.tuChoi(modalItem.id, { ly_do_tu_choi: lyDo.trim() });
+        await phieuDanhGiaService.tuChoi(phieuId, {
+          ly_do_tu_choi: lyDo.trim(),
+        });
+        alert('Đã từ chối phiếu');
+      } else {
+        await phieuDanhGiaService.traLai(phieuId, {
+          ly_do: lyDo.trim() || null,
+        });
+        alert('Đã trả lại phiếu cho công chức');
       }
-      alert(modalMode === 'phe_duyet' ? 'Đã duyệt phiếu' : 'Đã từ chối phiếu');
       closeModal();
       load();
-      onReloadMine();
     } catch (err) {
       console.error(err);
       alert(extractError(err, 'Thao tác thất bại'));
@@ -586,29 +829,91 @@ function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
     }
   };
 
+  const tailong = async (
+    it: PhieuChoPheDuyetItem,
+    loai: 'phieu' | 'bang_ke',
+  ) => {
+    try {
+      setDownloading(`${it.id}-${loai}`);
+      const blob =
+        loai === 'phieu'
+          ? await phieuDanhGiaService.downloadPhieuCuaCC(it.cong_chuc_id, it.quy, it.nam)
+          : await phieuDanhGiaService.downloadBangKeCuaCC(it.cong_chuc_id, it.quy, it.nam);
+
+      const ma_cc_safe = it.ma_cc.replace('/', '-');
+      const filename =
+        loai === 'phieu'
+          ? `PhieuDanhGia_${ma_cc_safe}_Q${it.quy}_${it.nam}.docx`
+          : `BangKeCongViec_${ma_cc_safe}_Q${it.quy}_${it.nam}.docx`;
+
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert(extractError(err, 'Không thể tải file'));
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   return (
-    <div className="mt-10 pt-8 border-t border-gray-200">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <span className="text-xl">🗂️</span>
-          Phê duyệt phiếu đánh giá quý
-          <span className="ml-2 px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-800 rounded-full">
-            {total}
-          </span>
-        </h2>
+    <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8">
+      {/* Bộ lọc quý + năm */}
+      <div className="mb-6 flex flex-wrap items-end gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Quý</label>
+          <select
+            value={quy}
+            onChange={(e) => setQuy(Number(e.target.value))}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          >
+            {Array.from({ length: 4 }, (_, i) => i + 1).map((q) => (
+              <option key={q} value={q}>Quý {q}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Năm</label>
+          <select
+            value={nam}
+            onChange={(e) => setNam(Number(e.target.value))}
+            className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          >
+            {Array.from({ length: 6 }, (_, i) => currentYear - 3 + i).map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+
         <button
           onClick={load}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="ml-auto px-4 py-2.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50"
         >
           🔄 Tải lại
         </button>
       </div>
 
+      {/* Thống kê tóm tắt trạng thái */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <ThongKeCard label="Nháp" value={thongKe.NHAP} color="gray" />
+        <ThongKeCard label="Chờ duyệt" value={thongKe.CHO_PHE_DUYET} color="amber" />
+        <ThongKeCard label="Đã duyệt" value={thongKe.DA_PHE_DUYET} color="green" />
+        <ThongKeCard label="Từ chối" value={thongKe.BI_TU_CHOI} color="red" />
+      </div>
+
+      {/* Danh sách */}
       {loading ? (
         <p className="text-sm text-gray-500">Đang tải…</p>
       ) : items.length === 0 ? (
         <p className="text-sm text-gray-500 italic">
-          Không có phiếu nào chờ duyệt cho Quý {quy}/{nam}.
+          Chưa có phiếu đánh giá nào cho Quý {quy}/{nam} trong phạm vi bạn duyệt.
         </p>
       ) : (
         <div className="overflow-x-auto border border-gray-200 rounded-lg">
@@ -620,62 +925,122 @@ function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Ngày gửi</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Ưu điểm</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Hạn chế</th>
+                <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Bảng in</th>
                 <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Hành động</th>
+                <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Trạng thái</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {items.map((it) => (
-                <tr key={it.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 align-top">
-                    <div className="font-medium text-gray-900">{it.ho_ten}</div>
-                    <div className="text-xs text-gray-500">{it.ma_cc}{it.chuc_vu ? ` · ${it.chuc_vu}` : ''}</div>
-                  </td>
-                  <td className="px-3 py-2 align-top text-gray-700">{it.don_vi_ten || '-'}</td>
-                  <td className="px-3 py-2 align-top text-gray-700 whitespace-nowrap">
-                    {formatDate(it.ngay_gui_duyet)}
-                  </td>
-                  <td className="px-3 py-2 align-top text-gray-700 max-w-xs">
-                    <div className="line-clamp-3 whitespace-pre-wrap">{it.uu_diem || '-'}</div>
-                  </td>
-                  <td className="px-3 py-2 align-top text-gray-700 max-w-xs">
-                    <div className="line-clamp-3 whitespace-pre-wrap">{it.han_che || '-'}</div>
-                  </td>
-                  <td className="px-3 py-2 align-top text-center whitespace-nowrap">
-                    <button
-                      onClick={() => openApprove(it)}
-                      className="mr-1 px-2.5 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded"
-                    >
-                      ✓ Duyệt
-                    </button>
-                    <button
-                      onClick={() => openReject(it)}
-                      className="px-2.5 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded"
-                    >
-                      ✗ Từ chối
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {items.map((it) => {
+                const isChoDuyet = it.trang_thai === 'CHO_PHE_DUYET';
+                const isDaDuyet = it.trang_thai === 'DA_PHE_DUYET';
+                return (
+                  <tr key={it.id ?? `cc-${it.cong_chuc_id}`} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 align-top">
+                      <div className="font-medium text-gray-900">{it.ho_ten}</div>
+                      <div className="text-xs text-gray-500">
+                        {it.ma_cc}
+                        {it.chuc_vu ? ` · ${it.chuc_vu}` : ''}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 align-top text-gray-700">{it.don_vi_ten || '-'}</td>
+                    <td className="px-3 py-2 align-top text-gray-700 whitespace-nowrap">
+                      {formatDate(it.ngay_gui_duyet) || <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-3 py-2 align-top text-gray-700 max-w-xs">
+                      <div className="line-clamp-3 whitespace-pre-wrap">{it.uu_diem || '-'}</div>
+                    </td>
+                    <td className="px-3 py-2 align-top text-gray-700 max-w-xs">
+                      <div className="line-clamp-3 whitespace-pre-wrap">{it.han_che || '-'}</div>
+                    </td>
+                    <td className="px-3 py-2 align-top text-center whitespace-nowrap">
+                      <button
+                        onClick={() => tailong(it, 'phieu')}
+                        disabled={downloading === `${it.id}-phieu`}
+                        className="block text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                        title="Tải phiếu đánh giá (PL-01)"
+                      >
+                        📝 PL-01
+                      </button>
+                      <button
+                        onClick={() => tailong(it, 'bang_ke')}
+                        disabled={downloading === `${it.id}-bang_ke`}
+                        className="block text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50 mt-1"
+                        title="Tải bảng kê công việc (PL-02)"
+                      >
+                        📑 PL-02
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 align-top text-center whitespace-nowrap">
+                      {isChoDuyet && (
+                        <>
+                          <button
+                            onClick={() => openPheDuyet(it)}
+                            className="mr-1 px-2.5 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded"
+                          >
+                            ✓ Duyệt
+                          </button>
+                          <button
+                            onClick={() => openTuChoi(it)}
+                            className="px-2.5 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded"
+                          >
+                            ✗ Từ chối
+                          </button>
+                        </>
+                      )}
+                      {isDaDuyet && (
+                        <button
+                          onClick={() => openTraLai(it)}
+                          className="px-2.5 py-1 text-xs bg-orange-600 hover:bg-orange-700 text-white rounded"
+                          title="Chuyển phiếu về trạng thái nháp để CC sửa lại"
+                        >
+                          ↩️ Trả lại
+                        </button>
+                      )}
+                      {!isChoDuyet && !isDaDuyet && (
+                        <span className="text-xs text-gray-400 italic">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-top text-center whitespace-nowrap">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          TRANG_THAI_BADGE[it.trang_thai] || 'bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {TRANG_THAI_LABEL[it.trang_thai] || it.trang_thai}
+                      </span>
+                      {isDaDuyet && it.ngay_phe_duyet && (
+                        <div className="text-[10px] text-gray-500 mt-1">
+                          {formatDate(it.ngay_phe_duyet)}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Modal phê duyệt / từ chối */}
+      {/* Modal hành động */}
       {modalItem && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl">
             <h3 className="text-lg font-semibold mb-4 text-gray-900">
-              {modalMode === 'phe_duyet' ? '✓ Duyệt phiếu' : '✗ Từ chối phiếu'}
+              {modalMode === 'phe_duyet' && '✓ Duyệt phiếu'}
+              {modalMode === 'tu_choi' && '✗ Từ chối phiếu'}
+              {modalMode === 'tra_lai' && '↩️ Trả lại phiếu đã duyệt'}
             </h3>
             <p className="text-sm text-gray-600 mb-4">
               <strong>{modalItem.ho_ten}</strong> ({modalItem.ma_cc}) · Quý {modalItem.quy}/{modalItem.nam}
             </p>
 
-            {modalMode === 'phe_duyet' ? (
+            {modalMode === 'phe_duyet' && (
               <>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  6. Ý kiến nhận xét của cấp có thẩm quyền <span className="text-gray-400">(có thể để trống)</span>
+                  6. Ý kiến nhận xét của cấp có thẩm quyền{' '}
+                  <span className="text-gray-400">(có thể để trống)</span>
                 </label>
                 <textarea
                   value={yKien}
@@ -685,7 +1050,9 @@ function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
                   placeholder="Nhận xét về công chức…"
                 />
               </>
-            ) : (
+            )}
+
+            {modalMode === 'tu_choi' && (
               <>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Lý do từ chối <span className="text-red-500">*</span>
@@ -696,6 +1063,25 @@ function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
                   rows={4}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                   placeholder="Công chức cần bổ sung nội dung…"
+                />
+              </>
+            )}
+
+            {modalMode === 'tra_lai' && (
+              <>
+                <p className="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  Phiếu sẽ chuyển về trạng thái <b>Nháp</b> để công chức sửa và gửi lại. Dùng
+                  khi bạn phê duyệt nhầm hoặc phát hiện sai sót sau khi duyệt.
+                </p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Ghi chú gửi cho công chức <span className="text-gray-400">(tuỳ chọn)</span>
+                </label>
+                <textarea
+                  value={lyDo}
+                  onChange={(e) => setLyDo(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  placeholder="Ví dụ: Cần bổ sung số liệu tháng 3…"
                 />
               </>
             )}
@@ -712,14 +1098,20 @@ function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
                 onClick={submit}
                 disabled={submitting}
                 className={`px-4 py-2 text-white rounded-lg disabled:opacity-50 ${
-                  modalMode === 'phe_duyet' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                  modalMode === 'phe_duyet'
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : modalMode === 'tu_choi'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-orange-600 hover:bg-orange-700'
                 }`}
               >
                 {submitting
                   ? 'Đang xử lý…'
                   : modalMode === 'phe_duyet'
                     ? 'Xác nhận duyệt'
-                    : 'Xác nhận từ chối'}
+                    : modalMode === 'tu_choi'
+                      ? 'Xác nhận từ chối'
+                      : 'Xác nhận trả lại'}
               </button>
             </div>
           </div>
@@ -729,9 +1121,32 @@ function PheDuyetPhieuSection({ quy, nam, onReloadMine }: PheDuyetProps) {
   );
 }
 
-// ============================================================================
+// =============================================================================
 // UTILS
-// ============================================================================
+// =============================================================================
+
+function ThongKeCard({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: 'gray' | 'amber' | 'green' | 'red';
+}) {
+  const styles: Record<string, string> = {
+    gray: 'bg-gray-50 border-gray-200 text-gray-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-800',
+    green: 'bg-green-50 border-green-200 text-green-800',
+    red: 'bg-red-50 border-red-200 text-red-800',
+  };
+  return (
+    <div className={`border rounded-xl px-4 py-3 ${styles[color]}`}>
+      <div className="text-xs font-medium opacity-80">{label}</div>
+      <div className="text-2xl font-bold mt-1">{value}</div>
+    </div>
+  );
+}
 
 function extractError(err: unknown, fallback: string): string {
   if (err && typeof err === 'object' && 'response' in err) {

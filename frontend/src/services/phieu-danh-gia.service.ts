@@ -7,13 +7,17 @@
 import apiClient from '@/lib/axios';
 import type {
   ChoPheDuyetResponse,
+  KiemTraDuDieuKienResponse,
   PheDuyetPhieuRequest,
   PhieuDanhGiaQuy,
+  TraLaiPhieuRequest,
+  TrangThaiPhieuDanhGia,
   TuChoiPhieuRequest,
   UpsertPhieuQuyRequest,
 } from '@/types/phieu-danh-gia';
 
 const BASE = '/phieu-danh-gia-quy';
+const BANG_KE_BASE = '/in-bang-ke';
 
 class PhieuDanhGiaService {
   /** CC: tạo mới hoặc cập nhật phiếu nháp. */
@@ -45,10 +49,11 @@ class PhieuDanhGiaService {
     return data.data;
   }
 
-  /** TDV/CCT: danh sách phiếu chờ duyệt. */
+  /** TDV/CCT: danh sách phiếu theo trạng thái (mặc định CHO_PHE_DUYET). */
   async getChoDuyet(params?: {
     quy?: number;
     nam?: number;
+    trang_thai?: TrangThaiPhieuDanhGia;
     page?: number;
     page_size?: number;
   }): Promise<ChoPheDuyetResponse> {
@@ -78,6 +83,44 @@ class PhieuDanhGiaService {
     );
     if (!data.success) throw new Error('Từ chối thất bại');
     return data.data;
+  }
+
+  /** TDV/CCT: trả lại phiếu đã duyệt (phê duyệt nhầm). */
+  async traLai(phieuId: string, payload: TraLaiPhieuRequest): Promise<PhieuDanhGiaQuy> {
+    const { data } = await apiClient.post<{ success: boolean; data: PhieuDanhGiaQuy }>(
+      `${BASE}/${phieuId}/tra-lai`,
+      payload,
+    );
+    if (!data.success) throw new Error('Trả lại phiếu thất bại');
+    return data.data;
+  }
+
+  /** CC: kiểm tra điều kiện trước khi gửi phiếu quý (CV + TC đã duyệt hay chưa). */
+  async kiemTraDuDieuKien(quy: number, nam: number): Promise<KiemTraDuDieuKienResponse> {
+    const { data } = await apiClient.get<{ success: boolean; data: KiemTraDuDieuKienResponse }>(
+      `${BASE}/kiem-tra-du-dieu-kien`,
+      { params: { quy, nam } },
+    );
+    if (!data.success) throw new Error('Không kiểm tra được điều kiện');
+    return data.data;
+  }
+
+  /** TDV/CCT: tải phiếu đánh giá quý (PL-01) của 1 CC cụ thể. */
+  async downloadPhieuCuaCC(congChucId: string, quy: number, nam: number): Promise<Blob> {
+    const res = await apiClient.get<Blob>(
+      `${BANG_KE_BASE}/phieu-danh-gia-quy/${quy}/${nam}/cua-cc/${congChucId}`,
+      { responseType: 'blob' },
+    );
+    return res.data;
+  }
+
+  /** TDV/CCT: tải bảng kê công việc quý (PL-02) của 1 CC cụ thể. */
+  async downloadBangKeCuaCC(congChucId: string, quy: number, nam: number): Promise<Blob> {
+    const res = await apiClient.get<Blob>(
+      `${BANG_KE_BASE}/bang-ke-cong-viec-quy/${quy}/${nam}/cua-cc/${congChucId}`,
+      { responseType: 'blob' },
+    );
+    return res.data;
   }
 }
 

@@ -207,17 +207,25 @@ async def _tinh_sp_cc_thuong_thang(
     cong_chuc_id: UUID,
     thang: int,
     nam: int,
+    tam_tinh: bool = True,
 ) -> dict:
     """
-    Tổng SP của CC thường trong 1 tháng (lấy cả DA_PHE_DUYET và CHO_PHE_DUYET
-    để hiển thị quý tạm tính cho CC chưa có báo cáo duyệt).
+    Tổng SP của CC thường trong 1 tháng.
 
     Tuân thủ: với hàng DA_PHE_DUYET dùng so_sp_chat_luong/so_sp_tien_do đã chốt;
     với CHO_PHE_DUYET suy ra từ tu_danh_gia (y hệt `tinh_diem_kpi_70`).
 
+    Params:
+        tam_tinh: True → bao gồm CHO_PHE_DUYET (mặc định, giữ nguyên hành vi cũ
+                  để các caller quý tạm tính không bị ảnh hưởng).
+                  False → CHỈ DA_PHE_DUYET (dùng khi in phiếu/bảng kê chính thức).
+
     Trả về: {"tong_sp", "sp_chat_luong", "sp_tien_do"} (đều Decimal, đơn vị SP).
     """
-    allowed_statuses = [TrangThaiKeKhai.CHO_PHE_DUYET, TrangThaiKeKhai.DA_PHE_DUYET]
+    if tam_tinh:
+        allowed_statuses = [TrangThaiKeKhai.CHO_PHE_DUYET, TrangThaiKeKhai.DA_PHE_DUYET]
+    else:
+        allowed_statuses = [TrangThaiKeKhai.DA_PHE_DUYET]
     stmt = (
         select(
             KeKhaiCongViec.trang_thai,
@@ -273,9 +281,10 @@ async def _tinh_cv_lanh_dao_thang(
     cong_chuc_id: UUID,
     thang: int,
     nam: int,
+    tam_tinh: bool = True,
 ) -> dict:
     """
-    Tổng hợp công việc lãnh đạo trong 1 tháng (DA_PHE_DUYET + CHO_PHE_DUYET).
+    Tổng hợp công việc lãnh đạo trong 1 tháng.
 
     Theo Phụ lục I:
     - Chỉ CV ĐÃ HOÀN THÀNH mới được tính vào điểm tiến độ / chất lượng.
@@ -285,9 +294,16 @@ async def _tinh_cv_lanh_dao_thang(
         max(0, 1 - so_loi_tien_do × 0.25) vào điểm tiến độ,
         max(0, 1 - so_loi_chat_luong × 0.25) vào điểm chất lượng.
 
+    Params:
+        tam_tinh: True → gộp CHO_PHE_DUYET + DA_PHE_DUYET (mặc định).
+                  False → CHỈ DA_PHE_DUYET (khi in phiếu/bảng kê chính thức).
+
     Trả về tổng thô: {"tong_cv", "hoan_thanh", "diem_tien_do", "diem_chat_luong"}.
     """
-    allowed = [TrangThaiKeKhaiLD.CHO_PHE_DUYET.value, TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
+    if tam_tinh:
+        allowed = [TrangThaiKeKhaiLD.CHO_PHE_DUYET.value, TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
+    else:
+        allowed = [TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
     stmt = (
         select(
             KeKhaiLanhDao.trang_thai_hoan_thanh,
@@ -374,9 +390,16 @@ async def tinh_diem_quy(
     cong_chuc_id: UUID,
     quy: int,
     nam: int,
+    tam_tinh: bool = True,
 ) -> dict:
     """
     Tính điểm quý theo spec Phụ lục I NĐ 335/2025/NĐ-CP (lũy kế).
+
+    Params:
+        tam_tinh: True (mặc định) → gộp CHO_PHE_DUYET + DA_PHE_DUYET cho SP/CV
+                  (phù hợp với tab xếp loại quý hiện tại cho CC chưa chốt báo cáo).
+                  False → chỉ lấy DA_PHE_DUYET (dùng khi in phiếu/bảng kê chính
+                  thức: spec yêu cầu data phải đã được phê duyệt).
 
     Trả về dict:
         diem_kpi_quy, diem_tc_quy, diem_tong_quy, xep_loai_quy  (None nếu không đủ dữ liệu)
@@ -444,7 +467,7 @@ async def tinh_diem_quy(
                 cac_thang.append(_thang_placeholder(thang, info))
                 continue
 
-            cv_data = await _tinh_cv_lanh_dao_thang(db, cong_chuc_id, thang, nam)
+            cv_data = await _tinh_cv_lanh_dao_thang(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
             tong_cv += cv_data["tong_cv"]
             tong_ht += cv_data["hoan_thanh"]
             tong_diem_td += cv_data["diem_tien_do"]
@@ -522,7 +545,7 @@ async def tinh_diem_quy(
                 continue
 
             sp_giao_thang = Decimal(str(info["so_ngay_lam_viec"])) * Decimal(str(SP_PER_DAY))
-            sp_data = await _tinh_sp_cc_thuong_thang(db, cong_chuc_id, thang, nam)
+            sp_data = await _tinh_sp_cc_thuong_thang(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
 
             tong_sp_giao += sp_giao_thang
             tong_sp_ht += sp_data["tong_sp"]

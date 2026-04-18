@@ -41,6 +41,18 @@ class TuChoiPhieuRequest(BaseModel):
     ly_do_tu_choi: str = Field(..., min_length=1, description="Lý do từ chối")
 
 
+class TraLaiPhieuRequest(BaseModel):
+    """
+    TDV/CCT trả lại phiếu đã phê duyệt (xử lý trường hợp phê duyệt nhầm).
+    Lý do là tuỳ chọn — sẽ hiển thị cho CC như ghi chú trả lại.
+    """
+
+    ly_do: Optional[str] = Field(
+        None,
+        description="Ghi chú cho CC khi trả lại (không bắt buộc)",
+    )
+
+
 # =============================================================================
 # RESPONSE SCHEMAS
 # =============================================================================
@@ -83,10 +95,15 @@ class PhieuDanhGiaQuyResponse(BaseModel):
 
 
 class PhieuChoPheDuyetItem(BaseModel):
-    """1 dòng trong danh sách phiếu chờ duyệt (TDV/CCT)."""
+    """
+    1 dòng trong bảng phiếu quý (TDV/CCT).
+
+    `id` nullable vì bảng này có thể chứa placeholder NHAP khi CC chưa soạn
+    phiếu (backend tự sinh dòng giả để TDV thấy toàn bộ CC trong phạm vi duyệt).
+    """
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
+    id: Optional[UUID] = None
     cong_chuc_id: UUID
     ma_cc: str
     ho_ten: str
@@ -96,5 +113,33 @@ class PhieuChoPheDuyetItem(BaseModel):
     nam: int
     trang_thai: str
     ngay_gui_duyet: Optional[datetime] = None
+    ngay_phe_duyet: Optional[datetime] = None
     uu_diem: Optional[str] = None
     han_che: Optional[str] = None
+    y_kien_lanh_dao: Optional[str] = None
+
+
+class ChiTietThangThieu(BaseModel):
+    """Chi tiết số lượng còn chưa duyệt trong 1 tháng."""
+
+    thang: int
+    cv_chua_duyet: int = 0
+    tc_chua_duyet: int = 0
+
+
+class KiemTraDuDieuKienResponse(BaseModel):
+    """
+    Kết quả kiểm tra điều kiện gửi duyệt phiếu quý.
+
+    CC chỉ nên gửi phiếu khi toàn bộ công việc + tiêu chí chung đã được phê
+    duyệt. Nếu còn mục tạm tính, FE hiện cảnh báo trước khi gửi.
+    """
+
+    quy: int
+    nam: int
+    co_van_de: bool = Field(
+        ..., description="True nếu còn công việc hoặc tiêu chí chưa duyệt"
+    )
+    so_cv_chua_duyet: int = 0
+    so_tc_chua_duyet: int = 0
+    chi_tiet_thang: list[ChiTietThangThieu] = Field(default_factory=list)

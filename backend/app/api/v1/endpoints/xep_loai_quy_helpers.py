@@ -401,6 +401,11 @@ async def tinh_diem_quy(
                   False → chỉ lấy DA_PHE_DUYET (dùng khi in phiếu/bảng kê chính
                   thức: spec yêu cầu data phải đã được phê duyệt).
 
+    LƯU Ý (20/04/2026): caller nên truyền `tam_tinh=True` khi CC là Trưởng đơn
+    vị hoặc Phó Chi cục trưởng — kê khai của 2 cấp này do CCT duyệt, thường là
+    bottleneck; ép `tam_tinh=False` sẽ làm điểm quý tụt giả tạo. Tham khảo
+    `in_bang_ke.export_phieu_danh_gia_quy` để xem mẫu.
+
     Trả về dict:
         diem_kpi_quy, diem_tc_quy, diem_tong_quy, xep_loai_quy  (None nếu không đủ dữ liệu)
         a_so_luong, b_tien_do, c_chat_luong                     (0-1, cho cả CC và LĐ)

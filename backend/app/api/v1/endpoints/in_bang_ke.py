@@ -1185,8 +1185,14 @@ async def export_phieu_danh_gia_quy(
 
     is_lanh_dao = cc.is_lanh_dao or False
 
-    # Tính điểm quý — tam_tinh=False vì phiếu in chính thức yêu cầu data đã phê duyệt.
-    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam, tam_tinh=False)
+    # Điểm quý — mặc định lấy `tam_tinh=False` (chỉ DA_PHE_DUYET) cho phiếu chính thức.
+    # CHÍNH SÁCH (20/04/2026): với TDV và PCCT — luôn lấy điểm TẠM TÍNH (gộp cả
+    # CHO_PHE_DUYET) vì CCT là bottleneck duyệt kê khai của họ; bắt chờ CCT duyệt
+    # xong mới in phiếu sẽ làm điểm tụt giả tạo. CCT và CC thường giữ nguyên
+    # `tam_tinh=False`.
+    cap_bac = cc.vai_tro.cap_bac if cc.vai_tro else None
+    dung_tam_tinh = cap_bac in (CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG)
+    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam, tam_tinh=dung_tam_tinh)
 
     # Lấy 3 tháng trong quý
     thang_list = QUY_TO_THANG.get(quy, [])
@@ -1537,10 +1543,13 @@ async def export_bang_ke_cong_viec_quy(
     if nam < 2020 or nam > 2100:
         raise HTTPException(status_code=400, detail="Năm không hợp lệ")
 
-    # Load user
+    # Load user (kèm vai_tro để check cap_bac)
     stmt_user = (
         select(CongChuc)
-        .options(selectinload(CongChuc.don_vi))
+        .options(
+            selectinload(CongChuc.don_vi),
+            selectinload(CongChuc.vai_tro),
+        )
         .where(CongChuc.id == current_user.id)
     )
     result_user = await db.execute(stmt_user)
@@ -1550,6 +1559,12 @@ async def export_bang_ke_cong_viec_quy(
 
     is_lanh_dao = cc.is_lanh_dao or False
 
+    # CHÍNH SÁCH (20/04/2026): TDV và PCCT — liệt kê thêm CV CHO_PHE_DUYET (đánh
+    # nhãn "[Chờ duyệt]") để đồng bộ với PL-01B quý (dùng tạm tính). CCT và
+    # CC thường giữ nguyên chỉ lấy DA_PHE_DUYET.
+    cap_bac = cc.vai_tro.cap_bac if cc.vai_tro else None
+    gom_cho_duyet = cap_bac in (CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG)
+
     # Lấy 3 tháng trong quý
     thang_list = QUY_TO_THANG.get(quy, [])
 
@@ -1557,8 +1572,12 @@ async def export_bang_ke_cong_viec_quy(
     cong_viec_list = []
     cong_viec_lanh_dao_list = []
 
-    # CHÍNH SÁCH (17/04/2026): Bảng kê quý chính thức chỉ tổng hợp công việc ĐÃ PHÊ DUYỆT.
+    # CHÍNH SÁCH (17/04/2026): Bảng kê quý chính thức chỉ tổng hợp công việc ĐÃ PHÊ DUYỆT,
+    # ngoại lệ cho TDV/PCCT (xem chú thích gom_cho_duyet ở trên).
     if is_lanh_dao:
+        allowed_ld = [TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
+        if gom_cho_duyet:
+            allowed_ld.append(TrangThaiKeKhaiLD.CHO_PHE_DUYET.value)
         stmt_kkld = (
             select(KeKhaiLanhDao)
             .where(
@@ -1567,7 +1586,7 @@ async def export_bang_ke_cong_viec_quy(
                     KeKhaiLanhDao.thang.in_(thang_list),
                     KeKhaiLanhDao.nam == nam,
                     KeKhaiLanhDao.is_deleted == False,
-                    KeKhaiLanhDao.trang_thai == TrangThaiKeKhaiLD.DA_PHE_DUYET.value,
+                    KeKhaiLanhDao.trang_thai.in_(allowed_ld),
                 )
             )
             .order_by(KeKhaiLanhDao.thang, KeKhaiLanhDao.ngay_thuc_hien.desc())
@@ -1709,14 +1728,18 @@ async def export_bang_ke_cong_viec_quy(
                 new_row.cells[8].text = "X" if cham_tien_do else ""
                 set_cell_font_times_new_roman(new_row.cells[8])
 
-                ghi_chu = ""
+                ghi_chu_parts = []
+                # Nhãn "Chờ duyệt" cho CV chưa được CCT phê duyệt (chỉ xuất hiện với
+                # TDV/PCCT — xem `gom_cho_duyet`).
+                if cv.trang_thai == TrangThaiKeKhaiLD.CHO_PHE_DUYET.value:
+                    ghi_chu_parts.append("[Chờ duyệt]")
                 if cv.so_loi_chat_luong > 0:
-                    ghi_chu += f"Lỗi CL ({cv.so_loi_chat_luong}): {cv.ghi_chu_loi_chat_luong or 'Không có mô tả'}. "
+                    ghi_chu_parts.append(f"Lỗi CL ({cv.so_loi_chat_luong}): {cv.ghi_chu_loi_chat_luong or 'Không có mô tả'}.")
                 if cv.so_loi_tien_do > 0:
-                    ghi_chu += f"Lỗi TĐ ({cv.so_loi_tien_do}): {cv.ghi_chu_loi_tien_do or 'Không có mô tả'}."
+                    ghi_chu_parts.append(f"Lỗi TĐ ({cv.so_loi_tien_do}): {cv.ghi_chu_loi_tien_do or 'Không có mô tả'}.")
                 if cv.y_kien_lanh_dao:
-                    ghi_chu += f" Ý kiến LĐ: {cv.y_kien_lanh_dao}."
-                new_row.cells[9].text = ghi_chu.strip()
+                    ghi_chu_parts.append(f"Ý kiến LĐ: {cv.y_kien_lanh_dao}.")
+                new_row.cells[9].text = " ".join(ghi_chu_parts)
                 set_cell_font_times_new_roman(new_row.cells[9])
 
             else:

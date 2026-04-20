@@ -408,7 +408,11 @@ function buildMau03(data) {
   
   children.push(emptyPara());
   children.push(titlePara(data.title));
-  children.push(para([txt(`Tháng ${data.thang} năm ${data.nam}`)], { alignment: AlignmentType.CENTER }));
+  // Nếu data.quy được truyền → header "Quý X năm Y", ngược lại "Tháng X năm Y"
+  const periodText = data.quy
+    ? `Quý ${data.quy} năm ${data.nam}`
+    : `Tháng ${data.thang} năm ${data.nam}`;
+  children.push(para([txt(periodText)], { alignment: AlignmentType.CENTER }));
   if (!data.is_toan_chi_cuc && data.don_vi_name) {
     children.push(para([txt(`Đơn vị: ${data.don_vi_name}`, { italics: true })], { alignment: AlignmentType.CENTER }));
   }

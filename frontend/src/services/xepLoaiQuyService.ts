@@ -153,6 +153,59 @@ class XepLoaiQuyService {
   }
 
   /**
+   * Lấy danh sách báo cáo quý tất cả đơn vị theo mọi trạng thái.
+   * Dành cho CCT/PCCT/TCCB.
+   */
+  async getDanhSachQuy(params: {
+    quy?: number;
+    nam?: number;
+    trang_thai?: 'NHAP' | 'CHO_PHE_DUYET' | 'DA_PHE_DUYET' | 'TU_CHOI';
+    don_vi_id?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<{
+    items: BaoCaoXepLoaiQuy[];
+    pagination: {
+      page: number;
+      page_size: number;
+      total_items: number;
+      total_pages: number;
+    };
+  }> {
+    const { data } = await apiClient.get<{
+      success: boolean;
+      data: {
+        items: BaoCaoXepLoaiQuy[];
+        pagination: any;
+      };
+    }>(`${BAO_CAO_URL}/danh-sach`, { params });
+
+    if (!data.success) {
+      throw new Error('Failed to fetch quarterly reports list');
+    }
+
+    return {
+      items: data.data.items,
+      pagination: data.data.pagination,
+    };
+  }
+
+  /**
+   * Lấy chi tiết 1 báo cáo quý theo id (kèm chi_tiets).
+   */
+  async getChiTietBaoCaoQuyById(baoCaoId: string): Promise<BaoCaoXepLoaiQuy> {
+    const { data } = await apiClient.get<{ success: boolean; data: BaoCaoXepLoaiQuy }>(
+      `${BAO_CAO_URL}/${baoCaoId}`
+    );
+
+    if (!data.success) {
+      throw new Error('Failed to fetch quarterly report detail');
+    }
+
+    return data.data;
+  }
+
+  /**
    * CCT phê duyệt hoặc từ chối báo cáo quý
    */
   async pheDuyet(

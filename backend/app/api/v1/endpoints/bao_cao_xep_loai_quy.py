@@ -89,6 +89,15 @@ def check_is_lanh_dao_don_vi(user: CongChuc) -> bool:
     ]
 
 
+def check_can_view_all_units(user: CongChuc) -> bool:
+    """
+    Quyền xem toàn bộ đơn vị: CCT/PCCT hoặc user có flag can_view_all_units (TCCB).
+    """
+    if getattr(user, "can_view_all_units", False):
+        return True
+    return check_is_lanh_dao_chi_cuc(user)
+
+
 # =============================================================================
 # ENDPOINT 1: TDV LẤY/TẠO BÁO CÁO QUÝ ĐƠN VỊ
 # =============================================================================
@@ -641,6 +650,179 @@ async def get_danh_sach_cho_phe_duyet_quy(
             "pagination": pagination.model_dump(),
         },
         message="Lấy danh sách chờ phê duyệt thành công"
+    )
+
+
+# =============================================================================
+# ENDPOINT 4B: DANH SÁCH BÁO CÁO QUÝ (MỌI TRẠNG THÁI)
+# =============================================================================
+
+@router.get("/danh-sach")
+async def get_danh_sach_bao_cao_quy(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    quy: Optional[int] = Query(None, ge=1, le=4),
+    nam: Optional[int] = Query(None, ge=2025),
+    trang_thai: Optional[str] = Query(
+        None,
+        description="Lọc theo trạng thái: NHAP | CHO_PHE_DUYET | DA_PHE_DUYET | TU_CHOI",
+    ),
+    don_vi_id: Optional[UUID] = Query(None, description="Lọc theo đơn vị"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+):
+    """
+    Lấy danh sách báo cáo xếp loại quý của tất cả đơn vị (mọi trạng thái).
+
+    Dành cho CCT/PCCT/TCCB (can_view_all_units) theo dõi toàn Chi cục.
+
+    Quyền:
+    - CCT/PCCT/TCCB (can_view_all_units): xem toàn bộ đơn vị.
+    - TDV/PDV/QLDV: chỉ xem đơn vị mình (bỏ qua param don_vi_id).
+    """
+    is_chi_cuc = check_can_view_all_units(current_user)
+    is_don_vi = check_is_lanh_dao_don_vi(current_user)
+    if not is_chi_cuc and not is_don_vi:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PERM_001",
+                message="Bạn không có quyền xem danh sách báo cáo quý",
+            ),
+        )
+
+    if trang_thai and trang_thai not in ["NHAP", "CHO_PHE_DUYET", "DA_PHE_DUYET", "TU_CHOI"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="VAL_001",
+                message="trang_thai không hợp lệ",
+            ),
+        )
+
+    stmt_count = (
+        select(func.count())
+        .select_from(BaoCaoXepLoaiQuy)
+        .where(BaoCaoXepLoaiQuy.is_deleted == False)
+    )
+    stmt_data = (
+        select(BaoCaoXepLoaiQuy)
+        .options(
+            selectinload(BaoCaoXepLoaiQuy.don_vi),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_lap),
+        )
+        .where(BaoCaoXepLoaiQuy.is_deleted == False)
+    )
+
+    # Scope theo quyền
+    if not is_chi_cuc:
+        # TDV/PDV/QLDV: chỉ đơn vị mình
+        stmt_count = stmt_count.where(BaoCaoXepLoaiQuy.don_vi_id == current_user.don_vi_id)
+        stmt_data = stmt_data.where(BaoCaoXepLoaiQuy.don_vi_id == current_user.don_vi_id)
+    elif don_vi_id:
+        stmt_count = stmt_count.where(BaoCaoXepLoaiQuy.don_vi_id == don_vi_id)
+        stmt_data = stmt_data.where(BaoCaoXepLoaiQuy.don_vi_id == don_vi_id)
+
+    if quy:
+        stmt_count = stmt_count.where(BaoCaoXepLoaiQuy.quy == quy)
+        stmt_data = stmt_data.where(BaoCaoXepLoaiQuy.quy == quy)
+    if nam:
+        stmt_count = stmt_count.where(BaoCaoXepLoaiQuy.nam == nam)
+        stmt_data = stmt_data.where(BaoCaoXepLoaiQuy.nam == nam)
+    if trang_thai:
+        stmt_count = stmt_count.where(BaoCaoXepLoaiQuy.trang_thai == trang_thai)
+        stmt_data = stmt_data.where(BaoCaoXepLoaiQuy.trang_thai == trang_thai)
+
+    total_result = await db.execute(stmt_count)
+    total_items = total_result.scalar() or 0
+
+    offset = (page - 1) * page_size
+    stmt_data = (
+        stmt_data.order_by(
+            BaoCaoXepLoaiQuy.nam.desc(),
+            BaoCaoXepLoaiQuy.quy.desc(),
+            BaoCaoXepLoaiQuy.created_at.desc(),
+        )
+        .offset(offset)
+        .limit(page_size)
+    )
+    result_data = await db.execute(stmt_data)
+    bao_caos = result_data.scalars().all()
+
+    data = [
+        BaoCaoXepLoaiQuyBriefResponse.model_validate(bc).model_dump()
+        for bc in bao_caos
+    ]
+    pagination = Pagination.create(
+        page=page, page_size=page_size, total_items=total_items
+    )
+
+    return success_response(
+        data={"items": data, "pagination": pagination.model_dump()},
+        message="Lấy danh sách báo cáo quý thành công",
+    )
+
+
+# =============================================================================
+# ENDPOINT 4C: CHI TIẾT 1 BÁO CÁO QUÝ THEO ID
+# =============================================================================
+
+@router.get("/{bao_cao_id}")
+async def get_chi_tiet_bao_cao_quy(
+    bao_cao_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """
+    Lấy chi tiết đầy đủ 1 báo cáo quý theo id (kèm chi_tiets).
+
+    Dùng cho CCT/PCCT/TCCB xem chi tiết báo cáo đơn vị sau khi chọn từ danh sách.
+
+    Quyền:
+    - CCT/PCCT/TCCB: xem mọi đơn vị.
+    - TDV/PDV/QLDV: chỉ xem báo cáo của đơn vị mình.
+    """
+    stmt = (
+        select(BaoCaoXepLoaiQuy)
+        .options(
+            selectinload(BaoCaoXepLoaiQuy.don_vi),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_lap),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_phe_duyet),
+            selectinload(BaoCaoXepLoaiQuy.chi_tiets).selectinload(
+                ChiTietXepLoaiQuy.cong_chuc
+            ),
+        )
+        .where(BaoCaoXepLoaiQuy.id == bao_cao_id)
+        .where(BaoCaoXepLoaiQuy.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    bao_cao = result.scalar_one_or_none()
+
+    if not bao_cao:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(
+                code="NOT_FOUND", message="Không tìm thấy báo cáo quý"
+            ),
+        )
+
+    # Kiểm tra quyền truy cập
+    is_chi_cuc = check_can_view_all_units(current_user)
+    if not is_chi_cuc:
+        if not check_is_lanh_dao_don_vi(current_user) or bao_cao.don_vi_id != current_user.don_vi_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_response(
+                    code="PERM_002",
+                    message="Bạn chỉ được xem báo cáo của đơn vị mình",
+                ),
+            )
+
+    response_data = BaoCaoXepLoaiQuyResponse.model_validate(bao_cao)
+    response_data.trang_thai_ten = get_trang_thai_ten_quy(bao_cao.trang_thai)
+    return success_response(
+        data=response_data.model_dump(),
+        message="Lấy chi tiết báo cáo quý thành công",
     )
 
 

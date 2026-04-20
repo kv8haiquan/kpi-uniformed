@@ -641,7 +641,7 @@ export default function DashboardPage() {
             <QuickActionCard icon="✍️" title="Tự chấm điểm" description="Tiêu chí chung (30đ)" href="/danh-gia/tu-cham-diem" color="purple" />
             <QuickActionCard icon="📊" title="Xem đánh giá" description="Kết quả KPI của bạn" href="/danh-gia" color="green" />
             <QuickActionCard icon="🗓️" title="Nghỉ phép" description="Đăng ký và quản lý" href="/nghi-phep" color="cyan" />
-            <QuickActionCard icon="🖨️" title="In Bảng kê" description="Xuất phiếu đánh giá & bảng kê CV" href="/in-bang-ke" color="orange" />
+            <QuickActionCard icon="🖨️" title="Theo dõi, đánh giá Quý" description="Phiếu đánh giá & bảng kê công việc" href="/in-bang-ke" color="orange" />
           </div>
         </div>
 

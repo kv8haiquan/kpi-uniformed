@@ -34,6 +34,17 @@ export interface IExportDonViOptions extends IExportOptions {
   donViId?: string;  // CCT/PCCT chọn đơn vị
 }
 
+// Options dành riêng cho báo cáo quý (thay thang → quy)
+export interface IExportQuyOptions {
+  quy: number;
+  nam: number;
+  format?: ExportFormat;
+}
+
+export interface IExportDonViQuyOptions extends IExportQuyOptions {
+  donViId?: string;
+}
+
 // =============================================================================
 // HELPER: DOWNLOAD FILE TỪ RESPONSE
 // =============================================================================
@@ -183,6 +194,51 @@ class ExportService {
       await downloadBlob(response, fallback);
     } catch (error: any) {
       console.error('[Export] Error exporting mau 05:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Xuất báo cáo đơn vị theo QUÝ (Mẫu 03 quý).
+   * TDV/PDV: đơn vị mình. CCT/PCCT/TCCB: chọn đơn vị bất kỳ qua donViId.
+   */
+  async exportDonViQuy(options: IExportDonViQuyOptions): Promise<void> {
+    const { quy, nam, format = 'docx', donViId } = options;
+
+    const params: Record<string, any> = { format };
+    if (donViId) params.don_vi_id = donViId;
+
+    try {
+      const response = await apiClient.get(
+        `${this.BASE_URL}/don-vi/quy/${quy}/nam/${nam}`,
+        { params, responseType: 'blob' }
+      );
+
+      const fallback = `Mau03_DonVi_Q${quy}_${nam}.${format}`;
+      await downloadBlob(response, fallback);
+    } catch (error: any) {
+      console.error('[Export] Error exporting don vi quy:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Xuất Mẫu 03 QUÝ tổng hợp tất cả đơn vị (mỗi đơn vị 1 trang).
+   * Quyền: CCT/PCCT/TCCB (can_view_all_units).
+   */
+  async exportDonViTongHopQuy(options: IExportQuyOptions): Promise<void> {
+    const { quy, nam, format = 'docx' } = options;
+
+    try {
+      const response = await apiClient.get(
+        `${this.BASE_URL}/don-vi-tong-hop/quy/${quy}/nam/${nam}`,
+        { params: { format }, responseType: 'blob' }
+      );
+
+      const fallback = `Mau03_TatCaDonVi_Q${quy}_${nam}.${format}`;
+      await downloadBlob(response, fallback);
+    } catch (error: any) {
+      console.error('[Export] Error exporting don vi tong hop quy:', error);
       throw error;
     }
   }

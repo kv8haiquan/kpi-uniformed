@@ -84,9 +84,9 @@ export default function InBangKePage() {
               <span className="text-2xl text-white">📋</span>
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">In Bảng kê</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Theo dõi, đánh giá Quý</h1>
               <p className="text-sm text-gray-600 mt-1">
-                Phiếu đánh giá + bảng kê công việc. Với quý, tự nhập mục 4/5 rồi gửi duyệt.
+                Phiếu đánh giá + bảng kê công việc (theo tháng hoặc quý). Với quý, tự nhập mục 4/5 rồi gửi duyệt.
               </p>
             </div>
           </div>

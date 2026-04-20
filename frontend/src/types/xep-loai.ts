@@ -178,10 +178,10 @@ export function canViewAllUnits(user: IUser | null): boolean {
 }
 
 export function getAccessibleTabs(capBac: CapBacVaiTro, user?: IUser | null): ITabConfig[] {
-  // v1.1.0: User có can_view_all_units → xem được tab bao-cao (read-only)
+  // v1.1.0: User có can_view_all_units (ví dụ TCCB) nhưng vai_tro không thuộc
+  // nhóm lãnh đạo → cho xem tab báo cáo tháng + xếp loại quý (read-only).
   if (user && canViewAllUnits(user) && capBac === CapBacVaiTro.CONG_CHUC) {
-    // Chỉ cho xem tab bao-cao, KHÔNG cho phê duyệt
-    return TABS_CONFIG.filter((tab) => tab.id === 'bao-cao');
+    return TABS_CONFIG.filter((tab) => tab.id === 'bao-cao' || tab.id === 'quy');
   }
   return TABS_CONFIG.filter((tab) => tab.allowedRoles.includes(capBac));
 }

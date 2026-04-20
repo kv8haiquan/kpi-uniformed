@@ -10,14 +10,16 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { xepLoaiQuyService } from '@/services/xepLoaiQuyService';
+import { exportService } from '@/services/export.service';
 import type {
   ChiTietQuyResponse,
   BaoCaoXepLoaiQuy,
   ChiTietXepLoaiQuy,
   MucXepLoaiQuy,
+  TrangThaiBaoCaoQuy,
 } from '@/types/xep-loai-quy';
 import { ITabProps } from '@/types/xep-loai';
 import {
@@ -365,13 +367,30 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
           <StatusBadge trangThai={baoCao.trang_thai} />
         </div>
         <StatsSummary baoCao={baoCao} />
-        {canEdit && (
-          <div className="mt-3">
+        <div className="mt-3 flex flex-wrap gap-2">
+          {canEdit && (
             <button onClick={handleGuiDuyet} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium">
               Gửi duyệt
             </button>
-          </div>
-        )}
+          )}
+          <button
+            onClick={async () => {
+              try {
+                await exportService.exportDonViQuy({
+                  quy: baoCao.quy,
+                  nam: baoCao.nam,
+                  donViId: baoCao.don_vi_id,
+                });
+              } catch (err: any) {
+                alert('Lỗi tải Mẫu 03: ' + (err?.response?.data?.detail?.message || err.message || 'Unknown'));
+              }
+            }}
+            className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors text-sm font-medium"
+            title="Tải Mẫu 03 cho đơn vị mình"
+          >
+            📄 Tải Mẫu 03
+          </button>
+        </div>
       </div>
 
       {/* Table */}
@@ -460,36 +479,67 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
 }
 
 // =============================================================================
-// WORKFLOW VIEW: CCT
+// WORKFLOW VIEW: CCT / PCCT / TCCB
 // =============================================================================
+// - CCT/PCCT: xem + phê duyệt mọi đơn vị.
+// - TCCB (can_view_all_units): chỉ xem (không phê duyệt).
 
 interface WorkflowViewCCTProps {
   quy: number;
   nam: number;
+  canApprove: boolean; // CCT/PCCT → true; TCCB view-only → false
 }
 
-function WorkflowViewCCT({ quy, nam }: WorkflowViewCCTProps) {
+const TRANG_THAI_FILTER_OPTIONS: { value: '' | TrangThaiBaoCaoQuy; label: string }[] = [
+  { value: '', label: 'Tất cả' },
+  { value: 'NHAP', label: 'Nháp' },
+  { value: 'CHO_PHE_DUYET', label: 'Chờ duyệt' },
+  { value: 'DA_PHE_DUYET', label: 'Đã duyệt' },
+  { value: 'TU_CHOI', label: 'Từ chối' },
+];
+
+function WorkflowViewCCT({ quy, nam, canApprove }: WorkflowViewCCTProps) {
   const [danhSach, setDanhSach] = useState<BaoCaoXepLoaiQuy[]>([]);
   const [selectedBaoCao, setSelectedBaoCao] = useState<BaoCaoXepLoaiQuy | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [yKien, setYKien] = useState('');
   const [selectedChiTiet, setSelectedChiTiet] = useState<ChiTietXepLoaiQuy | null>(null);
+  const [filterTrangThai, setFilterTrangThai] = useState<'' | TrangThaiBaoCaoQuy>('');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  const loadDanhSach = async () => {
+  const loadDanhSach = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await xepLoaiQuyService.getChoPheduyet({ quy, nam });
-      setDanhSach(data);
+      const { items } = await xepLoaiQuyService.getDanhSachQuy({
+        quy,
+        nam,
+        trang_thai: filterTrangThai || undefined,
+        page_size: 100,
+      });
+      setDanhSach(items);
     } catch (err: any) {
       setError(err.message || 'Lỗi tải danh sách');
     } finally {
       setLoading(false);
     }
-  };
+  }, [quy, nam, filterTrangThai]);
 
-  useEffect(() => { loadDanhSach(); }, [quy, nam]);
+  useEffect(() => { loadDanhSach(); }, [loadDanhSach]);
+
+  const handleSelectBaoCao = async (baoCaoId: string) => {
+    setLoadingDetail(true);
+    try {
+      const bc = await xepLoaiQuyService.getChiTietBaoCaoQuyById(baoCaoId);
+      setSelectedBaoCao(bc);
+    } catch (err: any) {
+      alert('Lỗi tải chi tiết: ' + (err.message || 'Unknown error'));
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
   const handlePheDuyet = async (baoCaoId: string, hanhDong: 'phe_duyet' | 'tu_choi') => {
     const msg = hanhDong === 'phe_duyet' ? 'Phê duyệt báo cáo này?' : 'Từ chối báo cáo này?';
@@ -505,11 +555,49 @@ function WorkflowViewCCT({ quy, nam }: WorkflowViewCCTProps) {
     }
   };
 
+  const handleDownloadMau03 = async (bc: BaoCaoXepLoaiQuy) => {
+    setDownloadingId(bc.id);
+    try {
+      await exportService.exportDonViQuy({
+        quy: bc.quy,
+        nam: bc.nam,
+        donViId: bc.don_vi_id,
+      });
+    } catch (err: any) {
+      alert('Lỗi tải Mẫu 03: ' + (err?.response?.data?.detail?.message || err.message || 'Unknown'));
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const handleDownloadTongHop = async () => {
+    setDownloadingId('ALL');
+    try {
+      await exportService.exportDonViTongHopQuy({ quy, nam });
+    } catch (err: any) {
+      alert('Lỗi tải tổng hợp: ' + (err?.response?.data?.detail?.message || err.message || 'Unknown'));
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // Thống kê nhanh theo trạng thái
+  const thongKeTrangThai = useMemo(() => {
+    const base = { NHAP: 0, CHO_PHE_DUYET: 0, DA_PHE_DUYET: 0, TU_CHOI: 0 };
+    for (const bc of danhSach) {
+      if (bc.trang_thai in base) base[bc.trang_thai as keyof typeof base] += 1;
+    }
+    return base;
+  }, [danhSach]);
+
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error} />;
 
-  // Chi tiết 1 báo cáo
+  // -------------------------------------------------------------------------
+  // CHI TIẾT 1 BÁO CÁO
+  // -------------------------------------------------------------------------
   if (selectedBaoCao) {
+    const isChoDuyet = selectedBaoCao.trang_thai === 'CHO_PHE_DUYET';
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -517,10 +605,19 @@ function WorkflowViewCCT({ quy, nam }: WorkflowViewCCTProps) {
             &larr; Quay lại
           </button>
           <h3 className="text-lg font-semibold">Chi tiết báo cáo - {selectedBaoCao.don_vi?.ten_don_vi || 'N/A'}</h3>
+          <StatusBadge trangThai={selectedBaoCao.trang_thai} />
         </div>
 
-        <div className="bg-white p-4 rounded-lg shadow">
+        <div className="bg-white p-4 rounded-lg shadow flex items-start justify-between gap-3">
           <StatsSummary baoCao={selectedBaoCao} />
+          <button
+            onClick={() => handleDownloadMau03(selectedBaoCao)}
+            disabled={downloadingId === selectedBaoCao.id}
+            className="shrink-0 bg-purple-600 text-white px-3 py-2 rounded-md hover:bg-purple-700 text-sm font-medium disabled:opacity-50"
+            title="Tải Mẫu 03 cho đơn vị này"
+          >
+            {downloadingId === selectedBaoCao.id ? 'Đang tải...' : '📄 Tải Mẫu 03'}
+          </button>
         </div>
 
         <div className="bg-white rounded-lg shadow overflow-x-auto">
@@ -563,16 +660,23 @@ function WorkflowViewCCT({ quy, nam }: WorkflowViewCCTProps) {
           </table>
         </div>
 
-        {/* Ý kiến + nút duyệt */}
-        <div className="bg-white p-4 rounded-lg shadow">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Ý kiến phê duyệt</label>
-          <textarea className="w-full border border-gray-300 rounded-md p-2 text-sm" rows={3} placeholder="Nhập ý kiến (nếu có)..."
-            value={yKien} onChange={(e) => setYKien(e.target.value)} />
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => handlePheDuyet(selectedBaoCao.id, 'phe_duyet')} className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm font-medium">Phê duyệt</button>
-            <button onClick={() => handlePheDuyet(selectedBaoCao.id, 'tu_choi')} className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm font-medium">Từ chối</button>
+        {/* Ý kiến + nút duyệt (chỉ khi CHO_PHE_DUYET và canApprove) */}
+        {canApprove && isChoDuyet && (
+          <div className="bg-white p-4 rounded-lg shadow">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Ý kiến phê duyệt</label>
+            <textarea className="w-full border border-gray-300 rounded-md p-2 text-sm" rows={3} placeholder="Nhập ý kiến (nếu có)..."
+              value={yKien} onChange={(e) => setYKien(e.target.value)} />
+            <div className="mt-3 flex gap-2">
+              <button onClick={() => handlePheDuyet(selectedBaoCao.id, 'phe_duyet')} className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm font-medium">Phê duyệt</button>
+              <button onClick={() => handlePheDuyet(selectedBaoCao.id, 'tu_choi')} className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm font-medium">Từ chối</button>
+            </div>
           </div>
-        </div>
+        )}
+        {!canApprove && isChoDuyet && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+            Bạn có quyền xem báo cáo nhưng không có quyền phê duyệt.
+          </div>
+        )}
 
         {selectedChiTiet && (
           <ChiTietModal chiTiet={selectedChiTiet} quy={quy} nam={nam} onClose={() => setSelectedChiTiet(null)} />
@@ -581,21 +685,78 @@ function WorkflowViewCCT({ quy, nam }: WorkflowViewCCTProps) {
     );
   }
 
-  // Danh sách chờ duyệt
+  // -------------------------------------------------------------------------
+  // DANH SÁCH TẤT CẢ ĐƠN VỊ
+  // -------------------------------------------------------------------------
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold text-gray-900">Danh sách báo cáo chờ phê duyệt</h3>
+      {/* Header: filter + tổng hợp */}
+      <div className="bg-white p-4 rounded-lg shadow">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Lọc trạng thái</label>
+            <select
+              value={filterTrangThai}
+              onChange={(e) => setFilterTrangThai(e.target.value as '' | TrangThaiBaoCaoQuy)}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              {TRANG_THAI_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || 'all'} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={loadDanhSach}
+            className="px-3 py-2 text-sm text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50"
+          >
+            🔄 Tải lại
+          </button>
+
+          <button
+            onClick={handleDownloadTongHop}
+            disabled={danhSach.length === 0 || downloadingId === 'ALL'}
+            className="ml-auto px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm font-medium disabled:opacity-50"
+            title="Tải Mẫu 03 tổng hợp tất cả đơn vị (mỗi đơn vị 1 trang)"
+          >
+            {downloadingId === 'ALL' ? 'Đang tải...' : '📥 Tải tổng hợp tất cả đơn vị'}
+          </button>
+        </div>
+
+        {/* Thống kê nhanh */}
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+            <div className="text-gray-500">Nháp</div>
+            <div className="font-bold text-gray-800">{thongKeTrangThai.NHAP}</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            <div className="text-amber-700">Chờ duyệt</div>
+            <div className="font-bold text-amber-800">{thongKeTrangThai.CHO_PHE_DUYET}</div>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded px-3 py-2">
+            <div className="text-green-700">Đã duyệt</div>
+            <div className="font-bold text-green-800">{thongKeTrangThai.DA_PHE_DUYET}</div>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded px-3 py-2">
+            <div className="text-red-700">Từ chối</div>
+            <div className="font-bold text-red-800">{thongKeTrangThai.TU_CHOI}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bảng danh sách */}
+      {loadingDetail && <LoadingSpinner />}
       {danhSach.length === 0 ? (
-        <EmptyState title="Không có báo cáo nào chờ phê duyệt" />
+        <EmptyState title={`Không có báo cáo quý ${quy}/${nam} nào${filterTrangThai ? ` ở trạng thái "${TRANG_THAI_MAP[filterTrangThai]?.label}"` : ''}`} />
       ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Đơn vị</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Quý/Năm</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Tổng CC</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">A/B/C/D</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">A / B / C / D</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Người lập</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ngày gửi</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Hành động</th>
@@ -605,7 +766,7 @@ function WorkflowViewCCT({ quy, nam }: WorkflowViewCCTProps) {
               {danhSach.map((bc) => (
                 <tr key={bc.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">{bc.don_vi?.ten_don_vi || 'N/A'}</td>
-                  <td className="px-4 py-3 text-sm text-center text-gray-600">Q{bc.quy}/{bc.nam}</td>
+                  <td className="px-4 py-3 text-center"><StatusBadge trangThai={bc.trang_thai} /></td>
                   <td className="px-4 py-3 text-sm text-center font-medium">{bc.tong_cong_chuc}</td>
                   <td className="px-4 py-3 text-sm text-center">
                     <span className="text-green-700 font-semibold">{bc.so_loai_a}</span>{' / '}
@@ -615,8 +776,21 @@ function WorkflowViewCCT({ quy, nam }: WorkflowViewCCTProps) {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{bc.nguoi_lap?.ho_ten || 'N/A'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{bc.ngay_gui_duyet ? new Date(bc.ngay_gui_duyet).toLocaleDateString('vi-VN') : '-'}</td>
-                  <td className="px-4 py-3 text-center">
-                    <button onClick={() => setSelectedBaoCao(bc)} className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline">Xem chi tiết</button>
+                  <td className="px-4 py-3 text-center whitespace-nowrap">
+                    <button
+                      onClick={() => handleSelectBaoCao(bc.id)}
+                      className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline mr-3"
+                    >
+                      Xem chi tiết
+                    </button>
+                    <button
+                      onClick={() => handleDownloadMau03(bc)}
+                      disabled={downloadingId === bc.id}
+                      className="text-purple-600 hover:text-purple-800 text-sm font-medium hover:underline disabled:opacity-50"
+                      title="Tải Mẫu 03 của đơn vị này"
+                    >
+                      {downloadingId === bc.id ? 'Đang tải...' : '📄 Mẫu 03'}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -636,8 +810,12 @@ export default function TabQuy({ nam }: ITabProps) {
   const { user } = useAuthStore();
   const [quy, setQuy] = useState<number>(Math.ceil((new Date().getMonth() + 1) / 3));
 
-  const isTDV = user?.vai_tro?.ma_vai_tro === 'TDV' || user?.vai_tro?.ma_vai_tro === 'PDV';
-  const isCCT = ['CCT', 'PCCT', 'SUPER_ADMIN'].includes(user?.vai_tro?.ma_vai_tro || '');
+  const maVaiTro = user?.vai_tro?.ma_vai_tro || '';
+  const isTDV = maVaiTro === 'TDV' || maVaiTro === 'PDV';
+  const isCCT = ['CCT', 'PCCT', 'SUPER_ADMIN'].includes(maVaiTro);
+  // TCCB (hoặc user có can_view_all_units): xem tất cả đơn vị nhưng không phê duyệt
+  const hasViewAll = user?.can_view_all_units === true;
+  const isBigViewer = isCCT || hasViewAll;
 
   return (
     <div className="space-y-4">
@@ -668,8 +846,8 @@ export default function TabQuy({ nam }: ITabProps) {
       {/* Content */}
       {isTDV ? (
         <WorkflowViewTDV quy={quy} nam={nam} />
-      ) : isCCT ? (
-        <WorkflowViewCCT quy={quy} nam={nam} />
+      ) : isBigViewer ? (
+        <WorkflowViewCCT quy={quy} nam={nam} canApprove={isCCT} />
       ) : (
         <div className="bg-white p-8 rounded-lg shadow text-center">
           <p className="text-gray-600">Bạn không có quyền truy cập báo cáo quý.</p>

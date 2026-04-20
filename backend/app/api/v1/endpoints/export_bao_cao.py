@@ -45,6 +45,9 @@ from app.models.kpi_assessment import DanhGiaThang, TieuChiChung, TieuChiChungDa
 from app.models.bao_cao_xep_loai import (
     BaoCaoXepLoai, ChiTietXepLoai, TrangThaiBaoCao
 )
+from app.models.bao_cao_xep_loai_quy import (
+    BaoCaoXepLoaiQuy, ChiTietXepLoaiQuy,
+)
 from app.schemas.common import error_response
 
 
@@ -298,6 +301,55 @@ async def _get_all_bao_cao(
     return list(result.scalars().all())
 
 
+async def _get_bao_cao_don_vi_quy(
+    db: AsyncSession, don_vi_id: UUID, quy: int, nam: int
+) -> Optional[BaoCaoXepLoaiQuy]:
+    """Lấy báo cáo xếp loại QUÝ của đơn vị kèm chi tiết."""
+    stmt = (
+        select(BaoCaoXepLoaiQuy)
+        .options(
+            selectinload(BaoCaoXepLoaiQuy.don_vi),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_lap),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_phe_duyet),
+            selectinload(BaoCaoXepLoaiQuy.chi_tiets)
+            .selectinload(ChiTietXepLoaiQuy.cong_chuc)
+            .selectinload(CongChuc.vai_tro),
+        )
+        .where(
+            BaoCaoXepLoaiQuy.don_vi_id == don_vi_id,
+            BaoCaoXepLoaiQuy.quy == quy,
+            BaoCaoXepLoaiQuy.nam == nam,
+            BaoCaoXepLoaiQuy.is_deleted == False,
+        )
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def _get_all_bao_cao_quy(
+    db: AsyncSession, quy: int, nam: int
+) -> list:
+    """Lấy tất cả báo cáo xếp loại QUÝ toàn Chi cục."""
+    stmt = (
+        select(BaoCaoXepLoaiQuy)
+        .options(
+            selectinload(BaoCaoXepLoaiQuy.don_vi),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_lap),
+            selectinload(BaoCaoXepLoaiQuy.chi_tiets)
+            .selectinload(ChiTietXepLoaiQuy.cong_chuc)
+            .selectinload(CongChuc.vai_tro),
+        )
+        .where(
+            BaoCaoXepLoaiQuy.quy == quy,
+            BaoCaoXepLoaiQuy.nam == nam,
+            BaoCaoXepLoaiQuy.is_deleted == False,
+        )
+        .order_by(BaoCaoXepLoaiQuy.don_vi_id)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 # =============================================================================
 # HELPER: BUILD DATA DICTS CHO DOCX GENERATOR
 # =============================================================================
@@ -467,6 +519,102 @@ def _build_mau03_data(
         "title": title,
         "subtitle": subtitle,
         "thang": thang,
+        "nam": nam,
+        "don_vi_name": don_vi_name,
+        "is_toan_chi_cuc": is_toan_chi_cuc,
+        "rows": rows,
+        "thong_ke": {
+            "tong": tong,
+            "A": so_a, "B": so_b, "C": so_c, "D": so_d, "E": so_e,
+        },
+    }
+
+
+def _build_mau03_data_quy(
+    bao_caos: list,
+    quy: int, nam: int,
+    don_vi_name: str = "",
+    is_toan_chi_cuc: bool = False,
+) -> dict:
+    """
+    Build data dict cho Mẫu 03 QUÝ - Bảng tổng hợp xếp loại theo quý.
+
+    Khác với Mẫu 03 tháng:
+    - Chu kỳ theo quý (1-4) thay vì tháng (1-12).
+    - ChiTietXepLoaiQuy không có so_ngay_lam_viec / so_ngay_nghi (template cũ cũng không dùng).
+    - Subtitle: "Quý X/năm Y".
+    """
+    rows = []
+
+    for bc in bao_caos:
+        don_vi_ten = bc.don_vi.ten_don_vi if bc.don_vi else ""
+
+        if not bc.chi_tiets:
+            continue
+
+        for ct in bc.chi_tiets:
+            if not ct.cong_chuc:
+                continue
+            # Loại trừ CC inactive / deleted
+            if hasattr(ct.cong_chuc, "is_active") and ct.cong_chuc.is_active is False:
+                continue
+            if hasattr(ct.cong_chuc, "deleted_at") and ct.cong_chuc.deleted_at is not None:
+                continue
+
+            xep_loai_cuoi = (
+                ct.xep_loai_quyet_dinh
+                or ct.xep_loai_de_xuat
+                or ct.xep_loai_he_thong
+            )
+
+            cap_bac = (
+                ct.cong_chuc.vai_tro.cap_bac.value
+                if ct.cong_chuc and ct.cong_chuc.vai_tro
+                else "CONG_CHUC"
+            )
+            sort_order = SORT_ORDER_CAP_BAC.get(cap_bac, 99)
+
+            rows.append({
+                "ho_ten": ct.cong_chuc.ho_ten if ct.cong_chuc else "",
+                "don_vi": don_vi_ten,
+                "chuc_vu": ct.cong_chuc.chuc_vu if ct.cong_chuc else "",
+                # Quý không theo dõi ngày LV/ngày nghỉ — để 0 cho nhất quán schema
+                "so_ngay_lv": 0.0,
+                "so_ngay_nghi": 0.0,
+                "diem_tcc": float(ct.diem_tieu_chi_chung or 0),
+                "diem_kpi": float(ct.diem_kpi or 0),
+                "diem_tong": float(ct.diem_tong or 0),
+                "xep_loai_he_thong": ct.xep_loai_he_thong or "",
+                "xep_loai_de_xuat": ct.xep_loai_de_xuat or "",
+                "xep_loai_quyet_dinh": ct.xep_loai_quyet_dinh or "",
+                "xep_loai_cuoi": xep_loai_cuoi,
+                "ghi_chu": ct.ghi_chu or "",
+                "_sort_order": sort_order,
+            })
+
+    rows.sort(key=lambda r: (r["_sort_order"], r["ho_ten"]))
+    for i, row in enumerate(rows, 1):
+        row["stt"] = i
+        del row["_sort_order"]
+
+    title = "BẢNG TỔNG HỢP KẾT QUẢ XẾP LOẠI CHẤT LƯỢNG CÔNG CHỨC"
+    if is_toan_chi_cuc:
+        subtitle = f"Toàn Chi cục - Quý {quy}/{nam}"
+    else:
+        subtitle = f"{don_vi_name} - Quý {quy}/{nam}"
+
+    tong = len(rows)
+    so_a = sum(1 for r in rows if r["xep_loai_cuoi"] == "A")
+    so_b = sum(1 for r in rows if r["xep_loai_cuoi"] == "B")
+    so_c = sum(1 for r in rows if r["xep_loai_cuoi"] == "C")
+    so_d = sum(1 for r in rows if r["xep_loai_cuoi"] == "D")
+    so_e = sum(1 for r in rows if r["xep_loai_cuoi"] == "E")
+
+    return {
+        "title": title,
+        "subtitle": subtitle,
+        # Báo cho generate.js biết đây là báo cáo quý → render "Quý X năm Y"
+        "quy": quy,
         "nam": nam,
         "don_vi_name": don_vi_name,
         "is_toan_chi_cuc": is_toan_chi_cuc,
@@ -1003,6 +1151,134 @@ async def export_don_vi_tong_hop(
     
     filename = f"Mau03_TatCaDonVi_{thang:02d}_{nam}.{format}"
     return make_file_response(docx_bytes, filename, format)
+
+
+# =============================================================================
+# 2B. EXPORT ĐƠN VỊ THEO QUÝ (Mẫu 03 quý)
+# =============================================================================
+
+@router.get("/don-vi/quy/{quy}/nam/{nam}")
+async def export_don_vi_quy(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    quy: int,
+    nam: int,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+    don_vi_id: Optional[UUID] = Query(
+        None, description="ID đơn vị (CCT/PCCT/TCCB chọn đơn vị bất kỳ)"
+    ),
+):
+    """
+    Xuất Mẫu 03 QUÝ - Bảng tổng hợp xếp loại đơn vị theo quý.
+
+    - TDV/PDV: chỉ đơn vị mình.
+    - CCT/PCCT/TCCB (can_view_all_units): chọn đơn vị bất kỳ.
+    """
+    if quy < 1 or quy > 4:
+        raise HTTPException(400, detail=error_response("VAL_001", "Quý phải từ 1-4"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+
+    target_don_vi_id = don_vi_id or current_user.don_vi_id
+
+    has_view_all = getattr(current_user, "can_view_all_units", False)
+    cap_bac = _get_cap_bac(current_user)
+    if not has_view_all and cap_bac not in [
+        CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI,
+        CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG,
+    ]:
+        raise HTTPException(403, detail=error_response(
+            "PERM_003", "Bạn không có quyền xuất báo cáo đơn vị"
+        ))
+    if (
+        not has_view_all
+        and _is_lanh_dao_don_vi(current_user)
+        and target_don_vi_id != current_user.don_vi_id
+    ):
+        raise HTTPException(403, detail=error_response(
+            "PERM_004", "Bạn chỉ được xuất báo cáo đơn vị mình"
+        ))
+
+    bao_cao = await _get_bao_cao_don_vi_quy(db, target_don_vi_id, quy, nam)
+    if not bao_cao:
+        raise HTTPException(404, detail=error_response(
+            "BIZ_002",
+            f"Chưa có báo cáo xếp loại quý {quy}/{nam} cho đơn vị này",
+        ))
+
+    try:
+        don_vi_name = bao_cao.don_vi.ten_don_vi if bao_cao.don_vi else ""
+        mau03_data = _build_mau03_data_quy(
+            [bao_cao], quy, nam, don_vi_name, is_toan_chi_cuc=False
+        )
+        docx_bytes = await _generate_docx("don-vi", mau03_data)
+
+        if format == "pdf":
+            docx_bytes = convert_docx_to_pdf(docx_bytes)
+
+        filename = f"Mau03_DonVi_Q{quy}_{nam}.{format}"
+        return make_file_response(docx_bytes, filename, format)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[EXPORT] export_don_vi_quy error: {traceback.format_exc()}")
+        raise HTTPException(500, detail=error_response(
+            "SYS_099", f"Lỗi xuất báo cáo quý: {str(e)[:200]}"
+        ))
+
+
+@router.get("/don-vi-tong-hop/quy/{quy}/nam/{nam}")
+async def export_don_vi_tong_hop_quy(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    quy: int,
+    nam: int,
+    format: str = Query("docx", regex="^(docx|pdf)$"),
+):
+    """
+    Xuất Mẫu 03 QUÝ tổng hợp TẤT CẢ đơn vị (mỗi đơn vị 1 trang).
+
+    Quyền: CCT, PCCT hoặc user có can_view_all_units (TCCB).
+    """
+    if quy < 1 or quy > 4:
+        raise HTTPException(400, detail=error_response("VAL_001", "Quý phải từ 1-4"))
+    if nam < 2025:
+        raise HTTPException(400, detail=error_response("VAL_002", "Năm phải >= 2025"))
+
+    if not _is_lanh_dao_chi_cuc(current_user):
+        raise HTTPException(403, detail=error_response(
+            "PERM_003", "Chỉ CCT/PCCT/TCCB mới được xuất báo cáo tổng hợp quý"
+        ))
+
+    bao_caos = await _get_all_bao_cao_quy(db, quy, nam)
+    if not bao_caos:
+        raise HTTPException(404, detail=error_response(
+            "BIZ_003", f"Chưa có báo cáo xếp loại quý {quy}/{nam}"
+        ))
+
+    don_vi_list = []
+    for bc in bao_caos:
+        don_vi_data = _build_mau03_data_quy(
+            [bc], quy, nam,
+            don_vi_name=bc.don_vi.ten_don_vi if bc.don_vi else "",
+            is_toan_chi_cuc=False,
+        )
+        don_vi_list.append(don_vi_data)
+
+    combined_data = {
+        "don_vi_list": don_vi_list,
+        "quy": quy,
+        "nam": nam,
+    }
+
+    docx_bytes = await _generate_docx("don-vi-tong-hop", combined_data)
+
+    if format == "pdf":
+        docx_bytes = convert_docx_to_pdf(docx_bytes)
+
+    filename = f"Mau03_TatCaDonVi_Q{quy}_{nam}.{format}"
+    return make_file_response(docx_bytes, filename, format)
+
 
 @router.get("/mau05-doi-moi/thang/{thang}/nam/{nam}")
 async def export_mau05_doi_moi(

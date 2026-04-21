@@ -75,14 +75,37 @@ router = APIRouter()
 # HELPER FUNCTIONS
 # =============================================================================
 
+# =============================================================================
+# NỚI HẠN TẠM THỜI (2026-04-21): Cho phép tự đánh giá + phê duyệt tiêu chí chung
+# cho mọi tháng từ 2026-01 trở đi, đến hết 2026-05-31 để CC bổ sung các tháng
+# còn thiếu. Sau deadline này, tự động quay về quy tắc gốc.
+# Xem thêm: CONFIRM với người dùng ngày 2026-04-21.
+# =============================================================================
+HAN_MO_RONG_TAM_THOI_DEN = date(2026, 5, 31)
+MO_RONG_TU_THANG_NAM = (2026, 1)  # (năm, tháng) — tuple để so sánh
+
+
+def _trong_han_mo_rong_tam_thoi(thang: int, nam: int) -> bool:
+    """True nếu hôm nay vẫn trong window nới và tháng/năm ≥ 2026-01."""
+    today = date.today()
+    if today > HAN_MO_RONG_TAM_THOI_DEN:
+        return False
+    return (nam, thang) >= MO_RONG_TU_THANG_NAM
+
+
 def kiem_tra_thoi_han_tu_danh_gia(thang: int, nam: int) -> bool:
     """Kiểm tra có trong thời hạn tự đánh giá không.
-    
+
     Quy tắc: Trước ngày 10 tháng sau (BUSINESS_RULES §1.2)
     - Tháng hiện tại: luôn cho phép
     - Tháng trước: cho phép nếu ngày ≤ 10
     """
+    # Nới tạm thời đến HAN_MO_RONG_TAM_THOI_DEN — cho phép mọi tháng ≥ 2026-01
+    # Vẫn chặn tháng tương lai
     today = date.today()
+    if _trong_han_mo_rong_tam_thoi(thang, nam) and (nam, thang) <= (today.year, today.month):
+        return True
+
     if thang == today.month and nam == today.year:
         return True
     prev_month = 12 if today.month == 1 else today.month - 1
@@ -90,6 +113,15 @@ def kiem_tra_thoi_han_tu_danh_gia(thang: int, nam: int) -> bool:
     if thang == prev_month and nam == prev_year and today.day <= 30:
         return True
     return False
+
+
+def _dang_bi_khoa(danh_gia: "DanhGiaThang") -> bool:
+    """Wrapper: bypass `is_khoa` trong window nới tạm thời (2026-04 → 2026-05-31)."""
+    if not danh_gia.is_khoa:
+        return False
+    if _trong_han_mo_rong_tam_thoi(danh_gia.thang, danh_gia.nam):
+        return False
+    return True
 
 
 async def get_or_create_danh_gia_thang(
@@ -460,8 +492,8 @@ async def tu_danh_gia_tieu_chi(
     
     danh_gia, is_new = await get_or_create_danh_gia_thang(db, current_user.id, payload.thang, payload.nam)
     
-    # v2.6: Kiểm tra khóa dữ liệu
-    if danh_gia.is_khoa:
+    # v2.6: Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
+    if _dang_bi_khoa(danh_gia):
         raise HTTPException(status_code=400, detail=error_response(code="BIZ_002", message="Dữ liệu đã bị khóa, không thể chỉnh sửa"))
     
     # Kiểm tra trạng thái
@@ -533,9 +565,23 @@ async def tu_danh_gia_tieu_chi(
             vt = result_vt.scalar_one_or_none()
             if vt:
                 nguoi_pd_vai_tro = vt.cap_bac
-        
+
         danh_gia.nguoi_phe_duyet_tc_cap1_id = nguoi_pd.id
         danh_gia.trang_thai_tc = TrangThaiTieuChi.CHO_PHE_DUYET
+
+        # Reset toàn bộ state cũ để tránh pollution khi resubmit (ví dụ tháng
+        # trước từng là CC thường + Phó ĐT đã duyệt cap1 → cap2_id bị prefill =
+        # ĐT; nếu giờ ĐT tự đánh giá và chọn CCT, data cũ sẽ khiến badge FE
+        # hiển thị "Chờ cấp 2" thay vì "Chờ duyệt thẳng").
+        danh_gia.nguoi_phe_duyet_tc_cap2_id = None
+        danh_gia.ngay_phe_duyet_tc_cap1 = None
+        danh_gia.ngay_phe_duyet_tc_cap2 = None
+        danh_gia.diem_tc_cap1 = None
+        danh_gia.diem_tc_cap2 = None
+        danh_gia.diem_tieu_chi_chung = None
+        danh_gia.ly_do_tu_choi_tc = None
+        danh_gia.nguoi_tu_choi_tc_id = None
+        danh_gia.ngay_tu_choi_tc = None
     
     await db.flush()
     for tc in created:
@@ -877,8 +923,8 @@ async def phe_duyet_tieu_chi_chung(
     if not danh_gia:
         raise HTTPException(status_code=404, detail=error_response(code="NOT_FOUND", message="Không tìm thấy"))
     
-    # Kiểm tra khóa dữ liệu
-    if danh_gia.is_khoa:
+    # Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
+    if _dang_bi_khoa(danh_gia):
         raise HTTPException(status_code=400, detail=error_response(code="BIZ_002", message="Dữ liệu đã bị khóa"))
     
     # Lấy cấp bậc người đăng ký và current_user
@@ -1250,8 +1296,8 @@ async def tu_choi_tieu_chi_chung(
             detail=error_response(code="NOT_FOUND", message="Không tìm thấy đánh giá")
         )
     
-    # Kiểm tra khóa dữ liệu
-    if danh_gia.is_khoa:
+    # Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
+    if _dang_bi_khoa(danh_gia):
         raise HTTPException(
             status_code=400,
             detail=error_response(code="BIZ_002", message="Dữ liệu đã bị khóa, không thể từ chối")
@@ -1411,8 +1457,8 @@ async def tra_lai_tieu_chi_da_duyet(
             detail=error_response(code="NOT_FOUND", message="Không tìm thấy đánh giá")
         )
     
-    # Kiểm tra khóa dữ liệu
-    if danh_gia.is_khoa:
+    # Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
+    if _dang_bi_khoa(danh_gia):
         raise HTTPException(
             status_code=400,
             detail=error_response(code="BIZ_002", message="Dữ liệu đã bị khóa, không thể trả lại")
@@ -1553,8 +1599,8 @@ async def phe_duyet_tieu_chi_bulk(
         if not danh_gia:
             continue
         
-        # Kiểm tra khóa
-        if danh_gia.is_khoa:
+        # Kiểm tra khóa (bypass trong window nới tạm thời)
+        if _dang_bi_khoa(danh_gia):
             continue
         
         # Kiểm tra quyền
@@ -1565,7 +1611,52 @@ async def phe_duyet_tieu_chi_bulk(
         
         if not (is_approver_cap1 or is_approver_cap2 or is_approver_legacy or is_cct):
             continue
-        
+
+        # Cấp bậc người được đánh giá — cần để phân biệt duyệt thẳng
+        cap_bac_cc = None
+        if danh_gia.cong_chuc and danh_gia.cong_chuc.vai_tro:
+            cap_bac_cc = danh_gia.cong_chuc.vai_tro.cap_bac
+
+        # --- DUYỆT THẲNG 1 CẤP ---
+        # Các flow duyệt thẳng (không qua 2 cấp Phó ĐT → ĐT):
+        #   (a) ĐT/PCCT → CCT duyệt
+        #   (b) CCT tự đánh giá → CCT tự duyệt
+        # Nếu rơi vào nhánh "Cấp 1" bên dưới, trạng thái sẽ bị kẹt ở
+        # CHO_CAP2 và cap2_id bị pre-fill sai (= chính CC hoặc null).
+        is_cct_tu_danh_gia = (
+            cap_bac_cc == CapBacVaiTro.CHI_CUC_TRUONG
+            and danh_gia.cong_chuc_id == current_user.id
+        )
+        is_dt_pcct_gui_cct = (
+            cap_bac_cc in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+            and cap_bac_current == CapBacVaiTro.CHI_CUC_TRUONG
+        )
+        is_duyet_thang = (
+            (is_cct_tu_danh_gia or is_dt_pcct_gui_cct)
+            and is_approver_cap1
+            and not danh_gia.ngay_phe_duyet_tc_cap1
+        )
+        if is_duyet_thang:
+            for tc in danh_gia.tieu_chi_chungs:
+                tc.is_achieved_ld = tc.is_achieved_cc
+                tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(tc.tieu_chi.ma_tieu_chi, tc.is_achieved_ld)))
+                tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
+                tc.ngay_phe_duyet = now
+                tc.ghi_chu_ld = payload.ghi_chu
+
+            tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
+            diem = Decimal(str(tong_hop.tong_diem))
+            danh_gia.ngay_phe_duyet_tc_cap1 = now
+            danh_gia.diem_tc_cap1 = diem
+            danh_gia.nguoi_phe_duyet_tc_cap2_id = current_user.id
+            danh_gia.ngay_phe_duyet_tc_cap2 = now
+            danh_gia.diem_tc_cap2 = diem
+            danh_gia.diem_tieu_chi_chung = diem
+            danh_gia.trang_thai_tc = TrangThaiTieuChi.DA_PHE_DUYET
+
+            processed_ids.append(dgt_id)
+            continue
+
         # Xử lý theo cấp
         # Cấp 1
         if is_approver_cap1 and not danh_gia.ngay_phe_duyet_tc_cap1:

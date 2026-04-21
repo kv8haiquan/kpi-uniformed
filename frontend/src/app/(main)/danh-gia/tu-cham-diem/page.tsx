@@ -152,15 +152,31 @@ export default function TuChamDiemPage() {
     const todayMonth = today.getMonth() + 1;
     const todayYear = today.getFullYear();
     const todayDay = today.getDate();
-    
+
+    // NỚI HẠN TẠM THỜI (2026-04-21): cho phép mọi tháng ≥ 2026-01 đến hết
+    // 2026-05-31 để CC bổ sung các tháng còn thiếu. Đồng bộ với backend
+    // kiem_tra_thoi_han_tu_danh_gia.
+    const HAN_MO_RONG_TAM_THOI_DEN = new Date(2026, 4, 31); // tháng 5 index = 4
+    const MO_RONG_TU_NAM = 2026;
+    const MO_RONG_TU_THANG = 1;
+    if (today <= HAN_MO_RONG_TAM_THOI_DEN) {
+      const afterStart =
+        selectedNam > MO_RONG_TU_NAM ||
+        (selectedNam === MO_RONG_TU_NAM && selectedThang >= MO_RONG_TU_THANG);
+      const notFuture =
+        selectedNam < todayYear ||
+        (selectedNam === todayYear && selectedThang <= todayMonth);
+      if (afterStart && notFuture) return false;
+    }
+
     // Current month: always OK
     if (selectedThang === todayMonth && selectedNam === todayYear) return false;
-    
+
     // Previous month: OK if day <= 10 (business rule: trước ngày 10 tháng sau)
     let prevMonth = todayMonth === 1 ? 12 : todayMonth - 1;
     let prevYear = todayMonth === 1 ? todayYear - 1 : todayYear;
     if (selectedThang === prevMonth && selectedNam === prevYear && todayDay <= 30) return false;
-    
+
     // All other months: deadline passed
     return true;
   }, [selectedThang, selectedNam]);

@@ -95,6 +95,17 @@ interface ITieuChiChiTiet {
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 type ApprovalLevel = 'all' | 'cap1' | 'cap2' | 'thang';
 
+/**
+ * Xác định user hiện tại có dính líu tới đơn (là người duyệt cấp 1 hoặc cấp 2).
+ * Dùng để chặn CCT/LĐ cấp cao không thấy đơn toàn chi cục (backend `/lich-su`
+ * miễn filter cho CCT → nếu không chặn ở FE, tab sẽ hiển thị tất cả CC).
+ */
+function isItemUserInvolved(item: ITieuChiItem, currentUserId?: string): boolean {
+  if (!currentUserId) return false;
+  return item.nguoi_phe_duyet_tc_cap1_id === currentUserId
+      || item.nguoi_phe_duyet_tc_cap2_id === currentUserId;
+}
+
 // =============================================================================
 // HELPER - Fetch tất cả pages (copy từ TabCongViec)
 // =============================================================================
@@ -561,9 +572,6 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   
-  // Counts state
-  const [counts, setCounts] = useState({ pending: 0, approved: 0, rejected: 0, total: 0 });
-  
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ITieuChiItem | null>(null);
   const [modalAction, setModalAction] = useState<'approve' | 'reject' | 'detail' | null>(null);
@@ -633,24 +641,9 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
       }
       
       setData(allItems);
-      
-      // ✅ Tính counts từ dữ liệu đã load
-      const pendingCount = allItems.filter(d => {
-        const t = d.trang_thai_tc || d.trang_thai_tieu_chi || d.trang_thai;
-        return t === 'CHO_PHE_DUYET' || t === 'CHO_PHE_DUYET_TC' || t === 'CHO_CAP2';
-      }).length;
-      const approvedCount = allItems.filter(d => {
-        const t = d.trang_thai_tc || d.trang_thai_tieu_chi || d.trang_thai;
-        return t === 'DA_PHE_DUYET';
-      }).length;
-      const rejectedCount = allItems.filter(d => {
-        const t = d.trang_thai_tc || d.trang_thai_tieu_chi || d.trang_thai;
-        return t === 'TU_CHOI';
-      }).length;
-      
-      setCounts({ pending: pendingCount, approved: approvedCount, rejected: rejectedCount, total: allItems.length });
-      if (onPendingCountChange) onPendingCountChange(pendingCount);
-      
+      // Counts + onPendingCountChange được tính qua useMemo/useEffect bên dưới
+      // (vì cần lọc theo currentUserId — đặc biệt quan trọng với CCT do backend
+      // /lich-su miễn filter cho CCT).
     } catch (err) {
       const error = err as Error;
       setError(error.message || 'Có lỗi xảy ra khi tải dữ liệu');
@@ -658,7 +651,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
     } finally {
       setIsLoading(false);
     }
-  }, [thang, nam, onPendingCountChange]);
+  }, [thang, nam]);
 
   useEffect(() => {
     loadData();
@@ -870,26 +863,45 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
     return canApproveCap1 || canApproveCap2;
   };
 
-  const pendingItems = data.filter(d => {
+  // ✅ FIX (CCT): Chỉ giữ đơn user có dính líu (cap1 hoặc cap2 approver).
+  // Backend /lich-su miễn filter cho CCT → FE phải lọc, nếu không CCT thấy mọi CC.
+  // Non-CCT đã được backend filter → filter này no-op.
+  const relevantData = React.useMemo(() => {
+    if (!currentUserId) return [] as ITieuChiItem[];
+    return data.filter(item => isItemUserInvolved(item, currentUserId));
+  }, [data, currentUserId]);
+
+  const pendingItems = relevantData.filter(d => {
     const trangThaiTC = d.trang_thai_tc || d.trang_thai_tieu_chi || d.trang_thai;
-    const isPending = trangThaiTC === 'CHO_PHE_DUYET_TC' || 
+    const isPending = trangThaiTC === 'CHO_PHE_DUYET_TC' ||
       trangThaiTC === 'CHO_PHE_DUYET' ||
       trangThaiTC === 'CHO_CAP2' ||
       (!trangThaiTC && !d.ngay_phe_duyet_tc_cap2);
     return isPending;
   });
-  
+
   // Items mà user hiện tại có thể duyệt (chưa duyệt)
   const approvableItems = pendingItems.filter(canUserApproveItem);
-  
+
   // Items mà user đã duyệt (cấp 1 hoặc cấp 2)
-  const userApprovedItems = data.filter(item => {
+  const userApprovedItems = relevantData.filter(item => {
     const approvedCap1 = !!(currentUserId && item.nguoi_phe_duyet_tc_cap1_id === currentUserId && item.ngay_phe_duyet_tc_cap1);
     const approvedCap2 = !!(currentUserId && item.nguoi_phe_duyet_tc_cap2_id === currentUserId && item.ngay_phe_duyet_tc_cap2);
     return approvedCap1 || approvedCap2;
   });
-  
-  const filteredData = data.filter(item => {
+
+  // Counts rejected tính từ relevantData (không phải data toàn chi cục)
+  const rejectedCount = relevantData.filter(d => {
+    const t = d.trang_thai_tc || d.trang_thai_tieu_chi || d.trang_thai;
+    return t === 'TU_CHOI';
+  }).length;
+
+  // Notify parent về số lượng cần user hành động (approvableItems)
+  useEffect(() => {
+    if (onPendingCountChange) onPendingCountChange(approvableItems.length);
+  }, [approvableItems.length, onPendingCountChange]);
+
+  const filteredData = relevantData.filter(item => {
     const trangThaiTC = item.trang_thai_tc || item.trang_thai_tieu_chi || item.trang_thai;
     const isPending = trangThaiTC === 'CHO_PHE_DUYET_TC' || 
       trangThaiTC === 'CHO_PHE_DUYET' ||
@@ -942,10 +954,10 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
            d.nguoi_phe_duyet_tc_cap1_id !== currentUserId;
   }).length;
 
-  // ✅ Danh sách công chức unique để filter
+  // ✅ Danh sách công chức unique để filter — chỉ lấy từ relevantData
   const uniqueCongChuc = React.useMemo(() => {
     const map = new Map<string, { id: string; ho_ten: string; ma_cc: string }>();
-    data.forEach(item => {
+    relevantData.forEach(item => {
       const id = item.cong_chuc_id || item.cong_chuc?.ho_ten || item.ho_ten;
       if (id && !map.has(id)) {
         map.set(id, {
@@ -956,7 +968,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
       }
     });
     return Array.from(map.values()).sort((a, b) => a.ho_ten.localeCompare(b.ho_ten, 'vi'));
-  }, [data]);
+  }, [relevantData]);
 
   // Apply congChucFilter + levelFilter vào filteredData
   const finalFilteredData = React.useMemo(() => {
@@ -1014,7 +1026,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
               <option value="all">Tất cả ({approvableItems.length + userApprovedItems.length})</option>
               <option value="pending">Chờ duyệt ({approvableItems.length})</option>
               <option value="approved">Đã duyệt ({userApprovedItems.length})</option>
-              <option value="rejected">Từ chối ({counts.rejected})</option>
+              <option value="rejected">Từ chối ({rejectedCount})</option>
             </select>
           </div>
 

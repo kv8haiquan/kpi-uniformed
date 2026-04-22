@@ -24,12 +24,22 @@ class CauHoiInline(BaseModel):
     giai_thich: Optional[str] = None
 
 
+LOAI_BAI_KIEM_TRA = {"TRAC_NGHIEM", "THUC_HANH"}
+
+
 class BaiKiemTraCreate(BaseModel):
     """Schema tao bai kiem tra."""
     # Optional vi khoa_hoc_id duoc lay tu URL path parameter, backend se override
     khoa_hoc_id: Optional[UUID] = None
     tieu_de: str = Field(..., min_length=1, max_length=300)
     mo_ta: Optional[str] = None
+    # Loai BKT
+    loai_bai_kiem_tra: str = "TRAC_NGHIEM"
+    # Thuc hanh: huong dan bai nop + giới hạn upload
+    yeu_cau_bai_lam: Optional[str] = None
+    dung_luong_toi_da_mb: Optional[int] = Field(default=500, ge=1, le=2000)
+    dinh_dang_cho_phep: Optional[str] = "mp4,mov,webm"
+    # Cau hinh chung
     thoi_gian_lam_bai_phut: Optional[int] = Field(None, ge=1)
     so_lan_lam_toi_da: int = Field(default=3, ge=1)
     diem_dat: Decimal = Field(default=Decimal("70.00"), ge=0, le=100)
@@ -41,16 +51,27 @@ class BaiKiemTraCreate(BaseModel):
     # Khung gio thi hang ngay
     gio_mo: Optional[str] = None
     gio_dong: Optional[str] = None
-    # cau_hoi_ids: chon tu ngan hang (co the rong neu dung cau_hoi_moi)
+    # cau_hoi_ids: chon tu ngan hang (co the rong neu dung cau_hoi_moi hoac THUC_HANH)
     cau_hoi_ids: Optional[list[UUID]] = None
     # cau_hoi_moi: tao moi inline ngay khi tao BKT
     cau_hoi_moi: Optional[list[CauHoiInline]] = None
+
+    @field_validator("loai_bai_kiem_tra")
+    @classmethod
+    def _vld_loai(cls, v: str) -> str:
+        if v not in LOAI_BAI_KIEM_TRA:
+            raise ValueError(f"Loại BKT phải thuộc: {sorted(LOAI_BAI_KIEM_TRA)}")
+        return v
 
 
 class BaiKiemTraUpdate(BaseModel):
     """Schema cap nhat bai kiem tra."""
     tieu_de: Optional[str] = Field(None, min_length=1, max_length=300)
     mo_ta: Optional[str] = None
+    loai_bai_kiem_tra: Optional[str] = None
+    yeu_cau_bai_lam: Optional[str] = None
+    dung_luong_toi_da_mb: Optional[int] = Field(None, ge=1, le=2000)
+    dinh_dang_cho_phep: Optional[str] = None
     thoi_gian_lam_bai_phut: Optional[int] = Field(None, ge=1)
     so_lan_lam_toi_da: Optional[int] = Field(None, ge=1)
     diem_dat: Optional[Decimal] = Field(None, ge=0, le=100)
@@ -65,6 +86,13 @@ class BaiKiemTraUpdate(BaseModel):
     cau_hoi_ids: Optional[list[UUID]] = None
     cau_hoi_moi: Optional[list[CauHoiInline]] = None
 
+    @field_validator("loai_bai_kiem_tra")
+    @classmethod
+    def _vld_loai(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in LOAI_BAI_KIEM_TRA:
+            raise ValueError(f"Loại BKT phải thuộc: {sorted(LOAI_BAI_KIEM_TRA)}")
+        return v
+
 
 class BaiKiemTraResponse(BaseModel):
     """Schema response bai kiem tra."""
@@ -74,6 +102,10 @@ class BaiKiemTraResponse(BaseModel):
     khoa_hoc_id: Optional[UUID] = None
     tieu_de: str
     mo_ta: Optional[str] = None
+    loai_bai_kiem_tra: str = "TRAC_NGHIEM"
+    yeu_cau_bai_lam: Optional[str] = None
+    dung_luong_toi_da_mb: Optional[int] = None
+    dinh_dang_cho_phep: Optional[str] = None
     so_cau_hoi: int
     thoi_gian_lam_bai_phut: Optional[int] = None
     so_lan_lam_toi_da: Optional[int] = 3
@@ -95,6 +127,9 @@ class BaiKiemTraResponse(BaseModel):
     diem_cao_nhat: Optional[Decimal] = None
     da_dat: Optional[bool] = None
     so_lan_con_lai: Optional[int] = None
+    # Trang thai nop / cham cua ca nhan (chi THUC_HANH)
+    trang_thai_cham_moi_nhat: Optional[str] = None
+    bai_nop_url: Optional[str] = None
 
 
 class LichSuThiItem(BaseModel):
@@ -107,6 +142,13 @@ class LichSuThiItem(BaseModel):
     thoi_gian_lam_giay: Optional[int] = None
     dat_yeu_cau: Optional[bool] = None
     ngay_lam: Optional[datetime] = None
+    # THUC_HANH
+    bai_nop_url: Optional[str] = None
+    bai_nop_ten_file: Optional[str] = None
+    trang_thai_cham: Optional[str] = None
+    nhan_xet: Optional[str] = None
+    ngay_nop: Optional[datetime] = None
+    ngay_cham: Optional[datetime] = None
 
 
 class LichSuThiResponse(BaseModel):
@@ -123,16 +165,27 @@ class LichSuThiResponse(BaseModel):
 
 class BatDauResponse(BaseModel):
     """Response khi bat dau lam bai kiem tra."""
-    ket_qua_id: UUID
+    # ket_qua_id = None khi preview
+    ket_qua_id: Optional[UUID] = None
     lan_thu: int
     thoi_gian_phut: Optional[int] = None
-    so_cau: int
-    cau_hoi: list[CauHoiForExam]
+    # Loai BKT (de FE re nhanh upload vs quiz)
+    loai_bai_kiem_tra: str = "TRAC_NGHIEM"
+    # Trac nghiem
+    so_cau: int = 0
+    cau_hoi: list[CauHoiForExam] = []
+    # Thuc hanh
+    yeu_cau_bai_lam: Optional[str] = None
+    dung_luong_toi_da_mb: Optional[int] = None
+    dinh_dang_cho_phep: Optional[str] = None
+    # Chung
     so_lan_con_lai: Optional[int] = None
     dang_tiep_tuc: bool = False
     chi_tiet_nhap: Optional[list] = None
     thoi_gian_da_lam_giay: Optional[int] = None
     so_lan_vi_pham: int = 0
+    # Flag preview — FE hien banner vang
+    is_preview: bool = False
 
 
 class TraLoiItem(BaseModel):
@@ -177,3 +230,42 @@ class KetQuaResponse(BaseModel):
     dat_yeu_cau: Optional[bool] = None
     ngay_lam: Optional[datetime] = None
     chi_tiet: Optional[list[KetQuaChiTietItem]] = None
+    # Chế độ hiển thị (tham khảo từ BKT config)
+    che_do_xem: Optional[str] = None
+    thong_bao: Optional[str] = None
+    # THUC_HANH
+    loai_bai_kiem_tra: Optional[str] = None
+    bai_nop_url: Optional[str] = None
+    bai_nop_ten_file: Optional[str] = None
+    trang_thai_cham: Optional[str] = None
+    nhan_xet: Optional[str] = None
+    ngay_nop: Optional[datetime] = None
+    ngay_cham: Optional[datetime] = None
+
+
+class ChamTayRequest(BaseModel):
+    """Request cham bai thuc hanh (giang vien)."""
+    diem: Decimal = Field(..., ge=0, le=100)
+    nhan_xet: Optional[str] = None
+
+
+class KetQuaChamItem(BaseModel):
+    """1 ket qua trong danh sach cho giang vien cham bai thuc hanh."""
+    id: UUID
+    cong_chuc_id: UUID
+    ho_ten: Optional[str] = None
+    ma_cc: Optional[str] = None
+    don_vi_ten: Optional[str] = None
+    lan_thu: int
+    diem: Optional[Decimal] = None
+    dat_yeu_cau: Optional[bool] = None
+    ngay_lam: Optional[datetime] = None
+    ngay_nop: Optional[datetime] = None
+    ngay_cham: Optional[datetime] = None
+    bai_nop_url: Optional[str] = None
+    bai_nop_ten_file: Optional[str] = None
+    bai_nop_size_bytes: Optional[int] = None
+    bai_nop_content_type: Optional[str] = None
+    trang_thai_cham: Optional[str] = None
+    nhan_xet: Optional[str] = None
+    so_lan_vi_pham: Optional[int] = None

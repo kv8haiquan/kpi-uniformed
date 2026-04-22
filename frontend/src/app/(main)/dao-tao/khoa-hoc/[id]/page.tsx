@@ -382,6 +382,7 @@ export default function KhoaHocDetailPage() {
                     const td = bh.tien_do_ca_nhan;
                     const icon = TIEN_DO_ICON[td?.trang_thai || 'CHUA_XEM'] || '⚪';
                     const canAccessLesson = kh.dang_ky && !['CHO_PHE_DUYET', 'TU_CHOI', 'BI_LOAI'].includes(kh.dang_ky.trang_thai);
+                    const previewLesson = canManage && !canAccessLesson;
                     const inner = (
                       <>
                         <span className="text-lg shrink-0">{icon}</span>
@@ -396,15 +397,21 @@ export default function KhoaHocDetailPage() {
                         {td?.trang_thai === 'DA_HOAN_THANH' && (
                           <span className="text-xs text-green-600 font-medium shrink-0">✓ Hoàn thành</span>
                         )}
-                        {canAccessLesson && (
+                        {previewLesson && (
+                          <span className="text-xs text-yellow-700 font-medium shrink-0 bg-yellow-100 px-1.5 py-0.5 rounded">Xem thử</span>
+                        )}
+                        {(canAccessLesson || previewLesson) && (
                           <span className="text-gray-300 shrink-0 text-xs">›</span>
                         )}
                       </>
                     );
-                    return canAccessLesson ? (
+                    const href = previewLesson
+                      ? `/dao-tao/khoa-hoc/${id}/bai-hoc/${bh.id}?preview=1`
+                      : `/dao-tao/khoa-hoc/${id}/bai-hoc/${bh.id}`;
+                    return (canAccessLesson || previewLesson) ? (
                       <Link
                         key={bh.id}
-                        href={`/dao-tao/khoa-hoc/${id}/bai-hoc/${bh.id}`}
+                        href={href}
                         className="flex items-center gap-3 p-3 rounded-lg hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-colors cursor-pointer"
                       >
                         {inner}
@@ -444,18 +451,42 @@ export default function KhoaHocDetailPage() {
                     const conLuot = soLan < soLanMax;
                     const lichSu = bktLichSu[bkt.id];
                     const isExpanded = bktExpanded === bkt.id;
+                    const laThucHanh = bkt.loai_bai_kiem_tra === 'THUC_HANH';
+                    const trangThaiCham = bkt.trang_thai_cham_moi_nhat;
 
                     return (
                       <div key={bkt.id} className="border rounded-lg overflow-hidden">
                         {/* Header hàng BKT */}
                         <div className="flex items-center gap-4 p-4 hover:bg-gray-50">
-                          <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center shrink-0">
-                            <span className="text-lg">{daDat ? '✅' : soLan > 0 ? '🔄' : '📝'}</span>
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                            laThucHanh ? 'bg-orange-100' : 'bg-purple-100'
+                          }`}>
+                            <span className="text-lg">{
+                              daDat ? '✅' :
+                              laThucHanh && trangThaiCham === 'CHO_CHAM' ? '⏳' :
+                              soLan > 0 ? '🔄' :
+                              laThucHanh ? '🎬' : '📝'
+                            }</span>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-900">{bkt.tieu_de}</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-gray-900">{bkt.tieu_de}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                laThucHanh ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {laThucHanh ? 'Thực hành' : 'Trắc nghiệm'}
+                              </span>
+                              {laThucHanh && trangThaiCham === 'CHO_CHAM' && (
+                                <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700">Chờ chấm</span>
+                              )}
+                              {laThucHanh && trangThaiCham === 'DA_CHAM' && (
+                                <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">Đã chấm</span>
+                              )}
+                            </div>
                             <div className="text-xs text-gray-500 mt-0.5">
-                              {bkt.so_cau_hoi} câu
+                              {laThucHanh
+                                ? `Nộp video · ≤ ${bkt.dung_luong_toi_da_mb ?? 500} MB · ${bkt.dinh_dang_cho_phep || 'mp4,mov,webm'}`
+                                : `${bkt.so_cau_hoi} câu`}
                               {' • '}
                               {bkt.thoi_gian_lam_bai_phut ? `${bkt.thoi_gian_lam_bai_phut} phút` : 'Không giới hạn'}
                               {' • '}
@@ -489,14 +520,29 @@ export default function KhoaHocDetailPage() {
                                 {isExpanded ? '▲ Ẩn' : `▼ ${soLan} lần`}
                               </button>
                             )}
+                            {/* Nút xem thử cho GV / QT / Admin */}
+                            {canManage && (
+                              <Link
+                                href={`/dao-tao/khoa-hoc/${id}/kiem-tra/${bkt.id}?preview=1`}
+                                target="_blank"
+                                className="px-3 py-1.5 text-xs border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                                title="Xem thử như học viên (không lưu kết quả)"
+                              >
+                                👁 Xem thử
+                              </Link>
+                            )}
                             {/* Nút hành động */}
                             {kh.dang_ky ? (
                               conLuot ? (
                                 <Link
                                   href={`/dao-tao/khoa-hoc/${id}/kiem-tra/${bkt.id}`}
-                                  className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors"
+                                  className={`px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors ${
+                                    laThucHanh ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'
+                                  }`}
                                 >
-                                  {soLan === 0 ? 'Làm bài' : 'Làm lại'}
+                                  {laThucHanh
+                                    ? (soLan === 0 ? 'Nộp video' : 'Nộp lại')
+                                    : (soLan === 0 ? 'Làm bài' : 'Làm lại')}
                                 </Link>
                               ) : (
                                 <span className="px-4 py-2 bg-gray-100 text-gray-400 rounded-lg text-sm cursor-not-allowed">
@@ -504,7 +550,7 @@ export default function KhoaHocDetailPage() {
                                 </span>
                               )
                             ) : (
-                              <span className="text-xs text-gray-400">Đăng ký để làm bài</span>
+                              !canManage && <span className="text-xs text-gray-400">Đăng ký để làm bài</span>
                             )}
                           </div>
                         </div>

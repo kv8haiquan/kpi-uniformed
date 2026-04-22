@@ -179,6 +179,13 @@ export interface ICauHoiCreate {
 /** Body tạo/sửa bài kiểm tra */
 export interface IBaiKiemTraCreate {
   tieu_de: string;
+  mo_ta?: string;
+  /** TRAC_NGHIEM (default) | THUC_HANH */
+  loai_bai_kiem_tra?: string;
+  /** Bắt buộc nếu loai_bai_kiem_tra=THUC_HANH */
+  yeu_cau_bai_lam?: string;
+  dung_luong_toi_da_mb?: number;     // default 500
+  dinh_dang_cho_phep?: string;       // CSV: "mp4,mov,webm"
   thoi_gian_lam_bai_phut?: number;   // null = không giới hạn
   so_lan_lam_toi_da?: number;        // default 3
   diem_dat?: number;                 // default 70
@@ -197,6 +204,10 @@ export interface IBaiKiemTra {
   khoa_hoc_id: string;
   tieu_de: string;
   mo_ta?: string | null;
+  loai_bai_kiem_tra?: string;        // TRAC_NGHIEM | THUC_HANH
+  yeu_cau_bai_lam?: string | null;
+  dung_luong_toi_da_mb?: number | null;
+  dinh_dang_cho_phep?: string | null;
   so_cau_hoi: number;
   thoi_gian_lam_bai_phut: number | null;
   so_lan_lam_toi_da: number;
@@ -213,6 +224,9 @@ export interface IBaiKiemTra {
   so_lan_da_lam?: number | null;
   diem_cao_nhat?: number | null;
   da_dat?: boolean | null;
+  /** THUC_HANH: trang thai cham lan nop moi nhat cua ca nhan */
+  trang_thai_cham_moi_nhat?: string | null;
+  bai_nop_url?: string | null;
 }
 
 export interface ILichSuThiItem {
@@ -224,11 +238,19 @@ export interface ILichSuThiItem {
   thoi_gian_lam_giay: number | null;
   dat_yeu_cau: boolean | null;
   ngay_lam: string | null;
+  // THUC_HANH
+  bai_nop_url?: string | null;
+  bai_nop_ten_file?: string | null;
+  trang_thai_cham?: string | null;   // CHO_CHAM | DA_CHAM | null
+  nhan_xet?: string | null;
+  ngay_nop?: string | null;
+  ngay_cham?: string | null;
 }
 
 export interface ILichSuThi {
   bai_kiem_tra_id: string;
   tieu_de: string;
+  loai_bai_kiem_tra?: string;
   so_lan_lam_toi_da: number;
   diem_dat: number | null;
   so_lan_da_lam: number;
@@ -247,16 +269,22 @@ export interface ICauHoiForExam {
 }
 
 export interface IBatDauResponse {
-  ket_qua_id: string;
+  ket_qua_id: string | null;
   lan_thu: number;
   thoi_gian_phut: number | null;
+  loai_bai_kiem_tra?: string;        // TRAC_NGHIEM | THUC_HANH
   so_cau: number;
   cau_hoi: ICauHoiForExam[];
+  // THUC_HANH fields
+  yeu_cau_bai_lam?: string | null;
+  dung_luong_toi_da_mb?: number | null;
+  dinh_dang_cho_phep?: string | null;
   dang_tiep_tuc?: boolean;
   chi_tiet_nhap?: any[] | null;
   thoi_gian_da_lam_giay?: number;
   so_lan_vi_pham?: number;
   so_lan_con_lai?: number | null;
+  is_preview?: boolean;
 }
 
 export interface IKetQuaResponse {
@@ -272,6 +300,35 @@ export interface IKetQuaResponse {
   thong_bao?: string;
   chi_tiet: any[] | null;
   so_lan_con_lai?: number | null;
+  // THUC_HANH
+  loai_bai_kiem_tra?: string;
+  bai_nop_url?: string | null;
+  bai_nop_ten_file?: string | null;
+  trang_thai_cham?: string | null;   // CHO_CHAM | DA_CHAM
+  nhan_xet?: string | null;
+  ngay_nop?: string | null;
+  ngay_cham?: string | null;
+}
+
+export interface IKetQuaChamItem {
+  id: string;
+  cong_chuc_id: string;
+  ho_ten: string | null;
+  ma_cc: string | null;
+  don_vi_ten: string | null;
+  lan_thu: number;
+  diem: number | null;
+  dat_yeu_cau: boolean | null;
+  ngay_lam: string | null;
+  ngay_nop: string | null;
+  ngay_cham: string | null;
+  bai_nop_url: string | null;
+  bai_nop_ten_file: string | null;
+  bai_nop_size_bytes: number | null;
+  bai_nop_content_type: string | null;
+  trang_thai_cham: string | null;   // CHO_CHAM | DA_CHAM
+  nhan_xet: string | null;
+  so_lan_vi_pham?: number | null;
 }
 
 // =============================================================================

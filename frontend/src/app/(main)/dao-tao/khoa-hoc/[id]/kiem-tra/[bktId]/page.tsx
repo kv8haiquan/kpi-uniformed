@@ -7,23 +7,37 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { baiKiemTraApi } from '@/services/lms';
 import type { IBaiKiemTra, ICauHoiForExam, IKetQuaResponse } from '@/types/lms';
 
-type ExamState = 'CHUA_BAT_DAU' | 'DANG_LAM' | 'DA_NOP';
+type ExamState = 'CHUA_BAT_DAU' | 'DANG_LAM' | 'DA_NOP' | 'THUC_HANH_CHUA_NOP' | 'THUC_HANH_DA_NOP';
 
 export default function KiemTraPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const khoaHocId = params.id as string;
   const bktId = params.bktId as string;
+  // Preview flag: GV/QT xem thử → không lưu kết quả
+  const isPreview = searchParams.get('preview') === '1' || searchParams.get('preview') === 'true';
 
   const [state, setState] = useState<ExamState>('CHUA_BAT_DAU');
   const [bkt, setBkt] = useState<IBaiKiemTra | null>(null);
   const [lichSu, setLichSu] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Loai BKT (detect sau khi bat-dau)
+  const [loaiBKT, setLoaiBKT] = useState<'TRAC_NGHIEM' | 'THUC_HANH'>('TRAC_NGHIEM');
+
+  // Thuc hanh state
+  const [yeuCauBaiLam, setYeuCauBaiLam] = useState<string>('');
+  const [thDungLuongMb, setThDungLuongMb] = useState<number>(500);
+  const [thDinhDang, setThDinhDang] = useState<string>('mp4,mov,webm');
+  const [thFile, setThFile] = useState<File | null>(null);
+  const [thUploadPct, setThUploadPct] = useState<number | null>(null);
+  const [thKetQua, setThKetQua] = useState<any>(null); // ket qua sau khi upload
 
   // Dang lam state
   const [cauHoi, setCauHoi] = useState<ICauHoiForExam[]>([]);
@@ -34,7 +48,7 @@ export default function KiemTraPage() {
   const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Anti-cheating
+  // Anti-cheating (bo qua khi preview hoac THUC_HANH)
   const [violations, setViolations] = useState(0);
   const MAX_VIOLATIONS = 3;
   const [showViolationWarning, setShowViolationWarning] = useState(false);
@@ -81,6 +95,7 @@ export default function KiemTraPage() {
   // Fullscreen enforcement + violation tracking
   useEffect(() => {
     if (state !== 'DANG_LAM') return;
+    if (isPreview) return; // Preview: không bật fullscreen
 
     // Request fullscreen
     const requestFullscreen = async () => {
@@ -161,6 +176,7 @@ export default function KiemTraPage() {
   // Auto-save every 30 seconds
   useEffect(() => {
     if (state !== 'DANG_LAM' || !ketQuaId) return;
+    if (isPreview) return; // Preview: không auto-save
     const interval = setInterval(async () => {
       const currentTraLoi = traLoiRef.current;
       const entries = Object.entries(currentTraLoi);
@@ -180,10 +196,24 @@ export default function KiemTraPage() {
   const handleBatDau = async () => {
     try {
       setLoading(true);
-      const res = await baiKiemTraApi.batDau(bktId);
+      const res = await baiKiemTraApi.batDau(bktId, isPreview);
       const data = res.data.data;
+      // Detect loai
+      const loai = data.loai_bai_kiem_tra || 'TRAC_NGHIEM';
+      setLoaiBKT(loai);
+
+      if (loai === 'THUC_HANH') {
+        setYeuCauBaiLam(data.yeu_cau_bai_lam || '');
+        setThDungLuongMb(data.dung_luong_toi_da_mb || 500);
+        setThDinhDang(data.dinh_dang_cho_phep || 'mp4,mov,webm');
+        setKetQuaId(data.ket_qua_id || '');
+        setState('THUC_HANH_CHUA_NOP');
+        setLoading(false);
+        return;
+      }
+
       setCauHoi(data.cau_hoi);
-      setKetQuaId(data.ket_qua_id);
+      setKetQuaId(data.ket_qua_id || '');
       setCurrentIdx(0);
 
       // Restore draft answers if resuming
@@ -241,6 +271,24 @@ export default function KiemTraPage() {
     if (submitting) return;
     setSubmitting(true);
     try {
+      if (isPreview) {
+        // Chế độ xem thử — không gọi API, chỉ hiển thị mock result
+        alert('Chế độ xem thử: bài không được chấm, không lưu kết quả.');
+        setState('DA_NOP');
+        setKetQua({
+          id: 'preview',
+          lan_thu: 0,
+          diem: 0,
+          so_cau_dung: 0,
+          so_cau_sai: 0,
+          dat_yeu_cau: false,
+          che_do_xem: 'KHONG_CHO_XEM',
+          thong_bao: 'Chế độ xem thử — không có kết quả thực',
+          chi_tiet: null,
+        } as any);
+        if (timerRef.current) clearInterval(timerRef.current);
+        return;
+      }
       const traLoiList = Object.entries(traLoi).map(([cau_hoi_id, dap_an]) => ({
         cau_hoi_id,
         dap_an,
@@ -257,11 +305,47 @@ export default function KiemTraPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [traLoi, ketQuaId, bktId, submitting]);
+  }, [traLoi, ketQuaId, bktId, submitting, isPreview]);
 
   // Fix Issue 1: Ref to avoid stale closure in timer auto-submit
   const handleNopBaiRef = useRef(handleNopBai);
   handleNopBaiRef.current = handleNopBai;
+
+  // Nop video bai thuc hanh
+  const handleNopVideo = useCallback(async () => {
+    if (!thFile) {
+      alert('Vui lòng chọn file video để nộp');
+      return;
+    }
+    if (isPreview) {
+      alert('Chế độ xem thử: không thể nộp bài thật. Dùng tài khoản học viên để upload.');
+      return;
+    }
+    // Client-side check
+    const ext = (thFile.name.split('.').pop() || '').toLowerCase();
+    const allowedSet = new Set(
+      thDinhDang.split(',').map((e) => e.trim().replace(/^\./, '').toLowerCase()).filter(Boolean)
+    );
+    if (!allowedSet.has(ext)) {
+      alert(`Định dạng .${ext} không được chấp nhận. Cho phép: ${[...allowedSet].join(', ')}`);
+      return;
+    }
+    if (thFile.size > thDungLuongMb * 1024 * 1024) {
+      alert(`File vượt quá ${thDungLuongMb} MB`);
+      return;
+    }
+
+    try {
+      setThUploadPct(0);
+      const res = await baiKiemTraApi.nopVideo(bktId, thFile, (pct) => setThUploadPct(pct));
+      setThKetQua(res.data.data);
+      setState('THUC_HANH_DA_NOP');
+      setThUploadPct(null);
+    } catch (err: any) {
+      setThUploadPct(null);
+      alert(err?.response?.data?.detail?.error?.message || 'Lỗi nộp video. Thử lại sau.');
+    }
+  }, [thFile, thDinhDang, thDungLuongMb, bktId, isPreview]);
 
   // Update tra loi
   const setAnswer = (cauHoiId: string, value: any) => {
@@ -294,17 +378,68 @@ export default function KiemTraPage() {
     );
   }
 
+  // Banner preview (hien o tat ca state khi isPreview=true)
+  const PreviewBanner = () =>
+    isPreview ? (
+      <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2.5 text-sm text-yellow-800 flex items-center gap-2">
+        <span>👁</span>
+        <span className="font-medium">Chế độ xem thử (giảng viên)</span>
+        <span className="text-yellow-700">— Bài không được chấm, không tính lượt, không lưu kết quả.</span>
+      </div>
+    ) : null;
+
   // =========================================================================
   // STATE 1: CHUA BAT DAU
   // =========================================================================
   if (state === 'CHUA_BAT_DAU' && bkt) {
+    const laThucHanh = bkt.loai_bai_kiem_tra === 'THUC_HANH';
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-lg w-full bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center">
-          <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">📝</span>
+      <div className="min-h-screen bg-gray-50">
+        <PreviewBanner />
+        <div className="flex items-center justify-center p-4">
+        <div className="max-w-lg w-full bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mt-6">
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${
+            laThucHanh ? 'bg-orange-100' : 'bg-purple-100'
+          }`}>
+            <span className="text-3xl">{laThucHanh ? '🎬' : '📝'}</span>
           </div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">{bkt.tieu_de}</h1>
+          <h1 className="text-xl font-bold text-gray-900 mb-1">{bkt.tieu_de}</h1>
+          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+            laThucHanh ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+          }`}>
+            {laThucHanh ? 'Thực hành — nộp video' : 'Trắc nghiệm'}
+          </span>
+
+          {laThucHanh ? (
+            <div className="mt-5 space-y-2 text-sm text-left">
+              {bkt.yeu_cau_bai_lam && (
+                <div className="bg-orange-50 border border-orange-100 rounded-lg p-3">
+                  <div className="text-xs font-semibold text-orange-700 mb-1 uppercase">Yêu cầu bài làm</div>
+                  <div className="text-gray-800 whitespace-pre-wrap">{bkt.yeu_cau_bai_lam}</div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="text-gray-500 text-xs">Định dạng</div>
+                  <div className="font-medium text-gray-900 text-sm">{bkt.dinh_dang_cho_phep || 'mp4,mov,webm'}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="text-gray-500 text-xs">Dung lượng tối đa</div>
+                  <div className="font-medium text-gray-900 text-sm">{bkt.dung_luong_toi_da_mb ?? 500} MB</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="text-gray-500 text-xs">Điểm đạt</div>
+                  <div className="font-medium text-gray-900 text-sm">{bkt.diem_dat}%</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="text-gray-500 text-xs">Số lần nộp</div>
+                  <div className="font-medium text-gray-900 text-sm">
+                    {lichSu ? `Còn ${bkt.so_lan_lam_toi_da - lichSu.so_lan_da_lam}/${bkt.so_lan_lam_toi_da}` : `${bkt.so_lan_lam_toi_da} lượt`}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-3 my-6 text-sm">
             <div className="bg-gray-50 rounded-lg p-3">
               <div className="text-gray-500">Số câu</div>
@@ -331,12 +466,163 @@ export default function KiemTraPage() {
               </div>
             )}
           </div>
+          )}
+
           <button onClick={handleBatDau} disabled={loading}
-            className="w-full px-6 py-3 bg-purple-600 text-white rounded-xl font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50">
-            {loading ? 'Đang tải...' : 'Bắt đầu làm bài'}
+            className={`w-full px-6 py-3 text-white rounded-xl font-semibold transition-colors disabled:opacity-50 mt-5 ${
+              laThucHanh ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'
+            }`}>
+            {loading ? 'Đang tải...' : laThucHanh ? 'Bắt đầu nộp video' : 'Bắt đầu làm bài'}
           </button>
           <Link href={`/dao-tao/khoa-hoc/${khoaHocId}`}
             className="text-sm text-gray-500 hover:text-gray-700 mt-4 inline-block">Quay lại khóa học</Link>
+        </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // STATE: THUC_HANH_CHUA_NOP — form upload video
+  // =========================================================================
+  if (state === 'THUC_HANH_CHUA_NOP' && bkt) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <PreviewBanner />
+        <div className="max-w-2xl mx-auto p-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mt-4">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-2xl">🎬</span>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-lg font-bold text-gray-900 truncate">{bkt.tieu_de}</h1>
+                <p className="text-xs text-gray-500">Bài thực hành — nộp video</p>
+              </div>
+            </div>
+
+            {yeuCauBaiLam && (
+              <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 mb-4">
+                <div className="text-xs font-semibold text-orange-700 mb-1 uppercase">Yêu cầu bài làm</div>
+                <div className="text-sm text-gray-800 whitespace-pre-wrap">{yeuCauBaiLam}</div>
+              </div>
+            )}
+
+            <div className="flex gap-4 text-xs text-gray-500 mb-4">
+              <span>📦 Tối đa: <strong className="text-gray-700">{thDungLuongMb} MB</strong></span>
+              <span>🎬 Định dạng: <strong className="text-gray-700">{thDinhDang}</strong></span>
+            </div>
+
+            {/* Chọn file */}
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+              {thFile ? (
+                <div className="space-y-2">
+                  <div className="text-3xl">🎬</div>
+                  <div className="text-sm font-medium text-gray-900 truncate">{thFile.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {(thFile.size / (1024 * 1024)).toFixed(2)} MB · {thFile.type || 'video'}
+                  </div>
+                  <button
+                    onClick={() => setThFile(null)}
+                    disabled={thUploadPct !== null}
+                    className="text-xs text-gray-500 hover:text-red-600 disabled:opacity-50"
+                  >
+                    Đổi file
+                  </button>
+                </div>
+              ) : (
+                <label className="cursor-pointer">
+                  <input
+                    type="file"
+                    accept={thDinhDang.split(',').map((e) => '.' + e.trim().replace(/^\./, '')).join(',')}
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) setThFile(f);
+                      e.target.value = '';
+                    }}
+                  />
+                  <div className="text-4xl mb-2">📂</div>
+                  <div className="text-sm font-medium text-gray-700">Nhấn để chọn video bài làm</div>
+                  <div className="text-xs text-gray-400 mt-1">{thDinhDang} · tối đa {thDungLuongMb} MB</div>
+                </label>
+              )}
+            </div>
+
+            {thUploadPct !== null && (
+              <div className="mt-4">
+                <div className="text-sm text-blue-700 mb-1">Đang tải lên... {thUploadPct}%</div>
+                <div className="w-full bg-blue-100 rounded-full h-2">
+                  <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${thUploadPct}%` }} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center mt-5">
+              <Link href={`/dao-tao/khoa-hoc/${khoaHocId}`}
+                className="text-sm text-gray-500 hover:text-gray-700">← Quay lại khóa học</Link>
+              <button
+                onClick={handleNopVideo}
+                disabled={!thFile || thUploadPct !== null || isPreview}
+                className="px-6 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700 disabled:opacity-50"
+                title={isPreview ? 'Chế độ xem thử: không thể nộp bài' : ''}
+              >
+                {thUploadPct !== null ? `Đang tải... ${thUploadPct}%` : 'Nộp bài'}
+              </button>
+            </div>
+
+            {isPreview && (
+              <p className="text-xs text-yellow-700 mt-3 text-center">
+                Đang ở chế độ xem thử — nút "Nộp bài" bị khóa. Dùng tài khoản học viên để nộp thật.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // STATE: THUC_HANH_DA_NOP — da nop, cho cham
+  // =========================================================================
+  if (state === 'THUC_HANH_DA_NOP' && bkt) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <PreviewBanner />
+        <div className="max-w-2xl mx-auto p-4">
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mt-6">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-4xl">✅</span>
+            </div>
+            <h1 className="text-xl font-bold text-gray-900 mb-2">Đã nộp bài!</h1>
+            <p className="text-sm text-gray-600 mb-1">
+              Video bài làm của bạn đã được gửi đến giảng viên.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              Trạng thái: <span className="inline-block px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium text-xs">Chờ chấm</span>
+            </p>
+
+            {thKetQua && (
+              <div className="bg-gray-50 rounded-lg p-4 text-left text-sm space-y-2 mb-5">
+                <div><span className="text-gray-500">Tên file:</span> <span className="font-medium text-gray-800">{thKetQua.bai_nop_ten_file}</span></div>
+                {thKetQua.bai_nop_size_bytes && (
+                  <div><span className="text-gray-500">Dung lượng:</span> <span className="font-medium text-gray-800">{(thKetQua.bai_nop_size_bytes / (1024 * 1024)).toFixed(2)} MB</span></div>
+                )}
+                <div><span className="text-gray-500">Lần nộp:</span> <span className="font-medium text-gray-800">{thKetQua.lan_thu}</span></div>
+                {thKetQua.bai_nop_url && (
+                  <div>
+                    <span className="text-gray-500">Bài nộp:</span>{' '}
+                    <a href={thKetQua.bai_nop_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
+                      Xem lại video đã nộp ↗
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <Link href={`/dao-tao/khoa-hoc/${khoaHocId}`}
+              className="inline-block px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              Quay lại khóa học
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -351,6 +637,7 @@ export default function KiemTraPage() {
 
     return (
       <div className="min-h-screen bg-gray-50">
+        <PreviewBanner />
         {/* Header */}
         <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
           <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -529,7 +816,9 @@ export default function KiemTraPage() {
     const hasChiTiet = Array.isArray(ketQua.chi_tiet) && ketQua.chi_tiet.length > 0;
 
     return (
-      <div className="min-h-screen bg-gray-50 py-6 px-4">
+      <div className="min-h-screen bg-gray-50">
+        <PreviewBanner />
+        <div className="py-6 px-4">
         <div className="max-w-2xl mx-auto space-y-5">
 
           {/* Score card */}
@@ -679,6 +968,7 @@ export default function KiemTraPage() {
                 : '📊 Chỉ xem điểm tổng — kết quả chi tiết bị ẩn.'}
             </div>
           )}
+        </div>
         </div>
       </div>
     );

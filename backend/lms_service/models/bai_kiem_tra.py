@@ -43,6 +43,23 @@ class BaiKiemTra(Base):
     tieu_de: Mapped[str] = mapped_column(String(300), nullable=False)
     mo_ta: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Loai BKT: TRAC_NGHIEM (mac dinh) | THUC_HANH (hoc vien upload video)
+    loai_bai_kiem_tra: Mapped[str] = mapped_column(
+        String(50),
+        server_default="TRAC_NGHIEM",
+        nullable=False,
+        comment="TRAC_NGHIEM | THUC_HANH",
+    )
+
+    # Thuc hanh: huong dan bai lam + giới hạn upload
+    yeu_cau_bai_lam: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dung_luong_toi_da_mb: Mapped[Optional[int]] = mapped_column(Integer, server_default="500")
+    dinh_dang_cho_phep: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        server_default="mp4,mov,webm",
+        comment="CSV extension (khong dau cham)",
+    )
+
     # Cau hinh de thi
     so_cau_hoi: Mapped[int] = mapped_column(Integer, nullable=False)
     thoi_gian_lam_bai_phut: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

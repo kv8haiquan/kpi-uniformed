@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,7 @@ from lms_service.models.khoa_hoc import KhoaHoc
 from lms_service.models.dang_ky_khoa_hoc import DangKyKhoaHoc
 from lms_service.models.base import CongChucRef, DonViRef
 from lms_service.schemas.bai_kiem_tra import BaiKiemTraCreate, BaiKiemTraUpdate
+from lms_service.services.file_service import FileService
 from shared.auth import TokenPayload
 
 
@@ -34,6 +35,13 @@ class BaiKiemTraService:
 
     def _is_manager(self, user: TokenPayload) -> bool:
         return user.vai_tro == "SUPER_ADMIN" or "QT_DAO_TAO" in (user.platform_roles or [])
+
+    def _can_preview(self, user: TokenPayload) -> bool:
+        """GV / QT_DAO_TAO / SUPER_ADMIN duoc phep xem thu (preview)."""
+        return (
+            self._is_manager(user)
+            or "GIANG_VIEN" in (user.platform_roles or [])
+        )
 
     async def _get_bkt(self, id: uuid.UUID) -> BaiKiemTra:
         result = await self.db.execute(select(BaiKiemTra).where(BaiKiemTra.id == id, BaiKiemTra.is_active == True))  # noqa: E712
@@ -61,6 +69,7 @@ class BaiKiemTraService:
         items = result.scalars().all()
 
         # Lay thong ke ca nhan bang 1 query GROUP BY (tranh N+1)
+        # Khong filter dat_yeu_cau.isnot(None) de THUC_HANH (chua cham) van duoc dem.
         stats_map: dict = {}
         if user_id and items:
             bkt_ids = [item.id for item in items]
@@ -74,7 +83,6 @@ class BaiKiemTraService:
                 .where(
                     KetQuaBaiKiemTra.cong_chuc_id == user_id,
                     KetQuaBaiKiemTra.bai_kiem_tra_id.in_(bkt_ids),
-                    KetQuaBaiKiemTra.dat_yeu_cau.isnot(None),
                 )
                 .group_by(KetQuaBaiKiemTra.bai_kiem_tra_id)
             )
@@ -85,15 +93,47 @@ class BaiKiemTraService:
                     "da_dat": bool(row.da_dat),
                 }
 
+        # Lay trang thai cham/bai nop moi nhat cua ca nhan (chi THUC_HANH)
+        latest_map: dict = {}
+        if user_id and items:
+            bkt_ids = [item.id for item in items]
+            latest_r = await self.db.execute(
+                select(
+                    KetQuaBaiKiemTra.bai_kiem_tra_id,
+                    KetQuaBaiKiemTra.bai_nop_url,
+                    KetQuaBaiKiemTra.trang_thai_cham,
+                )
+                .where(
+                    KetQuaBaiKiemTra.cong_chuc_id == user_id,
+                    KetQuaBaiKiemTra.bai_kiem_tra_id.in_(bkt_ids),
+                )
+                .order_by(
+                    KetQuaBaiKiemTra.bai_kiem_tra_id,
+                    KetQuaBaiKiemTra.lan_thu.desc(),
+                )
+            )
+            for row in latest_r.all():
+                key = str(row.bai_kiem_tra_id)
+                if key not in latest_map:
+                    latest_map[key] = {
+                        "bai_nop_url": row.bai_nop_url,
+                        "trang_thai_cham_moi_nhat": row.trang_thai_cham,
+                    }
+
         # Chuyen ORM objects sang dict (de gan them stats ca nhan)
         item_dicts = []
         for item in items:
             stat = stats_map.get(str(item.id), {})
+            latest = latest_map.get(str(item.id), {})
             item_dicts.append({
                 "id": item.id,
                 "khoa_hoc_id": item.khoa_hoc_id,
                 "tieu_de": item.tieu_de,
                 "mo_ta": item.mo_ta,
+                "loai_bai_kiem_tra": item.loai_bai_kiem_tra,
+                "yeu_cau_bai_lam": item.yeu_cau_bai_lam,
+                "dung_luong_toi_da_mb": item.dung_luong_toi_da_mb,
+                "dinh_dang_cho_phep": item.dinh_dang_cho_phep,
                 "so_cau_hoi": item.so_cau_hoi,
                 "thoi_gian_lam_bai_phut": item.thoi_gian_lam_bai_phut,
                 "so_lan_lam_toi_da": item.so_lan_lam_toi_da,
@@ -112,6 +152,8 @@ class BaiKiemTraService:
                 "so_lan_da_lam": stat.get("so_lan_da_lam"),
                 "diem_cao_nhat": stat.get("diem_cao_nhat"),
                 "da_dat": stat.get("da_dat"),
+                "bai_nop_url": latest.get("bai_nop_url"),
+                "trang_thai_cham_moi_nhat": latest.get("trang_thai_cham_moi_nhat"),
             })
 
         return {"items": item_dicts, "pagination": {"page": page, "page_size": page_size, "total_items": total_items, "total_pages": math.ceil(total_items / page_size) if total_items else 0}}
@@ -131,29 +173,47 @@ class BaiKiemTraService:
         if kh_r.scalar_one_or_none() is None:
             raise HTTPException(status_code=404, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Không tìm thấy khóa học"}})
 
-        # Validate: phai co it nhat 1 cau hoi (tu ngan hang hoac moi)
+        la_thuc_hanh = data.loai_bai_kiem_tra == "THUC_HANH"
         cau_hoi_ids = data.cau_hoi_ids or []
         cau_hoi_moi = data.cau_hoi_moi or []
-        if not cau_hoi_ids and not cau_hoi_moi:
-            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Phải có ít nhất 1 câu hỏi"}})
 
-        # Verify cac cau hoi tu ngan hang ton tai
-        if cau_hoi_ids:
-            ch_r = await self.db.execute(select(func.count(CauHoi.id)).where(CauHoi.id.in_(cau_hoi_ids), CauHoi.is_active == True))  # noqa: E712
-            if (ch_r.scalar() or 0) != len(cau_hoi_ids):
-                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Một số câu hỏi không tồn tại"}})
+        # Trac nghiem: phai co it nhat 1 cau hoi.
+        # Thuc hanh: bo qua cau hoi (BKT thuc hanh khong can ngan hang cau hoi).
+        if not la_thuc_hanh:
+            if not cau_hoi_ids and not cau_hoi_moi:
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Phải có ít nhất 1 câu hỏi"}})
+            if cau_hoi_ids:
+                ch_r = await self.db.execute(select(func.count(CauHoi.id)).where(CauHoi.id.in_(cau_hoi_ids), CauHoi.is_active == True))  # noqa: E712
+                if (ch_r.scalar() or 0) != len(cau_hoi_ids):
+                    raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Một số câu hỏi không tồn tại"}})
 
-        tong_so_cau = len(cau_hoi_ids) + len(cau_hoi_moi)
+        if la_thuc_hanh:
+            # Thuc hanh: yeu_cau_bai_lam bat buoc de hoc vien biet can lam gi
+            if not (data.yeu_cau_bai_lam or "").strip():
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Yêu cầu bài làm là bắt buộc cho bài thực hành"}})
+            tong_so_cau = 0
+            # Thuc hanh: khong dung tron de / tron dap an / che do xem dap an
+            tron_de = False
+            tron_dap_an = False
+        else:
+            tong_so_cau = len(cau_hoi_ids) + len(cau_hoi_moi)
+            tron_de = data.tron_de
+            tron_dap_an = data.tron_dap_an
+
         bkt = BaiKiemTra(
             khoa_hoc_id=data.khoa_hoc_id,
             tieu_de=data.tieu_de,
             mo_ta=data.mo_ta,
+            loai_bai_kiem_tra=data.loai_bai_kiem_tra,
+            yeu_cau_bai_lam=data.yeu_cau_bai_lam,
+            dung_luong_toi_da_mb=data.dung_luong_toi_da_mb or 500,
+            dinh_dang_cho_phep=(data.dinh_dang_cho_phep or "mp4,mov,webm"),
             so_cau_hoi=tong_so_cau,
             thoi_gian_lam_bai_phut=data.thoi_gian_lam_bai_phut,
             so_lan_lam_toi_da=data.so_lan_lam_toi_da,
             diem_dat=data.diem_dat,
-            tron_de=data.tron_de,
-            tron_dap_an=data.tron_dap_an,
+            tron_de=tron_de,
+            tron_dap_an=tron_dap_an,
             che_do_xem_ket_qua=data.che_do_xem_ket_qua,
             hien_giai_thich=data.hien_giai_thich,
             gio_mo=data.gio_mo,
@@ -162,6 +222,12 @@ class BaiKiemTraService:
         )
         self.db.add(bkt)
         await self.db.flush()  # lay bkt.id
+
+        if la_thuc_hanh:
+            # Thuc hanh — khong tao cau hoi / link
+            await self.db.flush()
+            await self.db.refresh(bkt)
+            return bkt
 
         thu_tu = 1
 
@@ -209,11 +275,17 @@ class BaiKiemTraService:
         for field, value in update_data.items():
             setattr(bkt, field, value)
 
-        # Neu co thay doi cau hoi → xoa links cu, tao moi
-        if cau_hoi_ids is not None or cau_hoi_moi is not None:
+        la_thuc_hanh = bkt.loai_bai_kiem_tra == "THUC_HANH"
+
+        if la_thuc_hanh:
+            # Thuc hanh: khong dung cau hoi -> luon clean links, ep so_cau_hoi = 0
             await self.db.execute(delete(BaiKiemTraCauHoi).where(BaiKiemTraCauHoi.bai_kiem_tra_id == id))
-            # Giu cau hoi inline cu (bai_kiem_tra_id == id) — NULL bo de re-link
-            # KHONG xoa cau hoi inline, chi xoa links
+            bkt.so_cau_hoi = 0
+            bkt.tron_de = False
+            bkt.tron_dap_an = False
+        elif cau_hoi_ids is not None or cau_hoi_moi is not None:
+            # Trac nghiem + co thay doi cau hoi → xoa links cu, tao moi
+            await self.db.execute(delete(BaiKiemTraCauHoi).where(BaiKiemTraCauHoi.bai_kiem_tra_id == id))
 
             thu_tu = 1
             user_uuid = uuid.UUID(user.sub)
@@ -294,75 +366,129 @@ class BaiKiemTraService:
     # =========================================================================
     # 6. BAT DAU THI
     # =========================================================================
-    async def bat_dau_thi(self, bai_kiem_tra_id: uuid.UUID, user: TokenPayload) -> dict:
-        """Bat dau lam bai kiem tra. Tra ve cau hoi (khong dap an)."""
+    async def bat_dau_thi(
+        self,
+        bai_kiem_tra_id: uuid.UUID,
+        user: TokenPayload,
+        preview: bool = False,
+    ) -> dict:
+        """Bat dau lam bai kiem tra. Tra ve cau hoi (khong dap an).
+
+        preview=True: danh cho GV/QT/ADMIN xem thu — KHONG tao ket_qua, KHONG ghi DB.
+        """
         bkt = await self._get_bkt(bai_kiem_tra_id)
         user_uuid = uuid.UUID(user.sub)
 
-        # Enforce ngay_mo/ngay_dong (Date check) va gio_mo/gio_dong (time check)
-        from datetime import date, time
-        now = datetime.utcnow()
-        today = now.date()
-        current_time = now.strftime("%H:%M")
+        is_preview_mode = False
+        if preview:
+            if not self._can_preview(user):
+                raise HTTPException(
+                    status_code=403,
+                    detail={"success": False, "error": {"code": "LMS_ERR_008", "message": "Bạn không có quyền xem thử"}},
+                )
+            is_preview_mode = True
 
-        if bkt.ngay_mo and today < bkt.ngay_mo:
-            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Bài kiểm tra chưa mở. Ngày mở: {bkt.ngay_mo}"}})
-        if bkt.ngay_dong and today > bkt.ngay_dong:
-            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_012", "message": "Bài kiểm tra đã đóng"}})
-        if bkt.gio_mo and current_time < bkt.gio_mo:
-            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_013", "message": f"Chưa đến giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
-        if bkt.gio_dong and current_time > bkt.gio_dong:
-            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_014", "message": f"Đã hết giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
+        if not is_preview_mode:
+            # Enforce ngay_mo/ngay_dong (Date check) va gio_mo/gio_dong (time check)
+            now = datetime.utcnow()
+            today = now.date()
+            current_time = now.strftime("%H:%M")
 
-        # Verify da dang ky khoa hoc
-        dk_r = await self.db.execute(
-            select(DangKyKhoaHoc).where(DangKyKhoaHoc.cong_chuc_id == user_uuid, DangKyKhoaHoc.khoa_hoc_id == bkt.khoa_hoc_id)
-        )
-        dk_obj = dk_r.scalar_one_or_none()
-        if dk_obj is None:
-            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_003", "message": "Bạn chưa đăng ký khóa học này"}})
-        if dk_obj.trang_thai in ("CHO_PHE_DUYET", "TU_CHOI", "BI_LOAI"):
-            status_labels = {"CHO_PHE_DUYET": "chờ phê duyệt", "TU_CHOI": "bị từ chối", "BI_LOAI": "đã bị loại"}
-            raise HTTPException(status_code=403, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Không thể thi. Đăng ký {status_labels.get(dk_obj.trang_thai, dk_obj.trang_thai)}."}})
+            if bkt.ngay_mo and today < bkt.ngay_mo:
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Bài kiểm tra chưa mở. Ngày mở: {bkt.ngay_mo}"}})
+            if bkt.ngay_dong and today > bkt.ngay_dong:
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_012", "message": "Bài kiểm tra đã đóng"}})
+            if bkt.gio_mo and current_time < bkt.gio_mo:
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_013", "message": f"Chưa đến giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
+            if bkt.gio_dong and current_time > bkt.gio_dong:
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_014", "message": f"Đã hết giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
 
-        # Kiem tra so lan da thi
-        done_count_r = await self.db.execute(
-            select(func.count(KetQuaBaiKiemTra.id)).where(
-                KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
-                KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
-                KetQuaBaiKiemTra.dat_yeu_cau.isnot(None),  # da cham xong
+            # Verify da dang ky khoa hoc
+            dk_r = await self.db.execute(
+                select(DangKyKhoaHoc).where(DangKyKhoaHoc.cong_chuc_id == user_uuid, DangKyKhoaHoc.khoa_hoc_id == bkt.khoa_hoc_id)
             )
-        )
-        done_count = done_count_r.scalar() or 0
-        if bkt.so_lan_lam_toi_da and done_count >= bkt.so_lan_lam_toi_da:
-            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_005", "message": f"Đã hết lượt thi ({bkt.so_lan_lam_toi_da} lần)"}})
+            dk_obj = dk_r.scalar_one_or_none()
+            if dk_obj is None:
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_003", "message": "Bạn chưa đăng ký khóa học này"}})
+            if dk_obj.trang_thai in ("CHO_PHE_DUYET", "TU_CHOI", "BI_LOAI"):
+                status_labels = {"CHO_PHE_DUYET": "chờ phê duyệt", "TU_CHOI": "bị từ chối", "BI_LOAI": "đã bị loại"}
+                raise HTTPException(status_code=403, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Không thể thi. Đăng ký {status_labels.get(dk_obj.trang_thai, dk_obj.trang_thai)}."}})
 
-        # Check for existing in-progress attempt (resume logic)
-        existing_r = await self.db.execute(
-            select(KetQuaBaiKiemTra).where(
-                KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
-                KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
-                KetQuaBaiKiemTra.dat_yeu_cau.is_(None),
+            # Kiem tra so lan da thi
+            done_count_r = await self.db.execute(
+                select(func.count(KetQuaBaiKiemTra.id)).where(
+                    KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
+                    KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
+                    KetQuaBaiKiemTra.dat_yeu_cau.isnot(None),  # da cham xong
+                )
             )
-        )
-        existing = existing_r.scalar_one_or_none()
+            done_count = done_count_r.scalar() or 0
+            if bkt.so_lan_lam_toi_da and done_count >= bkt.so_lan_lam_toi_da:
+                raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_005", "message": f"Đã hết lượt thi ({bkt.so_lan_lam_toi_da} lần)"}})
 
-        if existing:
-            # Resume existing attempt
-            kq = existing
-            lan_thu = kq.lan_thu
+            # BKT thuc hanh: KHONG tao placeholder — chi tao record khi thuc su nop_video
+            if bkt.loai_bai_kiem_tra == "THUC_HANH":
+                kq = None
+                existing = None
+                lan_thu = done_count + 1
+            else:
+                # Trac nghiem: Check for existing in-progress attempt (resume logic)
+                existing_r = await self.db.execute(
+                    select(KetQuaBaiKiemTra).where(
+                        KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
+                        KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
+                        KetQuaBaiKiemTra.dat_yeu_cau.is_(None),
+                    )
+                )
+                existing = existing_r.scalar_one_or_none()
+
+                if existing:
+                    kq = existing
+                    lan_thu = kq.lan_thu
+                else:
+                    lan_thu = done_count + 1
+                    kq = KetQuaBaiKiemTra(
+                        cong_chuc_id=user_uuid,
+                        bai_kiem_tra_id=bai_kiem_tra_id,
+                        lan_thu=lan_thu,
+                        ngay_lam=datetime.utcnow(),
+                    )
+                    self.db.add(kq)
+                    await self.db.flush()
+                    await self.db.refresh(kq)
         else:
-            # Tao ket qua moi
-            lan_thu = done_count + 1
-            kq = KetQuaBaiKiemTra(
-                cong_chuc_id=user_uuid,
-                bai_kiem_tra_id=bai_kiem_tra_id,
-                lan_thu=lan_thu,
-                ngay_lam=datetime.utcnow(),
-            )
-            self.db.add(kq)
-            await self.db.flush()
-            await self.db.refresh(kq)
+            # Preview mode — KHONG tao record nao
+            kq = None
+            existing = None
+            lan_thu = 0
+            done_count = 0
+
+        # =====================================================================
+        # BKT THUC HANH — tra config upload, khong can list cau hoi
+        # =====================================================================
+        if bkt.loai_bai_kiem_tra == "THUC_HANH":
+            # THUC_HANH khong tao placeholder → so_lan_con_lai = tong - da nop
+            if bkt.so_lan_lam_toi_da and not is_preview_mode:
+                so_lan_con_lai = bkt.so_lan_lam_toi_da - done_count
+            else:
+                so_lan_con_lai = None
+            return {
+                "ket_qua_id": kq.id if kq else None,
+                "lan_thu": lan_thu,
+                "thoi_gian_phut": bkt.thoi_gian_lam_bai_phut,
+                "loai_bai_kiem_tra": "THUC_HANH",
+                "yeu_cau_bai_lam": bkt.yeu_cau_bai_lam,
+                "dung_luong_toi_da_mb": bkt.dung_luong_toi_da_mb,
+                "dinh_dang_cho_phep": bkt.dinh_dang_cho_phep,
+                "so_cau": 0,
+                "cau_hoi": [],
+                "so_lan_con_lai": so_lan_con_lai,
+                "dang_tiep_tuc": False,
+                "chi_tiet_nhap": None,
+                "thoi_gian_da_lam_giay": 0,
+                "so_lan_vi_pham": 0,
+                "is_preview": is_preview_mode,
+            }
 
         # Lay danh sach cau hoi
         links_r = await self.db.execute(
@@ -405,15 +531,16 @@ class BaiKiemTraService:
                     random.shuffle(item["lua_chon"])
 
         # Tinh so_lan_con_lai
-        so_lan_con_lai = (bkt.so_lan_lam_toi_da - lan_thu) if bkt.so_lan_lam_toi_da else None
+        so_lan_con_lai = (bkt.so_lan_lam_toi_da - lan_thu) if (bkt.so_lan_lam_toi_da and not is_preview_mode) else None
 
         # Neu resume, tra ve chi_tiet_nhap va thoi_gian_da_lam
-        if existing:
+        if existing and not is_preview_mode:
             thoi_gian_da_lam_giay = int((datetime.utcnow() - kq.ngay_lam).total_seconds()) if kq.ngay_lam else 0
             return {
                 "ket_qua_id": kq.id,
                 "lan_thu": lan_thu,
                 "thoi_gian_phut": bkt.thoi_gian_lam_bai_phut,
+                "loai_bai_kiem_tra": bkt.loai_bai_kiem_tra,
                 "so_cau": len(cau_hoi_list),
                 "cau_hoi": cau_hoi_list,
                 "so_lan_con_lai": so_lan_con_lai,
@@ -421,12 +548,14 @@ class BaiKiemTraService:
                 "chi_tiet_nhap": kq.chi_tiet_nhap,
                 "thoi_gian_da_lam_giay": thoi_gian_da_lam_giay,
                 "so_lan_vi_pham": kq.so_lan_vi_pham or 0,
+                "is_preview": False,
             }
         else:
             return {
-                "ket_qua_id": kq.id,
+                "ket_qua_id": kq.id if kq else None,
                 "lan_thu": lan_thu,
                 "thoi_gian_phut": bkt.thoi_gian_lam_bai_phut,
+                "loai_bai_kiem_tra": bkt.loai_bai_kiem_tra,
                 "so_cau": len(cau_hoi_list),
                 "cau_hoi": cau_hoi_list,
                 "so_lan_con_lai": so_lan_con_lai,
@@ -434,6 +563,7 @@ class BaiKiemTraService:
                 "chi_tiet_nhap": None,
                 "thoi_gian_da_lam_giay": 0,
                 "so_lan_vi_pham": 0,
+                "is_preview": is_preview_mode,
             }
 
     # =========================================================================
@@ -462,7 +592,7 @@ class BaiKiemTraService:
     # 7. NOP BAI — CHAM DIEM TU DONG
     # =========================================================================
     async def nop_bai(self, ket_qua_id: uuid.UUID, tra_loi_list: list, user: TokenPayload) -> dict:
-        """Nop bai va cham diem tu dong."""
+        """Nop bai va cham diem tu dong (BKT trac nghiem)."""
         user_uuid = uuid.UUID(user.sub)
 
         # Lay ket qua
@@ -476,6 +606,10 @@ class BaiKiemTraService:
             raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_010", "message": "Bài thi này đã được nộp"}})
 
         bkt = await self._get_bkt(kq.bai_kiem_tra_id)
+
+        # BKT thuc hanh khong dung endpoint nay
+        if bkt.loai_bai_kiem_tra == "THUC_HANH":
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Bài kiểm tra thực hành phải dùng endpoint nộp video"}})
 
         # Tinh thoi gian lam
         thoi_gian_lam = int((datetime.utcnow() - kq.ngay_lam).total_seconds()) if kq.ngay_lam else 0
@@ -709,6 +843,8 @@ class BaiKiemTraService:
             if "GIANG_VIEN" not in (user.platform_roles or []):
                 raise HTTPException(status_code=403, detail={"success": False, "error": {"code": "LMS_ERR_008", "message": "Không có quyền xem kết quả này"}})
 
+        bkt = await self._get_bkt(kq.bai_kiem_tra_id)
+
         return {
             "id": kq.id,
             "lan_thu": kq.lan_thu,
@@ -719,6 +855,13 @@ class BaiKiemTraService:
             "dat_yeu_cau": kq.dat_yeu_cau,
             "ngay_lam": kq.ngay_lam,
             "chi_tiet": kq.chi_tiet_tra_loi,
+            "loai_bai_kiem_tra": bkt.loai_bai_kiem_tra,
+            "bai_nop_url": kq.bai_nop_url,
+            "bai_nop_ten_file": kq.bai_nop_ten_file,
+            "trang_thai_cham": kq.trang_thai_cham,
+            "nhan_xet": kq.nhan_xet,
+            "ngay_nop": kq.ngay_nop,
+            "ngay_cham": kq.ngay_cham,
         }
 
     # =========================================================================
@@ -729,13 +872,22 @@ class BaiKiemTraService:
         bkt = await self._get_bkt(bai_kiem_tra_id)
         user_uuid = uuid.UUID(user.sub)
 
-        kq_r = await self.db.execute(
-            select(KetQuaBaiKiemTra)
-            .where(
+        # Thuc hanh: hien thi ca lan dang CHO_CHAM (dat_yeu_cau chua co) de hoc vien biet
+        la_thuc_hanh = bkt.loai_bai_kiem_tra == "THUC_HANH"
+        if la_thuc_hanh:
+            where_clauses = [
+                KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
+                KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
+            ]
+        else:
+            where_clauses = [
                 KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
                 KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
                 KetQuaBaiKiemTra.dat_yeu_cau.isnot(None),
-            )
+            ]
+        kq_r = await self.db.execute(
+            select(KetQuaBaiKiemTra)
+            .where(*where_clauses)
             .order_by(KetQuaBaiKiemTra.lan_thu.asc())
         )
         ket_qua_list = kq_r.scalars().all()
@@ -747,6 +899,7 @@ class BaiKiemTraService:
         return {
             "bai_kiem_tra_id": bkt.id,
             "tieu_de": bkt.tieu_de,
+            "loai_bai_kiem_tra": bkt.loai_bai_kiem_tra,
             "so_lan_lam_toi_da": bkt.so_lan_lam_toi_da,
             "diem_dat": bkt.diem_dat,
             "so_lan_da_lam": so_lan_da_lam,
@@ -762,6 +915,12 @@ class BaiKiemTraService:
                     "thoi_gian_lam_giay": kq.thoi_gian_lam_giay,
                     "dat_yeu_cau": kq.dat_yeu_cau,
                     "ngay_lam": kq.ngay_lam,
+                    "bai_nop_url": kq.bai_nop_url,
+                    "bai_nop_ten_file": kq.bai_nop_ten_file,
+                    "trang_thai_cham": kq.trang_thai_cham,
+                    "nhan_xet": kq.nhan_xet,
+                    "ngay_nop": kq.ngay_nop,
+                    "ngay_cham": kq.ngay_cham,
                 }
                 for kq in ket_qua_list
             ],
@@ -819,6 +978,223 @@ class BaiKiemTraService:
                 "dat_yeu_cau": kq.dat_yeu_cau,
                 "so_lan_vi_pham": kq.so_lan_vi_pham or 0,
                 "ngay_lam": kq.ngay_lam,
+                # THUC_HANH
+                "bai_nop_url": kq.bai_nop_url,
+                "bai_nop_ten_file": kq.bai_nop_ten_file,
+                "bai_nop_size_bytes": kq.bai_nop_size_bytes,
+                "bai_nop_content_type": kq.bai_nop_content_type,
+                "trang_thai_cham": kq.trang_thai_cham,
+                "nhan_xet": kq.nhan_xet,
+                "ngay_nop": kq.ngay_nop,
+                "ngay_cham": kq.ngay_cham,
             })
 
         return items
+
+    # =========================================================================
+    # 11. NOP VIDEO — BKT THUC HANH
+    # =========================================================================
+    async def nop_video(
+        self,
+        bai_kiem_tra_id: uuid.UUID,
+        file: UploadFile,
+        user: TokenPayload,
+    ) -> dict:
+        """Hoc vien nop video bai thuc hanh. Moi lan bam nop tao lan nop moi."""
+        bkt = await self._get_bkt(bai_kiem_tra_id)
+        user_uuid = uuid.UUID(user.sub)
+
+        if bkt.loai_bai_kiem_tra != "THUC_HANH":
+            raise HTTPException(
+                status_code=400,
+                detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Bài kiểm tra này không phải thực hành"}},
+            )
+
+        # Enforce ngay_mo/ngay_dong + gio_mo/gio_dong
+        now = datetime.utcnow()
+        today = now.date()
+        current_time = now.strftime("%H:%M")
+        if bkt.ngay_mo and today < bkt.ngay_mo:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Bài kiểm tra chưa mở. Ngày mở: {bkt.ngay_mo}"}})
+        if bkt.ngay_dong and today > bkt.ngay_dong:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_012", "message": "Bài kiểm tra đã đóng"}})
+        if bkt.gio_mo and current_time < bkt.gio_mo:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_013", "message": f"Chưa đến giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
+        if bkt.gio_dong and current_time > bkt.gio_dong:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_014", "message": f"Đã hết giờ thi. Khung giờ: {bkt.gio_mo} - {bkt.gio_dong}"}})
+
+        # Check da dang ky + trang thai
+        dk_r = await self.db.execute(
+            select(DangKyKhoaHoc).where(
+                DangKyKhoaHoc.cong_chuc_id == user_uuid,
+                DangKyKhoaHoc.khoa_hoc_id == bkt.khoa_hoc_id,
+            )
+        )
+        dk_obj = dk_r.scalar_one_or_none()
+        if dk_obj is None:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_003", "message": "Bạn chưa đăng ký khóa học này"}})
+        if dk_obj.trang_thai in ("CHO_PHE_DUYET", "TU_CHOI", "BI_LOAI"):
+            status_labels = {"CHO_PHE_DUYET": "chờ phê duyệt", "TU_CHOI": "bị từ chối", "BI_LOAI": "đã bị loại"}
+            raise HTTPException(status_code=403, detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Không thể nộp bài. Đăng ký {status_labels.get(dk_obj.trang_thai, dk_obj.trang_thai)}."}})
+
+        # Dem so lan da nop (moi ban ghi ket qua = 1 lan)
+        done_count_r = await self.db.execute(
+            select(func.count(KetQuaBaiKiemTra.id)).where(
+                KetQuaBaiKiemTra.cong_chuc_id == user_uuid,
+                KetQuaBaiKiemTra.bai_kiem_tra_id == bai_kiem_tra_id,
+            )
+        )
+        done_count = done_count_r.scalar() or 0
+        if bkt.so_lan_lam_toi_da and done_count >= bkt.so_lan_lam_toi_da:
+            raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_005", "message": f"Đã hết lượt nộp ({bkt.so_lan_lam_toi_da} lần)"}})
+
+        # Validate extension (khop voi dinh_dang_cho_phep cua BKT)
+        allowed_raw = (bkt.dinh_dang_cho_phep or "mp4,mov,webm").strip()
+        allowed_exts = {
+            e.strip().lstrip(".").lower()
+            for e in allowed_raw.split(",")
+            if e.strip()
+        }
+        filename = file.filename or ""
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in allowed_exts:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "LMS_ERR_006",
+                        "message": f"Định dạng '{ext}' không được chấp nhận. Cho phép: {', '.join(sorted(allowed_exts))}",
+                    },
+                },
+            )
+
+        # Luu file
+        fs = FileService()
+        result = await fs.save_file(file, sub_folder="bai-thuc-hanh")
+
+        # Enforce giới hạn dung lượng theo BKT
+        max_mb = bkt.dung_luong_toi_da_mb or 500
+        if result["file_size"] > max_mb * 1024 * 1024:
+            await fs.delete_file(result["file_url"])
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "LMS_ERR_007",
+                        "message": f"File vượt quá {max_mb} MB theo cấu hình bài kiểm tra",
+                    },
+                },
+            )
+
+        # Tao lan nop moi
+        lan_thu = done_count + 1
+        now_dt = datetime.utcnow()
+        kq = KetQuaBaiKiemTra(
+            cong_chuc_id=user_uuid,
+            bai_kiem_tra_id=bai_kiem_tra_id,
+            lan_thu=lan_thu,
+            ngay_lam=now_dt,
+            ngay_nop=now_dt,
+            bai_nop_url=result["file_url"],
+            bai_nop_ten_file=result["file_name"],
+            bai_nop_size_bytes=result["file_size"],
+            bai_nop_content_type=result["content_type"],
+            trang_thai_cham="CHO_CHAM",
+        )
+        self.db.add(kq)
+        await self.db.flush()
+        await self.db.refresh(kq)
+
+        # Tang so_lan_lam_bai cua dang_ky
+        if dk_obj:
+            dk_obj.so_lan_lam_bai = (dk_obj.so_lan_lam_bai or 0) + 1
+
+        await self.db.flush()
+        return {
+            "id": kq.id,
+            "lan_thu": kq.lan_thu,
+            "bai_nop_url": kq.bai_nop_url,
+            "bai_nop_ten_file": kq.bai_nop_ten_file,
+            "bai_nop_size_bytes": kq.bai_nop_size_bytes,
+            "bai_nop_content_type": kq.bai_nop_content_type,
+            "trang_thai_cham": kq.trang_thai_cham,
+            "ngay_nop": kq.ngay_nop,
+            "ngay_lam": kq.ngay_lam,
+            "loai_bai_kiem_tra": "THUC_HANH",
+        }
+
+    # =========================================================================
+    # 12. CHAM TAY — BKT THUC HANH (GV / QT)
+    # =========================================================================
+    async def cham_tay(
+        self,
+        ket_qua_id: uuid.UUID,
+        diem: Decimal,
+        nhan_xet: Optional[str],
+        user: TokenPayload,
+    ) -> dict:
+        """Giang vien / QT cham diem bai thuc hanh."""
+        # Only GV/QT/SUPER_ADMIN
+        if not self._can_preview(user):
+            raise HTTPException(
+                status_code=403,
+                detail={"success": False, "error": {"code": "LMS_ERR_008", "message": "Không có quyền chấm bài"}},
+            )
+
+        kq_r = await self.db.execute(select(KetQuaBaiKiemTra).where(KetQuaBaiKiemTra.id == ket_qua_id))
+        kq = kq_r.scalar_one_or_none()
+        if kq is None:
+            raise HTTPException(status_code=404, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Không tìm thấy kết quả thi"}})
+
+        bkt = await self._get_bkt(kq.bai_kiem_tra_id)
+        if bkt.loai_bai_kiem_tra != "THUC_HANH":
+            raise HTTPException(
+                status_code=400,
+                detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Chỉ chấm tay cho bài thực hành"}},
+            )
+        if not kq.bai_nop_url:
+            raise HTTPException(
+                status_code=400,
+                detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Học viên chưa nộp bài"}},
+            )
+
+        diem_decimal = Decimal(str(diem))
+        kq.diem = diem_decimal
+        kq.diem_cham_tay = diem_decimal
+        kq.nhan_xet = nhan_xet
+        kq.nguoi_cham_id = uuid.UUID(user.sub)
+        kq.ngay_cham = datetime.utcnow()
+        kq.trang_thai_cham = "DA_CHAM"
+        kq.dat_yeu_cau = diem_decimal >= (bkt.diem_dat or Decimal("70"))
+
+        await self.db.flush()
+        await self.db.refresh(kq)
+
+        # Cap nhat dang_ky + tinh lai phan tram hoan thanh (keu tu bai_hoc_service)
+        dk_r = await self.db.execute(
+            select(DangKyKhoaHoc).where(
+                DangKyKhoaHoc.cong_chuc_id == kq.cong_chuc_id,
+                DangKyKhoaHoc.khoa_hoc_id == bkt.khoa_hoc_id,
+            )
+        )
+        dk = dk_r.scalar_one_or_none()
+        if dk:
+            if kq.dat_yeu_cau and (dk.diem_cao_nhat is None or diem_decimal > dk.diem_cao_nhat):
+                dk.diem_cao_nhat = diem_decimal
+            await self.db.flush()
+            from lms_service.services.bai_hoc_service import BaiHocService
+            bh_svc = BaiHocService(self.db)
+            await bh_svc._tinh_lai_phan_tram(dk, bkt.khoa_hoc_id, kq.cong_chuc_id)
+
+        return {
+            "id": kq.id,
+            "lan_thu": kq.lan_thu,
+            "diem": kq.diem,
+            "dat_yeu_cau": kq.dat_yeu_cau,
+            "nhan_xet": kq.nhan_xet,
+            "trang_thai_cham": kq.trang_thai_cham,
+            "ngay_cham": kq.ngay_cham,
+            "ngay_lam": kq.ngay_lam,
+        }

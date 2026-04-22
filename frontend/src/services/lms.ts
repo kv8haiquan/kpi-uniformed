@@ -93,9 +93,13 @@ export const baiHocApi = {
   /** Cập nhật bài học — PUT /bai-hoc/{id} (GIANG_VIEN, QT_DAO_TAO, ADMIN) */
   capNhat: (id: string, data: Partial<IBaiHocCreate>) =>
     lmsApi.put(`/bai-hoc/${id}`, data),
-  /** Cập nhật tiến độ học viên — PATCH /bai-hoc/{id}/tien-do */
-  capNhatTienDo: (id: string, data: { thoi_gian_xem_giay: number; hoan_thanh: boolean }) =>
-    lmsApi.patch(`/bai-hoc/${id}/tien-do`, data),
+  /** Cập nhật tiến độ học viên — PATCH /bai-hoc/{id}/tien-do. preview=true: GV xem thử, không lưu */
+  capNhatTienDo: (
+    id: string,
+    data: { thoi_gian_xem_giay: number; hoan_thanh: boolean },
+    preview: boolean = false,
+  ) =>
+    lmsApi.patch(`/bai-hoc/${id}/tien-do${preview ? '?preview=true' : ''}`, data),
   /** Sắp xếp thứ tự bài học — PATCH /khoa-hoc/{id}/bai-hoc/sap-xep */
   sapXep: (khoaHocId: string, data: { thu_tu: { bai_hoc_id: string; thu_tu: number }[] }) =>
     lmsApi.patch(`/khoa-hoc/${khoaHocId}/bai-hoc/sap-xep`, data),
@@ -192,10 +196,26 @@ export const baiKiemTraApi = {
   /** Xóa bài kiểm tra — DELETE /bai-kiem-tra/{id} */
   xoa: (id: string) =>
     lmsApi.delete(`/bai-kiem-tra/${id}`),
-  batDau: (id: string) =>
-    lmsApi.post(`/bai-kiem-tra/${id}/bat-dau`),
+  batDau: (id: string, preview: boolean = false) =>
+    lmsApi.post(`/bai-kiem-tra/${id}/bat-dau${preview ? '?preview=true' : ''}`),
   nopBai: (id: string, data: any) =>
     lmsApi.post(`/bai-kiem-tra/${id}/nop-bai`, data),
+  /** Học viên nộp video bài thực hành — POST /bai-kiem-tra/{id}/nop-video (multipart) */
+  nopVideo: (id: string, file: File, onProgress?: (pct: number) => void) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return lmsApi.post(`/bai-kiem-tra/${id}/nop-video`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded * 100) / e.total));
+        }
+      },
+    });
+  },
+  /** GV/QT chấm điểm bài thực hành — POST /ket-qua/{ket_qua_id}/cham-tay */
+  chamTay: (ketQuaId: string, data: { diem: number; nhan_xet?: string }) =>
+    lmsApi.post(`/ket-qua/${ketQuaId}/cham-tay`, data),
   luuNhap: (id: string, data: { ket_qua_id: string; tra_loi: any[]; so_lan_vi_pham: number }) =>
     lmsApi.post(`/bai-kiem-tra/${id}/luu-nhap`, data),
   ketQua: (id: string) =>

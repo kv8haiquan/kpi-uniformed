@@ -7,7 +7,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { baiHocApi } from '@/services/lms';
 import type { IBaiHoc } from '@/types/lms';
@@ -202,8 +202,10 @@ const LOAI_BADGE: Record<string, { label: string; bg: string }> = {
 export default function BaiHocViewPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const khoaHocId = params.id as string;
   const baiHocId = params.baiHocId as string;
+  const isPreview = searchParams.get('preview') === '1' || searchParams.get('preview') === 'true';
 
   const [baiHoc, setBaiHoc] = useState<IBaiHoc | null>(null);
   const [allBaiHocs, setAllBaiHocs] = useState<IBaiHoc[]>([]);
@@ -243,6 +245,10 @@ export default function BaiHocViewPage() {
   // Hoan thanh bai hoc
   const handleComplete = useCallback(async () => {
     if (!baiHoc) return;
+    if (isPreview) {
+      alert('Chế độ xem thử: không ghi tiến độ. Chuyển sang tài khoản học viên để hoàn thành bài.');
+      return;
+    }
     setCompleting(true);
     try {
       await baiHocApi.capNhatTienDo(baiHocId, {
@@ -261,7 +267,7 @@ export default function BaiHocViewPage() {
     } finally {
       setCompleting(false);
     }
-  }, [baiHoc, baiHocId, khoaHocId]);
+  }, [baiHoc, baiHocId, khoaHocId, isPreview]);
 
   // Navigation
   const currentIdx = allBaiHocs.findIndex((bh) => bh.id === baiHocId);
@@ -293,6 +299,13 @@ export default function BaiHocViewPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {isPreview && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2.5 text-sm text-yellow-800 flex items-center gap-2">
+          <span>👁</span>
+          <span className="font-medium">Chế độ xem thử (giảng viên)</span>
+          <span className="text-yellow-700">— Không ghi tiến độ, không tính phần trăm hoàn thành.</span>
+        </div>
+      )}
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center gap-2 text-sm text-gray-500">

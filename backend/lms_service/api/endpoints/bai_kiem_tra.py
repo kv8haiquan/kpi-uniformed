@@ -18,9 +18,10 @@ Endpoints:
   GET    /ket-qua/{id}                     Xem ket qua chi tiet
 """
 
+from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.dependencies import get_db, get_current_user, require_platform_role
@@ -29,6 +30,7 @@ from lms_service.schemas.bai_kiem_tra import (
     BaiKiemTraResponse,
     BaiKiemTraUpdate,
     BatDauResponse,
+    ChamTayRequest,
     KetQuaResponse,
     LichSuThiResponse,
     NopBaiRequest,
@@ -151,27 +153,70 @@ async def xoa_bkt(
 @router.post("/bai-kiem-tra/{id}/bat-dau")
 async def bat_dau_thi(
     id: UUID,
+    preview: bool = Query(False, description="True: GV/QT xem thử, không ghi DB"),
     db: AsyncSession = Depends(get_db),
     user: TokenPayload = Depends(get_current_user),
 ):
-    """Bắt đầu làm bài kiểm tra. Trả câu hỏi (không đáp án)."""
+    """Bắt đầu làm bài kiểm tra.
+
+    - Trắc nghiệm: trả câu hỏi (không đáp án).
+    - Thực hành: trả `yeu_cau_bai_lam` + cấu hình upload.
+    - Preview (GV/QT): KHÔNG tạo bản ghi, không tính lượt.
+    """
     service = BaiKiemTraService(db)
-    result = await service.bat_dau_thi(id, user)
+    result = await service.bat_dau_thi(id, user, preview=preview)
     return {
         "success": True,
         "data": BatDauResponse(
-            ket_qua_id=result["ket_qua_id"],
+            ket_qua_id=result.get("ket_qua_id"),
             lan_thu=result["lan_thu"],
             thoi_gian_phut=result["thoi_gian_phut"],
-            so_cau=result["so_cau"],
-            cau_hoi=[CauHoiForExam(**ch) for ch in result["cau_hoi"]],
+            loai_bai_kiem_tra=result.get("loai_bai_kiem_tra", "TRAC_NGHIEM"),
+            so_cau=result.get("so_cau", 0),
+            cau_hoi=[CauHoiForExam(**ch) for ch in (result.get("cau_hoi") or [])],
+            yeu_cau_bai_lam=result.get("yeu_cau_bai_lam"),
+            dung_luong_toi_da_mb=result.get("dung_luong_toi_da_mb"),
+            dinh_dang_cho_phep=result.get("dinh_dang_cho_phep"),
             so_lan_con_lai=result.get("so_lan_con_lai"),
             dang_tiep_tuc=result.get("dang_tiep_tuc", False),
             chi_tiet_nhap=result.get("chi_tiet_nhap"),
             thoi_gian_da_lam_giay=result.get("thoi_gian_da_lam_giay", 0),
             so_lan_vi_pham=result.get("so_lan_vi_pham", 0),
+            is_preview=result.get("is_preview", False),
         ).model_dump(mode="json"),
     }
+
+
+@router.post("/bai-kiem-tra/{id}/nop-video", status_code=201)
+async def nop_video(
+    id: UUID,
+    file: UploadFile = File(..., description="Video bài làm (.mp4, .mov, .webm...)"),
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Học viên nộp video bài thực hành. Multipart upload."""
+    service = BaiKiemTraService(db)
+    result = await service.nop_video(id, file, user)
+    await db.commit()
+    return {
+        "success": True,
+        "data": result,
+        "message": "Nộp bài thành công. Chờ giảng viên chấm.",
+    }
+
+
+@router.post("/ket-qua/{ket_qua_id}/cham-tay")
+async def cham_tay(
+    ket_qua_id: UUID,
+    data: ChamTayRequest,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(require_platform_role("GIANG_VIEN", "QT_DAO_TAO")),
+):
+    """Giảng viên/QT chấm điểm cho bài nộp thực hành."""
+    service = BaiKiemTraService(db)
+    result = await service.cham_tay(ket_qua_id, data.diem, data.nhan_xet, user)
+    await db.commit()
+    return {"success": True, "data": result, "message": "Đã lưu chấm bài"}
 
 
 @router.post("/bai-kiem-tra/{id}/nop-bai")

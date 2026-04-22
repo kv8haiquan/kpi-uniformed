@@ -12,6 +12,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { baiKiemTraApi, cauHoiApi } from '@/services/lms';
 import type { IBaiKiemTra, IBaiKiemTraCreate, ICauHoi, ICauHoiInline } from '@/types/lms';
 import ImportCauHoiDialog from '@/components/lms/ImportCauHoiDialog';
@@ -56,6 +57,11 @@ type CauHoiItem =
 
 interface BktFormBase {
   tieu_de:               string;
+  mo_ta:                 string;
+  loai_bai_kiem_tra:     string;         // TRAC_NGHIEM | THUC_HANH
+  yeu_cau_bai_lam:       string;
+  dung_luong_toi_da_mb:  string;
+  dinh_dang_cho_phep:    string;         // CSV
   thoi_gian_lam_bai_phut: string;
   so_lan_lam_toi_da:     string;
   diem_dat:              string;
@@ -68,6 +74,11 @@ interface BktFormBase {
 
 const BKT_BASE_DEFAULT: BktFormBase = {
   tieu_de:               '',
+  mo_ta:                 '',
+  loai_bai_kiem_tra:     'TRAC_NGHIEM',
+  yeu_cau_bai_lam:       '',
+  dung_luong_toi_da_mb:  '500',
+  dinh_dang_cho_phep:    'mp4,mov,webm',
   thoi_gian_lam_bai_phut: '',
   so_lan_lam_toi_da:     '3',
   diem_dat:              '70',
@@ -470,6 +481,11 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
     init
       ? {
           tieu_de:               init.tieu_de,
+          mo_ta:                 init.mo_ta ?? '',
+          loai_bai_kiem_tra:     init.loai_bai_kiem_tra ?? 'TRAC_NGHIEM',
+          yeu_cau_bai_lam:       init.yeu_cau_bai_lam ?? '',
+          dung_luong_toi_da_mb:  String(init.dung_luong_toi_da_mb ?? 500),
+          dinh_dang_cho_phep:    init.dinh_dang_cho_phep ?? 'mp4,mov,webm',
           thoi_gian_lam_bai_phut: init.thoi_gian_lam_bai_phut ? String(init.thoi_gian_lam_bai_phut) : '',
           so_lan_lam_toi_da:     String(init.so_lan_lam_toi_da ?? 3),
           diem_dat:              String(init.diem_dat ?? 70),
@@ -481,6 +497,8 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
         }
       : { ...BKT_BASE_DEFAULT }
   );
+
+  const isThucHanh = base.loai_bai_kiem_tra === 'THUC_HANH';
 
   // Danh sách câu hỏi trong BKT (đã sắp xếp)
   const [cauHoiList, setCauHoiList] = useState<CauHoiItem[]>([]);
@@ -539,7 +557,15 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
 
   const handleSubmit = async () => {
     if (!base.tieu_de.trim()) { setErrMsg('Tiêu đề bài kiểm tra là bắt buộc'); return; }
-    if (cauHoiList.length === 0) { setErrMsg('Phải có ít nhất 1 câu hỏi'); return; }
+
+    if (isThucHanh) {
+      if (!base.yeu_cau_bai_lam.trim()) {
+        setErrMsg('Yêu cầu bài làm là bắt buộc cho bài thực hành');
+        return;
+      }
+    } else {
+      if (cauHoiList.length === 0) { setErrMsg('Phải có ít nhất 1 câu hỏi'); return; }
+    }
 
     setSubmitting(true);
     setErrMsg('');
@@ -554,16 +580,23 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
 
       const payload: IBaiKiemTraCreate = {
         tieu_de:              base.tieu_de.trim(),
+        ...(base.mo_ta.trim() && { mo_ta: base.mo_ta.trim() }),
+        loai_bai_kiem_tra:    base.loai_bai_kiem_tra,
         diem_dat:             base.diem_dat ? Number(base.diem_dat) : 70,
-        tron_de:              base.tron_de,
+        tron_de:              isThucHanh ? false : base.tron_de,
         che_do_xem_ket_qua:  base.che_do_xem_ket_qua,
         hien_giai_thich:     base.hien_giai_thich,
         ...(base.thoi_gian_lam_bai_phut && { thoi_gian_lam_bai_phut: Number(base.thoi_gian_lam_bai_phut) }),
         ...(base.so_lan_lam_toi_da      && { so_lan_lam_toi_da:      Number(base.so_lan_lam_toi_da) }),
         ...(base.gio_mo                 && { gio_mo:                  base.gio_mo }),
         ...(base.gio_dong               && { gio_dong:                base.gio_dong }),
-        ...(cau_hoi_ids.length > 0      && { cau_hoi_ids }),
-        ...(cau_hoi_moi.length > 0      && { cau_hoi_moi }),
+        ...(isThucHanh && {
+          yeu_cau_bai_lam:     base.yeu_cau_bai_lam.trim(),
+          dung_luong_toi_da_mb: Number(base.dung_luong_toi_da_mb) || 500,
+          dinh_dang_cho_phep:  base.dinh_dang_cho_phep.trim() || 'mp4,mov,webm',
+        }),
+        ...(!isThucHanh && cau_hoi_ids.length > 0      && { cau_hoi_ids }),
+        ...(!isThucHanh && cau_hoi_moi.length > 0      && { cau_hoi_moi }),
       };
 
       if (mode === 'sua' && init) {
@@ -607,6 +640,82 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
             />
           </div>
 
+          {/* Loại bài kiểm tra */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Loại bài kiểm tra <span className="text-red-500">*</span>
+            </label>
+            <div className="flex gap-2">
+              {[
+                { v: 'TRAC_NGHIEM', label: '📝 Trắc nghiệm', hint: 'Câu hỏi tự động chấm' },
+                { v: 'THUC_HANH',   label: '🎬 Thực hành',   hint: 'Học viên upload video bài làm' },
+              ].map((opt) => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setBase({ ...base, loai_bai_kiem_tra: opt.v })}
+                  className={`flex-1 px-3 py-3 rounded-lg border-2 text-left transition-colors ${
+                    base.loai_bai_kiem_tra === opt.v
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="text-sm font-medium text-gray-900">{opt.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+            {init && init.loai_bai_kiem_tra && init.loai_bai_kiem_tra !== base.loai_bai_kiem_tra && (
+              <p className="text-xs text-orange-600 mt-1">
+                ⚠️ Đổi loại sẽ xoá câu hỏi hiện có (trắc nghiệm → thực hành) hoặc huỷ cấu hình upload (thực hành → trắc nghiệm).
+              </p>
+            )}
+          </div>
+
+          {/* Cấu hình thực hành */}
+          {isThucHanh && (
+            <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
+              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Cấu hình bài thực hành</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Yêu cầu bài làm <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={base.yeu_cau_bai_lam}
+                  onChange={(e) => setBase({ ...base, yeu_cau_bai_lam: e.target.value })}
+                  placeholder="Mô tả chi tiết nội dung học viên cần làm, quay video và nộp..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y bg-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dung lượng tối đa (MB)</label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={2000}
+                    value={base.dung_luong_toi_da_mb}
+                    onChange={(e) => setBase({ ...base, dung_luong_toi_da_mb: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  />
+                  <p className="text-xs text-gray-400 mt-0.5">Thường 500 MB (~15 phút video 720p)</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Định dạng cho phép</label>
+                  <input
+                    type="text"
+                    value={base.dinh_dang_cho_phep}
+                    onChange={(e) => setBase({ ...base, dinh_dang_cho_phep: e.target.value })}
+                    placeholder="mp4,mov,webm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  />
+                  <p className="text-xs text-gray-400 mt-0.5">CSV, không dấu chấm</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Cấu hình */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -634,16 +743,19 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="flex items-end pb-2.5">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input type="checkbox"
-                  checked={base.tron_de}
-                  onChange={(e) => setBase({ ...base, tron_de: e.target.checked })}
-                  className="w-4 h-4 accent-blue-600"
-                />
-                <span className="text-sm text-gray-700">Trộn đề (ngẫu nhiên)</span>
-              </label>
-            </div>
+            {!isThucHanh && (
+              <div className="flex items-end pb-2.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox"
+                    checked={base.tron_de}
+                    onChange={(e) => setBase({ ...base, tron_de: e.target.checked })}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm text-gray-700">Trộn đề (ngẫu nhiên)</span>
+                </label>
+              </div>
+            )}
+            {isThucHanh && <div />}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Khung giờ mở (HH:MM)</label>
               <input type="time"
@@ -663,6 +775,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
           </div>
 
           {/* Cấu hình hiển thị kết quả */}
+          {!isThucHanh && (
           <div className="space-y-3 pt-3 border-t border-gray-200">
             <p className="text-sm font-medium text-gray-700">Cấu hình hiển thị kết quả</p>
             <div>
@@ -699,8 +812,10 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
               <span className="text-sm text-gray-700">Hiển thị giải thích đáp án</span>
             </label>
           </div>
+          )}
 
           {/* Danh sách câu hỏi */}
+          {!isThucHanh && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium text-gray-700">
@@ -775,6 +890,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
               </div>
             )}
           </div>
+          )}
 
           {errMsg && (
             <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -789,13 +905,18 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
           >Hủy</button>
           <button onClick={handleSubmit}
-            disabled={submitting || !base.tieu_de.trim() || cauHoiList.length === 0}
+            disabled={
+              submitting
+              || !base.tieu_de.trim()
+              || (!isThucHanh && cauHoiList.length === 0)
+              || (isThucHanh && !base.yeu_cau_bai_lam.trim())
+            }
             className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
           >
             {submitting
               ? 'Đang lưu...'
               : mode === 'tao'
-              ? `Tạo (${cauHoiList.length} câu)`
+              ? (isThucHanh ? 'Tạo bài thực hành' : `Tạo (${cauHoiList.length} câu)`)
               : 'Lưu thay đổi'}
           </button>
         </div>
@@ -927,18 +1048,29 @@ export default function BaiKiemTraManager({ khoaHocId }: BaiKiemTraManagerProps)
         </div>
       ) : (
         <div className="space-y-2">
-          {bkts.map((bkt) => (
+          {bkts.map((bkt) => {
+            const laThucHanh = bkt.loai_bai_kiem_tra === 'THUC_HANH';
+            return (
             <div key={bkt.id}
               className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
             >
-              <span className="text-2xl shrink-0">📝</span>
+              <span className="text-2xl shrink-0">{laThucHanh ? '🎬' : '📝'}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900">{bkt.tieu_de}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium text-gray-900 truncate">{bkt.tieu_de}</p>
+                  <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-medium ${
+                    laThucHanh ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {laThucHanh ? 'Thực hành' : 'Trắc nghiệm'}
+                  </span>
+                </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {bkt.so_cau_hoi} câu
+                  {laThucHanh
+                    ? `Upload video · Tối đa ${bkt.dung_luong_toi_da_mb ?? 500} MB · ${bkt.dinh_dang_cho_phep || 'mp4,mov,webm'}`
+                    : `${bkt.so_cau_hoi} câu`}
                   {bkt.thoi_gian_lam_bai_phut
                     ? ` · ${bkt.thoi_gian_lam_bai_phut} phút`
-                    : ' · Không giới hạn thời gian'}
+                    : ''}
                   {' · Điểm đạt: '}{bkt.diem_dat}%
                   {!bkt.is_active && (
                     <span className="ml-2 px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">Ẩn</span>
@@ -946,6 +1078,12 @@ export default function BaiKiemTraManager({ khoaHocId }: BaiKiemTraManagerProps)
                 </p>
               </div>
               <div className="flex gap-1 shrink-0">
+                <Link
+                  href={`/dao-tao/khoa-hoc/${khoaHocId}/kiem-tra/${bkt.id}?preview=1`}
+                  target="_blank"
+                  className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
+                  title="Mở trang làm bài ở chế độ xem thử (không lưu kết quả)"
+                >👁 Xem thử</Link>
                 <button
                   onClick={() => { setEditBkt(bkt); setShowEditor(true); }}
                   className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs hover:bg-yellow-200"
@@ -956,7 +1094,8 @@ export default function BaiKiemTraManager({ khoaHocId }: BaiKiemTraManagerProps)
                 >Xóa</button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

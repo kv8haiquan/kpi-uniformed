@@ -14,7 +14,7 @@ Endpoints:
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.dependencies import get_db, get_current_user, require_platform_role
@@ -131,11 +131,29 @@ async def cap_nhat_bai_hoc(
 async def cap_nhat_tien_do(
     id: UUID,
     data: TienDoUpdate,
+    preview: bool = Query(False, description="True: GV/QT xem thử, không ghi tiến độ"),
     db: AsyncSession = Depends(get_db),
     user: TokenPayload = Depends(get_current_user),
 ):
-    """Cập nhật tiến độ học bài. Tất cả CBCC đã đăng ký khóa."""
+    """Cập nhật tiến độ học bài. Tất cả CBCC đã đăng ký khóa.
+
+    preview=True + user là GV/QT/ADMIN → trả về bài học với tien_do_ca_nhan=None,
+    KHÔNG UPSERT tien_do_bai_hoc và KHÔNG tính phần trăm hoàn thành.
+    """
     service = BaiHocService(db)
+
+    if preview:
+        is_manager = user.vai_tro == "SUPER_ADMIN" or "QT_DAO_TAO" in (user.platform_roles or [])
+        is_gv = "GIANG_VIEN" in (user.platform_roles or [])
+        if is_manager or is_gv:
+            bh = await service._get_bai_hoc(id)
+            # Chi tra du lieu bai hoc, khong cap nhat tien do
+            return {
+                "success": True,
+                "data": BaiHocResponse(**service._bai_hoc_to_dict(bh, None)).model_dump(mode="json"),
+                "message": "Chế độ xem thử — không lưu tiến độ",
+            }
+
     result = await service.cap_nhat_tien_do(id, data, user)
 
     return {

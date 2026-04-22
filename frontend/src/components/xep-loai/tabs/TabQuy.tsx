@@ -281,6 +281,7 @@ interface WorkflowViewTDVProps {
 function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
   const [baoCao, setBaoCao] = useState<BaoCaoXepLoaiQuy | null>(null);
   const [loading, setLoading] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canhBao, setCanhBao] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -339,6 +340,19 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
     }
   };
 
+  const handleTinhLai = async () => {
+    if (!baoCao) return;
+    setRecalculating(true);
+    try {
+      await xepLoaiQuyService.tinhLaiBaoCao(baoCao.id);
+      await loadBaoCao();
+    } catch (err: any) {
+      alert('Lỗi tính lại: ' + (err?.response?.data?.detail?.message || err.message || 'Unknown'));
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error} />;
   if (!baoCao) return <EmptyState title="Không có báo cáo quý" />;
@@ -367,10 +381,20 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
           <StatusBadge trangThai={baoCao.trang_thai} />
         </div>
         <StatsSummary baoCao={baoCao} />
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {canEdit && (
             <button onClick={handleGuiDuyet} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors text-sm font-medium">
               Gửi duyệt
+            </button>
+          )}
+          {canEdit && (
+            <button
+              onClick={handleTinhLai}
+              disabled={recalculating}
+              className="bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-700 transition-colors text-sm font-medium disabled:opacity-50"
+              title="Tính lại điểm hệ thống từ dữ liệu tháng mới nhất (giữ đề xuất đã điều chỉnh)"
+            >
+              {recalculating ? 'Đang tính...' : '🔄 Tính lại'}
             </button>
           )}
           <button
@@ -390,6 +414,11 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
           >
             📄 Tải Mẫu 03
           </button>
+          {baoCao.last_recalculated_at && (
+            <span className="ml-auto text-xs text-gray-500">
+              Cập nhật: {new Date(baoCao.last_recalculated_at).toLocaleString('vi-VN')}
+            </span>
+          )}
         </div>
       </div>
 
@@ -420,9 +449,9 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
                     {ct.cong_chuc?.ho_ten}
                     {ct.is_lanh_dao && <span className="ml-1 text-xs text-blue-600 font-semibold">(LĐ)</span>}
                   </td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_tieu_chi_chung).toFixed(1)}</td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_kpi).toFixed(1)}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{Number(ct.diem_tong).toFixed(1)}</td>
+                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_tieu_chi_chung).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_kpi).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{Number(ct.diem_tong).toFixed(2)}</td>
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center">
                     {isEditing ? (
@@ -644,9 +673,9 @@ function WorkflowViewCCT({ quy, nam, canApprove }: WorkflowViewCCTProps) {
                     {ct.cong_chuc?.ho_ten}
                     {ct.is_lanh_dao && <span className="ml-1 text-xs text-blue-600 font-semibold">(LĐ)</span>}
                   </td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_tieu_chi_chung).toFixed(1)}</td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_kpi).toFixed(1)}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{Number(ct.diem_tong).toFixed(1)}</td>
+                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_tieu_chi_chung).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_kpi).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{Number(ct.diem_tong).toFixed(2)}</td>
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_de_xuat || ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center">

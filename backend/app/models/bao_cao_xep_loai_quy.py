@@ -216,6 +216,16 @@ class BaoCaoXepLoaiQuy(BaseModelWithSoftDelete):
     )
 
     # -------------------------------------------------------------------------
+    # REBUILD SNAPSHOT
+    # -------------------------------------------------------------------------
+
+    last_recalculated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Thời điểm gần nhất rebuild snapshot (debounce 60s khi GET)"
+    )
+
+    # -------------------------------------------------------------------------
     # RELATIONSHIPS
     # -------------------------------------------------------------------------
 

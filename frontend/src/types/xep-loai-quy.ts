@@ -206,4 +206,5 @@ export interface BaoCaoXepLoaiQuy {
   canh_bao_ty_le_a: boolean;
   chi_tiets: ChiTietXepLoaiQuy[];
   canh_bao?: string;
+  last_recalculated_at?: string | null;
 }

@@ -99,6 +99,139 @@ def check_can_view_all_units(user: CongChuc) -> bool:
 
 
 # =============================================================================
+# REBUILD SNAPSHOT HELPER
+# =============================================================================
+# Khi báo cáo ở trạng thái NHAP/TU_CHOI, TDV có thể đã sửa đổi dữ liệu tháng
+# (duyệt/sửa tiêu chí chung, d/đ/e, sản phẩm) sau khi báo cáo được tạo.
+# Vì ChiTietXepLoaiQuy lưu snapshot tại thời điểm tạo, dữ liệu sẽ lệch so với
+# bản in (gọi tinh_diem_quy live). Helper bên dưới:
+#   1. Query lại DS công chức hiện tại của đơn vị (loại SUPER_ADMIN/QLDV).
+#   2. Với mỗi CC → gọi tinh_diem_quy → update điểm HỆ THỐNG,
+#      GIỮ NGUYÊN xep_loai_de_xuat/ly_do_dieu_chinh_dt/ghi_chu/xep_loai_quyet_dinh.
+#   3. Xoá chi tiết của CC đã chuyển đơn vị / không còn active.
+#   4. Thêm chi tiết cho CC mới về đơn vị trong quý.
+#   5. Cập nhật thống kê + last_recalculated_at.
+# =============================================================================
+
+REBUILD_DEBOUNCE_SECONDS = 60
+
+
+async def _rebuild_chi_tiets_bao_cao_quy(
+    db: AsyncSession,
+    bao_cao: BaoCaoXepLoaiQuy,
+) -> None:
+    """
+    Tính lại snapshot điểm cho báo cáo quý đang ở trạng thái NHAP/TU_CHOI.
+
+    KHÔNG commit — caller chịu trách nhiệm commit.
+    """
+    # 1. Query DS CC hiện tại của đơn vị (loại SUPER_ADMIN + QLDV)
+    excluded_roles = [CapBacVaiTro.SUPER_ADMIN, CapBacVaiTro.QUAN_LY_DON_VI]
+    stmt_cc = (
+        select(CongChuc)
+        .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
+        .options(selectinload(CongChuc.vai_tro))
+        .where(CongChuc.don_vi_id == bao_cao.don_vi_id)
+        .where(CongChuc.is_deleted == False)
+        .where(CongChuc.is_active == True)
+        .where(
+            (CongChuc.vai_tro_id == None) |
+            (~VaiTro.cap_bac.in_(excluded_roles))
+        )
+    )
+    cong_chucs = list((await db.execute(stmt_cc)).scalars().all())
+    cc_by_id = {cc.id: cc for cc in cong_chucs}
+
+    # 2. Map chi_tiet hiện có theo cong_chuc_id
+    existing_by_cc = {ct.cong_chuc_id: ct for ct in bao_cao.chi_tiets}
+
+    # 3. Với mỗi CC hiện tại → tính điểm + upsert
+    kept_cc_ids = set()
+    for cc in cong_chucs:
+        diem_data = await tinh_diem_quy(db, cc.id, bao_cao.quy, bao_cao.nam)
+
+        # CC chuyển đơn vị giữa quý → bỏ qua (không thêm mới, cũng sẽ xoá nếu đã có)
+        if diem_data.get("co_chuyen_don_vi"):
+            continue
+
+        diem_tc_quy = Decimal(str(diem_data.get("diem_tc_quy") or 0))
+        diem_kpi_quy = Decimal(str(diem_data.get("diem_kpi_quy") or 0))
+        diem_tong_quy = Decimal(str(diem_data.get("diem_tong_quy") or 0))
+        xep_loai_he_thong = diem_data.get("xep_loai_quy") or "D"
+
+        kept_cc_ids.add(cc.id)
+        ct = existing_by_cc.get(cc.id)
+        if ct is None:
+            # CC mới về đơn vị → thêm chi tiết
+            ct = ChiTietXepLoaiQuy(
+                bao_cao_quy_id=bao_cao.id,
+                cong_chuc_id=cc.id,
+                is_lanh_dao=cc.is_lanh_dao or False,
+                diem_tieu_chi_chung=diem_tc_quy,
+                diem_kpi=diem_kpi_quy,
+                diem_tong=diem_tong_quy,
+                xep_loai_he_thong=xep_loai_he_thong,
+            )
+            db.add(ct)
+            bao_cao.chi_tiets.append(ct)
+        else:
+            # Chỉ update field HỆ THỐNG; giữ xep_loai_de_xuat/ly_do/ghi_chu/quyet_dinh
+            ct.is_lanh_dao = cc.is_lanh_dao or False
+            ct.diem_tieu_chi_chung = diem_tc_quy
+            ct.diem_kpi = diem_kpi_quy
+            ct.diem_tong = diem_tong_quy
+            ct.xep_loai_he_thong = xep_loai_he_thong
+
+    # 4. Xoá chi_tiet của CC đã chuyển đơn vị / không còn active / rời đơn vị
+    for cc_id, ct in list(existing_by_cc.items()):
+        if cc_id not in kept_cc_ids:
+            # CC không còn trong đơn vị, hoặc chuyển đơn vị giữa quý → xoá
+            await db.delete(ct)
+            if ct in bao_cao.chi_tiets:
+                bao_cao.chi_tiets.remove(ct)
+
+    await db.flush()
+
+    # 5. Cập nhật thống kê
+    stats = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
+    for ct in bao_cao.chi_tiets:
+        xl = ct.xep_loai_quyet_dinh or ct.xep_loai_de_xuat or ct.xep_loai_he_thong
+        if xl in stats:
+            stats[xl] += 1
+    bao_cao.tong_cong_chuc = len(bao_cao.chi_tiets)
+    bao_cao.so_loai_a = stats["A"]
+    bao_cao.so_loai_b = stats["B"]
+    bao_cao.so_loai_c = stats["C"]
+    bao_cao.so_loai_d = stats["D"]
+    bao_cao.so_loai_e = stats["E"]
+    so_b = stats["B"]
+    bao_cao.canh_bao_ty_le_a = (
+        (stats["A"] > (0.2 * so_b)) if so_b > 0 else (stats["A"] > 0)
+    )
+    bao_cao.last_recalculated_at = datetime.now(timezone.utc)
+
+
+def _should_auto_rebuild(bao_cao: BaoCaoXepLoaiQuy) -> bool:
+    """
+    Có nên tự động rebuild snapshot khi GET báo cáo không?
+
+    Điều kiện:
+    - Trạng thái ∈ (NHAP, TU_CHOI) — báo cáo còn chỉnh sửa được
+    - Chưa rebuild lần nào, HOẶC lần cuối cách hiện tại > REBUILD_DEBOUNCE_SECONDS
+    """
+    if bao_cao.trang_thai not in ("NHAP", "TU_CHOI"):
+        return False
+    last = bao_cao.last_recalculated_at
+    if last is None:
+        return True
+    # Đảm bảo timezone-aware
+    now = datetime.now(timezone.utc)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return (now - last).total_seconds() > REBUILD_DEBOUNCE_SECONDS
+
+
+# =============================================================================
 # ENDPOINT 1: TDV LẤY/TẠO BÁO CÁO QUÝ ĐƠN VỊ
 # =============================================================================
 
@@ -192,7 +325,16 @@ async def get_or_create_bao_cao_quy_don_vi(
     bao_cao = result.scalar_one_or_none()
 
     if bao_cao:
-        # Đã có báo cáo → trả về
+        # Auto-rebuild snapshot khi NHAP/TU_CHOI (debounce 60s) để đồng bộ
+        # với bản in (tinh_diem_quy live). Không đụng xep_loai_de_xuat của TDV.
+        if _should_auto_rebuild(bao_cao):
+            await _rebuild_chi_tiets_bao_cao_quy(db, bao_cao)
+            await db.commit()
+            # Reload với relationships đầy đủ
+            await db.refresh(bao_cao)
+            result = await db.execute(stmt)
+            bao_cao = result.scalar_one()
+
         response_data = BaoCaoXepLoaiQuyResponse.model_validate(bao_cao)
         response_data.trang_thai_ten = get_trang_thai_ten_quy(bao_cao.trang_thai)
         data = response_data.model_dump()
@@ -281,6 +423,7 @@ async def get_or_create_bao_cao_quy_don_vi(
     # Cảnh báo tỷ lệ A > 20% B
     so_b = stat_counts["B"]
     bao_cao.canh_bao_ty_le_a = (stat_counts["A"] > (0.2 * so_b)) if so_b > 0 else (stat_counts["A"] > 0)
+    bao_cao.last_recalculated_at = datetime.now(timezone.utc)
 
     await db.commit()
 
@@ -432,6 +575,96 @@ async def dieu_chinh_de_xuat_quy(
     return success_response(
         data=ChiTietXepLoaiQuyResponse.model_validate(chi_tiet).model_dump(),
         message="Cập nhật xếp loại đề xuất thành công"
+    )
+
+
+# =============================================================================
+# ENDPOINT 2B: TDV/CCT TÍNH LẠI BÁO CÁO QUÝ (CƯỠNG CHẾ, BỎ DEBOUNCE)
+# =============================================================================
+
+@router.post("/{bao_cao_id}/tinh-lai")
+async def tinh_lai_bao_cao_quy(
+    bao_cao_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """
+    Tính lại snapshot điểm của báo cáo quý (cưỡng chế, bỏ debounce 60s).
+
+    Dùng khi TDV muốn đồng bộ ngay với dữ liệu tháng mới nhất, không cần chờ
+    auto-rebuild của GET endpoint. Chỉ cập nhật điểm hệ thống, GIỮ NGUYÊN
+    xep_loai_de_xuat / ly_do_dieu_chinh_dt / ghi_chu.
+
+    Quyền:
+    - TDV/PDV: chỉ báo cáo của đơn vị mình
+    - CCT/PCCT: mọi đơn vị
+
+    Điều kiện: Báo cáo phải ở trạng thái NHAP hoặc TU_CHOI.
+    """
+    stmt = (
+        select(BaoCaoXepLoaiQuy)
+        .options(
+            selectinload(BaoCaoXepLoaiQuy.don_vi),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_lap),
+            selectinload(BaoCaoXepLoaiQuy.nguoi_phe_duyet),
+            selectinload(BaoCaoXepLoaiQuy.chi_tiets).selectinload(ChiTietXepLoaiQuy.cong_chuc),
+        )
+        .where(BaoCaoXepLoaiQuy.id == bao_cao_id)
+        .where(BaoCaoXepLoaiQuy.is_deleted == False)
+    )
+    result = await db.execute(stmt)
+    bao_cao = result.scalar_one_or_none()
+
+    if not bao_cao:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(
+                code="NOT_FOUND",
+                message="Không tìm thấy báo cáo quý"
+            )
+        )
+
+    # Quyền: TDV/PDV của chính đơn vị, hoặc CCT/PCCT của mọi đơn vị
+    is_lanh_dao_dv = check_is_lanh_dao_don_vi(current_user)
+    is_lanh_dao_cc = check_is_lanh_dao_chi_cuc(current_user)
+    if not (is_lanh_dao_dv or is_lanh_dao_cc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PERM_001",
+                message="Không có quyền tính lại báo cáo quý"
+            )
+        )
+    if is_lanh_dao_dv and not is_lanh_dao_cc and bao_cao.don_vi_id != current_user.don_vi_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PERM_002",
+                message="Bạn chỉ được tính lại báo cáo của đơn vị mình"
+            )
+        )
+
+    if bao_cao.trang_thai not in ("NHAP", "TU_CHOI"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="VAL_006",
+                message="Chỉ có thể tính lại báo cáo ở trạng thái Nháp hoặc Bị từ chối"
+            )
+        )
+
+    await _rebuild_chi_tiets_bao_cao_quy(db, bao_cao)
+    await db.commit()
+
+    # Reload để trả về kèm relationships
+    result = await db.execute(stmt)
+    bao_cao = result.scalar_one()
+
+    response_data = BaoCaoXepLoaiQuyResponse.model_validate(bao_cao)
+    response_data.trang_thai_ten = get_trang_thai_ten_quy(bao_cao.trang_thai)
+    return success_response(
+        data=response_data.model_dump(),
+        message="Tính lại báo cáo quý thành công"
     )
 
 

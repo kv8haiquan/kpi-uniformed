@@ -92,6 +92,22 @@ class XepLoaiQuyService {
   }
 
   /**
+   * Tính lại cưỡng chế snapshot điểm của báo cáo quý (bỏ debounce 60s).
+   * Chỉ dùng khi báo cáo ở trạng thái NHAP hoặc TU_CHOI.
+   */
+  async tinhLaiBaoCao(baoCaoId: string): Promise<BaoCaoXepLoaiQuy> {
+    const { data } = await apiClient.post<{ success: boolean; data: BaoCaoXepLoaiQuy }>(
+      `${BAO_CAO_URL}/${baoCaoId}/tinh-lai`
+    );
+
+    if (!data.success) {
+      throw new Error('Failed to recalculate quarterly report snapshot');
+    }
+
+    return data.data;
+  }
+
+  /**
    * TDV điều chỉnh xếp loại đề xuất cho 1 công chức trong báo cáo quý
    */
   async deXuatXepLoai(

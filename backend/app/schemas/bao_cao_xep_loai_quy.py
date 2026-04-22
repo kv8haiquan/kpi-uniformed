@@ -153,6 +153,9 @@ class BaoCaoXepLoaiQuyResponse(BaseModel):
     # Chi tiết
     chi_tiets: List[ChiTietXepLoaiQuyResponse] = []
 
+    # Thời điểm rebuild snapshot gần nhất (NHAP/TU_CHOI → auto-rebuild mỗi 60s)
+    last_recalculated_at: Optional[datetime] = None
+
     # Timestamps
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

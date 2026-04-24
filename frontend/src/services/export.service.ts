@@ -263,6 +263,28 @@ class ExportService {
       throw error;
     }
   }
+
+  /**
+   * Xuất báo cáo tổng hợp theo QUÝ (ZIP 5 Excel).
+   * Hybrid: dùng snapshot quý nếu có, fallback tính on-the-fly.
+   * Quyền: Chỉ CCT và PCCT (hoặc can_view_all_units).
+   */
+  async exportBaoCaoTongHopQuy(options: Omit<IExportQuyOptions, 'format'>): Promise<void> {
+    const { quy, nam } = options;
+
+    try {
+      const response = await apiClient.get(
+        `${this.BASE_URL}/bao-cao-tong-hop/quy/${quy}/nam/${nam}`,
+        { responseType: 'blob' }
+      );
+
+      const fallback = `BaoCaoTongHop_Q${quy}_${nam}.zip`;
+      await downloadBlob(response, fallback);
+    } catch (error: any) {
+      console.error('[Export] Error exporting bao cao tong hop quy:', error);
+      throw error;
+    }
+  }
 }
 
 // =============================================================================

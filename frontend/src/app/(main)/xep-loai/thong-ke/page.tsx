@@ -11,6 +11,7 @@
  * 
  * Quyền: Chi cục trưởng, Phó Chi cục trưởng
  * 
+ * Version: 1.2.0 (24/04/2026) - Thêm nút xuất báo cáo tổng hợp theo QUÝ (ZIP 5 Excel)
  * Version: 1.1.0 (11/02/2026) - Thêm nút xuất báo cáo Mẫu 04
  * Version: 1.0.0 (28/01/2026)
  */
@@ -241,11 +242,17 @@ export default function ThongKeXepLoaiPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExportingZip, setIsExportingZip] = useState(false);
+  const [isExportingZipQuy, setIsExportingZipQuy] = useState(false);
 
   // Month/Year selector
   const currentDate = new Date();
   const [selectedThang, setSelectedThang] = useState(currentDate.getMonth() + 1);
   const [selectedNam, setSelectedNam] = useState(currentDate.getFullYear());
+
+  // Quarter selector (độc lập với tháng — dùng khi xuất ZIP quý)
+  const [selectedQuy, setSelectedQuy] = useState(
+    Math.ceil((currentDate.getMonth() + 1) / 3)
+  );
 
   // Auth check
   useEffect(() => {
@@ -291,6 +298,21 @@ export default function ThongKeXepLoaiPage() {
     }
   };
 
+  // Handler: Xuất báo cáo tổng hợp QUÝ (ZIP 5 Excel)
+  const handleExportBaoCaoTongHopQuy = async () => {
+    setIsExportingZipQuy(true);
+    try {
+      await exportService.exportBaoCaoTongHopQuy({
+        quy: selectedQuy,
+        nam: selectedNam,
+      });
+    } catch (err: any) {
+      setError(err.message || 'Lỗi khi xuất báo cáo tổng hợp quý');
+    } finally {
+      setIsExportingZipQuy(false);
+    }
+  };
+
   // Không có quyền
   if (!hasAccess) {
     return (
@@ -318,7 +340,7 @@ export default function ThongKeXepLoaiPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push('/dashboard')}
@@ -334,73 +356,117 @@ export default function ThongKeXepLoaiPage() {
             </div>
           </div>
 
-          {/* Month/Year Selector */}
-          <div className="flex items-center gap-3">
+          {/* Year selector (dùng chung cho cả tháng và quý) */}
+          <select
+            value={selectedNam}
+            onChange={(e) => setSelectedNam(parseInt(e.target.value))}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          >
+            {[currentDate.getFullYear() - 1, currentDate.getFullYear(), currentDate.getFullYear() + 1].map(y => (
+              <option key={y} value={y}>Năm {y}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Toolbar 2 hàng: Tháng | Quý */}
+        <div className="mt-4 flex flex-col gap-3">
+          {/* Hàng 1: THEO THÁNG */}
+          <div className="flex items-center gap-3 flex-wrap p-3 bg-blue-50 border border-blue-100 rounded-lg">
+            <span className="text-sm font-semibold text-blue-900 whitespace-nowrap">📅 Theo tháng:</span>
             <select
               value={selectedThang}
               onChange={(e) => setSelectedThang(parseInt(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
             >
               {Array.from({ length: 12 }, (_, i) => (
                 <option key={i + 1} value={i + 1}>Tháng {i + 1}</option>
               ))}
             </select>
+
+            {thongKe && (
+              <>
+                <ExportButton
+                  label="Xuất Mẫu 03 (Tất cả ĐV)"
+                  size="sm"
+                  onExport={async (format: ExportFormat) => {
+                    await exportService.exportDonViTongHop({
+                      thang: selectedThang,
+                      nam: selectedNam,
+                      format,
+                    });
+                  }}
+                />
+                <ExportButton
+                  label="Xuất Mẫu 04"
+                  size="sm"
+                  onExport={async (format: ExportFormat) => {
+                    await exportService.exportTongHop({
+                      thang: selectedThang,
+                      nam: selectedNam,
+                      format,
+                    });
+                  }}
+                />
+                <button
+                  onClick={handleExportBaoCaoTongHop}
+                  disabled={isExportingZip}
+                  className="px-3 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                >
+                  {isExportingZip ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                      <span>Đang xuất...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      <span>Xuất báo cáo tổng hợp tháng</span>
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Hàng 2: THEO QUÝ */}
+          <div className="flex items-center gap-3 flex-wrap p-3 bg-purple-50 border border-purple-100 rounded-lg">
+            <span className="text-sm font-semibold text-purple-900 whitespace-nowrap">📊 Theo quý:</span>
             <select
-              value={selectedNam}
-              onChange={(e) => setSelectedNam(parseInt(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              value={selectedQuy}
+              onChange={(e) => setSelectedQuy(parseInt(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 bg-white"
             >
-              {[currentDate.getFullYear() - 1, currentDate.getFullYear(), currentDate.getFullYear() + 1].map(y => (
-                <option key={y} value={y}>{y}</option>
+              {[1, 2, 3, 4].map((q) => (
+                <option key={q} value={q}>Quý {q} (T{(q - 1) * 3 + 1}-T{q * 3})</option>
               ))}
             </select>
-            
-            {/* Nút xuất báo cáo Mẫu 04 */}
-            {thongKe && (
-            <>
-              <ExportButton
-                label="Xuất Mẫu 03 (Tất cả ĐV)"
-                size="sm"
-                onExport={async (format: ExportFormat) => {
-                  await exportService.exportDonViTongHop({
-                    thang: selectedThang,
-                    nam: selectedNam,
-                    format,
-                  });
-                }}
-              />
-              <ExportButton
-                label="Xuất Mẫu 04"
-                size="sm"
-                onExport={async (format: ExportFormat) => {
-                  await exportService.exportTongHop({
-                    thang: selectedThang,
-                    nam: selectedNam,
-                    format,
-                  });
-                }}
-              />
-              <button
-                onClick={handleExportBaoCaoTongHop}
-                disabled={isExportingZip}
-                className="px-3 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-              >
-                {isExportingZip ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                    <span>Đang xuất...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    <span>Xuất báo cáo tổng hợp</span>
-                  </>
-                )}
-              </button>
-            </>
-          )}
+
+            <button
+              onClick={handleExportBaoCaoTongHopQuy}
+              disabled={isExportingZipQuy}
+              className="px-3 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+              title="Xuất ZIP 5 báo cáo Excel thống kê tổng hợp cho cả quý"
+            >
+              {isExportingZipQuy ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  <span>Đang xuất...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span>Xuất báo cáo tổng hợp quý</span>
+                </>
+              )}
+            </button>
+
+            <span className="text-xs text-purple-700 italic">
+              ZIP gồm 5 file: TC chung, KPI, LĐ d/đ/e, Khối lượng CV, Danh mục CV (gộp 3 tháng)
+            </span>
           </div>
         </div>
       </header>

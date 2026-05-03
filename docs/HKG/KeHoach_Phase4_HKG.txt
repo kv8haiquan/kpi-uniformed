@@ -1,0 +1,176 @@
+
+KẾ HOẠCH PHASE 4 — HỆ THỐNG HKG
+Nâng mức đáp ứng yêu cầu Văn phòng từ 72% lên 92%
+Thời gian: 4 tuần · Đơn vị thực hiện: Phòng Công nghệ Thông tin
+I. BỐI CẢNH
+Sau khi hoàn thành Phase 1-3 (6 tuần) của Hệ thống Họp Không Giấy (HKG), Phòng Công nghệ thông tin đã rà soát đối chiếu với Công văn phối hợp của Văn phòng (số …/VP ngày 23/4/2026). Kết quả cho thấy:
+Hệ thống HKG v5.0 hiện đáp ứng khoảng 72% yêu cầu của Văn phòng.
+Còn 6 nhóm chức năng quan trọng chưa được triển khai, đặc biệt là các tính năng đặc thù của "phòng họp không giấy" như đồng bộ trình chiếu tài liệu, annotation realtime và chế độ offline.
+Các khoảng trống này đều khả thi 100% về mặt kỹ thuật với stack công nghệ hiện tại.
+Phòng CNTT xây dựng kế hoạch Phase 4 trong 4 tuần để bổ sung các tính năng còn thiếu, nâng mức đáp ứng lên 
+92% — đáp ứng đầy đủ các yêu cầu thiết yếu của Văn phòng và đạt mức tương đương các phần mềm họp không giấy chuyên dụng.
+II. PHẠM VI & MỤC TIÊU
+1. Mục tiêu định lượng
+Nâng mức đáp ứng yêu cầu Văn phòng: từ 72% lên ≥ 92%
+Thực hiện 10 hạng mục cải tiến trong 4 tuần (84 giờ phát triển)
+Đảm bảo không làm gián đoạn các chức năng đã có (regression test)
+2. 10 hạng mục cần triển khai
+Sắp xếp theo mức độ ưu tiên (cao → thấp):
+
+III. CÔNG NGHỆ BỔ SUNG
+Phase 4 không thay đổi kiến trúc tổng thể — chỉ bổ sung các thành phần sau, đều là mã nguồn mở hoặc dịch vụ với chi phí thấp:
+
+
+IV. LỘ TRÌNH CHI TIẾT 4 TUẦN
+Tuần 1 — Backend bổ sung: SMS, Versioning, Lock, Notes, Print
+Mục tiêu: Hoàn tất các tính năng backend không phụ thuộc nhau, chuẩn bị API sẵn sàng cho frontend tuần sau.
+
+
+Sản phẩm cuối tuần 1: SMS gateway, versioning, lock, notes API hoạt động — đã test bằng Postman/Swagger.
+Tuần 2 — Đồng bộ trình chiếu tài liệu (Page Synchronization)
+Mục tiêu: Tính năng định danh "phòng họp không giấy". Quan trọng nhất của Phase 4.
+
+
+Sản phẩm cuối tuần 2: Chủ tọa lật trang → 5 đại biểu đồng bộ trong < 500ms · Toggle 2 chế độ hoạt động mượt.
+Tuần 3 — Annotation đồng bộ + Offline mode (PWA)
+Mục tiêu: Hai tính năng nâng cao nhất, đòi hỏi kỹ thuật cao. Tuần khó nhất.
+
+
+Sản phẩm cuối tuần 3: Chủ tọa khoanh vùng tài liệu → đại biểu thấy đồng bộ · Cuộc họp tiếp tục được dù mất mạng.
+Tuần 4 — Tracking + Editor + Zalo + UAT + Deploy
+Mục tiêu: Hoàn thiện các bổ sung cuối, UAT với Văn phòng, deploy production.
+
+
+Sản phẩm cuối tuần 4: HKG v6.0 production live · Đáp ứng ≥ 92% yêu cầu VP · Đã đào tạo Thư ký.
+
+V. TIÊU CHÍ NGHIỆM THU
+Phase 4 được nghiệm thu khi đạt 100% các tiêu chí sau:
+
+
+Bên cạnh các tiêu chí định lượng trên, Văn phòng sẽ tổ chức 02 cuộc họp thử nghiệm thực tế (1 cuộc họp giao ban Phòng + 1 cuộc họp Chi cục) để đánh giá UX và sự ổn định.
+VI. RỦI RO VÀ BIỆN PHÁP
+
+VII. CHI PHÍ DỰ KIẾN
+
+
+Tổng chi phí phát sinh năm đầu (ước tính): 12 - 15 triệu đồng
+Trong đó: ~1 triệu đồng đăng ký Brand Name SMS, 11-14 triệu đồng phí gửi SMS thực tế cả năm. Phần mềm và phát triển: 0 đồng (mã nguồn mở + nhân sự nội bộ).
+VIII. MA TRẬN ĐÁP ỨNG SAU KHI HOÀN THÀNH
+
+IX. KẾT LUẬN VÀ ĐỀ NGHỊ
+Phase 4 là bước hoàn thiện quan trọng để Hệ thống HKG đáp ứng đầy đủ yêu cầu của Văn phòng và sánh ngang với các phần mềm họp không giấy chuyên dụng (như iCPV-Cabinet hiện đang sử dụng).
+Phòng Công nghệ thông tin đề nghị Lãnh đạo Chi cục:
+Phê duyệt kế hoạch Phase 4 gồm 10 hạng mục triển khai trong 4 tuần.
+Cấp kinh phí đăng ký SMS Brand Name (~1 triệu) và phí SMS năm đầu (~11-14 triệu).
+Chỉ đạo Văn phòng phối hợp UAT 2 ngày trong tuần 4 và tổ chức 2 cuộc họp thử nghiệm.
+Cho phép linh hoạt giãn lộ trình thành 5 tuần nếu phát sinh rủi ro lớn (ví dụ: SMS Brand Name chưa duyệt kịp).
+Phòng Công nghệ thông tin kính trình Lãnh đạo xem xét, cho ý kiến chỉ đạo./.
+
+--- TABLE ---
+CHI CỤC HẢI QUAN KHU VỰC VIII
+PHÒNG CÔNG NGHỆ THÔNG TIN | DỰ ÁN HKG v5.0
+Tháng 4/2026
+
+--- TABLE ---
+STT | Khoảng trống cần bổ sung | Hiện tại | Sau Phase 4 | Ưu tiên
+1 | Đồng bộ trình chiếu tài liệu theo chủ trì (page-sync) | 0% | 100% | ★★★ Cao nhất
+2 | Highlight / Annotation đồng bộ realtime trên PDF | 0% | 90% | ★★★ Cao
+3 | Offline mode (PWA + IndexedDB cache tài liệu) | 0% | 95% | ★★★ Cao
+4 | SMS Gateway nhắc lịch họp & thay đổi | 0% | 100% | ★★ Trung bình
+5 | Versioning + Lock tài liệu khi đã trình | 20% | 100% | ★★ Trung bình
+6 | Ghi chú cá nhân + Ghi chú chia sẻ chủ trì-thư ký | 20% | 100% | ★★ Trung bình
+7 | Gắn biên bản theo từng ý kiến (rich-text reference) | 60% | 100% | ★ Bổ sung
+8 | In tài liệu phân quyền + log in | 70% | 100% | ★ Bổ sung
+9 | Theo dõi mức độ đọc tài liệu của đại biểu | 0% | 90% | ★ Bổ sung
+10 | Tích hợp Zalo OA nội bộ (gửi giấy mời) | 0% | 100% | ★ Tùy chọn
+
+--- TABLE ---
+Tính năng mới | Công nghệ | Ghi chú
+Đồng bộ trình chiếu | WebSocket (FastAPI) + Redis pub/sub | Tận dụng hạ tầng có sẵn — không thêm dependency
+Annotation realtime | PDF.js Annotation Editor (built-in) | Mã nguồn mở, đã tích hợp sẵn trong Mozilla PDF.js
+PWA Offline | next-pwa + Workbox + Dexie.js (IndexedDB wrapper) | Tất cả MIT license, miễn phí
+SMS Gateway | Viettel Brand Name API (hoặc eSMS / VNPT SMS) | Phí ~250-400đ/tin nhắn — cần đăng ký Brand Name
+Zalo OA | Zalo Official Account API + ZNS template | Cần duyệt mẫu ZNS — phí ~200-400đ/tin
+Versioning file | MinIO native versioning (bật trên bucket) | Có sẵn trong MinIO — không cần code thêm logic lưu trữ
+Editor biên bản | TipTap (ProseMirror) | Đã được dùng trong Module 9 — chỉ thêm extension
+
+--- TABLE ---
+Thứ | Công việc chi tiết | Khu vực | Sản phẩm bàn giao
+Th.2 | Tích hợp SMS Gateway: chọn nhà cung cấp (Viettel Brand Name / eSMS), đăng ký Brand Name, tạo service sms_service.py | Backend | Service SMS chạy được test
+Th.3 | Soạn 5 template SMS chuẩn: nhắc lịch 24h, nhắc 1h, đổi giờ, hủy họp, nhắc nhiệm vụ. Tích hợp Celery scheduled task | Backend | Test gửi SMS thành công đến 5 số
+Th.4 | Bảng tai_lieu_phien_ban + bật MinIO versioning. API: lấy danh sách phiên bản, rollback phiên bản cũ | Backend + DB | Versioning hoạt động end-to-end
+Th.5 | Cờ trạng thái khóa tài liệu (is_locked, locked_by, locked_at). Business rule: tài liệu locked → readonly | Backend | Lock/unlock thử nghiệm OK
+Th.6 | Bảng meeting.ghi_chu (loại CA_NHAN / CHIA_SE). API CRUD ghi chú cá nhân + ghi chú chia sẻ chủ trì-thư ký | Backend | CRUD ghi chú test pass
+Th.7 | Cờ cho_phep_in trên tai_lieu. Hook frontend disable Ctrl+P khi không có quyền. Log lich_su_in_tai_lieu | Backend + FE | Phân quyền in hoạt động
+
+--- TABLE ---
+Thứ | Công việc chi tiết | Khu vực | Sản phẩm bàn giao
+Th.2 | Thiết kế WebSocket channel /ws/meeting/{id}/presentation. Định nghĩa events: page_change, zoom_change, document_open. Phân quyền: chỉ chủ tọa được broadcast | Backend WS | WS endpoint hoạt động, test bằng wscat
+Th.3 | Tích hợp PDF.js viewer đầy đủ vào page chi tiết họp. Replace viewer cũ. Hook useState cho currentPage, zoom | Frontend | PDF viewer mới render đẹp trên Chrome/Firefox/Safari
+Th.4 | Implement chế độ "Theo chủ trì" (mặc định): listen WebSocket → tự động lật trang. Indicator góc phải: "Đang đồng bộ với chủ tọa" | Frontend | Mở 2 tab → chủ tọa lật → đại biểu tự động lật
+Th.5 | Implement chế độ "Xem độc lập": toggle button. Khi bật → ngắt listen WebSocket. Hiển thị banner: "Bạn đang xem độc lập — chủ tọa đang ở trang X" | Frontend | Toggle 2 chế độ mượt mà
+Th.6 | Nút "Quay lại theo chủ trì": jump tới trang chủ tọa đang ở. Đồng bộ zoom + scroll position (optional) | Frontend | Nút bấm hoạt động đúng
+Th.7 | Test đa thiết bị: PC chủ tọa + 5 client (laptop/tablet/mobile). Đo độ trễ. Xử lý reconnect khi mạng chập chờn | Test | Độ trễ < 500ms · Reconnect tự động
+
+--- TABLE ---
+Thứ | Công việc chi tiết | Khu vực | Sản phẩm bàn giao
+Th.2 | Bật PDF.js annotation editor layer. Implement 3 công cụ: highlight (đánh dấu vùng), draw (vẽ tự do), underline (gạch chân). Color picker cho chủ tọa | Frontend | 3 công cụ hoạt động trên 1 client
+Th.3 | WebSocket events: annotation_create / update / delete. Broadcast tới tất cả đại biểu. Lưu vào meeting.annotation (page, type, coords, color, owner) | Backend + FE | Annotation đồng bộ giữa các client
+Th.4 | Phân tách 2 lớp annotation: lớp chủ tọa (tất cả đại biểu thấy, màu cam) + lớp cá nhân (chỉ chủ sở hữu thấy, màu xanh). Toggle ẩn/hiện | Frontend | 2 lớp annotation rõ ràng
+Th.5 | Cài next-pwa. Cấu hình Service Worker với Workbox: tài liệu CacheFirst, API NetworkFirst, shell StaleWhileRevalidate | Frontend PWA | App cài được như PWA, hoạt động offline ở mức cơ bản
+Th.6 | Dexie.js (IndexedDB) — schema: documents, meetings, attendance_queue. Pre-download tự động khi user vào trang chi tiết họp (≤ 100MB/họp) | Frontend | Tài liệu offline xem được khi mất mạng
+Th.7 | Offline queue cho điểm danh QR + ghi chú: lưu IndexedDB → sync khi online. Banner trạng thái mạng. Test ngắt mạng giữa cuộc họp | Frontend | Cuộc họp tiếp tục được dù mất mạng
+
+--- TABLE ---
+Thứ | Công việc chi tiết | Khu vực | Sản phẩm bàn giao
+Th.2 | Tracking đọc tài liệu: ghi nhận mỗi lần mở tài liệu, thời gian dừng ở mỗi trang (heartbeat 30s). Bảng meeting.luot_doc_tai_lieu | Backend + FE | Số liệu tracking lưu được DB
+Th.3 | Dashboard "Mức độ tham gia": cho mỗi cuộc họp hiển thị tỷ lệ % đại biểu đã đọc tài liệu, thời gian đọc trung bình | Frontend | Trang thống kê hiển thị đẹp
+Th.4 | Editor biên bản nâng cấp (TipTap): thư ký chèn block "Trích ý kiến" → reference đến y_kien.id. Khi xuất PDF biên bản, ý kiến hiển thị dạng quote | Frontend | Biên bản link được vào ý kiến
+Th.5 | Tích hợp Zalo OA (nếu có Brand Account): gửi giấy mời + nhắc lịch qua Zalo Notification. Fallback: dùng SMS nếu CBCC chưa kết bạn OA | Backend | Test gửi Zalo thành công
+Th.6 | UAT 2 ngày với Văn phòng: chạy 2-3 cuộc họp thử thực tế. Ghi nhận bug, đánh giá UX | UAT | Biên bản UAT, danh sách bug
+Th.7 | Sửa bug critical, deploy production, cập nhật tài liệu hướng dẫn người dùng. Đào tạo Thư ký 60 phút | Deploy | Production live · Đã đào tạo
+
+--- TABLE ---
+Tiêu chí nghiệm thu | Mục tiêu | Cách đo
+Đồng bộ trình chiếu: chủ tọa lật trang → tất cả đại biểu lật theo trong < 500ms | ≥ 95% lần | Đo bằng cách bấm 50 lần lật
+Toggle "Theo chủ trì" / "Xem độc lập" hoạt động trên PC và mobile | 100% | Test 2 thiết bị mỗi loại
+Annotation chủ tọa hiển thị trên 5 client cùng lúc, đồng bộ trong 1 giây | ≥ 90% lần | Đo 30 lần annotation
+Tài liệu pre-download và xem được offline (ngắt Wi-Fi) | 100% | Test với 3 cuộc họp
+Điểm danh QR offline, sync về DB khi online | 100% | Test mất mạng giữa điểm danh
+SMS nhắc lịch họp 24h gửi đến đúng số CBCC | 100% | Gửi đến 20 số test
+SMS thông báo đổi/hủy họp gửi tức thì | ≤ 30 giây | Đo 10 lần đổi lịch
+Lock tài liệu: locked → không cho sửa/xóa kể cả admin | 100% | Try sửa 5 tài liệu locked
+Versioning: rollback về phiên bản cũ thành công | 100% | Test 5 tài liệu × 3 phiên bản
+Phân quyền in: đại biểu "không cho in" → Ctrl+P bị chặn | 100% | Test trên Chrome/Firefox/Edge
+
+--- TABLE ---
+Rủi ro | Mức độ | Biện pháp giảm thiểu
+WebSocket bị ngắt khi mạng chập chờn — đại biểu mất đồng bộ | Cao | Reconnect tự động + state recovery (lưu currentPage trong Redis); Khi reconnect → fetch state hiện tại
+PDF.js annotation render khác nhau giữa các trình duyệt | Trung bình | Test sớm trên Chrome/Firefox/Safari/Edge; Lưu coord theo % thay vì pixel; Chấp nhận sai lệch ≤ 5px
+IndexedDB hết quota khi cache nhiều tài liệu | Trung bình | Giới hạn 100MB/cuộc họp · LRU eviction · Cảnh báo người dùng khi gần đầy
+SMS Brand Name chưa duyệt kịp — không gửi được | Cao | Đăng ký Brand Name từ Tuần 1 (5-10 ngày làm việc); Fallback dùng email + thông báo nội bộ trong khi chờ
+Zalo OA cần duyệt template ZNS — chậm | Thấp | Đặt là tính năng tùy chọn (Tuần 4); Có thể lùi sang Phase 5 nếu chưa duyệt kịp
+UAT phát sinh nhiều bug ở Tuần 4 — không kịp deploy | Trung bình | Buffer 2 ngày Tuần 4; Bug critical ưu tiên fix; Bug minor ghi backlog
+1 người phát triển — quá tải khi gặp bug khó | Cao | AI hỗ trợ (Claude/ChatGPT/Gemini); Code review chéo; Có thể giãn lộ trình thành 5 tuần nếu cần
+
+--- TABLE ---
+Hạng mục | Chi phí dự kiến | Ghi chú
+SMS Brand Name (đăng ký + duy trì) | 1.000.000 đ/năm | Tham khảo Viettel Brand Name — phí 1 lần đăng ký
+SMS gửi tin (ước tính) | 300đ × ~3.000 tin/tháng = 900.000 đ/tháng | Trung bình 549 CBCC × ~5 tin/tháng
+Zalo ZNS (tùy chọn) | 200-400đ/tin × ước tính 2.000 tin = 400-800k/tháng | Có thể không bật nếu CBCC chưa quen Zalo OA
+Tăng dung lượng MinIO (tài liệu offline cache) | 0 đ | Dùng chung VPS hiện tại — chưa cần nâng cấp
+Phần mềm phát triển (PDF.js, PWA, Dexie) | 0 đ | 100% mã nguồn mở MIT/Apache
+Nhân sự phát triển | 1 người × 4 tuần | Phòng CNTT, không phát sinh chi phí thuê ngoài
+
+--- TABLE ---
+Nhóm chức năng VP yêu cầu | Trước Phase 4 | Sau Phase 4 | Cải thiện
+Nhóm 1 — Chức năng lõi | 67% | 94% | +27 điểm
+Nhóm 2 — Điều hành & sau họp | 83% | 98% | +15 điểm
+Nhóm 3 — Yêu cầu kỹ thuật | 85% | 96% | +11 điểm
+Nhóm 4 — Đề xuất thêm | 50% | 75% | +25 điểm
+TỔNG MỨC ĐÁP ỨNG | 72% | 92-93% | +20 điểm
+
+--- TABLE ---
+NGƯỜI LẬP KẾ HOẠCH
+(Ký, ghi rõ họ tên) | TRƯỞNG PHÒNG CNTT
+(Ký, ghi rõ họ tên)

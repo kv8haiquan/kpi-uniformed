@@ -44,6 +44,10 @@ from meeting_service.api.endpoints.ket_luan import (
     router_thong_ke as thong_ke_router,
 )
 from meeting_service.api.endpoints.cong_chuc import router as cong_chuc_router
+from meeting_service.api.endpoints.nhom_thanh_phan import (
+    router as nhom_thanh_phan_router,
+    router_cuoc_hop as nhom_thanh_phan_cuoc_hop_router,
+)
 from meeting_service.scheduler import start_scheduler, stop_scheduler
 
 
@@ -96,6 +100,8 @@ app.include_router(ket_luan_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(ket_luan_cuoc_hop_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(thong_ke_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(cong_chuc_router, prefix="/api/v1/hop-khong-giay")
+app.include_router(nhom_thanh_phan_router, prefix="/api/v1/hop-khong-giay")
+app.include_router(nhom_thanh_phan_cuoc_hop_router, prefix="/api/v1/hop-khong-giay")
 
 
 @app.get("/health", tags=["System"])

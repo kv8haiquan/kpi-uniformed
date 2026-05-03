@@ -1,0 +1,64 @@
+MỘT SỐ ĐIỂM MỚI
+1. Mô hình hóa hệ thống hoàn chỉnh (end-to-end)
+10 module rõ ràng, có logic liên kết 
+Có luồng nghiệp vụ đầy đủ: 
+trước họp → trong họp → sau họp 
+Có cả lấy ý kiến từ xa, kết luận, theo dõi nhiệm vụ 
+
+2. Mô tả dữ liệu & kiến trúc (điểm vượt trội quan trọng nhất)
+a. Thiết kế database (17 bảng)
+Ví dụ:
+cuoc_hop 
+thanh_phan 
+bieu_quyet 
+bien_ban 
+ket_luan 
+tien_do … 
+
+b. Kiến trúc kỹ thuật rõ ràng
+FastAPI + Next.js + PostgreSQL + Redis + MinIO 
+WebSocket realtime 
+Jitsi nội bộ 
+Nginx, Celery, JWT… 
+
+3. Có logic vận hành thực tế (không chỉ chức năng)
+HKG mô tả các cơ chế “thực chiến”:
+Ví dụ:
+Tự động duyệt xin phép vắng theo thời gian 
+3 tầng nhắc họp (24h – 1h – 30p) 
+Phân quyền theo đơn vị + vai trò + cấp lãnh đạo 
+Trạng thái cuộc họp tự động 
+
+4. Tích hợp chữ ký số hoàn chỉnh (điểm rất mạnh)
+CKS cá nhân + công vụ 
+Luồng ký đầy đủ 
+PAdES, QR xác thực, hash SHA-256 
+
+5. Bao phủ đầy đủ vòng đời cuộc họp (full lifecycle)
+
+6. Có nguyên tắc triển khai MVP (tư duy sản phẩm)
+Phase 1: chức năng cốt lõi 
+Phase 2–3: nâng cao 
+👉 Đây là tư duy:
+làm thật – chạy được – mở rộng dần 
+
+7. Gắn chặt với thực tế tổ chức HQKV8
+HKG:
+Map đúng 14 đơn vị 
+Không có cấp Tổ 
+Họp Đảng dùng chung hệ thống 
+
+8. Có tiêu chí nghiệm thu & vận hành
+HKG có:
+tiêu chí test 
+backup 
+audit log 
+bảo mật 
+monitoring 
+
+
+--- TABLE ---
+Giai đoạn | HKG | Văn phòng | Tờ trình
+Trước họp | ✓ rất chi tiết | ✓ | ✓
+Trong họp | ✓ sâu (realtime, video, biểu quyết) | ✓ | ✓
+Sau họp | ✓ rất mạnh (giao việc, theo dõi tiến độ) | ✓ nhưng chưa hệ thống | yếu

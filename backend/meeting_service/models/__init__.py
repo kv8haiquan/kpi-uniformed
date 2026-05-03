@@ -12,6 +12,7 @@ from meeting_service.models.ket_luan import KetLuan
 from meeting_service.models.tien_do import TienDo
 from meeting_service.models.mau_bieu import MauBieu
 from meeting_service.models.trang_thai_trinh_chieu import TrangThaiTrinhChieu
+from meeting_service.models.nhom_thanh_phan import NhomThanhPhan, NhomThanhPhanChiTiet
 
 __all__ = [
     "Base",
@@ -26,4 +27,6 @@ __all__ = [
     "TienDo",
     "MauBieu",
     "TrangThaiTrinhChieu",
+    "NhomThanhPhan",
+    "NhomThanhPhanChiTiet",
 ]

@@ -1,0 +1,1294 @@
+                                                  HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+
+
+                           CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+                                      Độc lập – Tự do – Hạnh phúc
+                                ────────────────────────────
+
+
+
+                             CHI CỤC HẢI QUAN KHU VỰC VIII
+                                 PHÒNG CÔNG NGHỆ THÔNG TIN
+
+
+                                            HỒ SƠ DỰ ÁN
+
+                 HỆ THỐNG HỌP KHÔNG GIẤY
+                              (HKG — Meeting Paperless System)
+                                      Phiên bản 5.0 · Tháng 4/2026
+
+
+Đơn vị chủ trì
+Phòng Công nghệ Thông tin — Chi cục Hải quan KV VIII
+Phạm vi
+549 CBCC · 14 đơn vị · Phòng/Đội/Bộ phận (không có Tổ)
+Khối họp
+Đảng + Chuyên môn + Hành chính + Ban/Nhóm
+Hình thức
+Trực tiếp · Họp video trực tuyến · Lấy ý kiến từ xa · Hybrid
+Nền tảng
+Web app độc lập — domain/subdomain riêng
+Môi trường test
+PC cơ quan i5-14500 + MacBook M5 (WSL2 — chỉ dev/test)
+Production
+Ubuntu Server (Viettel Cloud hoặc máy chủ nội bộ)
+AI hỗ trợ phát triển
+Claude AI Pro + ChatGPT Plus + Gemini Ultra
+Lộ trình
+6 tuần · 3 Phase · 1 người phát triển chính · Nguyên tắc MVP
+Chữ ký số
+CKS Công vụ (tổ chức) + CKS Cá nhân (CBCC)
+Chi phí phần mềm
+0 đồng — toàn bộ mã nguồn mở
+Phiên bản
+
+                                                 Trang 1 / 30
+                              HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+5.0 · Tháng 4/2026
+
+
+
+
+                     Tuần Châu, tháng 4 năm 2026
+
+
+
+
+                             Trang 2 / 30
+                                            HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN I. BỐI CẢNH & SỰ CẦN THIẾT
+
+1.1. Bối cảnh
+Chi cục Hải quan Khu vực VIII (HQKV8) gồm 14 đơn vị chuyên môn với 549 CBCC, hoạt động trải dài
+trên địa bàn tỉnh Quảng Ninh. Cơ cấu tổ chức gồm Phòng, Đội và Bộ phận (không có cấp Tổ). Đơn vị
+đang triển khai Nền tảng Số HQKV8 với các module KPI, LMS, Diễn đàn nghiệp vụ. Module Họp
+Không Giấy (HKG) là mảnh ghép cuối cùng để hoàn thiện hệ sinh thái số nội bộ, được xây dựng dưới
+dạng web app độc lập ngay từ đầu.
+
+
+
+1.2. Cơ cấu tổ chức thực tế
+I. Khối Chuyên môn — Chi cục HQKV8
+Cơ cấu tổ chức: Chi cục trưởng → Phó Chi cục trưởng → Phòng / Đội / Hải quan cửa khẩu → Bộ
+phận (không có cấp Tổ).
+
+
+ ST                     Đơn vị                  Cấp tổ chức                 Ghi chú
+  T
+
+       Chi cục trưởng                         Lãnh đạo Chi cục    Xem toàn bộ HKG
+
+       Phó Chi cục trưởng                     Lãnh đạo Chi cục    Xem toàn bộ HKG
+
+ 1     Văn phòng                              Phòng               Chánh VP xem toàn bộ HKG
+
+ 2     Phòng Tổ chức cán bộ                   Phòng
+
+ 3     Phòng Công nghệ thông tin              Phòng               Trưởng phòng CNTT xem
+                                                                  toàn bộ · Chủ trì HKG
+
+ 4     Phòng Nghiệp vụ Hải quan               Phòng
+
+ 5     Phòng Quản lý rủi ro                   Phòng
+
+ 6     Đội Phúc tập và kiểm tra sau thông     Đội
+       quan
+
+ 7     Đội Thông quan                         Đội
+
+ 8     Đội Kiểm soát Hải quan                 Đội
+
+ 9     Hải quan cửa khẩu cảng Hòn Gai         Hải quan CK
+
+ 10    Hải quan cửa khẩu Quốc tế Móng Cái     Hải quan CK
+
+ 11    Hải quan cửa khẩu cảng Cẩm Phả         Hải quan CK
+
+ 12    Hải quan cửa khẩu Hoành Mô             Hải quan CK
+
+
+
+                                            Trang 3 / 30
+                                                  HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+ ST                         Đơn vị                    Cấp tổ chức                 Ghi chú
+  T
+
+ 13           Hải quan cửa khẩu Bắc Phong Sinh      Hải quan CK
+
+ 14           Hải quan cửa khẩu cảng Vạn Gia        Hải quan CK
+
+
+
+ 📌 Lưu ý cơ cấu tổ chức
+          •     Dưới Phòng và Đội chỉ có Bộ phận — KHÔNG có cấp Tổ.
+          •     Đơn vị chủ trì dự án HKG là Phòng Công nghệ Thông tin (không phải Tổ CNTT).
+          •     Cấp tổ chức trong HKG: Chi cục → Phòng / Đội / HQ Cửa khẩu → Bộ phận.
+
+
+
+II. Khối Đảng — Đảng bộ Chi cục HQKV8
+14 Chi bộ trực thuộc tương ứng 1-1 với 14 đơn vị chuyên môn. Họp Đảng KHÔNG tách thành
+module riêng — sử dụng chung hệ thống với họp Chuyên môn/Hành chính, chỉ khác tiêu đề văn bản
+và chức danh ký.
+
+
+              Cơ cấu Đảng bộ
+
+ Bí thư Đảng ủy
+
+ Phó Bí thư Đảng ủy
+
+ Ban Thường vụ Đảng ủy
+
+ Ban Chấp hành Đảng ủy
+
+ Ủy ban Kiểm tra Đảng ủy
+
+ Tổ Tham mưu công tác Đảng
+
+ 14 Chi bộ trực thuộc                 Chi bộ Văn phòng · Chi bộ Phòng TCCB · Chi bộ Phòng CNTT ·
+                                      Chi bộ Phòng NV · Chi bộ Phòng QLRR · Chi bộ Đội Phúc tập ·
+                                      Chi bộ Đội Thông quan · Chi bộ Đội KSHQ · Chi bộ HQ CK Hòn
+                                      Gai · Chi bộ HQ CK Móng Cái · Chi bộ HQ CK Cẩm Phả · Chi bộ
+                                      HQ CK Hoành Mô · Chi bộ HQ CK Bắc Phong Sinh · Chi bộ HQ
+                                      CK Vạn Gia
+
+
+
+
+III. Các Ban, Nhóm
+      •       Ban Chỉ đạo 57
+      •       Và các Ban, Nhóm khác được thành lập theo quyết định của Chi cục trưởng
+
+
+
+
+                                                  Trang 4 / 30
+                                                HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+1.3. Quyết định kiến trúc — Web App độc lập
+HKG được xây dựng dưới dạng web app RIÊNG BIỆT với domain/subdomain riêng (ví dụ:
+hkg.hqkv8.vn), cơ sở dữ liệu schema riêng, không nhúng vào kpi.kv08.vn. Lý do: độc lập hoàn toàn,
+dễ bảo trì, không ảnh hưởng hệ thống đang vận hành. Tích hợp SSO là tùy chọn ở giai đoạn sau.
+
+
+
+1.4. Chiến lược triển khai 3 giai đoạn
+       Giai đoạn               Môi trường                       Mục đích              Thời điểm
+
+ Giai đoạn 1           PC cơ quan i5-14500               Dev & Test · CBCC LAN      Trong 6 tuần
+                       (WSL2 + Ubuntu)                   thử                        phát triển
+
+ Giai đoạn 2           Ubuntu Server (Viettel            Production · Toàn Chi      Sau khi test
+                       Cloud)                            cục                        OK
+
+ Giai đoạn 3           Tích hợp kpi.kv08.vn (tùy         SSO chung nếu cần          Giai đoạn dài
+                       chọn)                                                        hạn
+
+
+
+
+1.5. Nguyên tắc triển khai (MVP)
+   •   Phase 1 ưu tiên: tạo họp, gửi giấy mời, tài liệu, điểm danh, ý kiến, biên bản, kết luận.
+   •   Chức năng nâng cao (họp video, CKS chính thức, dashboard AI...) triển khai sau khi cốt lõi
+       ổn định.
+   •   Go-live sớm ở mức "đủ dùng" thay vì chờ hoàn thiện toàn bộ.
+
+
+
+
+                                                Trang 5 / 30
+                                              HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN II. MÔ TẢ CHỨC NĂNG (10 MODULE + CHỮ KÝ SỐ)
+
+2.1. Nguyên tắc phân quyền xem dữ liệu
+Hệ thống áp dụng nguyên tắc: cấp nào xem được cấp đó. Một số chức danh cụ thể được mở rộng
+quyền xem toàn bộ Chi cục do yêu cầu nghiệp vụ điều phối và quản trị hệ thống.
+
+
+           Đối tượng                     Phạm vi xem trong HKG                     Cơ sở
+
+ CBCC thường                     Cuộc họp đơn vị mình được mời             Cấp nào xem cấp đó
+
+ Thư ký Phòng/Đội                Cuộc họp và biên bản của đơn vị mình      Phạm vi đơn vị
+                                 KHÔNG xem thống kê đơn vị khác
+
+ Trưởng/Phó Phòng, Đội           Toàn bộ cuộc họp và thống kê đơn vị       Lãnh đạo đơn vị
+                                 mình
+
+ Chánh Văn phòng                 Toàn bộ Chi cục — mọi cuộc họp, biên      Điều phối lịch họp
+                                 bản, thống kê                             toàn CC
+
+ Trưởng phòng CNTT               Toàn bộ Chi cục — mọi cuộc họp, biên      Quản trị hệ thống
+                                 bản, thống kê
+
+ Lãnh đạo Chi cục (Chi cục       Toàn bộ Chi cục — mọi cuộc họp, biên      Lãnh đạo toàn đơn vị
+ trưởng, Phó CCT)                bản, thống kê
+
+ Admin hệ thống (Phòng CNTT)     Toàn bộ + cấu hình + quản lý user         Quản trị kỹ thuật
+
+
+
+ 🔑 Tóm tắt quy tắc phân quyền
+     •     CBCC và Thư ký Phòng/Đội: chỉ xem dữ liệu đơn vị mình — KHÔNG xem thống kê
+           đơn vị khác.
+     •     Trưởng/Phó đơn vị: xem toàn bộ đơn vị mình phụ trách.
+     •     Xem toàn bộ Chi cục: Lãnh đạo Chi cục (CCT, Phó CCT) + Chánh Văn phòng +
+           Trưởng phòng CNTT.
+     •     Admin kỹ thuật: Phòng CNTT — toàn quyền cấu hình, quản lý user, import/export.
+
+
+
+
+2.2. Vai trò trong từng cuộc họp
+           Vai trò                  Mã                            Quyền chính
+
+ Cán bộ Công chức            CBCC                Xem họp được mời, điểm danh, biểu quyết, gửi
+                                                 ý kiến, xem tài liệu
+
+ Chủ tọa                     CHU_TOA             Tạo/sửa/hủy họp, duyệt xin phép vắng,
+                                                 mở/đóng biểu quyết, ký biên bản
+
+
+
+                                              Trang 6 / 30
+                                                 HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+           Vai trò                     Mã                            Quyền chính
+
+ Thư ký                      THU_KY                 Upload tài liệu, ghi biên bản, xuất PDF/DOCX,
+                                                    theo dõi kết luận đơn vị mình
+
+ Lãnh đạo đơn vị             LANH_DAO_DV            Xem thống kê toàn đơn vị
+                                                    (is_lanh_dao_dv=TRUE)
+
+ Xem toàn bộ CC              XEM_TOAN_BO            Lãnh đạo CC + Chánh VP + Trưởng phòng
+                                                    CNTT — xem tất cả
+
+ Admin                       ADMIN                  Toàn quyền cấu hình, quản lý user,
+                                                    import/export (Phòng CNTT)
+
+
+
+
+2.3. Biên bản họp Đảng và họp Chuyên môn
+Hệ thống KHÔNG tách riêng module hay luồng xử lý cho họp Đảng. Toàn bộ quy trình (tạo họp, điểm
+danh, biểu quyết, biên bản, CKS) dùng chung. Sự khác biệt chỉ ở lớp hiển thị:
+
+
+          Yếu tố           Họp Chuyên môn / Hành chính                 Họp Chi bộ / Đảng ủy
+
+ Quy trình tạo họp        Giống nhau hoàn toàn                   Giống nhau hoàn toàn
+
+ Điểm danh                Giống nhau                             Giống nhau
+
+ Biểu quyết               Giống nhau                             Giống nhau
+
+ Ghi biên bản             Giống nhau                             Giống nhau
+
+ Xuất PDF biên bản        Tiêu đề: "BIÊN BẢN HỌP" Chức           Tiêu đề: "BIÊN BẢN HỌP CHI BỘ"
+                          danh: Chủ tọa, Thư ký                  Chức danh: Bí thư, Thư ký Chi bộ
+
+ Template Word            Mẫu BB Chuyên môn                      Mẫu BB Chi bộ (khác tiêu đề, chức
+                                                                 danh)
+
+ Nội dung biên bản        Giống nhau                             Giống nhau — Thư ký tự điền theo
+                                                                 nghiệp vụ Đảng
+
+ Chữ ký số                CKS Cá nhân + CKS Công vụ              CKS Cá nhân + CKS Công vụ
+
+
+
+  📋 Nguyên tắc xử lý biên bản họp Đảng
+     •     Dùng chung 1 luồng xử lý — chỉ khác template (tiêu đề văn bản và chức danh ký).
+     •     Admin upload 2 loại template: Mẫu BB Chuyên môn và Mẫu BB Chi bộ.
+     •     Khi tạo họp chọn khối "Đảng" → hệ thống tự dùng template Chi bộ khi xuất biên bản.
+     •     Placeholder {{chu_tri}} hiển thị "Bí thư" hoặc "Chủ tọa" tùy theo khối họp.
+     •     Thư ký tự điền nội dung đặc thù theo nghiệp vụ Đảng — hệ thống không can thiệp
+
+
+
+                                                Trang 7 / 30
+                                            HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+         nội dung.
+
+
+
+
+2.4. Mô tả 10 Module
+Module 1 — Quản lý Cuộc họp
+   •   Tạo họp: tiêu đề, khối (Đảng/Chuyên môn/Hành chính/Ban-Nhóm), đơn vị tổ chức (chọn từ
+       14 đơn vị thực tế), hình thức, ngày giờ, địa điểm, chủ trì, thư ký.
+   •   Cấp tổ chức: Chi cục / Phòng / Đội / HQ Cửa khẩu / Bộ phận (không có cấp Tổ).
+   •   Mời thành phần: 2 nhóm Bắt buộc / Tham khảo. Hỗ trợ họp định kỳ (giao ban tuần/tháng).
+   •   Lịch họp: tháng/tuần/ngày. Lọc theo đơn vị, khối, trạng thái, hình thức.
+   •   Trạng thái tự động: Lên kế hoạch → Đã thông báo → Đang diễn ra → Hoàn thành / Hủy.
+
+
+Module 2 — Thông báo & Giấy mời điện tử
+   •   Gửi giấy mời tự động khi tạo họp (thông báo realtime + email).
+   •   Nhắc nhở 3 tầng: 24 giờ, 1 giờ, 30 phút trước họp (Celery + Redis).
+   •   CBCC xác nhận tham dự ngay trên thông báo. Cập nhật tức thì khi thay đổi hoặc hủy.
+
+
+Module 3 — Tài liệu Họp
+   •   Upload MinIO: PDF, Word, PowerPoint, Excel (tối đa 100MB/file).
+   •   Đọc trực tiếp trên trình duyệt (PDF.js) — không cần in, không cần tải về.
+   •   Phân quyền 3 cấp: Công khai / Hạn chế / Mật (watermark tên người xem).
+
+
+Module 4 — Điểm danh (3 hình thức)
+   •   QR Code: CBCC quét bằng điện thoại tại cửa phòng, ghi nhận đến giây.
+   •   Bấm trực tiếp: Thư ký/Admin bấm trên máy tính cho từng CBCC.
+   •   Tự động online: Ghi nhận khi CBCC join phòng họp video trực tuyến.
+   •   Trạng thái: Có mặt · Đến muộn (sau 5 phút) · Vắng có phép · Vắng không phép.
+
+
+Module 5 — Xin phép Vắng & Tự động Duyệt
+   •   CBCC gửi đơn: lý do, file đính kèm, đề xuất người dự thay.
+   •   Quy trình: Chủ tọa duyệt → không phản hồi 4 giờ → Thư ký → không phản hồi trước giờ
+       họp → Tự động đồng ý.
+   •   Có thể TẮT tự động đồng ý cho họp quan trọng (Lãnh đạo CC chủ trì, họp Đảng ủy).
+
+
+Module 6 — Họp video trực tuyến (nội bộ)
+   •   Ứng dụng họp video cài trên server LAN nội bộ (Jitsi Meet) — không phụ thuộc Internet.
+   •   Xác thực JWT SSO — không cần đăng nhập lại.
+
+                                            Trang 8 / 30
+                                             HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+   •   Tự động điểm danh khi CBCC join, ghi nhận giờ vào/ra.
+   •   Hỗ trợ: chia sẻ màn hình, chat nhóm, giơ tay phát biểu, ghi hình (lưu MinIO).
+   •   Giai đoạn Phase 1 (MVP): tính năng nâng cao — triển khai sau khi cốt lõi ổn định.
+
+
+Module 7 — Gửi Ý kiến & Lấy Ý kiến từ Xa
+   •   Gửi ý kiến 3 thời điểm: trước họp, trong họp, sau họp. Kèm file đính kèm.
+   •   Ý kiến realtime trên màn hình Thư ký để tổng hợp vào biên bản.
+   •   Lấy ý kiến từ xa: tạo phiên với nội dung, câu hỏi, tài liệu, hạn phản hồi.
+   •   Tổng hợp kết quả tự động khi hết hạn, xuất báo cáo PDF.
+
+
+Module 8 — Biểu quyết Điện tử Realtime
+   •   2 hình thức: Công khai (hiển thị tên + lựa chọn) và Kín (không tra ngược được).
+   •   CBCC bỏ phiếu (Đồng ý / Không đồng ý / Từ chối) trên điện thoại hoặc máy tính.
+   •   Kết quả cập nhật realtime qua WebSocket. Xuất PDF/Excel, lưu tự động vào biên bản.
+
+
+Module 9 — Biên bản Họp & Chữ ký số
+   •   Thư ký ghi biên bản trực tuyến (rich-text editor). Tự động điền: thành phần, điểm danh, ý
+       kiến, biểu quyết.
+   •   Họp Đảng và họp Chuyên môn: dùng chung luồng xử lý — chỉ khác template tiêu đề và
+       chức danh ký.
+   •   Luồng ký: Thư ký soạn → Trình ký Chủ tọa → CKS Cá nhân → CKS Công vụ tự động.
+   •   Xuất PDF: watermark + QR xác thực + CKS nhúng (PAdES) + hash SHA-256.
+
+
+Module 10 — Kết luận, Đánh giá & Thống kê
+   •   Kết luận tách bản ghi riêng: người phụ trách, hạn, tiến độ %, mức ưu tiên.
+   •   Tự động nhắc 3 ngày trước hạn; đánh dấu Trễ hạn tự động.
+   •   Dashboard theo phân quyền: CBCC xem cá nhân; Trưởng ĐV xem đơn vị; Lãnh đạo CC +
+       Chánh VP + Trưởng phòng CNTT xem toàn Chi cục.
+   •   Thư ký Phòng/Đội chỉ xem thống kê đơn vị mình — KHÔNG xem đơn vị khác.
+
+
+
+
+                                             Trang 9 / 30
+                                           HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN III. CHỮ KÝ SỐ — 2 DẠNG
+HKG hỗ trợ 2 dạng CKS theo quy định Việt Nam. Biên bản họp Đảng và Chuyên môn dùng chung
+luồng ký — chỉ khác template tiêu ngữ và chức danh.
+
+
+         Tiêu chí        CKS Công vụ (Tổ chức)                  CKS Cá nhân (CBCC)
+
+ Cấp cho             Chi cục HQKV8 (tổ chức)               Từng CBCC — Lãnh đạo, Chủ tọa,
+                                                           Thư ký
+
+ Giá trị pháp lý     Tương đương con dấu + chữ ký          Tương đương chữ ký tay cá nhân
+                     đơn vị
+
+ Lưu trữ             USB Token cắm máy chủ hoặc            USB Token cá nhân hoặc Remote
+                     HSM                                   Signing
+
+ Đơn vị cấp          CACC / VNPT-CA                        CACC, VNPT-CA, Viettel-CA,
+                                                           BKAV-CA
+
+ Trong HKG           Tự động đóng dấu sau Chủ tọa ký       Chủ tọa ký xác nhận, Thư ký ký
+                                                           nháy
+
+ Test                Mock signature (giả lập)              Mock signature (giả lập)
+
+ Production          API thật CACC / USB Token máy         Remote Signing API hoặc USB
+                     chủ                                   Token
+
+
+
+
+3.1. Luồng ký biên bản
+  Thư ký soạn biên bản → Bấm [Trình ký]
+     ↓
+  Chủ tọa / Bí thư nhận thông báo → Xem xét nội dung
+     ↓
+  Ký CKS Cá nhân (USB Token hoặc app Remote Signing)
+     ↓
+  Hệ thống tự động đóng CKS Công vụ
+     ↓
+  Biên bản PDF hoàn chỉnh:
+     ✅ CKS Chủ tọa/Bí thư (PAdES)
+     ✅ CKS Công vụ Chi cục (PAdES)
+     ✅ QR code xác thực online
+     ✅ Hash SHA-256 chống giả mạo
+     ↓
+  Lưu MinIO + thông báo toàn bộ thành phần
+
+
+
+
+3.2. Database
+  CREATE TABLE meeting.lich_su_chu_ky (
+
+
+                                          Trang 10 / 30
+                                               HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tai_lieu_loai VARCHAR(20) NOT NULL, -- bien_ban | ket_luan
+    tai_lieu_id   UUID NOT NULL,
+    loai_cks      VARCHAR(20) NOT NULL, -- ca_nhan | cong_vu
+    nguoi_ky_id   UUID,
+    thoi_gian_ky TIMESTAMPTZ,
+    hash_noi_dung VARCHAR(64),
+    ca_provider   VARCHAR(50),
+    signature_value TEXT,
+    is_valid      BOOLEAN DEFAULT TRUE,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+  );
+
+  ALTER TABLE meeting.bien_ban
+    ADD COLUMN trang_thai_ky VARCHAR(30) DEFAULT 'chua_ky',
+    ADD COLUMN hash_cuoi_cung VARCHAR(64);
+
+
+
+
+3.3. Triển khai theo giai đoạn
+           Giai đoạn                     Cách xử lý                            Mục đích
+
+ Dev/Test                   Mock Signature — giả lập, chỉ kiểm thử,   Build UI/UX, test nghiệp vụ
+                            không dùng cho văn bản chính thức
+
+ UAT                        API Sandbox CACC hoặc nhà cung cấp        Test tích hợp thực tế
+                            CA
+
+ Production                 API thật CACC + USB Token máy chủ         Ký có giá trị pháp lý đầy đủ
+                            (CKS Công vụ)
+
+
+
+ 🔑 Nguyên tắc & Định hướng nâng cao
+       •    Dev/Test: chỉ Mock Signature — không dùng cho văn bản chính thức.
+       •    Production: chỉ dùng CKS thật sau khi được cấp chứng thư hợp lệ và kiểm thử xong.
+       •    Định hướng nâng cao: tích hợp TSA (Time Stamping Authority) tăng giá trị xác thực.
+
+
+
+
+                                              Trang 11 / 30
+                                              HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN IV. KIẾN TRÚC KỸ THUẬT & CÔNG NGHỆ
+
+4.1. Quyết định kiến trúc — Web App độc lập
+HKG được xây dựng dưới dạng web app RIÊNG BIỆT: domain riêng (hkg.hqkv8.vn), schema
+PostgreSQL riêng (meeting), không nhúng vào kpi.kv08.vn. Đảm bảo độc lập hoàn toàn, dễ bảo trì,
+không ảnh hưởng hệ thống đang vận hành khi nâng cấp hoặc sự cố.
+
+
+
+4.2. Stack công nghệ
+      Thành phần                Công nghệ               Phiên bản               Ghi chú
+
+ Frontend               Next.js + TypeScript           16.x           App Router, SSR,
+                                                                      responsive, web app riêng
+
+ UI Components          shadcn/ui + Tailwind CSS       4.x            Component library hiện
+                                                                      đại
+
+ Backend                FastAPI + Python               0.115+ /       REST API, async,
+                                                       3.11           OpenAPI auto-gen
+
+ ORM + Migration        SQLAlchemy + Alembic           2.0            Schema "meeting" độc lập
+
+ Database               PostgreSQL                     15             Schema meeting, JSONB,
+                                                                      UUID, RLS
+
+ Cache & Queue          Redis                          7.x            Pub/sub, Celery queue
+
+ File Storage           MinIO                          latest         S3-compatible, bucket:
+                                                                      meeting
+
+ Họp video              Jitsi Meet (nội bộ)            latest         Self-host LAN, JWT SSO
+
+ Realtime               WebSocket + Redis              —              Biểu quyết, điểm danh
+                                                                      online
+
+ Background Jobs        Celery + Redis                 latest         Email, nhắc việc, báo cáo
+
+ Reverse Proxy          Nginx                          latest         HTTPS, route /api/ và /ws/
+
+ Process Manager        PM2 / systemd                  —              Auto-restart, monitoring
+
+ Xuất văn bản           python-docx + weasyprint       latest         DOCX, PDF, Excel
+                        + openpyxl
+
+ Chữ ký số              pyhanko + API CACC             latest         PAdES nhúng PDF
+
+ QR Code                qrcode (Python)                latest         Điểm danh + xác thực
+                                                                      biên bản
+
+ Email                  aiosmtplib                     latest         Gửi giấy mời, nhắc họp
+
+
+                                              Trang 12 / 30
+                                        HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+      Thành phần            Công nghệ             Phiên bản               Ghi chú
+
+                                                                 async
+
+
+
+
+4.3. Schema meeting — 17 bảng
+           Bảng             Mục đích                       Trường quan trọng
+
+cuoc_hop           Thông tin cuộc họp            id, tieu_de, khoi, don_vi_to_chuc,
+                                                 hinh_thuc, ngay_hop, trang_thai
+
+thanh_phan         Thành phần tham dự            hop_id, cbcc_id, loai_tham_du, xac_nhan
+
+tai_lieu           Tài liệu đính kèm             hop_id, ten_file, minio_key, phan_quyen
+
+diem_danh          Điểm danh                     hop_id, cbcc_id, hinh_thuc, trang_thai,
+                                                 gio_diem_danh
+
+xin_phep_vang      Đơn xin phép vắng             hop_id, cbcc_id, ly_do, file_kem,
+                                                 trang_thai, auto_approved
+
+bieu_quyet         Phiên biểu quyết              hop_id, noi_dung, hinh_thuc (Kín/Công
+                                                 khai), trang_thai
+
+phieu_bau          Phiếu bầu                     bieu_quyet_id, cbcc_id (NULL nếu kín),
+                                                 lua_chon
+
+y_kien             Ý kiến                        hop_id, cbcc_id, noi_dung, file_kem, loai
+                                                 (Trước/Trong/Sau)
+
+bien_ban           Biên bản họp                  hop_id, noi_dung, file_pdf, trang_thai_ky,
+                                                 hash_cuoi_cung
+
+lich_su_chu_ky     Lịch sử CKS                   tai_lieu_id, loai_cks, nguoi_ky_id, hash,
+                                                 ca_provider
+
+ket_luan           Kết luận/Nhiệm vụ             hop_id, noi_dung, nguoi_phu_trach_id,
+                                                 han_hoan_thanh, tien_do_%
+
+tien_do            Cập nhật tiến độ              ket_luan_id, mo_ta, phan_tram,
+                                                 file_minh_chung
+
+danh_gia_hop       Đánh giá hiệu quả             hop_id, cbcc_id, diem (1-5), nhan_xet
+
+lay_y_kien_tu_xa   Phiên lấy ý kiến từ xa        tieu_de, mo_ta, han_phan_hoi, trang_thai
+
+phan_hoi_tu_xa     Phản hồi từ xa                phien_id, cbcc_id, noi_dung, file_kem
+
+mau_bieu           Template mẫu biểu             loai, ten, minio_key, la_mac_dinh,
+                                                 phien_ban, ap_dung_cho
+
+
+
+
+                                        Trang 13 / 30
+                                          HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+        Bảng                   Mục đích                      Trường quan trọng
+
+lich_su_import_export   Log xuất/nhập              loai_thaotac, loai_du_lieu, dinh_dang,
+                                                   so_ban_ghi, trang_thai
+
+
+
+
+4.4. Cấu trúc CBCC — Phân quyền trong DB
+ -- Bảng CBCC (kếthừa hoặc tạo mới)
+ public.cong_chuc (
+    id              UUID PRIMARY KEY,
+    ho_ten          VARCHAR(100),
+    email           VARCHAR(100) UNIQUE,
+    don_vi          VARCHAR(100),   -- Tên đơn vị (14 đơn vị thực tế )
+    cap_don_vi      VARCHAR(20),    -- phong | doi | hq_ck | bo_phan
+    chuc_vu         VARCHAR(100),
+    -- Flags phân quyền HKG:
+    is_lanh_dao_cc BOOLEAN DEFAULT FALSE, -- CCT hoặc Phó CCT
+    is_chanh_vp     BOOLEAN DEFAULT FALSE, -- Chánh Văn phòng
+    is_truong_cntt BOOLEAN DEFAULT FALSE, -- Trưởng phòng CNTT
+    is_lanh_dao_dv BOOLEAN DEFAULT FALSE, -- Trưởng/Phó Phòng, Đội
+    is_thu_ky_dv    BOOLEAN DEFAULT FALSE, -- Thư ký Phòng/Đội
+    is_dang_vien    BOOLEAN DEFAULT FALSE, -- Đảng viên
+    is_admin        BOOLEAN DEFAULT FALSE, -- Admin kỹ thuật (Phòng CNTT)
+    trang_thai      VARCHAR(20) DEFAULT 'hoat_dong',
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+ );
+
+ -- Logic phân quyền:
+ -- Xem toàn bộ CC: is_lanh_dao_cc OR is_chanh_vp OR is_truong_cntt OR is_admin
+ -- Xem toàn đơn vị: is_lanh_dao_dv (don_vi = đơn vị của mình)
+ -- Xem đơn vị mình: tất cả CBCC còn lại (don_vi = đơn vị của mình)
+
+
+
+
+                                          Trang 14 / 30
+                                                HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN V. LỘ TRÌNH TRIỂN KHAI — 6 TUẦN
+
+5.1. Nguồn lực & AI hỗ trợ
+            Yếu tố                        Giá trị                            Ảnh hưởng
+
+ Nhân lực                     1 người (Phòng CNTT)               Tập trung, không cần phối hợp,
+                                                                 quyết định nhanh
+
+ Thời gian/ngày               2–4 giờ (chiều + tối)              ~21 giờ hiệu quả/tuần
+
+ Claude Pro                   Kiến trúc, backend FastAPI,        Viết code nhanh, review kỹ thuật
+                              DB schema, logic nghiệp vụ
+
+ ChatGPT Plus                 UI Next.js, CSS/Tailwind,          Giao diện người dùng, UX
+                              debug frontend
+
+ Gemini Ultra                 Review code, phân tích rủi ro      Đảm bảo chất lượng, phát hiện lỗi
+                              bảo mật, kiểm tra logic
+
+
+
+ ⚠️ Nguyên tắc sử dụng AI an toàn
+     •   Code do AI sinh ra BẮT BUỘC rà soát, kiểm thử trước khi deploy — đặc biệt phần
+         phân quyền, truy vấn DB, xác thực.
+     •   Quản lý phiên bản Git — commit thường xuyên để rollback khi cần.
+     •   Không deploy production bất kỳ đoạn code nào chưa được kiểm tra bảo mật.
+
+
+
+
+5.2. Lộ trình 3 Phase
+   Phase             Tuần     Module                    Nội dung chính                   Sản phẩm
+
+ Phase 1 Cốt      1–2       1,2,3,4,5       DB 17 bảng · CRUD API · JWT auth ·           Web app cơ
+ lõi MVP                                    MinIO Điểm danh QR + bấm · Xin phép          bản CBCC
+                                            vắng Frontend: lịch họp, tạo họp, tài liệu   LAN dùng
+                                                                                         thử
+
+ Phase 2          3–4       6,7,8,9         Họp video + JWT SSO · Biểu quyết             Đầy đủ tính
+ Nâng cao                                   WebSocket Gửi/lấy ý kiến · Biên bản ·        năng Mock
+                                            Mock CKS Phân quyền xem dữ liệu đầy          chữ ký số
+                                            đủ
+
+ Phase 3          5–6       10+CKS          Dashboard 3 cấp · Kết luận ·                 Production
+ Hoàn thiện                 +IO+Deploy      Import/Export CKS Sandbox · UAT 20–          live CKS thật
+                                            30 CBCC Deploy Ubuntu Server · Đào           · Nghiệm thu
+                                            tạo
+
+
+
+
+                                               Trang 15 / 30
+                                             HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+5.3. Kế hoạch tuần chi tiết
+TUẦN 1 — Backend + DB
+  •   Th.2–3: Cài môi trường. Khởi tạo Next.js + FastAPI. Cấu trúc project.
+  •   Th.4–5: Alembic 17 bảng. CRUD API. MinIO. JWT auth.
+  •   Th.6–7: Swagger UI test. Seed data 14 đơn vị.
+
+
+TUẦN 2 — Frontend + Điểm danh + Phân quyền
+  •   Th.2–3: Layout + Sidebar. Lịch họp. Danh sách cuộc họp.
+  •   Th.4–5: Form tạo họp. Chi tiết họp. PDF viewer.
+  •   Th.6–7: QR + Bấm điểm danh. Xin phép vắng. Phân quyền xem dữ liệu.
+
+
+TUẦN 3 — Họp video + Biểu quyết + Ý kiến
+  •   Th.2–3: Jitsi Meet Docker. JWT SSO. Auto-attendance.
+  •   Th.4–5: WebSocket biểu quyết realtime.
+  •   Th.6–7: Gửi ý kiến. Lấy ý kiến từ xa. Celery nhắc.
+
+
+TUẦN 4 — Biên bản + Template Đảng/CM + Mock CKS
+  •   Th.2–3: Editor biên bản. Auto-fill dữ liệu.
+  •   Th.4–5: 2 template Word: Chuyên môn và Chi bộ. Xuất DOCX + PDF.
+  •   Th.6–7: UI luồng ký đầy đủ (Mock). Watermark + QR.
+
+
+TUẦN 5 — Dashboard phân quyền + Kết luận + Export
+  •   Th.2–3: Dashboard 3 cấp (cá nhân/đơn vị/toàn CC) theo phân quyền.
+  •   Th.4–5: Kết luận + tiến độ + nhắc hạn. Module Import/Export.
+  •   Th.6–7: API Sandbox CKS. Test ký thật.
+
+
+TUẦN 6 — UAT + Deploy + Nghiệm thu
+  •   Th.2–3: UAT 20–30 CBCC. 2–3 cuộc họp thực tế.
+  •   Th.4: Sửa bug. Tối ưu hiệu năng. Kiểm tra phân quyền.
+  •   Th.5: Deploy Ubuntu Server. Nginx HTTPS.
+  •   Th.6: Đào tạo Thư ký + Admin Phòng CNTT (90 phút).
+  •   Th.7: Vận hành chính thức. Bàn giao + biên bản nghiệm thu.
+
+
+
+
+                                            Trang 16 / 30
+                                       HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+5.4. Tiêu chí nghiệm thu
+           Nhóm                            Tiêu chí nghiệm thu
+
+Tài khoản          CBCC đăng nhập, truy cập đúng cuộc họp được mời
+
+Phân quyền         Thư ký Phòng/Đội KHÔNG xem thống kê đơn vị khác; Lãnh đạo CC +
+                   Chánh VP + Trưởng phòng CNTT xem toàn bộ
+
+Tài liệu           Upload, xem PDF, phân quyền và watermark hoạt động đúng
+
+Điểm danh          QR/bấm trực tiếp ghi nhận chính xác thời gian
+
+Biên bản           Tự động tổng hợp; template Chuyên môn và Chi bộ xuất đúng tiêu đề
+
+Kết luận           Giao việc, nhắc hạn, cập nhật tiến độ chính xác
+
+Bảo mật            Audit log đầy đủ; không truy cập trái quyền
+
+Sao lưu            Có file backup và kiểm tra khôi phục thành công
+
+
+
+
+                                      Trang 17 / 30
+                                              HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN VI. HẠ TẦNG & PHÂN CÔNG MÁY
+          Máy                     Cấu hình                          Vai trò                Ghi chú
+
+MacBook Pro M5           Apple M5 · macOS                 Viết code, SSH, IDE            Máy chính
+                                                          chính                          hàng ngày
+
+PC Cơ quan               i5-14500 · 16GB ·                Dev/Test · CBCC LAN            CHỈ dev/test
+                         Win11+WSL2                       thử
+
+Ubuntu Server            Viettel Cloud hoặc máy chủ       PRODUCTION — 549               Sau khi test
+                         NB                               CBCC                           OK
+
+
+
+
+    Dịch vụ       Port            Local (PC CQ)                             Production
+
+PostgreSQL       5432        localhost:5432                   DB Cloud
+
+Redis            6379        localhost:6379                   Redis Cloud
+
+MinIO            9000/90     localhost:9001                   MinIO Cloud
+                 01
+
+FastAPI          8004        [IP]:8004                        https://api.hkg.hqkv8.vn
+
+Next.js HKG      3000        [IP]:3000                        https://hkg.hqkv8.vn
+
+Nginx            80/443      [IP]:80                          HTTPS 443
+
+
+
+
+                                              Trang 18 / 30
+                                            HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN VI-A. AN TOÀN THÔNG TIN VÀ PHÂN QUYỀN
+
+1. Nguyên tắc phân quyền
+   •   RBAC (Role-Based Access Control) kết hợp phạm vi đơn vị: cấp nào xem cấp đó.
+   •   Thư ký Phòng/Đội: chỉ xem dữ liệu đơn vị mình — KHÔNG xem thống kê đơn vị khác.
+   •   Xem toàn bộ Chi cục: Lãnh đạo CC (CCT, Phó CCT) + Chánh Văn phòng + Trưởng phòng
+       CNTT.
+   •   Admin kỹ thuật: Phòng CNTT — toàn quyền cấu hình, quản lý user, import/export.
+
+
+
+2. Audit Log — Nhật ký hệ thống
+Bắt buộc ghi log: đăng nhập/đăng xuất, xem/tải tài liệu, tạo/sửa/xóa họp và biên bản, ký số, xuất dữ
+liệu.
+
+
+
+3. Bảo mật tài khoản & dữ liệu
+   •   Mật khẩu hash bcrypt/argon2. JWT + Refresh Token. Force logout. Quản lý thiết bị.
+   •   Tài liệu Mật/Hạn chế: watermark tên người xem, kiểm soát truy cập chặt.
+   •   HTTPS bắt buộc production. Firewall hạn chế truy cập DB từ ngoài.
+
+
+
+
+                                           Trang 19 / 30
+                                           HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN VI-B. SAO LƯU, PHỤC HỒI VÀ DUY TRÌ VẬN HÀNH
+
+1. Chính sách sao lưu
+PostgreSQL và MinIO sao lưu tự động hằng ngày. Lưu tối thiểu: 03 bản daily, 01 bản weekly, 01 bản
+monthly. Bản sao lưu lưu trên hệ thống độc lập (khác ổ đĩa/máy chủ production).
+
+2. Kiểm tra phục hồi & Vận hành
+   •   Định kỳ restore test — đảm bảo khả năng phục hồi khi sự cố.
+   •   Monitoring PM2/systemd + cảnh báo email/SMS khi dịch vụ dừng hoặc lỗi.
+
+
+
+
+                                          Trang 20 / 30
+                                            HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN VII. CÀI ĐẶT PC CƠ QUAN (Dev/Test)
+
+ ⚠️ PC cơ quan CHỈ là môi trường dev/test
+     •   Windows 11 + WSL2 đủ cho phát triển và kiểm thử.
+     •   Production: Ubuntu Server thuần — Docker native, ổn định hơn WSL2.
+
+
+
+Bước 1: Cài WSL2 + Ubuntu 22.04
+  # PowerShell (Admin): wsl --install
+  sudo apt update && sudo apt upgrade -y
+
+
+Bước 2: Cài Rancher Desktop (thay Docker Desktop — Apache 2.0, miễn phí)
+  # Tải: https://rancherdesktop.io/
+  # Container Engine = dockerd, Kubernetes = TẮ
+                                              T
+
+
+Bước 3: Khởi động PostgreSQL + Redis + MinIO (xem Phụ lục A)
+  mkdir -p ~/hkg/data/{postgres,redis,minio} && cd ~/hkg
+  docker compose up -d
+  # MinIO: http://localhost:9001 → tạo bucket "meeting"
+
+
+Bước 4: Cài Python 3.11 + thư viện
+  python3.11 -m venv venv && source venv/bin/activate
+  pip install fastapi uvicorn sqlalchemy alembic psycopg2-binary
+  pip install pydantic python-jose passlib redis celery aiosmtplib
+  pip install python-docx weasyprint minio qrcode pillow websockets pyhanko openpyxl
+
+
+Bước 5: Cài Node.js 20 + Git + Nginx
+  nvm install 20 && nvm use 20
+  sudo apt install -y git nginx && sudo service nginx start
+
+
+Bước 6: Bật SSH Server (để MacBook kết nối)
+  # PowerShell Admin:
+  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+  Start-Service sshd && Set-Service -Name sshd -StartupType Automatic
+
+
+
+
+ ✅ Checklist PC Cơ quan
+     •   □ WSL2 + Ubuntu 22.04 → wsl --status
+     •   □ Rancher Desktop → docker ps
+     •   □ PostgreSQL + Redis + MinIO running → docker compose ps
+     •   □ MinIO bucket "meeting" đã tạo
+     •   □ Python 3.11 + venv + tất cả pip packages
+     •   □ Node.js 20 + Git + Nginx + SSH Server
+
+
+                                           Trang 21 / 30
+HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+
+
+Trang 22 / 30
+                                          HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN VIII. CÀI ĐẶT MACBOOK PRO M5
+Bước 1: Homebrew + Git + Python 3.11 + Node.js 20
+  /bin/bash -c "$(curl -fsSL
+https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  brew install git python@3.11 && nvm install 20
+
+
+Bước 2: VS Code + 9 Extension (Remote-SSH là quan trọng nhất)
+  # 1.Python 2.Pylance 3.ES7+React 4.Tailwind 5.TypeScript
+  # 6.PostgreSQL(cweijan) 7.REST Client 8.GitLens 9.Remote-SSH
+
+
+Bước 3: Cấu hình SSH kết nối PC cơ quan
+  # ~/.ssh/config:
+  Host hkg-server
+      HostName [IP_PC_CQ] User [user_wsl] Port 22
+  # VS Code: Remote-SSH → Connect → hkg-server
+
+
+Bước 4: pgAdmin 4 ARM64 + Postman
+  # pgAdmin ARM64: https://pgadmin.org
+  # Thêm server: Host=[IP_PC_CQ], Port=5432, DB=hkg_db
+
+
+
+ ✅ Checklist MacBook
+     •   □ Homebrew + Git + Python 3.11 + Node.js 20
+     •   □ VS Code + 9 extension (Remote-SSH bắt buộc)
+     •   □ SSH kết nối PC cơ quan OK □ pgAdmin kết nối PostgreSQL OK
+
+
+
+
+                                          Trang 23 / 30
+                                              HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN IX. BẢN QUYỀN & CHI PHÍ PHẦN MỀM
+         Phần mềm                 Giấy phép          Chi phí                 Ghi chú
+
+Rancher Desktop   ✅         Apache 2.0             0đ             Thay Docker Desktop — không
+                                                                  giới hạn tổ chức
+
+Docker Desktop   ❌          Freemium               Phải mua       >250 người → KHÔNG dùng
+
+PostgreSQL 15               PostgreSQL             0đ             Miễn phí kể cả thương mại
+
+Redis 7                     BSD 3-Clause           0đ
+
+MinIO                       AGPL v3                0đ             Miễn phí khi tự host
+
+Python + FastAPI +          PSF / MIT              0đ
+Next.js
+
+Jitsi Meet                  Apache 2.0             0đ             Self-host LAN
+
+pyhanko + openpyxl          MIT                    0đ             CKS PDF + Excel
+
+API CKS (CACC/VNPT-         Dịch vụ NN             Phí cấp CKS    Phí dịch vụ, không phải bản
+CA)                                                               quyền phần mềm
+
+
+
+ 💰 Chi phí phần mềm nền tảng: 0 ĐỒNG
+     •    Toàn bộ stack 100% mã nguồn mở — 0 đồng bản quyền phần mềm.
+     •    Có thể phát sinh: hạ tầng cloud (VPS), tên miền, CKS, email/SMS, sao lưu, vận
+          hành bảo trì.
+
+
+
+
+                                              Trang 24 / 30
+                                             HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHẦN X. MODULE XUẤT / NHẬP DỮ LIỆU
+
+10.1. Tổng quan
+Module Import/Export cho phép HKG trao đổi dữ liệu hai chiều với Excel/Word — công cụ quen thuộc
+toàn CBCC. Cầu nối giữa hệ thống số và quy trình hành chính truyền thống trong giai đoạn chuyển
+đổi.
+
+
+
+10.2. Xuất Excel (.xlsx)
+        Loại dữ liệu                     Nội dung cột chính                      Quyền xuất
+
+ Danh sách CBCC              Mã · Họ tên · Email · Đơn vị · Chức vụ · Vai    Admin (Phòng
+                             trò · Trạng thái                                CNTT)
+
+ Thống kê tham dự            CBCC · Họp mời · Tham dự · Vắng phép ·          Lãnh đạo CC,
+                             Vắng KP · Tỷ lệ                                 Chánh VP, Trưởng
+                                                                             P.CNTT
+
+ Thống kê đơn vị             Chỉ đơn vị mình — không xem đơn vị khác         Trưởng/Phó
+                                                                             Phòng, Đội
+
+ Thống kê kết luận           Nội dung · Người PT · Hạn · Tiến độ · Trạng     Thư ký đơn vị
+                             thái                                            mình, Admin
+
+ Kết quả biểu quyết          Phiên · Đồng ý · Không ĐY · Từ chối · Tỷ lệ     Chủ tọa, Admin
+
+ Báo cáo tháng/quý           Số họp · Tỷ lệ TB · KL đúng hạn · Tiết kiệm     Lãnh đạo CC,
+                                                                             Chánh VP, Trưởng
+                                                                             P.CNTT
+
+
+
+
+10.3. Xuất Word (.docx) theo Mẫu biểu
+      Loại văn bản                          Nội dung                                 Quyền
+
+ Biên bản họp Chuyên       Toàn bộ biên bản — template tiêu đề              Thư ký
+ môn                       Chuyên môn
+
+ Biên bản họp Chi bộ       Toàn bộ biên bản — template tiêu đề Chi bộ       Thư ký
+                           + chức danh Đảng
+
+ Giấy mời họp              Thông tin họp · thành phần · tài liệu kèm        Thư ký, CT
+
+ Danh sách điểm danh       Bảng chữ ký — in dự phòng mất điện/mạng          Thư ký
+
+ Thông báo kết luận        Kết luận + nhiệm vụ giao + hạn                   Thư ký, CT
+
+ Báo cáo hoạt động         Tổng kết họp tháng/quý/năm                       Lãnh đạo CC, Chánh
+
+
+
+                                            Trang 25 / 30
+                                                 HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+       Loại văn bản                              Nội dung                             Quyền
+
+                                                                              VP, Trưởng P.CNTT
+
+
+
+Placeholder chuẩn trong Template Word
+               Placeholder                            Giá trị                        Ghi chú
+
+ {{ten_cuoc_hop}}                     Tên cuộc họp
+
+ {{ngay_hop}}                         Ngày tháng năm
+
+ {{gio_bat_dau}} / {{gio_ket_thuc}}   Giờ họp
+
+ {{dia_diem}}                         Địa điểm
+
+ {{chu_tri}}                          Chuyên môn: Chủ tọa · Đảng: Bí thư      Tự động theo khối
+                                                                              họp
+
+ {{thu_ky}}                           Chuyên môn: Thư ký · Đảng: Thư ký       Tự động theo khối
+                                      Chi bộ                                  họp
+
+ {{danh_sach_tham_du}}                Bảng thành phần (tự tạo)
+
+ {{danh_sach_vang}}                   DS vắng + lý do
+
+ {{noi_dung_hop}}                     Nội dung thảo luận                      Thư ký điền
+
+ {{ket_luan}}                         Kết luận + nhiệm vụ giao                Thư ký điền
+
+ {{ket_qua_bieu_quyet}}               Bảng BQ (tự tạo)
+
+ {{so_tham_du}} /                     18 / 22
+ {{tong_thanh_phan}}
+
+ {{don_vi}}                           Tên đơn vị tổ chức
+
+ {{qr_xac_thuc}}                      QR code xác thực                        Nhúng ảnh tự động
+
+
+
+
+10.4. Xuất PDF
+   •    Mọi Word/Excel đều xuất PDF 1 click. Thư viện: weasyprint + reportlab.
+   •    PDF biên bản: CKS PAdES nhúng, QR xác thực, watermark, không chỉnh sửa được.
+   •    Bulk export nhiều biên bản → ZIP.
+
+
+
+
+                                                 Trang 26 / 30
+                                             HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+10.5. Nhập từ Excel — Quy trình 7 bước Validate
+          Loại import                          Mục đích                            Quyền
+
+ Danh sách CBCC                 Khởi tạo/cập nhật hàng loạt — 14 đơn vị      Admin Phòng
+                                thực tế                                      CNTT
+
+ Phân quyền hàng loạt           Gán role: Chủ tọa, Thư ký, LĐ ĐV, Chánh      Admin Phòng
+                                VP, Trưởng P.CNTT, Đảng viên                 CNTT
+
+ Thành phần họp                 Import DS tham dự thay vì chọn tay           Thư ký, CT
+
+ Kết luận hàng loạt             Nhập KL từ biên bản giấy cũ                  Thư ký, Admin
+
+
+
+  Bước 1: Tải template Excel mẫu (có hướng dẫn Sheet 2)
+  Bước 2: Điền dữ liệu đúng cột (14 đơn vị, không có Tổ )
+  Bước 3: Upload file lên hệ thống
+  Bước 4: Validate từng dòng (định dạng, trùng email, thiế u trường, đơn vị không tồ
+                                                                                   n
+tại...)
+  Bước 5: Preview —     ✅
+                       OK (xanh) ⚠️Cảnh báo (vàng)        Lỗ    ❌
+                                                           i (đỏ)
+  Bước 6: Admin chọn: [Import OK] / [Import OK + bỏ lỗi] / [Tải file lỗ i vềsử a]
+  Bước 7: Ghi DB + Ghi log (meeting.lich_su_import_export)
+
+
+
+
+10.6. Nhập từ Word & Quản lý Template
+
+ ⚠️ Lưu ý về template biên bản
+     •   Cần 2 template: Mẫu BB Chuyên môn và Mẫu BB Chi bộ — chỉ khác tiêu đề và chức
+         danh ký.
+     •   Giữ nguyên tất cả {{placeholder}} khi tùy chỉnh — hệ thống dùng để điền dữ liệu tự
+         động.
+     •   Template cũ vẫn lưu MinIO — rollback về phiên bản trước bất cứ lúc nào.
+     •   Placeholder {{chu_tri}} và {{thu_ky}}: hệ thống tự chọn chức danh theo khối họp
+         (Đảng/Chuyên môn).
+
+
+
+
+                                            Trang 27 / 30
+                                           HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+KẾT LUẬN
+Hồ sơ phiên bản 5.0 đã cập nhật đầy đủ theo thực tế tổ chức và các yêu cầu nghiệp vụ cụ thể. Kiến
+trúc web app độc lập, phân quyền chính xác và mẫu biên bản dùng chung là các quyết định kỹ thuật
+phù hợp, đảm bảo tính khả thi và dễ bảo trì.
+
+
+
+  ✅ 6 điểm cập nhật chính trong v5.0
+     •   1. Cơ cấu tổ chức: Phòng/Đội → Bộ phận (không có Tổ). Phòng CNTT thay vì Tổ
+         CNTT.
+     •   2. Phân quyền chính xác: Thư ký Phòng/Đội KHÔNG xem thống kê đơn vị khác.
+     •   3. Xem toàn bộ Chi cục: Lãnh đạo CC (CCT, Phó CCT) + Chánh VP + Trưởng
+         phòng CNTT.
+     •   4. Họp Đảng: không tách riêng — dùng chung luồng, chỉ khác template tiêu đề và
+         chức danh.
+     •   5. Biên bản Đảng: 2 template (Chuyên môn & Chi bộ) — placeholder
+         {{chu_tri}}/{{thu_ky}} tự động theo khối.
+     •   6. Web app riêng biệt: domain hkg.hqkv8.vn, schema PostgreSQL riêng, độc lập
+         hoàn toàn.
+
+
+
+
+                                           Trang 28 / 30
+                                    HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+PHỤ LỤC A — docker-compose.yml
+ version: '3.9'
+ services:
+   postgres:
+     image: postgres:15
+     restart: always
+     environment:
+       POSTGRES_DB: hkg_db
+       POSTGRES_USER: hkg_user
+       POSTGRES_PASSWORD: Hkg@2026!
+     ports: ['5432:5432']
+     volumes: ['./data/postgres:/var/lib/postgresql/data']
+   redis:
+     image: redis:7-alpine
+     restart: always
+     ports: ['6379:6379']
+     volumes: ['./data/redis:/data']
+   minio:
+     image: minio/minio
+     restart: always
+     command: server /data --console-address ':9001'
+     environment:
+       MINIO_ROOT_USER: hkgadmin
+       MINIO_ROOT_PASSWORD: Hkg@2026!
+     ports: ['9000:9000', '9001:9001']
+     volumes: ['./data/minio:/data']
+
+
+
+
+PHỤ LỤC B — Cấu hình Nginx
+ server {
+     listen 80;
+     server_name hkg.hqkv8.vn;
+     location / {
+          proxy_pass http://localhost:3000;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+     }
+     location /api/ {
+          proxy_pass http://localhost:8004/;
+          proxy_set_header Host $host;
+     }
+     location /ws/ {
+          proxy_pass http://localhost:8004/ws/;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection 'upgrade';
+     }
+     location /minio/ { proxy_pass http://localhost:9001/; }
+ }
+
+                                    Trang 29 / 30
+                                        HKG v5.0 · Hồ sơ Dự án · Phòng CNTT · Chi cục HQKV8 · 4/2026
+
+
+
+
+PHỤ LỤC C — File cấu hình .env
+ DATABASE_URL=postgresql://hkg_user:Hkg@2026!@localhost:5432/hkg_db
+ REDIS_URL=redis://localhost:6379
+ MINIO_ENDPOINT=localhost:9000
+ MINIO_ACCESS_KEY=hkgadmin
+ MINIO_SECRET_KEY=Hkg@2026!
+ MINIO_BUCKET=meeting
+ SECRET_KEY=hkg-jwt-secret-hqkv8-2026-CHANGE-IN-PRODUCTION
+ ALGORITHM=HS256
+ ACCESS_TOKEN_EXPIRE_HOURS=8
+ BACKEND_PORT=8004
+ FRONTEND_PORT=3000
+ APP_URL=https://hkg.hqkv8.vn
+ # CKS (đểtrố ng test, điề n khi production):
+ CKS_API_URL=
+ CKS_MOCK_MODE=true
+
+
+
+
+                                  ─── Hết tài liệu ───
+              Phòng Công nghệ Thông tin — Chi cục Hải quan Khu vực VIII
+                   Hồ sơ Dự án HKG v5.0 · Tháng 4/2026 · Tài liệu nội bộ
+
+
+
+
+                                       Trang 30 / 30
+

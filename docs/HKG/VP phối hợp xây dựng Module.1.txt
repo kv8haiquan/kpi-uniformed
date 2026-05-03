@@ -1,0 +1,97 @@
+
+
+
+Ngày 23/4/2026, Văn phòng nhận được công văn số 94/CNTT của Phòng Công nghệ thông tin về việc phối hợp xây dựng module “Hệ thống hội nghị không giấy tờ” trên nền tảng Digital Learning. Trên cơ sở đang sử dụng Phần mềm Họp không giấy iCPV-Cabinet và các yêu cầu tổ chức Hội nghị không giấy tờ thông qua phần mềm, Văn phòng trao đổi, đề nghị xây dựng “Hệ thống hội nghị không giấy tờ” với các yêu cầu về chức năng của Module như sau:
+1. Nhóm chức năng lõi 
+(1) Quản lý cuộc họp
+- Cho phép tạo, cập nhật và quản lý lịch họp (thời gian, địa điểm, nội dung, thành phần tham dự);
+- Phân quyền người tham gia theo vai trò: chủ trì, thư ký, đại biểu;
+- Gửi giấy mời điện tử (tích hợp email/Zalo nội bộ nếu có);
+- Quản lý, theo dõi thành phần tham dự (xác nhận có/không họp, ủy quyền): List nhanh được danh sách, vắng mặt (cần ghi lý do, đã báo chủ trì hay chưa).
+(2) Quản lý tài liệu họp 
+- Hỗ trợ tải lên, lưu trữ và phân loại tài liệu theo từng cuộc họp (Upload được nhiều định dạng (PDF, Word, Excel)
+- Phân quyền xem/ tải/in (Chủ trì/thư ký được toàn quyền; đại biểu được quyền xem)
+- Quản lý phiên bản tài liệu: Chỉ phân quyền cho thư ký cuộc họp được gắn tài liệu và cập nhật, xóa/chỉnh sửa tài liệu. 
+- Khóa tài liệu khi đã trình, duyệt để đảm bảo tính toàn vẹn nội dung.
+- Hỗ trợ tải trước tài liệu để sử dụng trong điều kiện không có kết nối mạng.
+(3) Trình chiếu & theo dõi tài liệu
+- Đại biểu tham gia cuộc họp xem trực tiếp tài liệu trên thiết bị cá nhân (máy tính, máy tính bảng, điện thoại);
+- Người chủ trì điều khiển tài liệu chung (Đồng bộ theo chủ trì): khi chủ trì mở tài liệu, chuyển nội dung, toàn bộ đại biểu được đồng bộ hiển thị, không cần tự tìm.
+- Cho phép chuyển đổi linh hoạt giữa chế độ theo chủ trì và chế độ xem độc lập:
++ Chế độ “theo chủ trì”: Mặc định: mọi người bị khóa theo người điều hành -> Tập trung vào nội dung cuộc họp và điều hành của người chủ trì, tránh tình trạng: người xem trang 3, người xem trang 7
++ Chế độ “xem độc lập”: Đại biểu có thể tự lật tài liệu riêng, sau đó bấm “quay lại theo chủ trì” để tiếp tục theo dõi, không cần tìm trang.
+- Highlight, ghi chú trực tiếp: Chủ trì có thể khoanh, gạch chân trên tài liệu, tất cả đại biểu cùng thấy.
+- Chế độ tìm kiếm nhanh trong tài liệu: Đại biểu Gõ từ khóa/hoặc mục cần tìm → ra ngay kết quả, hiển thị các đoạn trong tài liệu có từ khóa/hoặc đến mục cần tìm.
+- Chế độ zoom (phóng to/thu nhỏ chữ)
+- Chế độ xem tài liệu trong điều kiện không có kết nối mạng (offline). 
+(4) Lập và quản lý biên bản cuộc họp
+- Cho phép thư ký nhập nội dung biên bản trực tiếp trên hệ thống; 
+- Gắn nội dung biên bản theo từng ý kiến, nội dung thảo luận;
+- Tự động tổng hợp, lưu theo mẫu chuẩn của đơn vị; xuất file biên bản sơ bộ ngay sau họp.
+(5) Ghi chú và trao đổi trong cuộc họp
+- Cho phép đại biểu tạo ghi chú cá nhân (chỉ người tạo được xem); 
+- Cho phép tạo ghi chú, trao đổi chia sẻ (chủ trì, thư ký được truy cập); 
+- Hỗ trợ tổng hợp nội dung trao đổi phục vụ lập biên bản.
+(6) Biểu quyết điện tử (Đối với những cuộc họp có biểu quyết)
+- Cho phép chủ trì tổ chức biểu quyết trong cuộc họp (đồng ý/không đồng ý/ý kiến khác);
+- Tổng hợp kết quả theo thời gian thực; 
+- Lưu trữ và kết xuất kết quả biểu quyết phục vụ lập biên bản.
+2. Nhóm chức năng điều hành & sau họp
+(1) Giao việc sau cuộc họp
+- Cho phép chủ trì tạo nhiệm vụ/giao việc ngay trong cuộc họp;
+- Gắn đơn vị/cá nhân thực hiện, thời hạn hoàn thành;
+- Theo dõi tiến độ, cập nhật kết quả:
+	+ Đơn vị/ cá nhân được giao việc cập nhật kết quả, tiến độ.
+	+ Chủ trì/thư ký/Trưởng đơn vị: Xem và kết xuất được tiến độ, kết quả của toàn bộ cuộc họp.
+	+ Trưởng đơn vị: Xem và kết xuất được tiến độ, kết quả của đơn vị được giao.
+- Tự động nhắc việc và cảnh báo quá hạn;
+- Tổng hợp báo cáo tình hình thực hiện nhiệm vụ. 
+(2)Thông báo và nhắc việc
+- Nhắc lịch họp tự động (bằng tin nhắn trước 01 ngày đến số điện thoại của tất cả thành phần dự họp) 
+- Thông báo thay đổi thời gian/hoãn/hủy cuộc họp (bằng tin nhắn đến số điện thoại ngay khi đăng/ chỉnh thông tin).
+- Nhắc nhiệm vụ trước cuộc họp/ tiến độ công việc được giao sau cuộc họp;
+- Thông báo tiến độ thực hiện nhiệm vụ.
+Thống kê, báo cáo, tra cứu. 
+- Tra cứu lịch sử cuộc họp, tài liệu, biên bản: Tra cứu theo cuộc họp, nội dung, tài liệu, tránh tình trạng “họp xong là mất dấu”; 
+- Thống kê số lượng cuộc họp, tỷ lệ tham gia: hiển thị trong khoảng thời gian tìm kiếm có bao nhiêu cuộc họp, nội dung cuộc họp, người chủ trì, thư ký, số lượng đại biểu, tỷ lệ tham gia.
+ - Tổng hợp tình hình thực hiện nhiệm vụ sau họp: Số nhiệm vụ được giao, số nhiệm vụ hoàn thành.
+3. Nhóm yêu cầu kỹ thuật và vận hành 
+- Giao diện đơn giản, dễ sử dụng;
+- Tốc độ xử lý nhanh, ổn định;
+- Hỗ trợ đa thiết bị (máy tính, tablet, điện thoại);
+- Có khả năng làm việc offline;
+- Đảm bảo an toàn, bảo mật:
++ Phân quyền chặt chẽ
++ Có log truy cập tài liệu
+4. Đề xuất thêm
+- Nhật ký cuộc họp (lưu trữ toàn bộ lịch sử cuộc họp); 
+- Theo dõi mức độ tham gia của các đại biểu (đọc tài liệu, phát biểu);
+- Nghiên cứu tích hợp Hệ thống quản lý văn bản (nếu được), hoặc các email công vụ.
+Vậy, Văn phòng trao đổi với Phòng Công nghệ thông tin./.
+
+
+
+--- TABLE ---
+CHI CỤC HẢI QUAN KHU VỰC VIII | CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM
+VĂN PHÒNG | Độc lập - Tự do - Hạnh phúc
+Số:      /VP
+V/v phối hợp xây dựng module “Hệ 
+thống hội nghị không giấy tờ” trên nền 
+tảng Digital Learning | Tuần Châu, ngày       tháng      năm
+
+--- TABLE ---
+Kính gửi: Phòng Công nghệ thông tin
+
+--- TABLE ---
+Nơi nhận:                                                                                         
+- Như trên;
+- Lưu: VT, VP. | CHÁNH VĂN PHÒNG
+
+
+
+
+
+
+
+
+Tống Thị Thái Hà

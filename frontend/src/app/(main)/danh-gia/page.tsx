@@ -44,7 +44,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/stores/useAuthStore';
+import { useAuthStore, useIsHd111 } from '@/stores/useAuthStore';
 import { kpiService } from '@/services/kpi.service';
 import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
 import { leaveService } from '@/services/leave.service';
@@ -220,6 +220,10 @@ export default function DanhGiaPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
   const isLanhDao = user?.is_lanh_dao ?? false;
+  const isHd111 = useIsHd111();
+  // HD-111 dùng cùng form kê khai lãnh đạo (kê khai từng CV với lỗi CL/TĐ)
+  // nhưng chỉ tính 3 chỉ số (a, b, c) — không có d, đ, e.
+  const usesLeaderForm = isLanhDao || isHd111;
 
   // State chung
   const [tieuChiChung, setTieuChiChung] = useState<IKetQuaTieuChiChungResponse | null>(null);
@@ -271,22 +275,25 @@ export default function DanhGiaPage() {
     setError(null);
 
     try {
-      if (isLanhDao) {
-        // LÃNH ĐẠO: Load thống kê kê khai LĐ + DDE + Tiêu chí chung
-        const [thongKeResult, ddeResult, tcResult] = await Promise.allSettled([
+      if (usesLeaderForm) {
+        // LÃNH ĐẠO + HĐ 111: Load thống kê kê khai LĐ + Tiêu chí chung.
+        // HĐ 111 không có d/đ/e (backend chặn) → bỏ qua DDE.
+        const [thongKeResult, tcResult, ddeResult] = await Promise.allSettled([
           leaderKPIService.getThongKe(selectedThang, selectedNam),
-          leaderKPIService.getDanhGiaDDE(selectedThang, selectedNam),
           tieuChiChungService.getKetQuaThang(selectedThang, selectedNam),
+          isHd111
+            ? Promise.resolve(null)
+            : leaderKPIService.getDanhGiaDDE(selectedThang, selectedNam),
         ]);
 
         if (thongKeResult.status === 'fulfilled') setThongKeLD(thongKeResult.value);
-        if (ddeResult.status === 'fulfilled') {
+        if (tcResult.status === 'fulfilled') setTieuChiChung(tcResult.value);
+        if (!isHd111 && ddeResult.status === 'fulfilled' && ddeResult.value) {
           console.log('[DanhGia] DDE data:', ddeResult.value);
-          setDdeData(ddeResult.value);
-        } else {
+          setDdeData(ddeResult.value as IDanhGiaDDEResponse);
+        } else if (!isHd111 && ddeResult.status === 'rejected') {
           console.warn('[DanhGia] DDE load failed:', ddeResult.reason);
         }
-        if (tcResult.status === 'fulfilled') setTieuChiChung(tcResult.value);
       } else {
         // CÔNG CHỨC: Load kê khai SP + ngày nghỉ + tiêu chí chung
         const [keKhaiResult, nghiResult, tcResult] = await Promise.allSettled([
@@ -304,7 +311,7 @@ export default function DanhGiaPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedThang, selectedNam, isLanhDao]);
+  }, [selectedThang, selectedNam, usesLeaderForm, isHd111]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -417,23 +424,31 @@ export default function DanhGiaPage() {
   const diemKPILD = (aLD + bLD + cLD + dLD + ddLD + eLD) / 6;
   const diemKPIQuyDoiLD = diemKPILD * 70;
 
+  // Điểm KPI HĐ 111 = (a + b + c) / 3 × 70 (cùng a/b/c như LĐ, bỏ d/đ/e)
+  const diemKPIHd111 = (aLD + bLD + cLD) / 3;
+  const diemKPIQuyDoiHd111 = diemKPIHd111 * 70;
+
   // =========================================================================
   // TỔNG ĐIỂM VÀ XẾP LOẠI
   // =========================================================================
-  const diemKPIQuyDoi = isLanhDao ? diemKPIQuyDoiLD : diemKPIQuyDoiCC;
+  const diemKPIQuyDoi = isHd111
+    ? diemKPIQuyDoiHd111
+    : isLanhDao
+      ? diemKPIQuyDoiLD
+      : diemKPIQuyDoiCC;
   const diemTong = diemTieuChiChung + diemKPIQuyDoi;
   const xepLoai = tinhXepLoai(diemTong);
   const xepLoaiColor = getXepLoaiColor(xepLoai);
 
   // Kiểm tra dữ liệu mới
-  const isNewKPI = isLanhDao 
+  const isNewKPI = usesLeaderForm
     ? (!thongKeLD || (thongKeLD.tong_da_duyet === 0 && thongKeLD.tong_cho_duyet === 0 && thongKeLD.tong_nhap === 0))
     : (!keKhaiSummaryCC || (keKhaiSummaryCC.tong_da_duyet === 0 && keKhaiSummaryCC.tong_cho_duyet === 0 && keKhaiSummaryCC.tong_nhap === 0));
   const isNewTC = !tieuChiChung || tieuChiChung.is_new_record;
 
   // Trạng thái kê khai
   const getTrangThaiKeKhai = () => {
-    if (isLanhDao) {
+    if (usesLeaderForm) {
       if (thongKeLD && thongKeLD.tong_da_duyet > 0) return 'DA_PHE_DUYET';
       if (thongKeLD && thongKeLD.tong_cho_duyet > 0) return 'CHO_PHE_DUYET';
       return 'NHAP';
@@ -503,17 +518,21 @@ export default function DanhGiaPage() {
               </button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  📊 Đánh giá KPI {isLanhDao ? '(Lãnh đạo)' : '(Công chức)'}
+                  📊 Đánh giá KPI {isLanhDao ? '(Lãnh đạo)' : isHd111 ? '(HĐ 111)' : '(Công chức)'}
                 </h1>
                 <p className="text-gray-600 mt-1">Tổng hợp kết quả đánh giá tháng {selectedThang}/{selectedNam}</p>
               </div>
             </div>
-            
+
             {/* Badge loại người dùng */}
             <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-              isLanhDao ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+              isLanhDao
+                ? 'bg-purple-100 text-purple-700'
+                : isHd111
+                  ? 'bg-teal-100 text-teal-700'
+                  : 'bg-blue-100 text-blue-700'
             }`}>
-              {isLanhDao ? '👔 Lãnh đạo' : '👤 Công chức'}
+              {isLanhDao ? '👔 Lãnh đạo' : isHd111 ? '🤝 HĐ 111' : '👤 Công chức'}
             </div>
           </div>
 
@@ -579,7 +598,7 @@ export default function DanhGiaPage() {
               <span className={`px-2 py-0.5 text-xs rounded-full ${
                 kpiTab === 'tam_tinh' ? 'bg-amber-200 text-amber-800' : 'bg-gray-100 text-gray-600'
               }`}>
-                {isLanhDao ? (tongNhapChoDuyetLD + tongDaDuyetLD) : (tongNhapChoDuyet + tongDaDuyet)}
+                {usesLeaderForm ? (tongNhapChoDuyetLD + tongDaDuyetLD) : (tongNhapChoDuyet + tongDaDuyet)}
               </span>
             </button>
             <button
@@ -595,7 +614,7 @@ export default function DanhGiaPage() {
               <span className={`px-2 py-0.5 text-xs rounded-full ${
                 kpiTab === 'chinh_thuc' ? 'bg-green-200 text-green-800' : 'bg-gray-100 text-gray-600'
               }`}>
-                {isLanhDao ? tongDaDuyetLD : tongDaDuyet}
+                {usesLeaderForm ? tongDaDuyetLD : tongDaDuyet}
               </span>
             </button>
           </div>
@@ -671,7 +690,13 @@ export default function DanhGiaPage() {
                 )}
                 <ScoreCard
                   title={`Điểm KPI ${kpiTab === 'tam_tinh' ? '(Tạm tính)' : ''}`}
-                  subtitle={isLanhDao ? '6 chỉ số (a, b, c, d, đ, e)' : '3 chỉ số (a, b, c)'}
+                  subtitle={
+                    isLanhDao
+                      ? '6 chỉ số (a, b, c, d, đ, e)'
+                      : isHd111
+                        ? '3 chỉ số (a, b, c) — kê khai LĐ'
+                        : '3 chỉ số (a, b, c)'
+                  }
                   value={diemKPIQuyDoi}
                   maxValue={70}
                   color="indigo"
@@ -825,7 +850,7 @@ export default function DanhGiaPage() {
             </div>
 
             {/* ========== KPI - CÔNG CHỨC ========== */}
-            {!isLanhDao && (
+            {!isLanhDao && !isHd111 && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-white">📊 Kê khai công việc - Công chức (70 điểm)</h2>
@@ -932,6 +957,122 @@ export default function DanhGiaPage() {
                           <span className="text-indigo-600 font-medium"> ({formatPercent(aSoLuongCC, 0)} + {formatPercent(bChatLuongCC, 0)} + {formatPercent(cTienDoCC, 0)}) / 3 × 70 </span>
                           = <strong className="text-indigo-700">{diemKPIQuyDoiCC.toFixed(1)} điểm</strong>
                         </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ========== KPI - HĐ 111 ========== */}
+            {/* HĐ 111 kê khai cùng form lãnh đạo (từng CV với lỗi CL/TĐ),    */}
+            {/* nhưng chỉ tính 3 chỉ số a, b, c — không có d, đ, e.            */}
+            {isHd111 && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 bg-gradient-to-r from-cyan-600 to-teal-600 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-white">📊 Kê khai công việc - HĐ 111 (70 điểm)</h2>
+                  {trangThaiKeKhai === 'DA_PHE_DUYET' && (
+                    <span className="px-3 py-1 bg-white/20 rounded-full text-xs font-medium text-white">Đã phê duyệt</span>
+                  )}
+                </div>
+                <div className="p-6">
+                  {isNewKPI ? (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Chưa có công việc</h3>
+                      <p className="text-gray-600 mb-4">Bạn chưa kê khai công việc cho tháng này.</p>
+                      <button
+                        onClick={() => router.push('/ke-khai')}
+                        className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
+                      >
+                        Bắt đầu kê khai
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Thông tin cơ bản - 5 ô (giống lãnh đạo) */}
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                        <StatBox
+                          label="Tổng CV được giao"
+                          value={targetLDHienThi}
+                          bgColor="bg-cyan-50"
+                          textColor="text-cyan-600"
+                        />
+                        <StatBox
+                          label="CV hoàn thành"
+                          value={cvHoanThanhHienThi}
+                          bgColor="bg-green-50"
+                          textColor="text-green-600"
+                        />
+                        <StatBox
+                          label="Lỗi chất lượng"
+                          value={loiChatLuongHienThi}
+                          bgColor={loiChatLuongHienThi > 0 ? "bg-red-50" : "bg-blue-50"}
+                          textColor={loiChatLuongHienThi > 0 ? "text-red-600" : "text-blue-600"}
+                        />
+                        <StatBox
+                          label="Lỗi tiến độ"
+                          value={loiTienDoHienThi}
+                          bgColor={loiTienDoHienThi > 0 ? "bg-red-50" : "bg-amber-50"}
+                          textColor={loiTienDoHienThi > 0 ? "text-red-600" : "text-amber-600"}
+                        />
+                        <StatBox
+                          label="Điểm KPI"
+                          value={`${diemKPIQuyDoiHd111.toFixed(1)}/70`}
+                          bgColor="bg-teal-50"
+                          textColor="text-teal-600"
+                        />
+                      </div>
+
+                      {/* 3 Chỉ số a, b, c (không có d, đ, e) */}
+                      <h3 className="text-sm font-medium text-gray-700 mb-4">Ba chỉ số (a, b, c)</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <MetricCard
+                          label="a. Tỷ lệ hoàn thành"
+                          value={formatPercent(aLD)}
+                          subValue={`${cvHoanThanhHienThi} / ${targetLDHienThi} CV`}
+                          color="indigo"
+                          percent={aLD * 100}
+                        />
+                        <MetricCard
+                          label="b. Tiến độ"
+                          value={formatPercent(bLD)}
+                          subValue={loiTienDoHienThi > 0 ? `${loiTienDoHienThi} lỗi (-${loiTienDoHienThi * 25}%)` : 'Không có lỗi'}
+                          color={loiTienDoHienThi > 0 ? "amber" : "emerald"}
+                          percent={bLD * 100}
+                        />
+                        <MetricCard
+                          label="c. Chất lượng"
+                          value={formatPercent(cLD)}
+                          subValue={loiChatLuongHienThi > 0 ? `${loiChatLuongHienThi} lỗi (-${loiChatLuongHienThi * 25}%)` : 'Không có lỗi'}
+                          color={loiChatLuongHienThi > 0 ? "amber" : "emerald"}
+                          percent={cLD * 100}
+                        />
+                      </div>
+
+                      {/* Công thức */}
+                      <div className="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <p className="text-sm text-gray-600 text-center">
+                          <strong>Công thức:</strong> Điểm KPI = (a + b + c) / 3 × 70
+                        </p>
+                        <p className="text-sm text-teal-600 font-medium text-center mt-1">
+                          = ({formatPercent(aLD, 0)} + {formatPercent(bLD, 0)} + {formatPercent(cLD, 0)}) / 3 × 70
+                          = <strong className="text-teal-700">{diemKPIQuyDoiHd111.toFixed(1)} điểm</strong>
+                        </p>
+                      </div>
+
+                      {/* Link đến chi tiết kê khai */}
+                      <div className="mt-4 text-center">
+                        <button
+                          onClick={() => router.push('/ke-khai')}
+                          className="text-teal-600 hover:text-teal-800 text-sm font-medium"
+                        >
+                          Xem chi tiết kê khai →
+                        </button>
                       </div>
                     </>
                   )}

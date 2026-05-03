@@ -41,6 +41,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.user_org import CongChuc, DonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
+from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, TrangThaiHoanThanh
 from app.models.kpi_assessment import DanhGiaThang, TieuChiChung, TieuChiChungDanhGia
 from app.models.bao_cao_xep_loai import (
     BaoCaoXepLoai, ChiTietXepLoai, TrangThaiBaoCao
@@ -245,6 +246,29 @@ async def _get_ke_khai_list(
     return list(result.scalars().all())
 
 
+async def _get_ke_khai_lanh_dao_list(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> list:
+    """Lấy danh sách kê khai LĐ đã duyệt của 1 CC.
+
+    Phase 3 (29/04/2026): HĐ 111 dùng cùng form ke_khai_lanh_dao như Lãnh đạo.
+    Export Mẫu 02 cần đọc bảng ke_khai_lanh_dao thay vì ke_khai_cong_viec.
+    """
+    stmt = (
+        select(KeKhaiLanhDao)
+        .where(
+            KeKhaiLanhDao.cong_chuc_id == cong_chuc_id,
+            KeKhaiLanhDao.thang == thang,
+            KeKhaiLanhDao.nam == nam,
+            KeKhaiLanhDao.trang_thai == TrangThaiKeKhaiLD.DA_PHE_DUYET.value,
+            KeKhaiLanhDao.is_deleted == False,
+        )
+        .order_by(KeKhaiLanhDao.ngay_thuc_hien, KeKhaiLanhDao.created_at)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def _get_tieu_chi_chung_list(db: AsyncSession) -> list:
     """Lấy danh sách tiêu chí chung (master data)."""
     stmt = (
@@ -444,6 +468,87 @@ def _build_mau02_data(
         "tong_sp_chat_luong": float(tong_sp_cl),
         "tong_sp_tien_do": float(tong_sp_td),
         "target_sp": so_ngay_lv * 96,
+        "diem_tieu_chi_chung": diem_tcc,
+        "diem_kpi": diem_kpi,
+        "diem_tong": diem_tong,
+        "xep_loai": chi_tiet_xep_loai.xep_loai_cuoi_cung if chi_tiet_xep_loai else "E",
+    }
+
+
+def _build_mau02_data_lanh_dao_style(
+    user: CongChuc,
+    thang: int, nam: int,
+    ke_khais: list,
+    chi_tiet_xep_loai: Optional[ChiTietXepLoai],
+) -> dict:
+    """Build data dict cho Mẫu 02 — kê khai theo form Lãnh đạo (LĐ + HĐ 111).
+
+    Khác với CC thường:
+    - Mỗi CV không có cap_do / SP quy đổi theo hệ số.
+    - Mỗi CV "đếm" theo số lượng (so_luong, mặc định 1).
+    - SP CL = so_luong × max(0, 1 - so_loi_cl × 0.25); SP TĐ tương tự.
+    - target_sp = tổng số CV được giao (không phải ngày × 96).
+    """
+    cong_viec_items = []
+    tong_sp_quy_doi = 0.0  # Tổng CV hoàn thành
+    tong_sp_cl = 0.0       # Tổng điểm chất lượng
+    tong_sp_td = 0.0       # Tổng điểm tiến độ
+    tong_so_luong = 0      # Tổng CV được giao
+
+    for kk in ke_khais:
+        # Trang_thai_hoan_thanh có thể là enum hoặc string
+        tt_ht = kk.trang_thai_hoan_thanh
+        if hasattr(tt_ht, "value"):
+            tt_ht = tt_ht.value
+        is_done = tt_ht == TrangThaiHoanThanh.DA_HOAN_THANH.value
+
+        so_luong = kk.so_luong or 1
+        loi_cl = kk.so_loi_chat_luong or 0
+        loi_td = kk.so_loi_tien_do or 0
+
+        # Mỗi CV hoàn thành = 1 đơn vị; tính điểm CL/TĐ theo công thức leader.
+        sp_qd = float(so_luong) if is_done else 0.0
+        sp_cl = float(so_luong) * max(0.0, 1.0 - loi_cl * 0.25) if is_done else 0.0
+        sp_td = float(so_luong) * max(0.0, 1.0 - loi_td * 0.25) if is_done else 0.0
+
+        tong_so_luong += so_luong
+        tong_sp_quy_doi += sp_qd
+        tong_sp_cl += sp_cl
+        tong_sp_td += sp_td
+
+        cong_viec_items.append({
+            "ten_cong_viec": kk.ten_cong_viec or "",
+            "cap_do": "",  # Không áp dụng cho HĐ 111
+            "so_luong": so_luong,
+            "sp_quy_doi": sp_qd,
+            "tu_dg_tien_do": 0,
+            "tu_dg_chat_luong": 0,
+            "so_loi_tien_do": loi_td,
+            "so_loi_chat_luong": loi_cl,
+            "sp_chat_luong": sp_cl,
+            "sp_tien_do": sp_td,
+        })
+
+    so_ngay_lv = float(chi_tiet_xep_loai.so_ngay_lam_viec or 0) if chi_tiet_xep_loai else 0
+    so_ngay_nghi = float(chi_tiet_xep_loai.so_ngay_nghi or 0) if chi_tiet_xep_loai else 0
+    diem_tcc = float(chi_tiet_xep_loai.diem_tieu_chi_chung) if chi_tiet_xep_loai else 0
+    diem_kpi = float(chi_tiet_xep_loai.diem_kpi) if chi_tiet_xep_loai else 0
+    diem_tong = float(chi_tiet_xep_loai.diem_tong) if chi_tiet_xep_loai else 0
+
+    return {
+        "ho_ten": user.ho_ten,
+        "chuc_vu": user.chuc_vu or "",
+        "don_vi": user.don_vi.ten_don_vi if user.don_vi else "",
+        "thang": thang,
+        "nam": nam,
+        "so_ngay_lam_viec": so_ngay_lv,
+        "so_ngay_nghi": so_ngay_nghi,
+        "cong_viec_items": cong_viec_items,
+        "tong_sp_quy_doi": tong_sp_quy_doi,
+        "tong_sp_chat_luong": tong_sp_cl,
+        "tong_sp_tien_do": tong_sp_td,
+        # HĐ 111: target = tổng CV được giao (không có ngày × 96)
+        "target_sp": float(tong_so_luong),
         "diem_tieu_chi_chung": diem_tcc,
         "diem_kpi": diem_kpi,
         "diem_tong": diem_tong,
@@ -958,12 +1063,20 @@ async def export_ca_nhan(
     
     # Lấy dữ liệu
     danh_gia = await _get_danh_gia_thang(db, target_user.id, thang, nam)
-    ke_khais = await _get_ke_khai_list(db, target_user.id, thang, nam)
     chi_tiet_xl = await _find_chi_tiet_xep_loai(db, target_user.id, thang, nam)
-    
+
     # Build data
     mau01_data = _build_mau01_data(target_user, thang, nam, danh_gia, chi_tiet_xl)
-    mau02_data = _build_mau02_data(target_user, thang, nam, ke_khais, chi_tiet_xl)
+
+    # Lãnh đạo + HĐ 111 kê khai theo form ke_khai_lanh_dao (không có data
+    # trong ke_khai_cong_viec). Đọc đúng bảng để Mẫu 02 không trống.
+    # Phase 3 (29/04/2026): mở rộng cho HĐ 111.
+    if target_user.kekhai_dung_form_lanh_dao:
+        ke_khai_ld = await _get_ke_khai_lanh_dao_list(db, target_user.id, thang, nam)
+        mau02_data = _build_mau02_data_lanh_dao_style(target_user, thang, nam, ke_khai_ld, chi_tiet_xl)
+    else:
+        ke_khais = await _get_ke_khai_list(db, target_user.id, thang, nam)
+        mau02_data = _build_mau02_data(target_user, thang, nam, ke_khais, chi_tiet_xl)
     
     # Generate DOCX via Node.js script
     import json

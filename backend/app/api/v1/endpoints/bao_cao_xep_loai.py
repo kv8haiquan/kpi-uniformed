@@ -216,15 +216,12 @@ async def tinh_diem_cong_chuc(
         diem_tcc = Decimal(str(danh_gia.diem_tieu_chi_chung))
     
     # =========================================================================
-    # 2. Tính số ngày làm việc và target SP
+    # 2. Tính số ngày làm việc + nghỉ (luôn dùng để hiển thị/báo cáo)
     # =========================================================================
     nghi_phep_data = await tinh_tong_ngay_nghi_thang(db, cong_chuc_id, thang, nam)
     so_ngay_lam_viec = Decimal(str(nghi_phep_data.get("so_ngay_lam_viec", 0)))
     so_ngay_nghi = Decimal(str(nghi_phep_data.get("tong_ngay_nghi", 0)))
-    
-    # Target SP = số ngày làm việc × 96 SP/ngày
-    target_sp = so_ngay_lam_viec * Decimal("96")
-    
+
     # =========================================================================
     # 3. Lấy tổng SP từ kê khai ĐÃ PHÊ DUYỆT
     # =========================================================================
@@ -241,10 +238,27 @@ async def tinh_diem_cong_chuc(
     )
     kk_result = await db.execute(kk_stmt)
     kk_row = kk_result.one()
-    
+
     tong_sp_hoan_thanh = Decimal(str(kk_row.tong_sp_quy_doi or 0))
     tong_sp_chat_luong = Decimal(str(kk_row.tong_sp_chat_luong or 0))
     tong_sp_tien_do = Decimal(str(kk_row.tong_sp_tien_do or 0))
+
+    # =========================================================================
+    # PL3 V2 (28/04/2026): Mẫu số = tổng SP kê khai đã duyệt
+    # =========================================================================
+    is_v2 = (
+        danh_gia is not None
+        and getattr(danh_gia, "version_tinh_diem", "V1") == "V2_PL3"
+    )
+    if is_v2:
+        # V2: target_sp = tổng SP CC đã kê khai (đã duyệt)
+        # Cache vào danh_gia.tong_sp_ke_khai
+        target_sp = tong_sp_hoan_thanh
+        if danh_gia is not None:
+            danh_gia.tong_sp_ke_khai = target_sp
+    else:
+        # V1: target_sp = số ngày làm việc × 96 SP/ngày
+        target_sp = so_ngay_lam_viec * Decimal("96")
     
     # =========================================================================
     # 4. Tính các chỉ số a, b, c

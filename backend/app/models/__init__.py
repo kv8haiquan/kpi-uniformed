@@ -41,6 +41,7 @@ from app.models.task_catalog import (
     SpCongViecChuan,
     CapDoPhucTap,
     DanhMucSpCongViec,
+    NhomCongViecPL3,  # PL3 V2 (28/04/2026)
 )
 
 # KPI Submission
@@ -121,6 +122,9 @@ from app.models.phieu_danh_gia import (
     TrangThaiPhieuDanhGia,
 )
 
+# Công việc yêu thích (favorites cho /ke-khai-v2 - 30/04/2026)
+from app.models.cong_viec_yeu_thich import CongViecYeuThich
+
 __all__ = [
     # ==========================================================================
     # BASE CLASSES
@@ -152,6 +156,7 @@ __all__ = [
     "SpCongViecChuan",
     "CapDoPhucTap",
     "DanhMucSpCongViec",
+    "NhomCongViecPL3",
     
     # ==========================================================================
     # KPI SUBMISSION
@@ -228,4 +233,9 @@ __all__ = [
     # ==========================================================================
     "PhieuDanhGiaQuy",
     "TrangThaiPhieuDanhGia",
+
+    # ==========================================================================
+    # CONG VIEC YEU THICH (favorites — 30/04/2026)
+    # ==========================================================================
+    "CongViecYeuThich",
 ]

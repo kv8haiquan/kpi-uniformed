@@ -80,6 +80,24 @@ class TraLaiBulkRequest(BaseModel):
 router = APIRouter()
 
 
+def _assert_not_v1(ke_khai: KeKhaiCongViec) -> None:
+    """PL3 V2 (02/05/2026): chặn mọi thao tác phê duyệt/trả lại trên bản V1."""
+    if getattr(ke_khai, "version_kekhai", "V1") == "V1":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "V1_CLOSED",
+                    "message": (
+                        "Kê khai V1 đã đóng — không thể phê duyệt/trả lại. "
+                        "Bản kê khai cũ này sẽ được trả về tự động."
+                    ),
+                },
+            },
+        )
+
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
@@ -175,6 +193,32 @@ def get_so_loi_chot(
     if payload_value is not None:
         return payload_value
     return tu_danh_gia_value or 0
+
+
+def _is_v2_kekhai(kk: KeKhaiCongViec) -> bool:
+    """Helper kiểm tra bản kê khai có phải V2_PL3 không."""
+    return getattr(kk, "version_kekhai", "V1") == "V2_PL3"
+
+
+def _reject_v2_override_or_none(kk: KeKhaiCongViec, payload) -> Optional[str]:
+    """
+    Reject nếu LĐ cố override `cap_do_ma` cho bản kê khai V2_PL3.
+
+    LOCKED 14: V2_PL3 KHÔNG cho phép lãnh đạo override hệ số quy đổi
+    (snapshot immutable). C5 "theo thực tế" KHÔNG tồn tại trong V2.
+
+    Returns:
+        None nếu OK, hoặc string mô tả lý do reject.
+    """
+    if not _is_v2_kekhai(kk):
+        return None
+    cap_do_ma = getattr(payload, "cap_do_ma", None)
+    if cap_do_ma is not None:
+        return (
+            f"Bản kê khai V2_PL3 không cho phép đổi cấp độ (gửi cap_do_ma='{cap_do_ma}'). "
+            "LOCKED 14: hệ số quy đổi snapshot từ danh mục PL3 là immutable."
+        )
+    return None
 
 
 async def apply_cap_do_change(
@@ -345,6 +389,7 @@ async def get_pending_list(
     is_qldv_user = is_qldv(current_user)
     
     # Base query
+    # PL3 V2 (02/05/2026): không hiển thị bản V1 trong danh sách chờ duyệt nữa.
     base_query = (
         select(KeKhaiCongViec)
         .options(
@@ -354,13 +399,15 @@ async def get_pending_list(
         )
         .where(KeKhaiCongViec.trang_thai == TrangThaiKeKhai.CHO_PHE_DUYET)
         .where(KeKhaiCongViec.is_deleted == False)
+        .where(KeKhaiCongViec.version_kekhai != "V1")
     )
-    
+
     # Count query
     count_query = (
         select(func.count(KeKhaiCongViec.id))
         .where(KeKhaiCongViec.trang_thai == TrangThaiKeKhai.CHO_PHE_DUYET)
         .where(KeKhaiCongViec.is_deleted == False)
+        .where(KeKhaiCongViec.version_kekhai != "V1")
     )
     
     # Phân quyền:
@@ -534,27 +581,43 @@ async def xu_ly_phe_duyet(
     errors = []
     
     for kk in ke_khai_list:
+        # PL3 V2 (02/05/2026): bỏ qua bản V1 với lỗi rõ ràng
+        if getattr(kk, "version_kekhai", "V1") == "V1":
+            errors.append(
+                f"Kê khai {kk.id} là V1 đã đóng — không thể phê duyệt"
+            )
+            continue
+
         # Kiểm tra trạng thái
         if kk.trang_thai != TrangThaiKeKhai.CHO_PHE_DUYET:
             errors.append(f"Kê khai {kk.id} không ở trạng thái chờ phê duyệt")
             continue
-        
+
         # Kiểm tra quyền: Phải là người được gán hoặc Admin
         if not is_admin and kk.nguoi_phe_duyet_id != current_user.id:
             errors.append(f"Bạn không phải người phê duyệt kê khai {kk.id}")
             continue
-        
+
+        # PL3 V2 (LOCKED 14): không cho override hệ số/cấp độ
+        v2_reject = _reject_v2_override_or_none(kk, payload)
+        if v2_reject is not None:
+            errors.append(f"Kê khai {kk.id}: {v2_reject}")
+            continue
+
+        is_v2 = _is_v2_kekhai(kk)
+
         # Xử lý phê duyệt
         if payload.action == PheDuyetAction.APPROVE:
             # =====================================================================
             # APPROVE: Phê duyệt
             # =====================================================================
             kk.trang_thai = TrangThaiKeKhai.DA_PHE_DUYET
-            
+
             # =====================================================================
-            # FIX v2.7.0: Cập nhật mức độ nếu LĐ điều chỉnh
+            # FIX v2.7.0: Cập nhật mức độ nếu LĐ điều chỉnh — chỉ V1
+            # V2_PL3 đã reject ở trên nếu có cap_do_ma
             # =====================================================================
-            if payload.cap_do_ma is not None:
+            if not is_v2 and payload.cap_do_ma is not None:
                 await apply_cap_do_change(kk, payload.cap_do_ma, db)
             
             # =====================================================================
@@ -709,7 +772,9 @@ async def xu_ly_phe_duyet_don_le(
                 }
             }
         )
-    
+
+    _assert_not_v1(ke_khai)
+
     # Kiểm tra trạng thái
     if ke_khai.trang_thai != TrangThaiKeKhai.CHO_PHE_DUYET:
         raise HTTPException(
@@ -738,14 +803,30 @@ async def xu_ly_phe_duyet_don_le(
             }
         )
     
+    # PL3 V2 (LOCKED 14): không cho override hệ số/cấp độ
+    v2_reject = _reject_v2_override_or_none(ke_khai, payload)
+    if v2_reject is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "V2_NO_OVERRIDE",
+                    "message": v2_reject,
+                },
+            },
+        )
+    is_v2 = _is_v2_kekhai(ke_khai)
+
     # Xử lý phê duyệt
     if payload.action == PheDuyetAction.APPROVE:
         ke_khai.trang_thai = TrangThaiKeKhai.DA_PHE_DUYET
-        
+
         # =====================================================================
-        # FIX v2.7.0: Cập nhật mức độ nếu LĐ điều chỉnh
+        # FIX v2.7.0: Cập nhật mức độ nếu LĐ điều chỉnh — chỉ V1
+        # V2_PL3 đã reject ở trên nếu có cap_do_ma
         # =====================================================================
-        if payload.cap_do_ma is not None:
+        if not is_v2 and payload.cap_do_ma is not None:
             await apply_cap_do_change(ke_khai, payload.cap_do_ma, db)
         
         # =====================================================================
@@ -873,6 +954,8 @@ async def tra_lai_ke_khai(
             }
         )
 
+    _assert_not_v1(ke_khai)
+
     # Kiểm tra trạng thái: chỉ trả lại được khi DA_PHE_DUYET
     if ke_khai.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET:
         raise HTTPException(
@@ -983,6 +1066,10 @@ async def tra_lai_ke_khai_bulk(
     errors = []
 
     for kk in ke_khai_list:
+        if getattr(kk, "version_kekhai", "V1") == "V1":
+            errors.append(f"KK {kk.id}: V1 đã đóng — không thể trả lại")
+            continue
+
         if kk.trang_thai != TrangThaiKeKhai.DA_PHE_DUYET:
             errors.append(f"KK {kk.id}: không ở trạng thái DA_PHE_DUYET")
             continue

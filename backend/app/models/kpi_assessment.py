@@ -73,7 +73,8 @@ class MucXepLoai(str, enum.Enum):
     A = "A"  # Hoàn thành xuất sắc (>= 90 điểm)
     B = "B"  # Hoàn thành tốt (70-89 điểm)
     C = "C"  # Hoàn thành (50-69 điểm)
-    D = "D"  # Không hoàn thành (< 50 điểm)
+    D = "D"  # Không hoàn thành (< 50 điểm); CC kê 0 SP làm việc bình thường (LOCKED 5)
+    E = "E"  # Không xếp loại — nghỉ thai sản (LOCKED 20, thêm 28/04/2026)
 
 
 class TrangThaiDanhGia(str, enum.Enum):
@@ -349,6 +350,23 @@ class DanhGiaThang(BaseModelWithSoftDelete):
         comment="Khóa dữ liệu sau khi CCT phê duyệt báo cáo xếp loại tháng"
     )
 
+    # -------------------------------------------------------------------------
+    # PL3 V2 (28/04/2026) — VERSION + CACHE MẪU SỐ (LOCKED 11, 12)
+    # -------------------------------------------------------------------------
+
+    tong_sp_ke_khai: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+        comment="V2: cache mẫu số = SUM(so_sp_goc_quy_doi đã duyệt), snapshot lúc CCT duyệt",
+    )
+
+    version_tinh_diem: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        server_default="V1",
+        comment="Phiên bản công thức tính điểm: V1 hoặc V2_PL3",
+    )
+
     # Relationships
     cong_chuc: Mapped["CongChuc"] = relationship(
         "CongChuc",
@@ -425,6 +443,11 @@ class DanhGiaThang(BaseModelWithSoftDelete):
         CheckConstraint(
             "diem_tong IS NULL OR diem_tong BETWEEN 0 AND 100",
             name="ck_danh_gia_diem_tong"
+        ),
+        # PL3 V2 (28/04/2026) — LOCKED 11
+        CheckConstraint(
+            "version_tinh_diem IN ('V1', 'V2_PL3')",
+            name="ck_dgthang_version",
         ),
         UniqueConstraint("cong_chuc_id", "thang", "nam", name="uq_danh_gia_cc_thang_nam"),
         Index("idx_danh_gia_cc", "cong_chuc_id"),

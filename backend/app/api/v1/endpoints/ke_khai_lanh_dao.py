@@ -50,8 +50,9 @@ router = APIRouter()
 # =============================================================================
 
 def check_is_lanh_dao(user: CongChuc) -> bool:
-    """Kiểm tra user có phải là Lãnh đạo không."""
-    if user.is_lanh_dao:
+    """Kiểm tra user có quyền dùng form ke_khai_lanh_dao.
+    Phase 3 (29/04/2026): mở rộng cho HĐ 111 — dùng cùng form."""
+    if user.is_lanh_dao or user.is_hd_111:
         return True
     if user.vai_tro and user.vai_tro.cap_bac in [
         CapBacVaiTro.PHO_DON_VI, CapBacVaiTro.TRUONG_DON_VI,
@@ -62,13 +63,27 @@ def check_is_lanh_dao(user: CongChuc) -> bool:
 
 
 async def get_nguoi_phe_duyet_cho_lanh_dao(db: AsyncSession, current_user: CongChuc) -> tuple[List[CongChuc], str]:
-    """Xác định danh sách người phê duyệt cho Lãnh đạo."""
+    """Xác định danh sách người phê duyệt cho Lãnh đạo (hoặc HĐ 111).
+
+    Phase 3 (29/04/2026): HĐ 111 chọn TDV/PDV trong cùng đơn vị (giống CC).
+    """
     approvers, ghi_chu = [], ""
     if not current_user.vai_tro:
         return [], "Không có vai trò"
-    
+
+    # HĐ 111: chọn TDV/PDV cùng đơn vị (giống flow CC thường)
+    if current_user.is_hd_111:
+        stmt = select(CongChuc).join(VaiTro).where(
+            CongChuc.is_active == True,
+            CongChuc.don_vi_id == current_user.don_vi_id,
+            VaiTro.cap_bac.in_([CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]),
+        )
+        result = await db.execute(stmt)
+        approvers = list(result.scalars().all())
+        return approvers, "Người phê duyệt: Trưởng/Phó đơn vị"
+
     cap_bac = current_user.vai_tro.cap_bac
-    
+
     if cap_bac == CapBacVaiTro.CHI_CUC_TRUONG:
         approvers, ghi_chu = [current_user], "Chi cục trưởng tự phê duyệt"
     elif cap_bac in [CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.TRUONG_DON_VI]:
@@ -84,7 +99,7 @@ async def get_nguoi_phe_duyet_cho_lanh_dao(db: AsyncSession, current_user: CongC
         )
         result = await db.execute(stmt)
         approvers, ghi_chu = list(result.scalars().all()), "Người phê duyệt: Trưởng đơn vị"
-    
+
     return approvers, ghi_chu
 
 

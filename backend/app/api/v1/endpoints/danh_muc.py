@@ -404,8 +404,146 @@ async def get_nhom_cong_viec_list(
     
     result = await db.execute(stmt)
     nhom_list = result.scalars().all()
-    
+
     # Filter out None values
     data = [nhom for nhom in nhom_list if nhom]
-    
+
     return success_response(data=data)
+
+
+# =============================================================================
+# PL3 V2 ENDPOINTS (28/04/2026)
+# =============================================================================
+
+# La Mã 1-15 dùng cho sort lĩnh vực
+_ROMAN_ORDER = {
+    "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
+    "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10,
+    "XI": 11, "XII": 12, "XIII": 13, "XIV": 14, "XV": 15,
+}
+
+
+@router.get(
+    "/linh-vuc",
+    summary="Danh sách 15 lĩnh vực PL3 (V2)",
+    description="""
+    Trả về 15 lĩnh vực (I-XV) cho dropdown filter UI V2.
+
+    Lấy distinct (linh_vuc, ten_linh_vuc) từ các mục PL3 đã seed.
+    Sắp xếp theo thứ tự La Mã.
+
+    **Quyền:** mọi user đăng nhập.
+    """,
+)
+async def get_linh_vuc_list_pl3(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """Trả về 15 lĩnh vực PL3."""
+    stmt = (
+        select(
+            DanhMucSpCongViec.linh_vuc,
+            DanhMucSpCongViec.ten_linh_vuc,
+        )
+        .where(DanhMucSpCongViec.nguon_du_lieu == "PL3")
+        .where(DanhMucSpCongViec.linh_vuc.isnot(None))
+        .where(DanhMucSpCongViec.is_deleted == False)
+        .distinct()
+    )
+    rows = (await db.execute(stmt)).all()
+    items = [{"ma": r[0], "ten": r[1]} for r in rows]
+    items.sort(key=lambda x: _ROMAN_ORDER.get(x["ma"], 999))
+    return success_response(data=items)
+
+
+@router.get(
+    "/sp-cong-viec/pl3",
+    summary="Danh sách mục PL3 — search/filter/pagination cho UI V2",
+    description="""
+    Trả về danh sách mục PL3 (V2) với filter:
+    - **linh_vuc**: I, II, ..., XV
+    - **nhom_pl3**: 1-5
+    - **search**: tìm trong ten_cong_viec + cong_viec_chi_tiet (ILIKE)
+    - **page** (≥ 1, mặc định 1)
+    - **size** (1-100, mặc định 50)
+
+    Chỉ trả mục `nguon_du_lieu='PL3'` và `is_active=true`.
+
+    **Quyền:** mọi user đăng nhập.
+    """,
+)
+async def get_sp_cong_viec_pl3(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    linh_vuc: Optional[str] = Query(default=None, description="I-XV"),
+    nhom_pl3: Optional[int] = Query(default=None, ge=1, le=5),
+    search: Optional[str] = Query(default=None, min_length=1, max_length=200),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=100),
+) -> dict:
+    """List mục PL3 với search + pagination."""
+    base_query = (
+        select(DanhMucSpCongViec)
+        .where(DanhMucSpCongViec.nguon_du_lieu == "PL3")
+        .where(DanhMucSpCongViec.is_active == True)
+        .where(DanhMucSpCongViec.is_deleted == False)
+    )
+    count_query = (
+        select(func.count(DanhMucSpCongViec.id))
+        .where(DanhMucSpCongViec.nguon_du_lieu == "PL3")
+        .where(DanhMucSpCongViec.is_active == True)
+        .where(DanhMucSpCongViec.is_deleted == False)
+    )
+
+    if linh_vuc:
+        base_query = base_query.where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
+        count_query = count_query.where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
+
+    if nhom_pl3 is not None:
+        base_query = base_query.where(DanhMucSpCongViec.nhom_pl3 == nhom_pl3)
+        count_query = count_query.where(DanhMucSpCongViec.nhom_pl3 == nhom_pl3)
+
+    if search:
+        pattern = f"%{search}%"
+        cond = or_(
+            DanhMucSpCongViec.ten_cong_viec.ilike(pattern),
+            DanhMucSpCongViec.cong_viec_chi_tiet.ilike(pattern),
+            DanhMucSpCongViec.san_pham_dau_ra.ilike(pattern),
+        )
+        base_query = base_query.where(cond)
+        count_query = count_query.where(cond)
+
+    total = (await db.execute(count_query)).scalar() or 0
+    offset = (page - 1) * size
+    base_query = (
+        base_query
+        .order_by(DanhMucSpCongViec.linh_vuc.asc(), DanhMucSpCongViec.ma_danh_muc.asc())
+        .offset(offset)
+        .limit(size)
+    )
+    rows = (await db.execute(base_query)).scalars().all()
+
+    data = []
+    for dm in rows:
+        data.append({
+            "id": dm.id,
+            "ma_danh_muc": dm.ma_danh_muc,
+            "ten_cong_viec": dm.ten_cong_viec,
+            "cong_viec_chi_tiet": dm.cong_viec_chi_tiet,
+            "san_pham_dau_ra": dm.san_pham_dau_ra,
+            "linh_vuc": dm.linh_vuc,
+            "ten_linh_vuc": dm.ten_linh_vuc,
+            "nhom_pl3": dm.nhom_pl3,
+            "khung_diem_toi_da": dm.khung_diem_toi_da,
+            "diem_cham": dm.diem_cham,
+            "he_so_quy_doi": float(dm.he_so_quy_doi) if dm.he_so_quy_doi is not None else None,
+            "nhiem_vu": dm.nhiem_vu,
+            "is_active": dm.is_active,
+        })
+
+    pagination = Pagination.create(page=page, page_size=size, total_items=total)
+    return {
+        "success": True,
+        "data": data,
+        "pagination": pagination.model_dump(),
+    }

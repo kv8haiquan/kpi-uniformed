@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
+from app.core.kpi_version import resolve_kpi_version
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChung,
@@ -151,13 +152,18 @@ async def get_or_create_danh_gia_thang(
         )
 
     so_ngay = calendar.monthrange(nam, thang)[1]
+
+    # PL3 V2 (28/04/2026): xác định version theo kê khai đầu / pin / default
+    version_tinh_diem = await resolve_kpi_version(db, cong_chuc_id, thang, nam)
+
     danh_gia = DanhGiaThang(
         cong_chuc_id=cong_chuc_id,
         don_vi_id_snapshot=cong_chuc.don_vi_id,
         thang=thang,
         nam=nam,
         so_ngay_lam_viec=so_ngay,
-        trang_thai=TrangThaiDanhGia.DANG_DANH_GIA
+        trang_thai=TrangThaiDanhGia.DANG_DANH_GIA,
+        version_tinh_diem=version_tinh_diem,
     )
     db.add(danh_gia)
     await db.flush()

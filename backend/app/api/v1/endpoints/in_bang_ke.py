@@ -513,7 +513,12 @@ async def export_phieu_danh_gia(
 
     # === Tính điểm nhiệm vụ REUSE logic từ xep_loai_moi.py ===
     # Import hàm tính điểm KPI 70 (production logic)
-    from app.api.v1.endpoints.xep_loai_moi import tinh_diem_kpi_70, tinh_diem_kpi_70_lanh_dao
+    from app.api.v1.endpoints.xep_loai_moi import (
+        tinh_diem_kpi_70,
+        tinh_diem_kpi_70_lanh_dao,
+        tinh_diem_kpi_70_hd_111,
+        _has_ke_khai_lanh_dao,
+    )
 
     # Gọi hàm tính điểm (tam_tinh=False vì cần kết quả chính thức)
     diem_a = None
@@ -536,8 +541,16 @@ async def export_phieu_danh_gia(
             diem_dd = min(kpi_data.get("dd_to_chuc", 0) * 100, 100.0)  # đ: tổ chức triển khai
             diem_e = min(kpi_data.get("e_doan_ket", 0) * 100, 100.0)   # e: đoàn kết nội bộ
             diem_kpi_nhiem_vu = kpi_data.get("diem_70", 0)  # Điểm KPI /70
+        elif cc.is_hd_111 and await _has_ke_khai_lanh_dao(db, cc.id, thang, nam):
+            # HĐ 111 (Phase 3 — 29/04/2026): công thức 3 chỉ số (a,b,c) lấy từ ke_khai_lanh_dao
+            kpi_data = await tinh_diem_kpi_70_hd_111(db, cc.id, thang, nam, tam_tinh=False)
+            diem_a = min(kpi_data.get("a_so_luong", 0) * 100, 100.0)
+            diem_b = min(kpi_data.get("b_tien_do", 0) * 100, 100.0)
+            diem_c = min(kpi_data.get("c_chat_luong", 0) * 100, 100.0)
+            diem_kpi_nhiem_vu = kpi_data.get("diem_70", 0)
         else:
-            # Công chức: dùng công thức 3 chỉ số (a,b,c)
+            # Công chức: dùng công thức 3 chỉ số (a,b,c).
+            # Áp cho cả HĐ 111 ở các tháng cũ (chưa có data ke_khai_lanh_dao).
             kpi_data = await tinh_diem_kpi_70(db, cc.id, thang, nam, tam_tinh=False)
             # Cap tỷ lệ % ở 100% (fix bug a > 100% khi CC làm vượt chỉ tiêu)
             diem_a = min(kpi_data.get("a_so_luong", 0) * 100, 100.0)

@@ -25,6 +25,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
+from app.core.kpi_calculator_v2 import calculate_kpi_score_v2
+from app.core.kpi_version import resolve_kpi_version, VERSION_V2
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChungDanhGia,
@@ -40,6 +42,121 @@ from app.schemas.common import success_response, error_response
 
 
 router = APIRouter()
+
+
+async def tinh_diem_kpi_70_v2(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+    tam_tinh: bool = False,
+) -> dict:
+    """
+    PL3 V2 — Tính điểm KPI 70 cho CC từ kê khai V2_PL3.
+
+    Mẫu số (LOCKED 1): SUM(so_sp_goc_quy_doi) bản đã DA_PHE_DUYET (hoặc kèm
+    CHO_PHE_DUYET nếu tam_tinh=True).
+
+    Tử số (theo pattern V1):
+      - tong_hoan_thanh = SUM(so_sp_goc_quy_doi)  (mọi bản đã duyệt = đã hoàn thành)
+      - sp_chat_luong   = SUM(so_sp_chat_luong)   (đã trừ lỗi CL khi phê duyệt)
+      - sp_tien_do      = SUM(so_sp_tien_do)      (đã trừ lỗi TĐ khi phê duyệt)
+
+    Trường hợp NHAP/CHO_PHE_DUYET ở chế độ tam_tinh: dùng công thức tuyến tính
+    với tu_danh_gia_chat_luong/tu_danh_gia_tien_do.
+
+    LOCKED 5: mẫu số = 0 → KPI = 0 → caller xếp D.
+    """
+    if tam_tinh:
+        allowed = [TrangThaiKeKhai.NHAP, TrangThaiKeKhai.CHO_PHE_DUYET, TrangThaiKeKhai.DA_PHE_DUYET]
+    else:
+        allowed = [TrangThaiKeKhai.DA_PHE_DUYET]
+
+    stmt = (
+        select(
+            KeKhaiCongViec.trang_thai,
+            KeKhaiCongViec.so_luong,
+            KeKhaiCongViec.so_sp_goc_quy_doi,
+            KeKhaiCongViec.so_sp_chat_luong,
+            KeKhaiCongViec.so_sp_tien_do,
+            KeKhaiCongViec.tu_danh_gia_chat_luong,
+            KeKhaiCongViec.tu_danh_gia_tien_do,
+            KeKhaiCongViec.he_so_quy_doi_snapshot,
+        )
+        .where(KeKhaiCongViec.cong_chuc_id == cong_chuc_id)
+        .where(KeKhaiCongViec.thang == thang)
+        .where(KeKhaiCongViec.nam == nam)
+        .where(KeKhaiCongViec.version_kekhai == "V2_PL3")
+        .where(KeKhaiCongViec.is_deleted == False)  # noqa: E712
+        .where(KeKhaiCongViec.trang_thai.in_(allowed))
+    )
+    rows = (await db.execute(stmt)).all()
+
+    tong_sp_ke_khai = Decimal("0")
+    tong_hoan_thanh = Decimal("0")
+    sp_cl = Decimal("0")
+    sp_td = Decimal("0")
+
+    for trang_thai, so_luong, sp_goc, sp_cl_row, sp_td_row, tu_dg_cl, tu_dg_td, he_so in rows:
+        sp_goc_d = Decimal(str(sp_goc or 0))
+        so_luong_v = so_luong or 1
+
+        # Mẫu số = mọi bản trong allowed status
+        tong_sp_ke_khai += sp_goc_d
+        tong_hoan_thanh += sp_goc_d  # CC: mọi bản đã duyệt = đã hoàn thành
+
+        if trang_thai == TrangThaiKeKhai.DA_PHE_DUYET:
+            sp_cl += Decimal(str(sp_cl_row or 0))
+            sp_td += Decimal(str(sp_td_row or 0))
+        else:
+            # NHAP/CHO_PHE_DUYET (chế độ tạm tính): tính từ tu_danh_gia
+            tu_dg_cl_v = tu_dg_cl or 0
+            tu_dg_td_v = tu_dg_td or 0
+            if sp_goc_d > 0 and so_luong_v > 0:
+                sp_per_unit = sp_goc_d / Decimal(str(so_luong_v))
+                max_loi = so_luong_v * 4
+                loi_cl = min(tu_dg_cl_v, max_loi)
+                loi_td = min(tu_dg_td_v, max_loi)
+                sp_cl += max(sp_goc_d - Decimal("0.25") * Decimal(str(loi_cl)) * sp_per_unit, Decimal("0"))
+                sp_td += max(sp_goc_d - Decimal("0.25") * Decimal(str(loi_td)) * sp_per_unit, Decimal("0"))
+            else:
+                sp_cl += sp_goc_d
+                sp_td += sp_goc_d
+
+    # Tính KPI bằng helper V2
+    kpi_result = calculate_kpi_score_v2(
+        tong_hoan_thanh, sp_cl, sp_td, tong_sp_ke_khai
+    )
+
+    a = float(kpi_result["a"])
+    b = float(kpi_result["b"])
+    c = float(kpi_result["c"])
+    diem_kpi = float(kpi_result["kpi"])
+    diem_70 = min(70.0, diem_kpi * 70)
+    ly_do_zero = kpi_result["ly_do"]
+
+    # Backward-compat fields cho frontend cũ:
+    # V2 không dùng "ngày × 96" làm mẫu số → các field so_ngay_*, sp_duoc_giao
+    # vẫn trả về 0 để tránh frontend NaN.
+    return {
+        "version_tinh_diem": "V2_PL3",
+        "so_ngay_trong_thang": 0,
+        "so_ngay_nghi": 0,
+        "so_ngay_lam_viec": 0,
+        "sp_duoc_giao": float(tong_sp_ke_khai),  # V2: hiển thị mẫu số = tổng SP kê khai
+        "tong_sp_hoan_thanh": float(tong_hoan_thanh),
+        "sp_chat_luong": float(sp_cl),
+        "sp_tien_do": float(sp_td),
+        "tong_sp_ke_khai": float(tong_sp_ke_khai),
+        "a_so_luong": a,
+        # NOTE: theo legacy V1, key b_chat_luong thực ra là tỷ lệ tiến độ;
+        # c_tien_do là tỷ lệ chất lượng. Giữ legacy key naming để tránh phá frontend.
+        "b_chat_luong": c,  # = tỷ lệ tiến độ trong key naming legacy
+        "c_tien_do": b,     # = tỷ lệ chất lượng trong key naming legacy
+        "diem_kpi": diem_kpi,
+        "diem_70": diem_70,
+        "ly_do_kpi_zero": ly_do_zero,  # 'MAU_SO_BANG_0' hoặc None
+    }
 
 
 # =============================================================================
@@ -71,6 +188,16 @@ async def tinh_diem_kpi_70(
     Params:
     - tam_tinh: Nếu True, tính cả công việc CHỜ PHÊ DUYỆT và nghỉ phép CHỜ PHÊ DUYỆT
     """
+    # =========================================================================
+    # PL3 V2 dispatcher (28/04/2026)
+    # =========================================================================
+    version = await resolve_kpi_version(db, cong_chuc_id, thang, nam)
+    if version == VERSION_V2:
+        return await tinh_diem_kpi_70_v2(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
+    # =========================================================================
+    # V1 logic (giữ nguyên)
+    # =========================================================================
+
     # Lấy số ngày nghỉ (đã duyệt hoặc cả chờ duyệt)
     if tam_tinh:
         # Tạm tính: bao gồm cả CHO_PHE_DUYET và DA_PHE_DUYET
@@ -329,6 +456,120 @@ async def tinh_diem_kpi_70_lanh_dao(
     }
 
 
+async def tinh_diem_kpi_70_hd_111(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+    tam_tinh: bool = False,
+) -> dict:
+    """Tính điểm KPI 70 cho HĐ 111 từ KeKhaiLanhDao (chỉ 3 chỉ số a, b, c).
+
+    Phase 3 (29/04/2026): HĐ 111 dùng form lãnh đạo nhưng KHÔNG có d/đ/e.
+
+    Công thức:
+    - a = CV_hoàn_thành / Tổng_CV
+    - b = Tổng_điểm_tiến_độ / Tổng_CV (mỗi CV: max(0, 1 - lỗi×0.25))
+    - c = Tổng_điểm_chất_lượng / Tổng_CV
+    - Điểm = (a + b + c) / 3 × 70
+
+    Caller chỉ nên gọi khi CC có data ke_khai_lanh_dao cho tháng đó.
+    Tháng cũ (data ở ke_khai_cong_viec V1): dùng tinh_diem_kpi_70 thay thế.
+    """
+    if tam_tinh:
+        allowed_statuses = [
+            TrangThaiKeKhaiLD.NHAP.value,
+            TrangThaiKeKhaiLD.CHO_PHE_DUYET.value,
+            TrangThaiKeKhaiLD.DA_PHE_DUYET.value,
+        ]
+    else:
+        allowed_statuses = [TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
+
+    stmt = (
+        select(
+            KeKhaiLanhDao.trang_thai_hoan_thanh,
+            KeKhaiLanhDao.so_loi_chat_luong,
+            KeKhaiLanhDao.so_loi_tien_do,
+        )
+        .where(KeKhaiLanhDao.cong_chuc_id == cong_chuc_id)
+        .where(KeKhaiLanhDao.thang == thang)
+        .where(KeKhaiLanhDao.nam == nam)
+        .where(KeKhaiLanhDao.is_deleted == False)
+        .where(KeKhaiLanhDao.trang_thai.in_(allowed_statuses))
+    )
+    rows = (await db.execute(stmt)).all()
+
+    tong_cong_viec = len(rows)
+    tong_hoan_thanh = 0
+    tong_diem_chat_luong = 0.0
+    tong_diem_tien_do = 0.0
+    tong_loi_chat_luong = 0
+    tong_loi_tien_do = 0
+
+    for row in rows:
+        (trang_thai_ht, loi_cl, loi_td) = row
+        if trang_thai_ht != TrangThaiHoanThanh.DA_HOAN_THANH:
+            continue
+        tong_hoan_thanh += 1
+        tong_loi_chat_luong += loi_cl
+        tong_loi_tien_do += loi_td
+        tong_diem_chat_luong += max(0.0, 1.0 - loi_cl * 0.25)
+        tong_diem_tien_do += max(0.0, 1.0 - loi_td * 0.25)
+
+    a = min(tong_hoan_thanh / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
+    b = min(tong_diem_tien_do / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
+    c = min(tong_diem_chat_luong / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
+
+    # HD 111: 3 chỉ số → chia 3 (KHÔNG có d/đ/e)
+    diem_kpi = (a + b + c) / 3
+    diem_70 = min(70, diem_kpi * 70)
+
+    return {
+        "is_lanh_dao": False,
+        "is_hd_111": True,
+        "tong_cong_viec": tong_cong_viec,
+        "tong_hoan_thanh": tong_hoan_thanh,
+        "tong_diem_chat_luong": tong_diem_chat_luong,
+        "tong_diem_tien_do": tong_diem_tien_do,
+        "tong_loi_chat_luong": tong_loi_chat_luong,
+        "tong_loi_tien_do": tong_loi_tien_do,
+        "a_so_luong": a,
+        "b_tien_do": b,
+        "c_chat_luong": c,
+        # KHÔNG có d, đ, e
+        "diem_kpi": diem_kpi,
+        "diem_70": diem_70,
+        # Backward compatibility
+        "so_ngay_trong_thang": 0,
+        "so_ngay_nghi": 0,
+        "so_ngay_lam_viec": 0,
+        "sp_duoc_giao": 0,
+        "tong_sp_hoan_thanh": 0,
+        "sp_chat_luong": 0,
+        "sp_tien_do": 0,
+        "b_chat_luong": c,
+        "c_tien_do": b,
+    }
+
+
+async def _has_ke_khai_lanh_dao(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> bool:
+    """Check user có bản kê khai trong ke_khai_lanh_dao cho tháng/năm này không.
+
+    Dùng để quyết định HD 111 chấm theo công thức mới (form LĐ) hay V1 (data cũ).
+    """
+    stmt = (
+        select(func.count(KeKhaiLanhDao.id))
+        .where(KeKhaiLanhDao.cong_chuc_id == cong_chuc_id)
+        .where(KeKhaiLanhDao.thang == thang)
+        .where(KeKhaiLanhDao.nam == nam)
+        .where(KeKhaiLanhDao.is_deleted == False)
+    )
+    cnt = (await db.execute(stmt)).scalar() or 0
+    return cnt > 0
+
+
 def xep_loai_kpi(diem_tong: float) -> str:
     """Xếp loại KPI theo điểm tổng."""
     if diem_tong >= 90:
@@ -473,9 +714,14 @@ async def get_tong_hop_xep_loai(
         danh_gia = result_dg.scalar_one_or_none()
         
         # Tính điểm 70 (truyền tam_tinh flag)
-        # Lãnh đạo dùng công thức 6 chỉ số, công chức dùng 3 chỉ số
+        # Lãnh đạo: công thức 6 chỉ số (a..e)
+        # HĐ 111: công thức 3 chỉ số (a, b, c) — chỉ khi có data ke_khai_lanh_dao,
+        #         tháng cũ chưa có thì fall back V1 (Phase 3 — 29/04/2026).
+        # Công chức thường: V1 hoặc V2_PL3 (đã dispatch trong tinh_diem_kpi_70).
         if cc.is_lanh_dao:
             diem_70_data = await tinh_diem_kpi_70_lanh_dao(db, cc.id, thang, nam, tam_tinh=tam_tinh)
+        elif cc.is_hd_111 and await _has_ke_khai_lanh_dao(db, cc.id, thang, nam):
+            diem_70_data = await tinh_diem_kpi_70_hd_111(db, cc.id, thang, nam, tam_tinh=tam_tinh)
         else:
             diem_70_data = await tinh_diem_kpi_70(db, cc.id, thang, nam, tam_tinh=tam_tinh)
 

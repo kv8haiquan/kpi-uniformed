@@ -30,7 +30,7 @@ export type CapBac = 'CHI_CUC_TRUONG' | 'PHO_CHI_CUC_TRUONG' | 'TRUONG_DON_VI' |
 /**
  * Mã vai trò chuẩn.
  */
-export type MaVaiTro = 'CCT' | 'PCCT' | 'TDV' | 'QLDV' | 'PDV' | 'CC';
+export type MaVaiTro = 'CCT' | 'PCCT' | 'TDV' | 'QLDV' | 'PDV' | 'CC' | 'HD_111';
 
 // =============================================================================
 // LOGIN TYPES
@@ -95,6 +95,7 @@ export interface IUser {
   // Chức vụ & vai trò
   chuc_vu: string | null;     // Chức vụ hiển thị (VD: "Đội trưởng")
   is_lanh_dao: boolean;       // Có phải lãnh đạo không
+  is_hd_111?: boolean;        // Phase 3 (29/04/2026): HĐ 111 — kê khai form LĐ, không có d/đ/e
   is_system_admin: boolean;   // Có phải System Admin không
   can_view_all_units: boolean; // v1.1.0: Quyền xem toàn chi cục (read-only)
   is_active: boolean;         // Tài khoản đang active
@@ -102,9 +103,16 @@ export interface IUser {
   // Nested objects
   don_vi: IUserDonVi | null;  // Thông tin đơn vị
   vai_tro: IUserVaiTro | null; // Thông tin vai trò
-  
+
   // Timestamps
   last_login: string | null;  // ISO datetime string
+
+  // PL3 V2 (28/04/2026)
+  kpi_version_pinned?: 'V1' | 'V2_PL3' | null;  // CC pin riêng (NULL = dùng default)
+  effective_kpi_version?: 'V1' | 'V2_PL3';      // resolved version để FE biết route
+
+  // HKG (01/05/2026): platform_roles từ JWT — fallback decode token nếu /me không trả
+  platform_roles?: string[];
 }
 
 /**

@@ -381,6 +381,19 @@ class CongChuc(BaseModelWithSoftDelete):
     server_default="false",
     comment="Cho phép xem báo cáo/thống kê toàn Chi cục (read-only)"
     )
+
+    # -------------------------------------------------------------------------
+    # PL3 V2 (28/04/2026): Pin phiên bản KPI cho từng CC
+    # -------------------------------------------------------------------------
+    # NULL  → fallback platform_config(key='kpi_version_default')
+    # 'V1'  → công thức cũ (mẫu số = ngày × 96)
+    # 'V2_PL3' → công thức mới (mẫu số = tổng SP kê khai)
+    kpi_version_pinned: Mapped[Optional[str]] = mapped_column(
+        String(10),
+        nullable=True,
+        comment="Pin riêng version cho CC. NULL = dùng platform_config",
+    )
+
     # -------------------------------------------------------------------------
     # ĐĂNG NHẬP
     # -------------------------------------------------------------------------
@@ -499,3 +512,14 @@ class CongChuc(BaseModelWithSoftDelete):
         if self.vai_tro:
             return self.vai_tro.cap_bac
         return None
+
+    @property
+    def is_hd_111(self) -> bool:
+        """User là Hợp đồng 111 — kê khai dùng form lãnh đạo (ke_khai_lanh_dao),
+        không có tiêu chí d/đ/e, người phê duyệt do CC tự chọn."""
+        return bool(self.vai_tro and self.vai_tro.ma_vai_tro == "HD_111")
+
+    @property
+    def kekhai_dung_form_lanh_dao(self) -> bool:
+        """True nếu user kê khai theo form ke_khai_lanh_dao (LĐ hoặc HĐ 111)."""
+        return self.is_lanh_dao or self.is_hd_111

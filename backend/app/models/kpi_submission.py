@@ -155,11 +155,12 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         comment="ID công việc trong danh mục"
     )
     
-    cap_do_id: Mapped[uuid.UUID] = mapped_column(
+    # V1: bắt buộc; V2_PL3: NULL (LOCKED 8)
+    cap_do_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("cap_do_phuc_tap.id", ondelete="RESTRICT"),
-        nullable=False,
-        comment="ID cấp độ phức tạp"
+        nullable=True,
+        comment="V1: ID cấp độ phức tạp (C1-C5). V2_PL3: NULL"
     )
     
     so_luong: Mapped[int] = mapped_column(
@@ -337,6 +338,35 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
     )
 
     # -------------------------------------------------------------------------
+    # PL3 V2 (28/04/2026) — VERSION + SNAPSHOT (LOCKED 10, 13)
+    # -------------------------------------------------------------------------
+
+    version_kekhai: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        server_default="V1",
+        comment="Phiên bản công thức: V1 (ngày×96) hoặc V2_PL3 (tổng SP kê khai)",
+    )
+
+    he_so_quy_doi_snapshot: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(8, 4),
+        nullable=True,
+        comment="V2: snapshot he_so_quy_doi tại thời điểm kê khai (immutable)",
+    )
+
+    nhom_pl3_snapshot: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="V2: snapshot nhóm 1-5",
+    )
+
+    linh_vuc_snapshot: Mapped[Optional[str]] = mapped_column(
+        String(10),
+        nullable=True,
+        comment="V2: snapshot lĩnh vực I-XV",
+    )
+
+    # -------------------------------------------------------------------------
     # RELATIONSHIPS
     # -------------------------------------------------------------------------
 
@@ -361,8 +391,8 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         lazy="joined"
     )
     
-    # Cấp độ phức tạp
-    cap_do: Mapped["CapDoPhucTap"] = relationship(
+    # Cấp độ phức tạp — V1 only (V2_PL3 NULL)
+    cap_do: Mapped[Optional["CapDoPhucTap"]] = relationship(
         "CapDoPhucTap",
         back_populates="ke_khais",
         lazy="joined"
@@ -399,7 +429,17 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         # v2.7.3: Đã bỏ UniqueConstraint - cho phép CC kê khai cùng công việc
         # cùng cấp độ cùng ngày nhiều lần (VD: thanh tra sáng + chiều)
         # Constraint đã DROP bằng migration drop_uq_ke_khai_20260201
-        
+
+        # PL3 V2 (28/04/2026) — LOCKED 10, 13
+        CheckConstraint(
+            "version_kekhai IN ('V1', 'V2_PL3')",
+            name="ck_kekhai_version",
+        ),
+        CheckConstraint(
+            "version_kekhai <> 'V2_PL3' OR he_so_quy_doi_snapshot IS NOT NULL",
+            name="ck_kekhai_v2_required",
+        ),
+
         # Indexes
         Index("idx_ke_khai_cc", "cong_chuc_id"),
         Index("idx_ke_khai_thang_nam", "thang", "nam"),
@@ -407,6 +447,7 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         Index("idx_ke_khai_phe_duyet", "nguoi_phe_duyet_id"),
         Index("idx_ke_khai_cc_thang_nam", "cong_chuc_id", "thang", "nam"),
         Index("idx_ke_khai_don_vi_snapshot", "don_vi_id_snapshot", "thang", "nam"),
+        Index("idx_kekhai_version", "version_kekhai", "thang", "nam"),
     )
     
     def __repr__(self) -> str:

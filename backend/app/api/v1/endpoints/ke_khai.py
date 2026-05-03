@@ -176,6 +176,71 @@ async def calculate_kpi_score(
     return so_sp_goc_quy_doi, ma_sp
 
 
+async def _assert_v1_writable(db: AsyncSession, user: CongChuc) -> None:
+    """
+    PL3 V2 (02/05/2026) — Chặn TẠO MỚI bản V1 cho công chức V2_PL3.
+
+    Dùng cho endpoint CREATE (POST `/`, POST `/nhieu-ngay`) — vì khi tạo mới
+    bản kê khai sẽ mặc định version_kekhai='V1' (server_default), nên chặn theo
+    user effective version. Lãnh đạo + HĐ 111 dùng endpoint riêng, không qua đây.
+
+    Với endpoint sửa/xoá/gửi duyệt một bản đã tồn tại, dùng `_assert_kekhai_not_v1`
+    để check theo bản kê khai (vì frontend V2 vẫn gọi `/ke-khai/{id}/gui-duyet`
+    cho bản V2).
+    """
+    if user.is_lanh_dao or user.is_hd_111:
+        return
+    pinned = getattr(user, "kpi_version_pinned", None)
+    if pinned == "V1":
+        return
+    if pinned == "V2_PL3":
+        effective = "V2_PL3"
+    else:
+        from sqlalchemy import text
+        row = (await db.execute(
+            text("SELECT value FROM public.platform_config WHERE key='kpi_version_default'")
+        )).scalar_one_or_none()
+        effective = (row if isinstance(row, str) else str(row).strip('"')) if row else "V1"
+    if effective == "V2_PL3":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "V1_CLOSED",
+                    "message": (
+                        "Kê khai V1 đã đóng. Vui lòng kê khai mới tại /ke-khai-v2 "
+                        "(phiên bản V2_PL3)."
+                    ),
+                },
+            },
+        )
+
+
+def _assert_kekhai_not_v1(ke_khai: KeKhaiCongViec) -> None:
+    """
+    PL3 V2 (02/05/2026) — Chặn thao tác trên bản kê khai V1 đã tồn tại.
+
+    Dùng cho endpoint sửa/xoá/gửi duyệt: chặn theo `ke_khai.version_kekhai`
+    (không phải theo user). Bản V2 (gồm cả khi V2 frontend gọi nhầm endpoint
+    V1 do backend V2 chưa có route tương ứng) vẫn pass.
+    """
+    if getattr(ke_khai, "version_kekhai", "V1") == "V1":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "V1_CLOSED",
+                    "message": (
+                        "Bản kê khai này thuộc phiên bản V1 đã đóng. Vui lòng "
+                        "kê khai lại trên /ke-khai-v2."
+                    ),
+                },
+            },
+        )
+
+
 def ke_khai_to_response(kk: KeKhaiCongViec) -> dict:
     """
     Convert KeKhaiCongViec model to response dict.
@@ -544,9 +609,12 @@ async def get_thong_ke_ke_khai(
         .where(KeKhaiCongViec.thang == thang)
         .where(KeKhaiCongViec.nam == nam)
         .where(KeKhaiCongViec.is_deleted == False)
+        # PL3 V2 (02/05/2026): /ke-khai/thong-ke/thang chỉ tính bản V1
+        # (V2 dùng /ke-khai-v2/thong-ke/thang riêng).
+        .where(KeKhaiCongViec.version_kekhai == "V1")
         .group_by(KeKhaiCongViec.trang_thai)
     )
-    
+
     result = await db.execute(stats_query)
     stats = result.all()
     
@@ -568,13 +636,14 @@ async def get_thong_ke_ke_khai(
         .where(KeKhaiCongViec.thang == thang)
         .where(KeKhaiCongViec.nam == nam)
         .where(KeKhaiCongViec.is_deleted == False)
+        .where(KeKhaiCongViec.version_kekhai == "V1")
         .where(KeKhaiCongViec.trang_thai.in_([
             TrangThaiKeKhai.NHAP,
             TrangThaiKeKhai.CHO_PHE_DUYET,
             TrangThaiKeKhai.DA_PHE_DUYET,
         ]))
     )
-    
+
     detail_result = await db.execute(detail_query)
     detail_rows = detail_result.all()
     
@@ -747,6 +816,8 @@ async def get_ke_khai_list(
     Lấy danh sách kê khai của user hiện tại với phân trang.
     """
     # Base query - chỉ lấy kê khai của user hiện tại
+    # PL3 V2 (02/05/2026): trang /ke-khai chỉ hiển thị bản V1 (đối chiếu);
+    # bản V2_PL3 đã có trang /ke-khai-v2 riêng.
     base_query = (
         select(KeKhaiCongViec)
         .options(
@@ -757,13 +828,15 @@ async def get_ke_khai_list(
         )
         .where(KeKhaiCongViec.cong_chuc_id == current_user.id)
         .where(KeKhaiCongViec.is_deleted == False)
+        .where(KeKhaiCongViec.version_kekhai == "V1")
     )
-    
+
     # Count query
     count_query = (
         select(func.count(KeKhaiCongViec.id))
         .where(KeKhaiCongViec.cong_chuc_id == current_user.id)
         .where(KeKhaiCongViec.is_deleted == False)
+        .where(KeKhaiCongViec.version_kekhai == "V1")
     )
     
     # Apply filters
@@ -874,6 +947,7 @@ async def ke_khai_nhieu_ngay(
                 }
             }
         )
+    await _assert_v1_writable(db, current_user)
 
     # Tính điểm KPI quy đổi (chung cho tất cả ngày)
     so_sp_goc_quy_doi, ma_sp = await calculate_kpi_score(
@@ -1008,6 +1082,9 @@ async def gui_duyet_bulk(
     errors = []
 
     for kk in ke_khai_list:
+        if getattr(kk, "version_kekhai", "V1") == "V1":
+            errors.append(f"KK {kk.id}: V1 đã đóng — không thể gửi duyệt")
+            continue
         if kk.cong_chuc_id != current_user.id:
             errors.append(f"KK {kk.id}: không phải kê khai của bạn")
             continue
@@ -1193,6 +1270,7 @@ async def create_ke_khai(
                 }
             }
         )
+    await _assert_v1_writable(db, current_user)
 
     # Xác định tháng/năm
     if payload.ngay_thuc_hien:
@@ -1323,7 +1401,7 @@ async def update_ke_khai(
     )
     result = await db.execute(stmt)
     ke_khai = result.scalar_one_or_none()
-    
+
     if not ke_khai:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1335,7 +1413,9 @@ async def update_ke_khai(
                 }
             }
         )
-    
+
+    _assert_kekhai_not_v1(ke_khai)
+
     # Kiểm tra quyền: chỉ chủ sở hữu
     if ke_khai.cong_chuc_id != current_user.id:
         raise HTTPException(
@@ -1468,7 +1548,7 @@ async def delete_ke_khai(
     )
     result = await db.execute(stmt)
     ke_khai = result.scalar_one_or_none()
-    
+
     if not ke_khai:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1480,7 +1560,9 @@ async def delete_ke_khai(
                 }
             }
         )
-    
+
+    _assert_kekhai_not_v1(ke_khai)
+
     # Kiểm tra quyền: chỉ chủ sở hữu
     if ke_khai.cong_chuc_id != current_user.id:
         raise HTTPException(
@@ -1571,7 +1653,7 @@ async def gui_duyet_ke_khai(
     )
     result = await db.execute(stmt)
     ke_khai = result.scalar_one_or_none()
-    
+
     if not ke_khai:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1583,7 +1665,9 @@ async def gui_duyet_ke_khai(
                 }
             }
         )
-    
+
+    _assert_kekhai_not_v1(ke_khai)
+
     # Kiểm tra quyền: chỉ chủ sở hữu
     if ke_khai.cong_chuc_id != current_user.id:
         raise HTTPException(

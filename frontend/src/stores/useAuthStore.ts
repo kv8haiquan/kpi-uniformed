@@ -166,6 +166,15 @@ export const useIsQLDV = () => {
 };
 
 /**
+ * Hook kiểm tra user có phải Hợp đồng 111 không.
+ * Phase 3 (29/04/2026): HĐ 111 dùng form lãnh đạo, không có tab d/đ/e.
+ */
+export const useIsHd111 = () => {
+  const user = useAuthStore((state) => state.user);
+  return (user?.is_hd_111 ?? false) || user?.vai_tro?.ma_vai_tro === 'HD_111';
+};
+
+/**
  * Hook lấy tên đơn vị của user.
  */
 export const useUserDonVi = () => {

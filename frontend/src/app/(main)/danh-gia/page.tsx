@@ -255,6 +255,14 @@ export default function DanhGiaPage() {
     if (!isAuthenticated) router.push('/login');
   }, [isAuthenticated, router]);
 
+  // V2 REDIRECT (02/05/2026) — chặn user vào nhầm trang đánh giá V1.
+  // Lãnh đạo + HĐ 111 luôn được auth.py ép effective_kpi_version='V1'.
+  useEffect(() => {
+    if (user?.effective_kpi_version === 'V2_PL3') {
+      router.replace('/danh-gia-v2');
+    }
+  }, [user?.effective_kpi_version, router]);
+
   // =========================================================================
   // LOAD DATA
   // =========================================================================
@@ -462,6 +470,24 @@ export default function DanhGiaPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="max-w-6xl mx-auto px-4 py-6">
+        {/* PL3 V2 banner (29/04/2026): user pin V2 cảnh báo trang này V1-style */}
+        {user?.effective_kpi_version === 'V2_PL3' && (
+          <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 flex items-start justify-between gap-3 text-sm">
+            <div className="text-blue-900">
+              <strong>Bạn đang dùng phiên bản KPI mới (V2_PL3).</strong>{' '}
+              Trang này hiển thị công thức V1 (ngày × 96). Vào{' '}
+              <a href="/danh-gia-v2" className="font-semibold underline">/danh-gia-v2</a>{' '}
+              để xem điểm KPI theo công thức V2 mới (mẫu số = tổng SP đã kê khai).
+            </div>
+            <button
+              onClick={() => router.push('/danh-gia-v2')}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded hover:bg-blue-700 whitespace-nowrap"
+            >
+              Chuyển V2
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center justify-between">

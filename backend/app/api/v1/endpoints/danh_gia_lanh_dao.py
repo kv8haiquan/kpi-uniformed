@@ -44,7 +44,13 @@ router = APIRouter()
 # =============================================================================
 
 def check_is_lanh_dao(user: CongChuc) -> bool:
-    """Kiểm tra user có phải là Lãnh đạo không."""
+    """Kiểm tra user có phải là Lãnh đạo (cho đánh giá d/đ/e).
+
+    Phase 3 (29/04/2026): HĐ 111 KHÔNG có d/đ/e → reject ngay cả khi cùng form
+    ke_khai_lanh_dao. Endpoint này chỉ áp cho lãnh đạo thực sự.
+    """
+    if user.is_hd_111:
+        return False
     if user.is_lanh_dao:
         return True
     if user.vai_tro and user.vai_tro.cap_bac in [

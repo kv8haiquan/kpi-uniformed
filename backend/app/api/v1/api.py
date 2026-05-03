@@ -25,6 +25,9 @@ from app.api.v1.endpoints import (
     in_bang_ke,  # v3.7.0: In bảng kê cá nhân (phiếu đánh giá + bảng kê CV)
     bao_cao_xep_loai_quy,  # v3.9.0: Báo cáo xếp loại quý
     phieu_danh_gia_quy,  # v4.1.0 (17/04/2026): Phiếu đánh giá cá nhân quý + workflow 1 cấp
+    ke_khai_v2,  # PL3 V2 (28/04/2026): Kê khai công việc theo PL3
+    admin_pl3,   # PL3 V2 (28/04/2026): Admin CRUD danh mục PL3 + pin version
+    admin_import,  # PL3 V2 (28/04/2026): Admin import Excel PL3
 )
 
 # =============================================================================
@@ -79,6 +82,13 @@ api_router.include_router(
     ke_khai.router,
     prefix="/ke-khai",
     tags=["Kê khai công việc"],
+)
+
+# Kê khai công việc V2_PL3 (28/04/2026)
+api_router.include_router(
+    ke_khai_v2.router,
+    prefix="/ke-khai-v2",
+    tags=["Kê khai V2 (PL3)"],
 )
 
 
@@ -168,6 +178,20 @@ api_router.include_router(
     admin.router,
     prefix="/admin",
     tags=["Admin Module"],
+)
+
+# Admin PL3 V2 (28/04/2026)
+api_router.include_router(
+    admin_pl3.router,
+    prefix="/admin",
+    tags=["Admin PL3 V2"],
+)
+
+# Admin Excel import PL3 (28/04/2026)
+api_router.include_router(
+    admin_import.router,
+    prefix="/admin",
+    tags=["Admin Import PL3"],
 )
 
 api_router.include_router(

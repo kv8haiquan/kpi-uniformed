@@ -71,7 +71,8 @@ CHUC_VU_TO_VAI_TRO = {
     
     # Cấp 5 - Công chức
     "công chức": "CC",
-    "hợp đồng 111": "CC",  # Hợp đồng coi như công chức
+    # HĐ 111 dùng vai trò riêng (29/04/2026): form lãnh đạo, không d/đ/e
+    "hợp đồng 111": "HD_111",
 }
 
 # Mapping tên đơn vị -> loại đơn vị

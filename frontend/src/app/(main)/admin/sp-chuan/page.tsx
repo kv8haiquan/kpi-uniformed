@@ -234,6 +234,18 @@ export default function AdminSpChuanPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <main className="max-w-6xl mx-auto px-4 py-6">
+        {/* PL3 V2 deprecated banner (29/04/2026) */}
+        <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <strong>⚠️ Phiên bản V1 — đang được thay thế bằng V2_PL3.</strong>{' '}
+          Sau cutover, kê khai mới không gắn với SP1-SP4 mà dùng hệ số quy đổi
+          riêng từng mục PL3. Trang này vẫn hoạt động để quản lý dữ liệu V1 lịch
+          sử. Xem{' '}
+          <a href="/admin/danh-muc-pl3" className="font-semibold underline">
+            Quản lý danh mục PL3
+          </a>{' '}
+          cho phiên bản mới.
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

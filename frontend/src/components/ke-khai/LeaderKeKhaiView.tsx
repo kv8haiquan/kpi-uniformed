@@ -35,13 +35,24 @@ type TabType = 'ke-khai' | 'danh-gia-dde';
 interface LeaderKeKhaiViewProps {
   thang: number;
   nam: number;
+  /** Phase 3 (29/04/2026): nếu user là HĐ 111 → ẩn tab "Đánh giá d, đ, e",
+   *  hiển thị summary 3 chỉ số (a, b, c) thay vì 6, đổi label/màu phù hợp. */
+  isHd111?: boolean;
 }
 
 // =============================================================================
 // SUB COMPONENTS
 // =============================================================================
 
-function TabHeader({ activeTab, onTabChange }: { activeTab: TabType; onTabChange: (tab: TabType) => void }) {
+function TabHeader({
+  activeTab,
+  onTabChange,
+  hideAssessmentTab = false,
+}: {
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
+  hideAssessmentTab?: boolean;
+}) {
   return (
     <div className="border-b border-gray-200 bg-white rounded-t-xl">
       <nav className="flex -mb-px" aria-label="Tabs">
@@ -60,21 +71,23 @@ function TabHeader({ activeTab, onTabChange }: { activeTab: TabType; onTabChange
             Kê khai công việc
           </span>
         </button>
-        <button
-          onClick={() => onTabChange('danh-gia-dde')}
-          className={`py-4 px-6 border-b-2 font-medium text-sm transition-colors ${
-            activeTab === 'danh-gia-dde'
-              ? 'border-purple-500 text-purple-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            Đánh giá d, đ, e
-          </span>
-        </button>
+        {!hideAssessmentTab && (
+          <button
+            onClick={() => onTabChange('danh-gia-dde')}
+            className={`py-4 px-6 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'danh-gia-dde'
+                ? 'border-purple-500 text-purple-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Đánh giá d, đ, e
+            </span>
+          </button>
+        )}
       </nav>
     </div>
   );
@@ -259,7 +272,7 @@ function DeclarationTable({
 // MAIN COMPONENT
 // =============================================================================
 
-export default function LeaderKeKhaiView({ thang, nam }: LeaderKeKhaiViewProps) {
+export default function LeaderKeKhaiView({ thang, nam, isHd111 = false }: LeaderKeKhaiViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>('ke-khai');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -395,11 +408,17 @@ export default function LeaderKeKhaiView({ thang, nam }: LeaderKeKhaiViewProps) 
   return (
     <div className="space-y-6">
       {/* Summary */}
-      <SummaryCard thongKe={thongKe} dde={dde} />
+      {/* Phase 3: Tóm tắt KPI hiện đang dùng công thức 6 chỉ số (LĐ).
+          HĐ 111 không có d/đ/e → ẩn để tránh hiển thị sai; xem điểm chi tiết ở /danh-gia. */}
+      {!isHd111 && <SummaryCard thongKe={thongKe} dde={dde} />}
 
       {/* Tabs */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <TabHeader activeTab={activeTab} onTabChange={setActiveTab} />
+        <TabHeader
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          hideAssessmentTab={isHd111}
+        />
 
         <div className="p-6">
           {activeTab === 'ke-khai' && (

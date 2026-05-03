@@ -108,6 +108,8 @@ def user_to_response(cc: CongChuc) -> dict:
         "vai_tro_id": None,
         "vai_tro_ma": None,
         "vai_tro_ten": None,
+        # PL3 V2 (29/04/2026)
+        "kpi_version_pinned": getattr(cc, "kpi_version_pinned", None),
     }
     
     if cc.don_vi:

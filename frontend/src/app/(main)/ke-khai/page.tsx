@@ -31,7 +31,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { useAuthStore, useIsLanhDao, useIsQLDV } from '@/stores/useAuthStore';
+import { useAuthStore, useIsLanhDao, useIsQLDV, useIsHd111 } from '@/stores/useAuthStore';
 import LeaderKeKhaiView from '@/components/ke-khai/LeaderKeKhaiView';
 import { kpiService } from '@/services/kpi.service';
 import { isApiError } from '@/lib/axios';
@@ -56,6 +56,7 @@ export default function KeKhaiPage() {
   const { user } = useAuthStore();
   const isLanhDao = useIsLanhDao();
   const isQldv = useIsQLDV();
+  const isHd111 = useIsHd111();
 
   // State cho filter tháng/năm - DÙNG CHUNG CHO CẢ 2 VIEW
   const currentDate = new Date();
@@ -104,6 +105,13 @@ export default function KeKhaiPage() {
   }, [isQldv, router]);
 
   // ==========================================================================
+  // V2 READ-ONLY MODE (02/05/2026) — CC V2 chỉ xem dữ liệu V1 cũ để đối chiếu.
+  // Lãnh đạo + HĐ 111 dùng LeaderKeKhaiView (V1 hợp lệ) nên không bị ảnh hưởng.
+  // ==========================================================================
+  const isV1ReadOnly =
+    user?.effective_kpi_version === 'V2_PL3' && !isLanhDao && !isHd111;
+
+  // ==========================================================================
   // LOAD DATA - FIX v2.6.0: SỬ DỤNG getAllKeKhaiByMonth()
   // ==========================================================================
 
@@ -114,8 +122,8 @@ export default function KeKhaiPage() {
    * để tự động loop qua tất cả các trang và merge kết quả.
    */
   const loadData = useCallback(async () => {
-    // Chỉ load data cho CC thường
-    if (isLanhDao) return;
+    // Chỉ load data cho CC thường (LĐ + HĐ 111 dùng LeaderKeKhaiView riêng)
+    if (isLanhDao || isHd111) return;
 
     setIsLoading(true);
     setError(null);
@@ -139,7 +147,7 @@ export default function KeKhaiPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedThang, selectedNam, isLanhDao]);
+  }, [selectedThang, selectedNam, isLanhDao, isHd111]);
 
   // Load data khi tháng/năm thay đổi
   useEffect(() => {
@@ -294,9 +302,9 @@ export default function KeKhaiPage() {
   );
 
   // ==========================================================================
-  // RENDER LÃNH ĐẠO VIEW
+  // RENDER LÃNH ĐẠO VIEW (+ HĐ 111 — Phase 3, 29/04/2026)
   // ==========================================================================
-  if (isLanhDao) {
+  if (isLanhDao || isHd111) {
     return (
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
@@ -314,9 +322,13 @@ export default function KeKhaiPage() {
                 </button>
                 <div>
                   <h1 className="text-lg font-semibold text-gray-900">
-                    Kê khai công việc 
-                    <span className="ml-2 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">
-                      Lãnh đạo
+                    Kê khai công việc
+                    <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                      isHd111
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-purple-100 text-purple-700'
+                    }`}>
+                      {isHd111 ? 'Hợp đồng 111' : 'Lãnh đạo'}
                     </span>
                   </h1>
                   <p className="text-xs text-gray-500">{user?.ho_ten} - {user?.chuc_vu || user?.vai_tro?.ten_vai_tro}</p>
@@ -350,7 +362,7 @@ export default function KeKhaiPage() {
 
         {/* Main - Leader View */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <LeaderKeKhaiView thang={selectedThang} nam={selectedNam} />
+          <LeaderKeKhaiView thang={selectedThang} nam={selectedNam} isHd111={isHd111} />
         </main>
       </div>
     );
@@ -391,6 +403,27 @@ export default function KeKhaiPage() {
 
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* PL3 V2 (02/05/2026): CC V2 chỉ xem V1 cũ — read-only banner */}
+        {isV1ReadOnly && (
+          <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 flex items-start justify-between gap-3">
+            <div className="text-sm text-amber-900">
+              <strong>Trang xem tham khảo (V1) — chỉ đọc.</strong>{' '}
+              Hệ thống đã chuyển sang phiên bản V2_PL3. Trang này giữ lại để bạn
+              đối chiếu kê khai cũ. Vui lòng kê khai mới tại{' '}
+              <a href="/ke-khai-v2" className="font-semibold underline hover:text-amber-700">
+                /ke-khai-v2
+              </a>
+              .
+            </div>
+            <button
+              onClick={() => router.push('/ke-khai-v2')}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-amber-600 rounded hover:bg-amber-700 whitespace-nowrap"
+            >
+              Sang V2
+            </button>
+          </div>
+        )}
+
         {/* Filter & Actions */}
         <div className="card mb-6">
           <div className="card-body">
@@ -429,43 +462,45 @@ export default function KeKhaiPage() {
                 )}
               </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleOpenCreate}
-                  className="btn-primary"
-                  disabled={summary?.trang_thai_chung === KpiStatus.APPROVED}
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Thêm công việc
-                </button>
-
-                <button
-                  onClick={() => setIsMultiDayModalOpen(true)}
-                  className="btn-outline"
-                  disabled={summary?.trang_thai_chung === KpiStatus.APPROVED}
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Kê khai nhiều ngày
-                </button>
-
-                {/* FIX v2.6.0: Hiển thị số bản nháp thực tế */}
-                {canSubmit && (
+              {/* Actions — ẩn toàn bộ khi V1 read-only */}
+              {!isV1ReadOnly && (
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={handleOpenSubmitModal}
-                    className="btn-success"
+                    onClick={handleOpenCreate}
+                    className="btn-primary"
+                    disabled={summary?.trang_thai_chung === KpiStatus.APPROVED}
                   >
                     <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
-                    Gửi duyệt ({actualDraftCount})
+                    Thêm công việc
                   </button>
-                )}
-              </div>
+
+                  <button
+                    onClick={() => setIsMultiDayModalOpen(true)}
+                    className="btn-outline"
+                    disabled={summary?.trang_thai_chung === KpiStatus.APPROVED}
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Kê khai nhiều ngày
+                  </button>
+
+                  {/* FIX v2.6.0: Hiển thị số bản nháp thực tế */}
+                  {canSubmit && (
+                    <button
+                      onClick={handleOpenSubmitModal}
+                      className="btn-success"
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Gửi duyệt ({actualDraftCount})
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -609,12 +644,14 @@ export default function KeKhaiPage() {
               ) : (
                 <>
                   <p className="text-gray-500">Chưa có kê khai nào trong tháng này</p>
-                  <button
-                    onClick={handleOpenCreate}
-                    className="mt-4 btn-primary"
-                  >
-                    Thêm kê khai đầu tiên
-                  </button>
+                  {!isV1ReadOnly && (
+                    <button
+                      onClick={handleOpenCreate}
+                      className="mt-4 btn-primary"
+                    >
+                      Thêm kê khai đầu tiên
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -759,7 +796,7 @@ export default function KeKhaiPage() {
                           </td>
                           <td>
                             <div className="flex items-center justify-center gap-2">
-                              {canEditKeKhai(item.trang_thai) && (
+                              {!isV1ReadOnly && canEditKeKhai(item.trang_thai) && (
                                 <>
                                   <button
                                     onClick={() => handleOpenEdit(item.id)}
@@ -781,8 +818,11 @@ export default function KeKhaiPage() {
                                   </button>
                                 </>
                               )}
-                              {!canEditKeKhai(item.trang_thai) && (
+                              {!isV1ReadOnly && !canEditKeKhai(item.trang_thai) && (
                                 <span className="text-gray-400 text-xs">Không thể sửa</span>
+                              )}
+                              {isV1ReadOnly && (
+                                <span className="text-gray-400 text-xs">Chỉ xem</span>
                               )}
                             </div>
                           </td>

@@ -292,16 +292,38 @@ async def login_access_token(
 )
 async def get_current_user_info(
     current_user: ActiveUserDep,
+    db: DatabaseDep,
 ) -> dict[str, Any]:
     """
     Lấy thông tin chi tiết của user hiện tại.
-    
+
     **Response bao gồm:**
     - Thông tin cá nhân (mã CC, họ tên, email, SĐT)
     - Đơn vị công tác
     - Vai trò trong hệ thống
     - Cờ is_lanh_dao, is_system_admin
+    - PL3 V2 (28/04/2026): kpi_version_pinned (raw) + effective_kpi_version (resolved)
     """
+    # PL3 V2: tính effective_kpi_version
+    pinned = getattr(current_user, "kpi_version_pinned", None)
+    # LOCKED 4 (29/04/2026): lãnh đạo luôn dùng V1, V2_PL3 chỉ áp cho công chức.
+    # Phase 3 (29/04/2026): HD_111 cũng dùng V1 (form ke_khai_lanh_dao).
+    is_hd_111 = current_user.is_hd_111
+    if current_user.is_lanh_dao or is_hd_111:
+        effective_kpi_version = "V1"
+    elif pinned in ("V1", "V2_PL3"):
+        effective_kpi_version = pinned
+    else:
+        # Fallback platform_config
+        from sqlalchemy import text
+        row = (await db.execute(
+            text("SELECT value FROM public.platform_config WHERE key='kpi_version_default'")
+        )).scalar_one_or_none()
+        if row:
+            effective_kpi_version = row if isinstance(row, str) else str(row).strip('"')
+        else:
+            effective_kpi_version = "V1"
+
     # Chuẩn bị response data
     user_data = {
         "id": str(current_user.id),
@@ -313,10 +335,14 @@ async def get_current_user_info(
         "gioi_tinh": current_user.gioi_tinh.value if current_user.gioi_tinh else None,
         "chuc_vu": current_user.chuc_vu,
         "is_lanh_dao": current_user.is_lanh_dao,
+        "is_hd_111": is_hd_111,  # Phase 3 — HĐ 111 (29/04/2026)
         "is_system_admin": getattr(current_user, 'is_system_admin', False),
         "can_view_all_units": getattr(current_user, 'can_view_all_units', False) or False,
         "is_active": current_user.is_active,
         "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+        # PL3 V2 fields (28/04/2026)
+        "kpi_version_pinned": pinned,
+        "effective_kpi_version": effective_kpi_version,
     }
     
     # Thêm thông tin đơn vị

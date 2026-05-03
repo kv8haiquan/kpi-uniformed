@@ -54,6 +54,27 @@ const LOAI_ICON: Record<string, string> = {
 // HELPERS
 // =============================================================================
 
+/**
+ * Chuẩn hoá link_url cho thông báo "Yêu cầu phê duyệt" của LMS.
+ *
+ * Backend (dang_ky_service) đã được sửa để gắn `?tab=hoc-vien` khi tạo thông báo
+ * mới. Hàm này xử lý các thông báo CŨ chưa có query — bảo đảm click vào luôn
+ * mở thẳng tab "Học viên" để giảng viên duyệt nhanh.
+ */
+function resolveLinkUrl(item: IThongBaoListItem): string {
+  const url = item.link_url || '';
+  const isLMSCourse =
+    item.loai === 'LMS' &&
+    item.doi_tuong_type === 'KHOA_HOC' &&
+    url.includes('/dao-tao/khoa-hoc/');
+  const isApproval = (item.tieu_de || '').toLowerCase().includes('phê duyệt');
+  const hasTabParam = url.includes('tab=');
+  if (isLMSCourse && isApproval && !hasTabParam) {
+    return url.includes('?') ? `${url}&tab=hoc-vien` : `${url}?tab=hoc-vien`;
+  }
+  return url;
+}
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -143,7 +164,7 @@ export default function ThongBaoPage() {
   // Navigate on click
   const handleClick = (item: IThongBaoListItem) => {
     if (!item.da_doc) handleMarkRead(item.id);
-    if (item.link_url) router.push(item.link_url);
+    if (item.link_url) router.push(resolveLinkUrl(item));
   };
 
   return (

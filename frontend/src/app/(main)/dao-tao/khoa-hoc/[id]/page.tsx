@@ -8,7 +8,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { khoaHocApi, baiHocApi, baiKiemTraApi, dangKyApi } from '@/services/lms';
 import type { IKhoaHoc, IBaiHoc, IBaiKiemTra, ILichSuThi } from '@/types/lms';
@@ -33,10 +33,27 @@ const DK_TT_CONFIG: Record<string, { label: string; cls: string }> = {
 
 type DetailTab = 'noi-dung' | 'kiem-tra' | 'thong-tin' | 'khao-sat' | 'hoc-vien';
 
+const VALID_TABS: ReadonlyArray<DetailTab> = [
+  'noi-dung',
+  'kiem-tra',
+  'thong-tin',
+  'khao-sat',
+  'hoc-vien',
+];
+
 export default function KhoaHocDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = params.id as string;
+
+  // Cho phép deeplink ?tab=hoc-vien (vd: từ thông báo phê duyệt LMS)
+  const initialTab: DetailTab = (() => {
+    const t = searchParams.get('tab');
+    return t && (VALID_TABS as readonly string[]).includes(t)
+      ? (t as DetailTab)
+      : 'noi-dung';
+  })();
 
   const user = useAuthStore((s) => s.user);
   const platformRoles: string[] = (user as any)?.platform_roles ?? [];
@@ -55,7 +72,7 @@ export default function KhoaHocDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dangKyLoading, setDangKyLoading] = useState(false);
-  const [tab, setTab] = useState<DetailTab>('noi-dung');
+  const [tab, setTab] = useState<DetailTab>(initialTab);
   // Lịch sử làm bài: map bktId → ILichSuThi
   const [bktLichSu, setBktLichSu] = useState<Record<string, ILichSuThi>>({});
   const [bktExpanded, setBktExpanded] = useState<string | null>(null);
@@ -96,6 +113,15 @@ export default function KhoaHocDetailPage() {
       setHocViensLoaded(true);
     }
   };
+
+  // Auto-load danh sách học viên khi user vào trang với ?tab=hoc-vien
+  // (vd: từ thông báo phê duyệt LMS) — chờ khoaHoc + quyền sẵn sàng.
+  useEffect(() => {
+    if (tab === 'hoc-vien' && canManage && !hocViensLoaded) {
+      loadHocViens();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, canManage, hocViensLoaded]);
 
   const handleTabChange = (t: DetailTab) => {
     setTab(t);

@@ -43,6 +43,12 @@ export default function KetQuaBaoCaoPanel() {
   const [chamNhanXet, setChamNhanXet] = useState<string>('');
   const [chamLoading, setChamLoading] = useState(false);
 
+  // Xem chi tiet bai trac nghiem — state modal
+  const [chiTietModal, setChiTietModal] = useState<any | null>(null); // kq meta dang xem (ho_ten, ma_cc, lan_thu, diem...)
+  const [chiTietData, setChiTietData] = useState<any | null>(null);   // payload tu GET /ket-qua/{id}
+  const [chiTietLoading, setChiTietLoading] = useState(false);
+  const [chiTietErr, setChiTietErr] = useState<string>('');
+
   const selectedBkt = bktList.find((b) => b.id === selBktId);
   const laThucHanh = selectedBkt?.loai_bai_kiem_tra === 'THUC_HANH';
 
@@ -72,6 +78,21 @@ export default function KetQuaBaoCaoPanel() {
     setChamModal(kq);
     setChamDiem(kq.diem != null ? String(kq.diem) : '');
     setChamNhanXet(kq.nhan_xet || '');
+  };
+
+  const openChiTietModal = async (kq: any) => {
+    setChiTietModal(kq);
+    setChiTietData(null);
+    setChiTietErr('');
+    setChiTietLoading(true);
+    try {
+      const r = await baiKiemTraApi.ketQua(kq.id);
+      setChiTietData(r.data.data ?? r.data);
+    } catch (err: any) {
+      setChiTietErr(err?.response?.data?.detail?.error?.message || 'Không thể tải chi tiết bài làm');
+    } finally {
+      setChiTietLoading(false);
+    }
   };
 
   const handleSaveCham = async () => {
@@ -236,8 +257,10 @@ export default function KetQuaBaoCaoPanel() {
                         <th className="px-4 py-3 text-center font-medium text-gray-500">Vi phạm</th>
                       )}
                       <th className="px-4 py-3 text-left font-medium text-gray-500">{laThucHanh ? 'Ngày nộp' : 'Ngày thi'}</th>
-                      {laThucHanh && (
+                      {laThucHanh ? (
                         <th className="px-4 py-3 text-center font-medium text-gray-500">Chấm</th>
+                      ) : (
+                        <th className="px-4 py-3 text-center font-medium text-gray-500">Chi tiết</th>
                       )}
                     </tr>
                   </thead>
@@ -301,7 +324,7 @@ export default function KetQuaBaoCaoPanel() {
                               ? (kq.ngay_nop ? new Date(kq.ngay_nop).toLocaleString('vi-VN') : '—')
                               : (kq.ngay_lam ? new Date(kq.ngay_lam).toLocaleString('vi-VN') : '—')}
                           </td>
-                          {laThucHanh && (
+                          {laThucHanh ? (
                             <td className="px-4 py-3 text-center">
                               {kq.bai_nop_url ? (
                                 <button
@@ -316,6 +339,19 @@ export default function KetQuaBaoCaoPanel() {
                                 </button>
                               ) : (
                                 <span className="text-gray-400 text-xs">Chưa nộp</span>
+                              )}
+                            </td>
+                          ) : (
+                            <td className="px-4 py-3 text-center">
+                              {kq.dat_yeu_cau != null ? (
+                                <button
+                                  onClick={() => openChiTietModal(kq)}
+                                  className="px-2 py-1 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700"
+                                >
+                                  👁 Xem bài
+                                </button>
+                              ) : (
+                                <span className="text-gray-400 text-xs">Đang thi</span>
                               )}
                             </td>
                           )}
@@ -419,6 +455,146 @@ export default function KetQuaBaoCaoPanel() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal xem chi tiết bài trắc nghiệm */}
+      {chiTietModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setChiTietModal(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="font-semibold text-gray-900">Chi tiết bài làm</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {chiTietModal.ho_ten} · {chiTietModal.ma_cc} · Lần {chiTietModal.lan_thu}
+                </p>
+              </div>
+              <button
+                onClick={() => setChiTietModal(null)}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              >×</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              {chiTietLoading && (
+                <div className="text-center py-10 text-sm text-gray-500">Đang tải chi tiết...</div>
+              )}
+
+              {chiTietErr && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                  {chiTietErr}
+                </div>
+              )}
+
+              {chiTietData && (
+                <>
+                  {/* Score card tóm tắt */}
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-gray-900">{chiTietData.diem ?? '—'}</div>
+                      <div className="text-xs text-gray-500">Điểm</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-green-600">{chiTietData.so_cau_dung ?? 0}</div>
+                      <div className="text-xs text-gray-500">Câu đúng</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div className="text-xl font-bold text-red-600">{chiTietData.so_cau_sai ?? 0}</div>
+                      <div className="text-xs text-gray-500">Câu sai</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3 text-center">
+                      <div className={`text-sm font-bold ${chiTietData.dat_yeu_cau ? 'text-green-700' : 'text-red-700'}`}>
+                        {chiTietData.dat_yeu_cau ? 'ĐẠT' : 'CHƯA ĐẠT'}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">Kết quả</div>
+                    </div>
+                  </div>
+
+                  {/* Chi tiết từng câu */}
+                  {Array.isArray(chiTietData.chi_tiet) && chiTietData.chi_tiet.length > 0 ? (
+                    <div className="space-y-3">
+                      {chiTietData.chi_tiet.map((ct: any, i: number) => {
+                        const isCorrect = ct.dung === true;
+                        const isWrong = ct.dung === false;
+                        return (
+                          <div key={i} className={`rounded-lg border p-4 ${
+                            isCorrect ? 'bg-green-50 border-green-200' :
+                            isWrong ? 'bg-red-50 border-red-200' :
+                            'bg-yellow-50 border-yellow-200'
+                          }`}>
+                            <div className="flex items-start gap-2 mb-2">
+                              <span className="text-lg shrink-0">
+                                {isCorrect ? '✅' : isWrong ? '❌' : '⏳'}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <span className="text-xs font-medium text-gray-500">Câu {i + 1}</span>
+                                {ct.noi_dung && (
+                                  <p className="text-sm text-gray-900 mt-0.5 whitespace-pre-wrap">{ct.noi_dung}</p>
+                                )}
+                              </div>
+                              <span className={`text-sm font-bold shrink-0 ${
+                                isCorrect ? 'text-green-700' : isWrong ? 'text-red-700' : 'text-yellow-700'
+                              }`}>
+                                {ct.diem_dat}/{ct.diem_toi_da}đ
+                              </span>
+                            </div>
+
+                            {ct.tra_loi !== undefined && ct.tra_loi !== null && (
+                              <div className={`mt-2 px-3 py-1.5 rounded text-xs ${
+                                isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                              }`}>
+                                <span className="font-medium">Học viên chọn:</span>{' '}
+                                {Array.isArray(ct.tra_loi)
+                                  ? ct.tra_loi.join(', ')
+                                  : typeof ct.tra_loi === 'boolean'
+                                  ? (ct.tra_loi ? 'Đúng' : 'Sai')
+                                  : String(ct.tra_loi)}
+                              </div>
+                            )}
+
+                            {(ct.tra_loi === undefined || ct.tra_loi === null || ct.tra_loi === '') && (
+                              <div className="mt-2 px-3 py-1.5 rounded text-xs bg-gray-100 text-gray-600 italic">
+                                Học viên không trả lời câu này
+                              </div>
+                            )}
+
+                            {ct.dap_an_dung !== undefined && ct.dap_an_dung !== null && !isCorrect && (
+                              <div className="mt-1.5 px-3 py-1.5 rounded text-xs bg-green-100 text-green-800">
+                                <span className="font-medium">Đáp án đúng:</span>{' '}
+                                {Array.isArray(ct.dap_an_dung)
+                                  ? ct.dap_an_dung.join(', ')
+                                  : typeof ct.dap_an_dung === 'boolean'
+                                  ? (ct.dap_an_dung ? 'Đúng' : 'Sai')
+                                  : String(ct.dap_an_dung)}
+                              </div>
+                            )}
+
+                            {ct.giai_thich && (
+                              <div className="mt-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded text-xs text-blue-800">
+                                <span className="font-medium">Giải thích:</span>{' '}{ct.giai_thich}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-sm text-gray-500 bg-gray-50 rounded-lg">
+                      Bài làm này không có dữ liệu chi tiết từng câu.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t flex justify-end shrink-0">
+              <button
+                onClick={() => setChiTietModal(null)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+              >Đóng</button>
+            </div>
+          </div>
         </div>
       )}
 

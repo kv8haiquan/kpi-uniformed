@@ -132,7 +132,8 @@ class DangKyService:
                 tieu_de=f"Yêu cầu phê duyệt: {ho_ten} đăng ký khóa {kh.ten_khoa_hoc}",
                 noi_dung=f"{ho_ten} đăng ký khóa học \"{kh.ten_khoa_hoc}\". Vui lòng phê duyệt.",
                 muc_do="QUAN_TRONG",
-                link_url=f"/dao-tao/khoa-hoc/{khoa_hoc_id}",
+                # Link thẳng vào tab "Học viên" của khóa — nơi GV duyệt/từ chối
+                link_url=f"/dao-tao/khoa-hoc/{khoa_hoc_id}?tab=hoc-vien",
                 doi_tuong_type="KHOA_HOC",
                 doi_tuong_id=khoa_hoc_id,
             )

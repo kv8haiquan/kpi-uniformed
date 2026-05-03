@@ -74,6 +74,16 @@ export interface ILMSDashboardSummary {
   khoa_dang_hoc?: number;
   khoa_hoan_thanh?: number;
   chung_chi?: number;
+  /** Số đăng ký chờ phê duyệt (dành cho GV chủ khóa / QT_DAO_TAO). */
+  cho_phe_duyet?: number;
+}
+
+export interface IHKGDashboardSummary {
+  so_cuoc_hop_thang_nay?: number;
+  so_cuoc_hop_tham_du?: number;
+  ty_le_tham_du?: number;
+  nhiem_vu_dang_lam?: number;
+  nhiem_vu_qua_han?: number;
 }
 
 export interface IForumDashboardSummary {

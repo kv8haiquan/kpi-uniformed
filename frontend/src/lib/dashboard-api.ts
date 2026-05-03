@@ -16,6 +16,7 @@ import type {
   ILMSDashboardSummary,
   IForumDashboardSummary,
   ILegalDashboardSummary,
+  IHKGDashboardSummary,
   IThongBaoCount,
 } from '@/types/portal';
 
@@ -91,16 +92,66 @@ export async function fetchKPISummary(): Promise<IKPIDashboardSummary | null> {
  */
 export async function fetchLMSSummary(): Promise<ILMSDashboardSummary | null> {
   try {
-    const res = await axios.get('/api/v1/lms/bao-cao/ca-nhan', {
+    // Lấy báo cáo cá nhân + đếm yêu cầu chờ phê duyệt song song.
+    // Đếm yêu cầu chỉ trả về số > 0 với GV chủ khóa / QT_DAO_TAO / lãnh đạo;
+    // user thường sẽ nhận về 0 → backend đã xử lý phân quyền.
+    const [resCaNhan, resChoDuyet] = await Promise.allSettled([
+      axios.get('/api/v1/lms/bao-cao/ca-nhan', {
+        headers: authHeaders(),
+        timeout: TIMEOUT_MS,
+      }),
+      axios.get('/api/v1/lms/dang-ky/cho-phe-duyet', {
+        params: { page: 1, page_size: 1 },
+        headers: authHeaders(),
+        timeout: TIMEOUT_MS,
+      }),
+    ]);
+
+    const caNhanData =
+      resCaNhan.status === 'fulfilled'
+        ? resCaNhan.value.data?.data ?? resCaNhan.value.data
+        : null;
+    if (!caNhanData) return null;
+
+    let choPheDuyet: number | undefined;
+    if (resChoDuyet.status === 'fulfilled') {
+      const pg = resChoDuyet.value.data?.pagination;
+      choPheDuyet = pg?.total_items ?? 0;
+    }
+
+    return {
+      khoa_dang_hoc: caNhanData.khoa_dang_hoc ?? caNhanData.tong_dang_hoc ?? undefined,
+      khoa_hoan_thanh: caNhanData.khoa_hoan_thanh ?? caNhanData.tong_hoan_thanh ?? undefined,
+      chung_chi: caNhanData.chung_chi ?? caNhanData.tong_chung_chi ?? undefined,
+      cho_phe_duyet: choPheDuyet,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================================
+// HKG (Họp Không Giấy) — port 8006 (qua nginx /api/v1/hop-khong-giay/*)
+// =============================================================================
+
+/**
+ * Lấy tóm tắt cá nhân HKG (số cuộc họp tháng, nhiệm vụ đang làm/quá hạn).
+ * Endpoint: GET /api/v1/hop-khong-giay/thong-ke/ca-nhan
+ */
+export async function fetchHKGSummary(): Promise<IHKGDashboardSummary | null> {
+  try {
+    const res = await axios.get('/api/v1/hop-khong-giay/thong-ke/ca-nhan', {
       headers: authHeaders(),
       timeout: TIMEOUT_MS,
     });
     const data = res.data?.data ?? res.data;
     if (!data) return null;
     return {
-      khoa_dang_hoc: data.khoa_dang_hoc ?? data.tong_dang_hoc ?? undefined,
-      khoa_hoan_thanh: data.khoa_hoan_thanh ?? data.tong_hoan_thanh ?? undefined,
-      chung_chi: data.chung_chi ?? data.tong_chung_chi ?? undefined,
+      so_cuoc_hop_thang_nay: data.so_cuoc_hop_thang_nay ?? undefined,
+      so_cuoc_hop_tham_du: data.so_cuoc_hop_tham_du ?? undefined,
+      ty_le_tham_du: data.ty_le_tham_du ?? undefined,
+      nhiem_vu_dang_lam: data.nhiem_vu_dang_lam ?? undefined,
+      nhiem_vu_qua_han: data.nhiem_vu_qua_han ?? undefined,
     };
   } catch {
     return null;

@@ -16,6 +16,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { getPlatformRolesFromToken, userCanAccessHkg } from '@/lib/jwt-claims';
 import {
   Home,
   FileText,
@@ -33,6 +34,7 @@ import {
   Search,
   Settings,
   ChevronLeft,
+  CalendarCheck,
   ChevronRight,
   Menu,
   X,
@@ -86,13 +88,32 @@ function useMenuSections(): MenuSection[] {
   const isAdmin = useIsAdmin();
   const isQldv = useIsQLDV();
   const thongBaoCount = useThongBaoCount();
+  const { user } = useAuthStore();
+
+  // PL3 V2 (28/04/2026): hiển thị label "Kê khai công việc" và "Đánh giá" trỏ
+  // về route theo effective_kpi_version. Default V2_PL3 trên test env.
+  const kpiVersion = user?.effective_kpi_version ?? 'V2_PL3';
+  const keKhaiHref = kpiVersion === 'V2_PL3' ? '/ke-khai-v2' : '/ke-khai';
+  const keKhaiLabel =
+    kpiVersion === 'V2_PL3' ? 'Kê khai công việc (V2)' : 'Kê khai công việc';
+  const danhGiaHref = kpiVersion === 'V2_PL3' ? '/danh-gia-v2' : '/danh-gia';
+  const danhGiaLabel = kpiVersion === 'V2_PL3' ? 'Đánh giá (V2)' : 'Đánh giá';
+
+  // HKG (01/05/2026 — UAT feature flag): visible cho admin/leadership/HKG-roles.
+  // Đọc platform_roles từ user (populate từ /me) hoặc decode JWT làm fallback.
+  const platformRoles = user?.platform_roles ?? getPlatformRolesFromToken();
+  const hkgVisible = userCanAccessHkg({
+    vai_tro: user?.vai_tro?.ma_vai_tro,
+    is_admin: user?.is_system_admin,
+    platform_roles: platformRoles,
+  });
 
   // KPI menu items — QLDV: ẩn "Kê khai công việc" (không có quyền tạo)
   const kpiItems: MenuItem[] = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    ...(!isQldv ? [{ label: 'Kê khai công việc', href: '/ke-khai', icon: FileText }] : []),
+    ...(!isQldv ? [{ label: keKhaiLabel, href: keKhaiHref, icon: FileText }] : []),
     { label: 'Phê duyệt', href: '/phe-duyet', icon: CheckSquare },
-    { label: 'Đánh giá', href: '/danh-gia', icon: BarChart3 },
+    { label: danhGiaLabel, href: danhGiaHref, icon: BarChart3 },
     { label: 'Xếp loại', href: '/xep-loai', icon: Trophy },
     { label: 'Nghỉ phép', href: '/nghi-phep', icon: CalendarDays },
   ];
@@ -122,6 +143,11 @@ function useMenuSections(): MenuSection[] {
         { label: 'Tin tức', href: '/tin-tuc', icon: Newspaper },
         { label: 'Tài liệu', href: '/tai-lieu', icon: FolderOpen },
         { label: 'Kho tri thức', href: '/kien-thuc', icon: BookOpen },
+        // HKG (01/05/2026 — UAT): chỉ visible khi user có role HKG hoặc admin/leadership.
+        // Sau UAT pass → bỏ điều kiện hkgVisible để mở cho 549 user.
+        ...(hkgVisible
+          ? [{ label: 'Họp Không Giấy', href: '/hop-khong-giay', icon: CalendarCheck }]
+          : []),
       ],
     },
 

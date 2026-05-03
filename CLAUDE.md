@@ -172,10 +172,15 @@ Lý do: Cross-schema JOIN hoạt động bình thường, 1 connection pool, FK 
 | Service | Port | Folder | Status |
 |---------|------|--------|--------|
 | KPI Backend | 8000 | backend/app/ | ✅ Production |
-| LMS Backend | 8001 | (project riêng) | 🔄 Đang build |
-| Forum Backend | 8002 | (project riêng) | ⏳ Chưa bắt đầu |
-| Legal Backend | 8003 | (project riêng) | ⏳ Chưa bắt đầu |
+| LMS Backend | 8001 | backend/lms_service/ | ✅ Đã chạy (verify 01/05/2026) |
+| Forum Backend | 8002 | backend/forum_service/ | ✅ Đã chạy |
+| Legal Backend | 8003 | backend/legal_service/ | ✅ Đã chạy |
+| Portal Backend | 8004 | backend/portal_service/ | ✅ Đã chạy |
+| Common Backend | 8005 | backend/common_service/ | ✅ Đã chạy |
+| HKG Backend (Họp Không Giấy) | 8006 | backend/meeting_service/ | 🔄 G2 (Module 1) |
 | Frontend | 3000 | frontend/ | ✅ Production |
+
+> **Reconciled 01/05/2026** — phát hiện portal_service (8004) và common_service (8005) chưa document trước đó (gốc rễ port conflict khi scaffold HKG).
 
 ## Bảng dùng chung — CHỈ ĐỌC
 

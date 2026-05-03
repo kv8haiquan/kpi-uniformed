@@ -1,0 +1,252 @@
+[
+  {
+    "case": {
+      "cong_chuc_id": "f9b6e864-4246-46f8-9afe-5f03c1aaae21",
+      "ma_cc": "20ZZ-0447",
+      "ho_ten": "Nguyễn Trọng Nghĩa",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 147,
+      "tong_sp_da_duyet": 2579.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 4.0,
+      "so_ngay_lam_viec": 27.0,
+      "sp_duoc_giao": 2592.0,
+      "tong_sp_hoan_thanh": 2579.0,
+      "sp_chat_luong": 2579.0,
+      "sp_tien_do": 2579.0,
+      "a_so_luong": 0.9949845679012346,
+      "b_chat_luong": 0.9949845679012346,
+      "c_tien_do": 0.9949845679012346,
+      "diem_kpi": 0.9949845679012346,
+      "diem_70": 69.64891975308642
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "bd7f574b-7e4e-441c-ab9e-62c0ea1e6231",
+      "ma_cc": "20ZZ-0281",
+      "ho_ten": "Trần Thị Hằng",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 146,
+      "tong_sp_da_duyet": 2459.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 5.0,
+      "so_ngay_lam_viec": 26.0,
+      "sp_duoc_giao": 2496.0,
+      "tong_sp_hoan_thanh": 2459.0,
+      "sp_chat_luong": 2459.0,
+      "sp_tien_do": 2459.0,
+      "a_so_luong": 0.985176282051282,
+      "b_chat_luong": 0.985176282051282,
+      "c_tien_do": 0.985176282051282,
+      "diem_kpi": 0.985176282051282,
+      "diem_70": 68.96233974358974
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "bdaead0d-9be0-4b23-8b5d-6af2ed5d435c",
+      "ma_cc": "20ZZ-0124",
+      "ho_ten": "Trương Việt Dũng",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 124,
+      "tong_sp_da_duyet": 3791.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 0.0,
+      "so_ngay_lam_viec": 31.0,
+      "sp_duoc_giao": 2976.0,
+      "tong_sp_hoan_thanh": 3791.0,
+      "sp_chat_luong": 3791.0,
+      "sp_tien_do": 3791.0,
+      "a_so_luong": 1.0,
+      "b_chat_luong": 1.0,
+      "c_tien_do": 1.0,
+      "diem_kpi": 1.0,
+      "diem_70": 70
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "c8c24086-5d89-4de1-954b-cf0b81a9e04d",
+      "ma_cc": "20ZZ-0127",
+      "ho_ten": "Nguyễn Chí Thái",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 115,
+      "tong_sp_da_duyet": 1910.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 10.0,
+      "so_ngay_lam_viec": 21.0,
+      "sp_duoc_giao": 2016.0,
+      "tong_sp_hoan_thanh": 1910.0,
+      "sp_chat_luong": 1910.0,
+      "sp_tien_do": 1910.0,
+      "a_so_luong": 0.9474206349206349,
+      "b_chat_luong": 0.9474206349206349,
+      "c_tien_do": 0.9474206349206349,
+      "diem_kpi": 0.9474206349206349,
+      "diem_70": 66.31944444444444
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "86c50213-62c2-47b8-ab0c-b954828bd57d",
+      "ma_cc": "20ZZ-0381",
+      "ho_ten": "Vũ Thị Thu Thảo",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 107,
+      "tong_sp_da_duyet": 2184.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 8.0,
+      "so_ngay_lam_viec": 23.0,
+      "sp_duoc_giao": 2208.0,
+      "tong_sp_hoan_thanh": 2184.0,
+      "sp_chat_luong": 2184.0,
+      "sp_tien_do": 2184.0,
+      "a_so_luong": 0.9891304347826086,
+      "b_chat_luong": 0.9891304347826086,
+      "c_tien_do": 0.9891304347826086,
+      "diem_kpi": 0.9891304347826088,
+      "diem_70": 69.23913043478261
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "f7cefe2d-aae8-463c-94da-17935d63556e",
+      "ma_cc": "20ZZ-0474",
+      "ho_ten": "Lưu Đình Hải",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 103,
+      "tong_sp_da_duyet": 25311.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 5.0,
+      "so_ngay_lam_viec": 26.0,
+      "sp_duoc_giao": 2496.0,
+      "tong_sp_hoan_thanh": 25311.0,
+      "sp_chat_luong": 25311.0,
+      "sp_tien_do": 25311.0,
+      "a_so_luong": 1.0,
+      "b_chat_luong": 1.0,
+      "c_tien_do": 1.0,
+      "diem_kpi": 1.0,
+      "diem_70": 70
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "7c68aedc-9e7c-48e1-bc1d-8c45a3fdb779",
+      "ma_cc": "20ZZ-0342",
+      "ho_ten": "Đoàn Hồng Chuyên",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 93,
+      "tong_sp_da_duyet": 7885.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 5.0,
+      "so_ngay_lam_viec": 26.0,
+      "sp_duoc_giao": 2496.0,
+      "tong_sp_hoan_thanh": 7885.0,
+      "sp_chat_luong": 7885.0,
+      "sp_tien_do": 7885.0,
+      "a_so_luong": 1.0,
+      "b_chat_luong": 1.0,
+      "c_tien_do": 1.0,
+      "diem_kpi": 1.0,
+      "diem_70": 70
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "64ce307a-b91f-4dc2-9e87-f50ec885f93b",
+      "ma_cc": "20ZZ-0159",
+      "ho_ten": "Lưu Thị Loan",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 91,
+      "tong_sp_da_duyet": 7640.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 1.0,
+      "so_ngay_lam_viec": 30.0,
+      "sp_duoc_giao": 2880.0,
+      "tong_sp_hoan_thanh": 7640.0,
+      "sp_chat_luong": 7640.0,
+      "sp_tien_do": 7640.0,
+      "a_so_luong": 1.0,
+      "b_chat_luong": 1.0,
+      "c_tien_do": 1.0,
+      "diem_kpi": 1.0,
+      "diem_70": 70
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "68201cd4-986c-43f6-910f-cdce464888f8",
+      "ma_cc": "20ZZ-0206",
+      "ho_ten": "Nguyễn Công Toàn",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 88,
+      "tong_sp_da_duyet": 11390.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 0.0,
+      "so_ngay_lam_viec": 31.0,
+      "sp_duoc_giao": 2976.0,
+      "tong_sp_hoan_thanh": 11390.0,
+      "sp_chat_luong": 11390.0,
+      "sp_tien_do": 11390.0,
+      "a_so_luong": 1.0,
+      "b_chat_luong": 1.0,
+      "c_tien_do": 1.0,
+      "diem_kpi": 1.0,
+      "diem_70": 70
+    }
+  },
+  {
+    "case": {
+      "cong_chuc_id": "05800e09-99e8-4696-bccd-d3b1d9ca1e79",
+      "ma_cc": "20ZZ-0611",
+      "ho_ten": "Trần Văn Mạnh",
+      "thang": 1,
+      "nam": 2026,
+      "so_kekhai_v1_da_duyet": 86,
+      "tong_sp_da_duyet": 48970.0
+    },
+    "expected": {
+      "so_ngay_trong_thang": 31,
+      "so_ngay_nghi": 5.0,
+      "so_ngay_lam_viec": 26.0,
+      "sp_duoc_giao": 2496.0,
+      "tong_sp_hoan_thanh": 48970.0,
+      "sp_chat_luong": 48970.0,
+      "sp_tien_do": 48970.0,
+      "a_so_luong": 1.0,
+      "b_chat_luong": 1.0,
+      "c_tien_do": 1.0,
+      "diem_kpi": 1.0,
+      "diem_70": 70
+    }
+  }
+]

@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # File upload
     upload_dir: str = "uploads/lms"        # Thư mục lưu file (relative to working dir)
-    max_file_size_mb: int = 100            # Giới hạn kích thước file
+    max_file_size_mb: int = 500            # Giới hạn kích thước file (khớp mặc định frontend)
 
     # Common service internal API
     common_internal_url: str = "http://localhost:8005/internal/v1"

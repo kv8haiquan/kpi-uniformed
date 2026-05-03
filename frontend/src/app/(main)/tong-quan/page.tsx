@@ -24,6 +24,7 @@ import {
   fetchPortalSummary,
   fetchLegalSummary,
   fetchForumSummary,
+  fetchHKGSummary,
 } from '@/lib/dashboard-api';
 
 import type {
@@ -33,14 +34,17 @@ import type {
   IPortalDashboardSummary,
   ILegalDashboardSummary,
   IForumDashboardSummary,
+  IHKGDashboardSummary,
 } from '@/types/portal';
 
 import WidgetKPI from './components/WidgetKPI';
 import WidgetThongBao from './components/WidgetThongBao';
 import WidgetLMS from './components/WidgetLMS';
+import WidgetLMSPheDuyet from './components/WidgetLMSPheDuyet';
 import WidgetTinTuc from './components/WidgetTinTuc';
 import WidgetLegal from './components/WidgetLegal';
 import WidgetForum from './components/WidgetForum';
+import WidgetHKG from './components/WidgetHKG';
 
 // =============================================================================
 // CONSTANTS
@@ -59,6 +63,7 @@ interface DashboardState {
   portal: IPortalDashboardSummary | null;
   legal: ILegalDashboardSummary | null;
   forum: IForumDashboardSummary | null;
+  hkg: IHKGDashboardSummary | null;
 }
 
 // =============================================================================
@@ -75,6 +80,7 @@ export default function TongQuanPage() {
     portal: null,
     legal: null,
     forum: null,
+    hkg: null,
   });
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -86,7 +92,7 @@ export default function TongQuanPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
 
-    const [kpiRes, thongBaoRes, lmsRes, portalRes, legalRes, forumRes] =
+    const [kpiRes, thongBaoRes, lmsRes, portalRes, legalRes, forumRes, hkgRes] =
       await Promise.allSettled([
         fetchKPISummary(),
         fetchThongBaoCount(),
@@ -94,6 +100,7 @@ export default function TongQuanPage() {
         fetchPortalSummary(),
         fetchLegalSummary(),
         fetchForumSummary(),
+        fetchHKGSummary(),
       ]);
 
     setData({
@@ -103,6 +110,7 @@ export default function TongQuanPage() {
       portal:   portalRes.status   === 'fulfilled' ? portalRes.value   : null,
       legal:    legalRes.status    === 'fulfilled' ? legalRes.value    : null,
       forum:    forumRes.status    === 'fulfilled' ? forumRes.value    : null,
+      hkg:      hkgRes.status      === 'fulfilled' ? hkgRes.value      : null,
     });
 
     setLastUpdated(new Date());
@@ -194,6 +202,9 @@ export default function TongQuanPage() {
         {/* ------------------------------------------------------------------ */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
+          {/* Cảnh báo phê duyệt LMS — full-width, chỉ hiện khi có yêu cầu */}
+          <WidgetLMSPheDuyet count={data.lms?.cho_phe_duyet ?? 0} />
+
           {/* Hàng 1: KPI | Thông báo | LMS */}
           <WidgetKPI      data={data.kpi}      loading={loading} />
           <WidgetThongBao data={data.thongBao} loading={loading} />
@@ -203,8 +214,9 @@ export default function TongQuanPage() {
           <WidgetTinTuc   data={data.portal}   loading={loading} />
           <WidgetLegal    data={data.legal}    loading={loading} />
 
-          {/* Hàng 3: Diễn đàn */}
+          {/* Hàng 3: Diễn đàn | Họp không giấy */}
           <WidgetForum    data={data.forum}    loading={loading} />
+          <WidgetHKG      data={data.hkg}      loading={loading} />
 
         </div>
 

@@ -390,6 +390,12 @@ export const nhomThanhPhanApi = {
   themThanhVien: (nhom_id: string, data: INhomChiTietInput) =>
     unwrap<INhomChiTiet>(hkgApi.post(`/nhom-thanh-phan/${nhom_id}/thanh-vien`, data)),
 
+  /** Bulk add — skip CBCC đã có (không 409). Trả {so_them, so_bo_qua_trung, tong_thanh_vien}. */
+  themThanhVienBatch: (nhom_id: string, chi_tiet: INhomChiTietInput[]) =>
+    unwrap<{ so_them: number; so_bo_qua_trung: number; tong_thanh_vien: number }>(
+      hkgApi.post(`/nhom-thanh-phan/${nhom_id}/thanh-vien/batch`, { chi_tiet }),
+    ),
+
   suaThanhVien: (nhom_id: string, cong_chuc_id: string, data: INhomChiTietUpdate) =>
     unwrap<INhomChiTiet>(
       hkgApi.put(`/nhom-thanh-phan/${nhom_id}/thanh-vien/${cong_chuc_id}`, data),

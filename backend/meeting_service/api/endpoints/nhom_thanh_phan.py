@@ -28,6 +28,7 @@ from meeting_service.dependencies import (
 )
 from meeting_service.models.cuoc_hop import CuocHop
 from meeting_service.schemas.nhom_thanh_phan import (
+    ChiTietBatchRequest,
     ChiTietCreate,
     ChiTietResponse,
     ChiTietUpdate,
@@ -142,6 +143,24 @@ async def them_thanh_vien(
         "success": True,
         "data": ChiTietResponse.model_validate(ct).model_dump(mode="json"),
     }
+
+
+@router.post("/{nhom_id}/thanh-vien/batch",
+             summary="Thêm nhiều thành viên 1 lần (skip trùng, không 409)")
+async def them_thanh_vien_batch(
+    nhom_id: UUID,
+    data: ChiTietBatchRequest,
+    db: DatabaseDep,
+    user: CurrentUserDep,
+):
+    """Thêm nhiều thành viên cùng lúc.
+
+    Skip CBCC đã có trong nhóm (không raise 409). Trả số đã thêm + bỏ qua.
+    Dùng cho UI bulk-add từ checkbox list theo đơn vị.
+    """
+    service = NhomThanhPhanService(db)
+    result = await service.them_thanh_vien_batch(nhom_id, data.chi_tiet, user)
+    return {"success": True, "data": result.model_dump(mode="json")}
 
 
 @router.put("/{nhom_id}/thanh-vien/{cong_chuc_id}",

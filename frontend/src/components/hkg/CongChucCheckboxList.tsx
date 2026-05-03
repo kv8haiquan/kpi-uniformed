@@ -30,6 +30,14 @@ export interface ICongChucCheckboxListProps {
   thuKyId?: string | null;
   /** Disable toàn bộ. */
   disabled?: boolean;
+  /**
+   * UUIDs đã "khóa" — hiển thị tick + disabled, KHÔNG nằm trong `value`
+   * và không bị thêm vào khi "Chọn tất cả". Dùng cho case CBCC đã có trong
+   * nhóm thành phần — báo hiệu cho user biết khỏi tick lại.
+   */
+  lockedIds?: Set<string>;
+  /** Suffix hiển thị cạnh entry locked (vd: "(đã trong nhóm)"). */
+  lockedLabel?: string;
 }
 
 export default function CongChucCheckboxList({
@@ -39,6 +47,8 @@ export default function CongChucCheckboxList({
   chuToaId,
   thuKyId,
   disabled,
+  lockedIds,
+  lockedLabel,
 }: ICongChucCheckboxListProps) {
   const [items, setItems] = useState<ICongChucSearchItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -126,24 +136,31 @@ export default function CongChucCheckboxList({
   }
 
   const valueSet = new Set(value);
-  const allSelected = items.every((it) => valueSet.has(it.id));
-  const someSelected = items.some((it) => valueSet.has(it.id));
+  const lockSet = lockedIds ?? new Set<string>();
+
+  // Items có thể tick (loại trừ locked); dùng để tính allSelected
+  const togglableItems = items.filter((it) => !lockSet.has(it.id));
+  const allSelected =
+    togglableItems.length > 0 && togglableItems.every((it) => valueSet.has(it.id));
+  const someSelected = togglableItems.some((it) => valueSet.has(it.id));
 
   const toggleAll = () => {
     if (allSelected) {
-      // Bỏ tất cả TRỪ auto (chu_toa/thu_ky)
-      const kept = value.filter((id) => autoIds.has(id) || !items.find((it) => it.id === id));
+      // Bỏ tất cả TRỪ auto (chu_toa/thu_ky); locked không trong value nên skip
+      const kept = value.filter(
+        (id) => autoIds.has(id) || !togglableItems.find((it) => it.id === id),
+      );
       onChange(kept);
     } else {
-      // Tick tất cả + giữ value cũ ngoài đơn vị
+      // Tick tất cả togglable + giữ value cũ ngoài đơn vị
       const merged = new Set(value);
-      items.forEach((it) => merged.add(it.id));
+      togglableItems.forEach((it) => merged.add(it.id));
       onChange(Array.from(merged));
     }
   };
 
   const toggleOne = (id: string) => {
-    if (autoIds.has(id)) return; // disabled — không cho bỏ chu_toa/thu_ky
+    if (autoIds.has(id) || lockSet.has(id)) return; // disabled
     const next = new Set(value);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -162,35 +179,42 @@ export default function CongChucCheckboxList({
               if (el) el.indeterminate = !allSelected && someSelected;
             }}
             onChange={toggleAll}
-            disabled={disabled}
+            disabled={disabled || togglableItems.length === 0}
             className="w-4 h-4"
           />
-          Chọn tất cả ({items.length} CBCC)
+          Chọn tất cả ({togglableItems.length} CBCC{lockSet.size > 0 ? ` · ${lockSet.size} đã có` : ''})
         </label>
         <span className="text-xs text-gray-500">
-          Đã chọn {items.filter((it) => valueSet.has(it.id)).length}/{items.length}
+          Đã chọn {togglableItems.filter((it) => valueSet.has(it.id)).length}/{togglableItems.length}
         </span>
       </div>
 
       {/* Grid checkbox */}
       <div className="max-h-80 overflow-y-auto p-2 space-y-1">
         {items.map((it) => {
-          const checked = valueSet.has(it.id);
+          const isLocked = lockSet.has(it.id);
           const isAuto = autoIds.has(it.id);
+          const checked = valueSet.has(it.id) || isLocked;
           const autoLabel =
-            it.id === chuToaId ? ' (Chủ tọa)' : it.id === thuKyId ? ' (Thư ký)' : '';
+            it.id === chuToaId
+              ? ' (Chủ tọa)'
+              : it.id === thuKyId
+                ? ' (Thư ký)'
+                : isLocked && lockedLabel
+                  ? ` ${lockedLabel}`
+                  : '';
           return (
             <label
               key={it.id}
               className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm cursor-pointer ${
-                isAuto ? 'bg-blue-50' : 'hover:bg-gray-50'
-              } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                isAuto ? 'bg-blue-50' : isLocked ? 'bg-gray-100' : 'hover:bg-gray-50'
+              } ${disabled || isLocked ? 'opacity-70 cursor-not-allowed' : ''}`}
             >
               <input
                 type="checkbox"
                 checked={checked}
                 onChange={() => toggleOne(it.id)}
-                disabled={disabled || isAuto}
+                disabled={disabled || isAuto || isLocked}
                 className="w-4 h-4"
               />
               <span className={`flex-1 ${it.is_lanh_dao ? 'font-medium' : ''}`}>

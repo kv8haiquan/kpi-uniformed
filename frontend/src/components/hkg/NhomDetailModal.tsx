@@ -1,26 +1,40 @@
 /**
  * NhomDetailModal — modal chi tiết 1 nhóm + CRUD thành viên.
  *
- * Hiển thị:
- * - Header: tên nhóm + loại + mô tả
- * - Danh sách thành viên (sorted CHU_TRI > THU_KY > THANH_VIEN)
- * - Form thêm thành viên (CongChucPicker + chọn vai_tro + loai_tham_du)
- * - Mỗi row: dropdown sửa vai_tro/loai_tham_du + nút xoá
+ * Layout thêm thành viên (giống form tạo cuộc họp):
+ * - vai_tro + loai_tham_du dropdowns (apply cho tất cả CBCC trong lần Thêm)
+ * - Đơn vị dropdown → CongChucCheckboxList
+ *   • CBCC đã có trong nhóm: tick + disabled, suffix "(đã trong nhóm)"
+ * - CrossUnitPicker cho CBCC đơn vị khác
+ * - Submit gọi batch endpoint (skip trùng, không 409)
+ *
+ * Sau khi thêm, user có thể sửa vai_tro/loai_tham_du từng row trong bảng dưới.
  */
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import { Loader2, Plus, Trash2, X } from 'lucide-react';
-import { nhomThanhPhanApi } from '@/services/hkg';
+import { nhomThanhPhanApi, type ICongChucSearchItem } from '@/services/hkg';
 import { errMsg } from '@/lib/hkg-error';
-import CongChucPicker from '@/components/hkg/CongChucPicker';
+import CongChucCheckboxList from '@/components/hkg/CongChucCheckboxList';
+import CrossUnitPicker from '@/components/hkg/CrossUnitPicker';
 import type {
   INhom,
   INhomChiTiet,
+  INhomChiTietInput,
   LoaiThamDu,
   VaiTroNhom,
 } from '@/types/hkg';
+
+const LMS_API = process.env.NEXT_PUBLIC_LMS_API_URL || '/api/v1/lms';
+
+interface IDonVi {
+  id: string;
+  ma_don_vi: string;
+  ten_don_vi: string;
+}
 
 interface Props {
   nhomId: string;
@@ -44,7 +58,11 @@ export default function NhomDetailModal({ nhomId, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [pickedCcId, setPickedCcId] = useState<string | null>(null);
+  // Form bulk add
+  const [donViList, setDonViList] = useState<IDonVi[]>([]);
+  const [donViId, setDonViId] = useState<string>('');
+  const [inDonViIds, setInDonViIds] = useState<string[]>([]);
+  const [outsideEntries, setOutsideEntries] = useState<ICongChucSearchItem[]>([]);
   const [vaiTro, setVaiTro] = useState<VaiTroNhom>('THANH_VIEN');
   const [loaiThamDu, setLoaiThamDu] = useState<LoaiThamDu>('BAT_BUOC');
   const [adding, setAdding] = useState(false);
@@ -74,21 +92,66 @@ export default function NhomDetailModal({ nhomId, onClose }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Load đơn vị list 1 lần
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const token =
+          typeof window !== 'undefined'
+            ? localStorage.getItem('kpi_access_token')
+            : null;
+        const resp = await axios.get(`${LMS_API}/don-vi`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        setDonViList(resp.data?.data || []);
+      } catch {
+        // Silent — picker vẫn dùng được
+      }
+    };
+    load();
+  }, []);
+
+  // Set UUIDs CBCC đã có sẵn trong nhóm — để khoá trong checkbox list
+  const existingMemberIds = useMemo(
+    () => new Set((nhom?.chi_tiet ?? []).map((ct) => ct.cong_chuc_id)),
+    [nhom],
+  );
+
+  // Đổi đơn vị → reset selection trong đơn vị (giữ outside)
+  useEffect(() => {
+    setInDonViIds([]);
+  }, [donViId]);
+
+  // Tổng số CBCC sắp thêm (loại trừ trùng giữa 2 nguồn + đã có sẵn)
+  const candidateIds = useMemo(() => {
+    const s = new Set<string>(inDonViIds);
+    outsideEntries.forEach((e) => s.add(e.id));
+    existingMemberIds.forEach((id) => s.delete(id));
+    return s;
+  }, [inDonViIds, outsideEntries, existingMemberIds]);
+
   const handleAdd = async () => {
-    if (!pickedCcId) return;
+    if (candidateIds.size === 0) return;
     setAdding(true);
     try {
-      await nhomThanhPhanApi.themThanhVien(nhomId, {
-        cong_chuc_id: pickedCcId,
+      const items: INhomChiTietInput[] = Array.from(candidateIds).map((cong_chuc_id) => ({
+        cong_chuc_id,
         vai_tro: vaiTro,
         loai_tham_du: loaiThamDu,
-      });
-      setPickedCcId(null);
+      }));
+      const result = await nhomThanhPhanApi.themThanhVienBatch(nhomId, items);
+      setInDonViIds([]);
+      setOutsideEntries([]);
       setVaiTro('THANH_VIEN');
       setLoaiThamDu('BAT_BUOC');
       await reload();
+      const msgs = [`Đã thêm ${result.so_them} thành viên`];
+      if (result.so_bo_qua_trung > 0) {
+        msgs.push(`bỏ qua ${result.so_bo_qua_trung} người trùng`);
+      }
+      alert(msgs.join('. '));
     } catch (e: unknown) {
-      alert(errMsg(e, 'Thêm thất bại'));
+      alert(errMsg(e, 'Thêm thành viên thất bại'));
     } finally {
       setAdding(false);
     }
@@ -122,7 +185,7 @@ export default function NhomDetailModal({ nhomId, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
+        className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b">
@@ -158,21 +221,19 @@ export default function NhomDetailModal({ nhomId, onClose }: Props) {
             </div>
           ) : (
             <>
-              {/* Form thêm thành viên */}
-              <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
-                <div className="text-sm font-medium text-gray-700 mb-2">
+              {/* Form bulk add */}
+              <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4 space-y-3">
+                <div className="text-sm font-medium text-gray-700">
                   Thêm thành viên
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
-                  <CongChucPicker
-                    value={pickedCcId}
-                    onChange={(id) => setPickedCcId(id)}
-                    placeholder="Tìm CBCC theo tên/mã (≥2 ký tự)"
-                  />
+
+                {/* Default vai_tro + loai_tham_du */}
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-gray-600">Áp dụng cho lần thêm này:</span>
                   <select
                     value={vaiTro}
                     onChange={(e) => setVaiTro(e.target.value as VaiTroNhom)}
-                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white"
+                    className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white"
                   >
                     <option value="THANH_VIEN">Thành viên</option>
                     <option value="CHU_TRI">Chủ trì</option>
@@ -181,27 +242,85 @@ export default function NhomDetailModal({ nhomId, onClose }: Props) {
                   <select
                     value={loaiThamDu}
                     onChange={(e) => setLoaiThamDu(e.target.value as LoaiThamDu)}
-                    className="px-3 py-2 border border-gray-300 rounded text-sm bg-white"
+                    className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white"
                   >
                     <option value="BAT_BUOC">Bắt buộc</option>
                     <option value="THAM_KHAO">Tham khảo</option>
                   </select>
+                  <span className="text-xs text-gray-500">
+                    (sửa lại từng người trong bảng dưới sau khi thêm)
+                  </span>
+                </div>
+
+                {/* Đơn vị dropdown */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Chọn theo đơn vị
+                  </label>
+                  <select
+                    value={donViId}
+                    onChange={(e) => setDonViId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded text-sm bg-white"
+                  >
+                    <option value="">— Chọn đơn vị —</option>
+                    {donViList.map((dv) => (
+                      <option key={dv.id} value={dv.id}>
+                        {dv.ten_don_vi} ({dv.ma_don_vi})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Checkbox list trong đơn vị — locked với CBCC đã có */}
+                <CongChucCheckboxList
+                  donViId={donViId || null}
+                  value={inDonViIds}
+                  onChange={setInDonViIds}
+                  lockedIds={existingMemberIds}
+                  lockedLabel="(đã trong nhóm)"
+                />
+
+                {/* Cross-unit picker */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Hoặc tìm CBCC từ đơn vị khác
+                  </label>
+                  <CrossUnitPicker
+                    donViList={donViList}
+                    excludeDonViId={donViId || null}
+                    entries={outsideEntries}
+                    onChange={setOutsideEntries}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                  <span className="text-sm text-gray-600">
+                    Sẽ thêm <strong>{candidateIds.size}</strong> người
+                    {existingMemberIds.size > 0 && (
+                      <span className="text-xs text-gray-500 ml-1">
+                        (CBCC đã trong nhóm sẽ bị bỏ qua)
+                      </span>
+                    )}
+                  </span>
                   <button
                     onClick={handleAdd}
-                    disabled={!pickedCcId || adding}
-                    className="inline-flex items-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    disabled={candidateIds.size === 0 || adding}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                   >
                     {adding ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Plus className="w-4 h-4" />
                     )}
-                    Thêm
+                    Thêm vào nhóm
                   </button>
                 </div>
               </div>
 
-              {/* Danh sách thành viên */}
+              {/* Danh sách thành viên hiện có */}
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                Thành viên hiện tại ({nhom?.chi_tiet.length ?? 0})
+              </div>
               {nhom && nhom.chi_tiet.length === 0 ? (
                 <div className="p-6 text-center text-gray-500 bg-white border border-dashed rounded">
                   Chưa có thành viên nào. Dùng form ở trên để thêm.

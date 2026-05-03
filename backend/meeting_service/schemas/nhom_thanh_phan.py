@@ -144,3 +144,22 @@ class ThemTuNhomResponse(BaseModel):
     tong_thanh_phan: int
     chu_toa_auto_filled: bool = False
     thu_ky_auto_filled: bool = False
+
+
+# ───────────────────────────────────────────────────────────────────
+# BATCH — thêm nhiều thành viên 1 lần
+# ───────────────────────────────────────────────────────────────────
+
+class ChiTietBatchRequest(BaseModel):
+    """POST /nhom-thanh-phan/{id}/thanh-vien/batch — body.
+
+    Skip cong_chuc đã có sẵn (không 409) — trả số đã thêm + bỏ qua.
+    Trùng cong_chuc_id giữa các item trong cùng request → cũng skip.
+    """
+    chi_tiet: list[ChiTietCreate] = Field(..., min_length=1)
+
+
+class ChiTietBatchResponse(BaseModel):
+    so_them: int
+    so_bo_qua_trung: int
+    tong_thanh_vien: int

@@ -27,6 +27,7 @@ from meeting_service.models.nhom_thanh_phan import (
 )
 from meeting_service.models.thanh_phan import ThanhPhan
 from meeting_service.schemas.nhom_thanh_phan import (
+    ChiTietBatchResponse,
     ChiTietCreate,
     ChiTietUpdate,
     NhomCreate,
@@ -301,6 +302,73 @@ class NhomThanhPhanService:
         nhom.updated_at = datetime.now(timezone.utc)
         await self.db.flush()
         return ct
+
+    async def them_thanh_vien_batch(
+        self,
+        nhom_id: UUID,
+        items: list[ChiTietCreate],
+        user: TokenPayload,
+    ) -> ChiTietBatchResponse:
+        """Thêm nhiều thành viên 1 lần. Skip CC đã có sẵn (không raise 409).
+
+        Trùng cong_chuc_id giữa các item trong cùng request → cũng skip.
+        """
+        nhom = await self.db.get(NhomThanhPhan, nhom_id)
+        if nhom is None:
+            raise _err(404, "NHOM_NOT_FOUND", "Không tìm thấy nhóm thành phần")
+
+        # Members hiện có
+        existing_result = await self.db.execute(
+            select(NhomThanhPhanChiTiet.cong_chuc_id).where(
+                NhomThanhPhanChiTiet.nhom_id == nhom_id
+            )
+        )
+        existing_ids: set[UUID] = {row[0] for row in existing_result.fetchall()}
+
+        seen_in_request: set[UUID] = set()
+        so_them = 0
+        so_bo_qua = 0
+
+        for item in items:
+            cc_id = item.cong_chuc_id
+            if cc_id in existing_ids or cc_id in seen_in_request:
+                so_bo_qua += 1
+                continue
+            self.db.add(NhomThanhPhanChiTiet(
+                nhom_id=nhom_id,
+                cong_chuc_id=cc_id,
+                vai_tro=item.vai_tro,
+                loai_tham_du=item.loai_tham_du,
+            ))
+            seen_in_request.add(cc_id)
+            so_them += 1
+
+        nhom.updated_at = datetime.now(timezone.utc)
+        await self.db.flush()
+
+        # Tổng thành viên hiện tại
+        tong_result = await self.db.execute(
+            select(func.count(NhomThanhPhanChiTiet.id)).where(
+                NhomThanhPhanChiTiet.nhom_id == nhom_id
+            )
+        )
+        tong = tong_result.scalar() or 0
+
+        await ghi_audit(
+            self.db,
+            hanh_dong="ADD_THANH_VIEN_BATCH",
+            nguoi_thuc_hien_id=UUID(user.sub),
+            doi_tuong_loai="nhom_thanh_phan",
+            doi_tuong_id=nhom_id,
+            chi_tiet={"so_them": so_them, "so_bo_qua_trung": so_bo_qua},
+        )
+        await self.db.flush()
+
+        return ChiTietBatchResponse(
+            so_them=so_them,
+            so_bo_qua_trung=so_bo_qua,
+            tong_thanh_vien=tong,
+        )
 
     async def cap_nhat_thanh_vien(
         self,

@@ -187,6 +187,70 @@ async def test_delete_nhom_cascade_chi_tiet(
 # ════════════════════════════════════════════════════════════════════
 
 @pytest.mark.asyncio
+async def test_them_thanh_vien_batch(
+    client: AsyncClient, chu_toa_user, seed_test_users,
+):
+    """Batch add — happy path + skip trùng (đã có hoặc duplicate trong request)."""
+    create = await client.post(BASE_NHOM + "/", json={
+        "ten_nhom": "Batch test",
+        "chi_tiet": [
+            {"cong_chuc_id": "aaaaaaaa-0001-0000-0000-000000000001"},
+        ],
+    })
+    nhom_id = create.json()["data"]["id"]
+
+    # Batch: 3 items — CC1 đã có (skip), CC2 mới, CC2 lặp lại (skip)
+    r = await client.post(f"{BASE_NHOM}/{nhom_id}/thanh-vien/batch", json={
+        "chi_tiet": [
+            {"cong_chuc_id": "aaaaaaaa-0001-0000-0000-000000000001",
+             "vai_tro": "THANH_VIEN"},
+            {"cong_chuc_id": "aaaaaaaa-0002-0000-0000-000000000002",
+             "vai_tro": "THU_KY", "loai_tham_du": "THAM_KHAO"},
+            {"cong_chuc_id": "aaaaaaaa-0002-0000-0000-000000000002",
+             "vai_tro": "CHU_TRI"},
+        ],
+    })
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert data["so_them"] == 1
+    assert data["so_bo_qua_trung"] == 2
+    assert data["tong_thanh_vien"] == 2
+
+    # Verify vai_tro của CC2 = THU_KY (lần đầu gặp được apply, lần lặp bị skip)
+    detail = await client.get(f"{BASE_NHOM}/{nhom_id}")
+    cc2 = next(
+        x for x in detail.json()["data"]["chi_tiet"]
+        if x["cong_chuc_id"] == "aaaaaaaa-0002-0000-0000-000000000002"
+    )
+    assert cc2["vai_tro"] == "THU_KY"
+    assert cc2["loai_tham_du"] == "THAM_KHAO"
+
+
+@pytest.mark.asyncio
+async def test_batch_nhom_not_found_404(
+    client: AsyncClient, chu_toa_user, seed_test_users,
+):
+    fake = "00000000-0000-0000-0000-000000000000"
+    r = await client.post(f"{BASE_NHOM}/{fake}/thanh-vien/batch", json={
+        "chi_tiet": [
+            {"cong_chuc_id": "aaaaaaaa-0001-0000-0000-000000000001"},
+        ],
+    })
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_batch_empty_list_422(
+    client: AsyncClient, chu_toa_user, seed_test_users,
+):
+    create = await client.post(BASE_NHOM + "/", json={"ten_nhom": "X"})
+    nhom_id = create.json()["data"]["id"]
+
+    r = await client.post(f"{BASE_NHOM}/{nhom_id}/thanh-vien/batch", json={"chi_tiet": []})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_them_thanh_vien_duplicate_409(
     client: AsyncClient, chu_toa_user, seed_test_users,
 ):

@@ -75,7 +75,7 @@ export default function WidgetKPI({ data, loading }: WidgetKPIProps) {
           )}
 
           <Link
-            href="/ke-khai"
+            href="/ke-khai-v2"
             className="block text-center text-xs text-blue-600 hover:underline mt-1"
           >
             Kê khai công việc tháng
@@ -87,14 +87,14 @@ export default function WidgetKPI({ data, loading }: WidgetKPIProps) {
           <p className="text-xs text-gray-500 text-center">{thangNam} — Chưa có dữ liệu</p>
           <div className="grid grid-cols-2 gap-2">
             <Link
-              href="/ke-khai"
+              href="/ke-khai-v2"
               className="block text-center rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 p-2 transition-colors"
             >
               <div className="text-lg">📝</div>
               <div className="text-xs text-blue-700 font-medium mt-1">Kê khai</div>
             </Link>
             <Link
-              href="/danh-gia"
+              href="/danh-gia-v2"
               className="block text-center rounded-lg bg-green-50 hover:bg-green-100 border border-green-200 p-2 transition-colors"
             >
               <div className="text-lg">✅</div>

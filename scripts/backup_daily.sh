@@ -39,13 +39,17 @@ DAY_OF_MONTH="$(date +%d)"
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 die() { log "FATAL: $*"; exit 1; }
 
-[ -n "${PGPASSWORD:-}" ] || die "PGPASSWORD env var bắt buộc"
+# Auth: chấp nhận PGPASSWORD env HOẶC ~/.pgpass file (chuẩn PostgreSQL).
+# Production khuyến nghị dùng .pgpass (chmod 600) thay vì hardcode env.
+if [ -z "${PGPASSWORD:-}" ] && [ ! -f "$HOME/.pgpass" ]; then
+    die "Thiếu auth: set PGPASSWORD env HOẶC tạo $HOME/.pgpass (chmod 600)"
+fi
 
 mkdir -p "$DAILY_DIR" "$MONTHLY_DIR" "$UPLOADS_DIR"
 
 # ─── Pre-check: disk space ───────────────────────────────────────────
 log "Pre-check disk space..."
-DB_SIZE_BYTES=$(PGPASSWORD="$PGPASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_database_size('$DB_NAME')")
+DB_SIZE_BYTES=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT pg_database_size('$DB_NAME')")
 AVAIL_BYTES=$(df -B1 "$BACKUP_ROOT" | awk 'NR==2 {print $4}')
 REQUIRED=$((DB_SIZE_BYTES * 2))
 
@@ -57,7 +61,7 @@ log "Disk OK: DB=${DB_SIZE_BYTES}B, available=${AVAIL_BYTES}B"
 # ─── 1. pg_dump ──────────────────────────────────────────────────────
 DUMP_FILE="${DAILY_DIR}/db_${TIMESTAMP}.sql.gz"
 log "pg_dump → $DUMP_FILE"
-PGPASSWORD="$PGPASSWORD" pg_dump \
+pg_dump \
     -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" \
     --no-owner --no-acl --clean --if-exists \
     "$DB_NAME" \

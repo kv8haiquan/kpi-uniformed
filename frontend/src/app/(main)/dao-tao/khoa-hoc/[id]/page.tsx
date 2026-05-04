@@ -586,32 +586,74 @@ export default function KhoaHocDetailPage() {
                           <div className="border-t bg-gray-50 px-4 py-3">
                             <div className="text-xs font-medium text-gray-500 mb-2">Lịch sử làm bài</div>
                             <div className="space-y-2">
-                              {lichSu.lich_su.map((ls) => (
-                                <div key={ls.id} className="flex items-center gap-3 text-xs py-1.5 px-3 bg-white rounded-lg border border-gray-100">
-                                  <span className="text-gray-400 w-12 shrink-0">Lần {ls.lan_thu}</span>
-                                  <span className="font-medium text-gray-700 w-16 shrink-0">
-                                    {ls.diem != null ? `${Number(ls.diem).toFixed(1)} điểm` : '—'}
-                                  </span>
-                                  {ls.so_cau_dung != null && (
-                                    <span className="text-gray-500 shrink-0">
-                                      {ls.so_cau_dung} đúng / {(ls.so_cau_dung + (ls.so_cau_sai ?? 0))} câu
-                                    </span>
-                                  )}
-                                  {ls.thoi_gian_lam_giay != null && (
-                                    <span className="text-gray-400 shrink-0">
-                                      {Math.floor(ls.thoi_gian_lam_giay / 60)}:{String(ls.thoi_gian_lam_giay % 60).padStart(2, '0')} phút
-                                    </span>
-                                  )}
-                                  <span className={`shrink-0 px-2 py-0.5 rounded-full font-medium ${ls.dat_yeu_cau ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                                    {ls.dat_yeu_cau ? '✓ Đạt' : '✗ Không đạt'}
-                                  </span>
-                                  {ls.ngay_lam && (
-                                    <span className="text-gray-400 ml-auto shrink-0">
-                                      {new Date(ls.ngay_lam).toLocaleDateString('vi-VN')}
-                                    </span>
-                                  )}
-                                </div>
-                              ))}
+                              {lichSu.lich_su.map((ls) => {
+                                const choCham = laThucHanh && ls.trang_thai_cham === 'CHO_CHAM';
+                                const daCham = laThucHanh && ls.trang_thai_cham === 'DA_CHAM';
+                                return (
+                                  <div key={ls.id} className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+                                    <div className="flex items-center gap-3 text-xs py-1.5 px-3 flex-wrap">
+                                      <span className="text-gray-400 w-12 shrink-0">Lần {ls.lan_thu}</span>
+                                      <span className="font-medium text-gray-700 w-16 shrink-0">
+                                        {ls.diem != null ? `${Number(ls.diem).toFixed(1)} điểm` : '—'}
+                                      </span>
+                                      {ls.so_cau_dung != null && (
+                                        <span className="text-gray-500 shrink-0">
+                                          {ls.so_cau_dung} đúng / {(ls.so_cau_dung + (ls.so_cau_sai ?? 0))} câu
+                                        </span>
+                                      )}
+                                      {ls.thoi_gian_lam_giay != null && (
+                                        <span className="text-gray-400 shrink-0">
+                                          {Math.floor(ls.thoi_gian_lam_giay / 60)}:{String(ls.thoi_gian_lam_giay % 60).padStart(2, '0')} phút
+                                        </span>
+                                      )}
+                                      {laThucHanh && ls.bai_nop_url && (
+                                        <a
+                                          href={ls.bai_nop_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-blue-600 hover:underline shrink-0"
+                                          title={ls.bai_nop_ten_file || 'Xem bài nộp'}
+                                        >
+                                          🎬 Xem bài nộp
+                                        </a>
+                                      )}
+                                      {choCham ? (
+                                        <span className="shrink-0 px-2 py-0.5 rounded-full font-medium bg-yellow-100 text-yellow-700">
+                                          ⏳ Chờ chấm
+                                        </span>
+                                      ) : (
+                                        <span className={`shrink-0 px-2 py-0.5 rounded-full font-medium ${ls.dat_yeu_cau ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                                          {ls.dat_yeu_cau ? '✓ Đạt' : '✗ Không đạt'}
+                                        </span>
+                                      )}
+                                      {(ls.ngay_cham && daCham) ? (
+                                        <span className="text-gray-400 ml-auto shrink-0">
+                                          Chấm: {new Date(ls.ngay_cham).toLocaleDateString('vi-VN')}
+                                        </span>
+                                      ) : ls.ngay_lam ? (
+                                        <span className="text-gray-400 ml-auto shrink-0">
+                                          {new Date(ls.ngay_lam).toLocaleDateString('vi-VN')}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    {/* Nhận xét của giảng viên — chỉ THỰC HÀNH đã chấm */}
+                                    {laThucHanh && ls.nhan_xet && ls.nhan_xet.trim() && (
+                                      <div className="border-t border-gray-100 bg-blue-50/60 px-3 py-2">
+                                        <div className="flex items-start gap-2 text-xs">
+                                          <span className="text-blue-700 font-medium shrink-0">💬 Nhận xét của giảng viên:</span>
+                                          <span className="text-gray-800 whitespace-pre-wrap break-words">{ls.nhan_xet}</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {/* Chờ chấm — báo cho học viên */}
+                                    {choCham && !ls.nhan_xet && (
+                                      <div className="border-t border-gray-100 bg-yellow-50/60 px-3 py-1.5 text-xs text-yellow-800">
+                                        Bài đang chờ giảng viên chấm và nhận xét.
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}

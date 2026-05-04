@@ -264,6 +264,95 @@ class CuocHopService:
         return ch
 
     # ──────────────────────────────────────────────────────────────────
+    # LIFECYCLE — BAT_DAU / KET_THUC (Phase 4.1 BE_P2)
+    # ──────────────────────────────────────────────────────────────────
+    async def bat_dau(self, ch: CuocHop, user: TokenPayload) -> CuocHop:
+        """Chuyển trạng thái DA_THONG_BAO → DANG_DIEN_RA.
+
+        Blocker của page-sync: client chỉ kết nối WS được khi cuộc họp ở
+        trạng thái DA_THONG_BAO/DANG_DIEN_RA. State machine chặt:
+        chỉ accept transition từ DA_THONG_BAO. Các status khác → 400.
+        """
+        from fastapi import HTTPException
+        if ch.trang_thai != "DA_THONG_BAO":
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_STATE_TRANSITION",
+                        "message": (
+                            f"Chỉ bắt đầu cuộc họp ở trạng thái DA_THONG_BAO. "
+                            f"Hiện tại: {ch.trang_thai}."
+                        ),
+                    },
+                },
+            )
+
+        ch.trang_thai = "DANG_DIEN_RA"
+        ch.updated_at = datetime.now(timezone.utc)
+
+        await ghi_audit(
+            self.db,
+            hanh_dong="CUOC_HOP_BAT_DAU",
+            nguoi_thuc_hien_id=UUID(user.sub),
+            doi_tuong_loai="cuoc_hop",
+            doi_tuong_id=ch.id,
+        )
+        await self.db.flush()
+        return ch
+
+    async def ket_thuc(self, ch: CuocHop, user: TokenPayload) -> CuocHop:
+        """Chuyển trạng thái DANG_DIEN_RA → HOAN_THANH.
+
+        Side effect: cleanup trang_thai_trinh_chieu (set is_active=FALSE +
+        ket_thuc_luc=NOW) nếu phiên trình chiếu vẫn đang chạy. WS layer
+        sẽ broadcast meeting_ended event qua hook ở BE_P5.
+        """
+        from fastapi import HTTPException
+        from sqlalchemy import update
+        from meeting_service.models.trang_thai_trinh_chieu import TrangThaiTrinhChieu
+
+        if ch.trang_thai != "DANG_DIEN_RA":
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_STATE_TRANSITION",
+                        "message": (
+                            f"Chỉ kết thúc cuộc họp ở trạng thái DANG_DIEN_RA. "
+                            f"Hiện tại: {ch.trang_thai}."
+                        ),
+                    },
+                },
+            )
+
+        now = datetime.now(timezone.utc)
+        ch.trang_thai = "HOAN_THANH"
+        ch.updated_at = now
+
+        # Cleanup phiên trình chiếu nếu đang active.
+        await self.db.execute(
+            update(TrangThaiTrinhChieu)
+            .where(
+                TrangThaiTrinhChieu.cuoc_hop_id == ch.id,
+                TrangThaiTrinhChieu.is_active.is_(True),
+            )
+            .values(is_active=False, ket_thuc_luc=now, cap_nhat_luc=now)
+        )
+
+        await ghi_audit(
+            self.db,
+            hanh_dong="CUOC_HOP_KET_THUC",
+            nguoi_thuc_hien_id=UUID(user.sub),
+            doi_tuong_loai="cuoc_hop",
+            doi_tuong_id=ch.id,
+        )
+        await self.db.flush()
+        return ch
+
+    # ──────────────────────────────────────────────────────────────────
     # SEND INVITATION
     # ──────────────────────────────────────────────────────────────────
     async def gui_giay_moi(self, ch: CuocHop, user: TokenPayload) -> int:

@@ -137,6 +137,51 @@ async def huy_cuoc_hop(
     }
 
 
+# ─── 5b/5c. LIFECYCLE — BAT_DAU / KET_THUC (Phase 4.1 BE_P2) ──────────
+# Blocker của page-sync — codebase MVP chưa có cách set trang_thai='DANG_DIEN_RA'
+# hoặc chuyển sang 'HOAN_THANH'. 2 endpoint này lấp khoảng trống đó.
+
+@router.post("/{cuoc_hop_id}/bat-dau", summary="Bắt đầu cuộc họp")
+async def bat_dau_cuoc_hop(
+    db: DatabaseDep,
+    user: CurrentUserDep,
+    ch: CuocHop = Depends(require_can_edit_meeting),
+):
+    """
+    Chuyển DA_THONG_BAO → DANG_DIEN_RA. Permission: chu_toa | thu_ky |
+    SUPER_ADMIN | TRUONG_CNTT (qua require_can_edit_meeting).
+
+    State khác DA_THONG_BAO → 400 INVALID_STATE_TRANSITION.
+    Audit hanh_dong=CUOC_HOP_BAT_DAU.
+    """
+    service = CuocHopService(db)
+    ch = await service.bat_dau(ch, user)
+    return {
+        "success": True,
+        "data": CuocHopResponse.model_validate(ch).model_dump(mode="json"),
+    }
+
+
+@router.post("/{cuoc_hop_id}/ket-thuc", summary="Kết thúc cuộc họp")
+async def ket_thuc_cuoc_hop(
+    db: DatabaseDep,
+    user: CurrentUserDep,
+    ch: CuocHop = Depends(require_can_edit_meeting),
+):
+    """
+    Chuyển DANG_DIEN_RA → HOAN_THANH. Side effect: cleanup
+    trang_thai_trinh_chieu (set is_active=FALSE + ket_thuc_luc=NOW)
+    nếu phiên trình chiếu vẫn đang active.
+    Audit hanh_dong=CUOC_HOP_KET_THUC.
+    """
+    service = CuocHopService(db)
+    ch = await service.ket_thuc(ch, user)
+    return {
+        "success": True,
+        "data": CuocHopResponse.model_validate(ch).model_dump(mode="json"),
+    }
+
+
 # ─── 6. SEND INVITATION ───────────────────────────────────────────────
 @router.post("/{cuoc_hop_id}/gui-giay-moi", summary="Gửi giấy mời")
 async def gui_giay_moi(

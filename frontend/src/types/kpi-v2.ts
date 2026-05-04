@@ -47,6 +47,13 @@ export interface ILinhVuc {
   ten: string;
 }
 
+/**
+ * Nhiệm vụ (cột B Excel PL3) — distinct theo lĩnh vực.
+ */
+export interface INhiemVu {
+  nhiem_vu: string;
+}
+
 // =============================================================================
 // REQUEST PAYLOADS
 // =============================================================================
@@ -188,6 +195,7 @@ export interface IKeKhaiV2MultiDayResponse {
 
 export interface ISearchPL3Params {
   linh_vuc?: string;
+  nhiem_vu?: string;
   nhom_pl3?: number;
   search?: string;
   page?: number;

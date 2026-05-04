@@ -15,8 +15,11 @@ import { Search } from 'lucide-react';
 import { kpiV2Service } from '@/services/kpi-v2.service';
 import { ILinhVuc } from '@/types/kpi-v2';
 
+import { NhiemVuCombobox } from './NhiemVuCombobox';
+
 export interface ILinhVucNhomValue {
   linh_vuc?: string;
+  nhiem_vu?: string;
   nhom_pl3?: number;
   search?: string;
 }
@@ -67,9 +70,11 @@ export function LinhVucNhomFilter({ value, onChange, className }: Props) {
         <select
           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100"
           value={value.linh_vuc ?? ''}
-          onChange={(e) =>
-            onChange({ ...value, linh_vuc: e.target.value || undefined })
-          }
+          onChange={(e) => {
+            const next = e.target.value || undefined;
+            // Đổi lĩnh vực → reset nhiem_vu (mục cũ không còn hợp lệ)
+            onChange({ ...value, linh_vuc: next, nhiem_vu: undefined });
+          }}
           disabled={loadingLV}
         >
           <option value="">— Tất cả 15 lĩnh vực —</option>
@@ -80,6 +85,13 @@ export function LinhVucNhomFilter({ value, onChange, className }: Props) {
           ))}
         </select>
       </div>
+
+      {/* Nhiệm vụ — combobox có search, disable nếu chưa chọn lĩnh vực */}
+      <NhiemVuCombobox
+        linhVuc={value.linh_vuc}
+        value={value.nhiem_vu}
+        onChange={(nv) => onChange({ ...value, nhiem_vu: nv })}
+      />
 
       {/* Nhóm chip filter */}
       <div>

@@ -457,11 +457,46 @@ async def get_linh_vuc_list_pl3(
 
 
 @router.get(
+    "/nhiem-vu",
+    summary="Danh sách nhiệm vụ PL3 (V2) — distinct theo lĩnh vực",
+    description="""
+    Trả về danh sách distinct nhiệm vụ (cột B Excel PL3) cho dropdown filter
+    cấp 2 trong modal kê khai V2.
+
+    Yêu cầu query param `linh_vuc` (I-XV). Nhiệm vụ giữa các lĩnh vực có
+    thể trùng tên nên BẮT BUỘC truyền lĩnh vực để tránh nhập nhằng.
+
+    **Quyền:** mọi user đăng nhập.
+    """,
+)
+async def get_nhiem_vu_pl3(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    linh_vuc: str = Query(..., description="Mã lĩnh vực La Mã (I-XV)"),
+) -> dict:
+    """Distinct nhiem_vu lọc theo linh_vuc."""
+    stmt = (
+        select(DanhMucSpCongViec.nhiem_vu)
+        .where(DanhMucSpCongViec.nguon_du_lieu == "PL3")
+        .where(DanhMucSpCongViec.is_active == True)
+        .where(DanhMucSpCongViec.is_deleted == False)
+        .where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
+        .where(DanhMucSpCongViec.nhiem_vu.isnot(None))
+        .distinct()
+        .order_by(DanhMucSpCongViec.nhiem_vu.asc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    data = [{"nhiem_vu": nv} for nv in rows if nv]
+    return success_response(data=data)
+
+
+@router.get(
     "/sp-cong-viec/pl3",
     summary="Danh sách mục PL3 — search/filter/pagination cho UI V2",
     description="""
     Trả về danh sách mục PL3 (V2) với filter:
     - **linh_vuc**: I, II, ..., XV
+    - **nhiem_vu**: tên nhiệm vụ (cột B Excel) — exact match
     - **nhom_pl3**: 1-5
     - **search**: tìm trong ten_cong_viec + cong_viec_chi_tiet (ILIKE)
     - **page** (≥ 1, mặc định 1)
@@ -476,6 +511,7 @@ async def get_sp_cong_viec_pl3(
     db: DatabaseDep,
     current_user: ActiveUserDep,
     linh_vuc: Optional[str] = Query(default=None, description="I-XV"),
+    nhiem_vu: Optional[str] = Query(default=None, max_length=500, description="Tên nhiệm vụ — exact match"),
     nhom_pl3: Optional[int] = Query(default=None, ge=1, le=5),
     search: Optional[str] = Query(default=None, min_length=1, max_length=200),
     page: int = Query(default=1, ge=1),
@@ -498,6 +534,10 @@ async def get_sp_cong_viec_pl3(
     if linh_vuc:
         base_query = base_query.where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
         count_query = count_query.where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
+
+    if nhiem_vu:
+        base_query = base_query.where(DanhMucSpCongViec.nhiem_vu == nhiem_vu)
+        count_query = count_query.where(DanhMucSpCongViec.nhiem_vu == nhiem_vu)
 
     if nhom_pl3 is not None:
         base_query = base_query.where(DanhMucSpCongViec.nhom_pl3 == nhom_pl3)

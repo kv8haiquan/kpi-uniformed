@@ -26,6 +26,7 @@ import {
   IKeKhaiV2UpdateRequest,
   ILinhVuc,
   IListMyKeKhaiV2Params,
+  INhiemVu,
   IRecentItem,
   ISearchPL3Params,
   IThongKeKeKhaiThangV2,
@@ -40,11 +41,19 @@ async function getLinhVuc(): Promise<ILinhVuc[]> {
   return res.data.data;
 }
 
+async function getNhiemVu(linhVuc: string): Promise<INhiemVu[]> {
+  const res = await apiClient.get<IDataResponse<INhiemVu[]>>(
+    `/danh-muc/nhiem-vu?linh_vuc=${encodeURIComponent(linhVuc)}`
+  );
+  return res.data.data;
+}
+
 async function searchDanhMucPL3(
   params: ISearchPL3Params = {}
 ): Promise<IPaginatedResponse<IDanhMucPL3>> {
   const search = new URLSearchParams();
   if (params.linh_vuc) search.append('linh_vuc', params.linh_vuc);
+  if (params.nhiem_vu) search.append('nhiem_vu', params.nhiem_vu);
   if (params.nhom_pl3 !== undefined) search.append('nhom_pl3', String(params.nhom_pl3));
   if (params.search) search.append('search', params.search);
   if (params.page) search.append('page', String(params.page));
@@ -172,6 +181,7 @@ async function getRecent(thang: number, nam: number): Promise<IRecentItem[]> {
 
 export const kpiV2Service = {
   getLinhVuc,
+  getNhiemVu,
   searchDanhMucPL3,
   createKeKhai,
   updateKeKhai,

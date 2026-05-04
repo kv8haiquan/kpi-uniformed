@@ -36,6 +36,11 @@ interface Props {
   onSelect: (item: IDanhMucPL3) => void;
   /** Edit mode: ép default tab = 'all' để user thấy mục đang chọn. */
   initialTab?: PickerTabKey;
+  /**
+   * Edit mode: prefill filter (lĩnh vực + nhiệm vụ) để user thấy mục đang chọn
+   * nằm ở nhánh nào của cây PL3.
+   */
+  initialFilters?: ILinhVucNhomValue;
 }
 
 const FAVORITE_WARN_THRESHOLD = 30;
@@ -46,6 +51,7 @@ export function DanhMucPickerTabs({
   selectedId,
   onSelect,
   initialTab,
+  initialFilters,
 }: Props) {
   const [favorites, setFavorites] = useState<IFavoriteItem[]>([]);
   const [recent, setRecent] = useState<IRecentItem[]>([]);
@@ -53,7 +59,7 @@ export function DanhMucPickerTabs({
   const [loadingFav, setLoadingFav] = useState(true);
   const [loadingRecent, setLoadingRecent] = useState(true);
   const [activeTab, setActiveTab] = useState<PickerTabKey | null>(null);
-  const [filters, setFilters] = useState<ILinhVucNhomValue>({});
+  const [filters, setFilters] = useState<ILinhVucNhomValue>(initialFilters ?? {});
 
   // Load favorites + recent song song khi mount
   useEffect(() => {

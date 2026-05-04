@@ -250,6 +250,14 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
               selectedId={selectedDM?.id}
               onSelect={setSelectedDM}
               initialTab={isEdit ? 'all' : undefined}
+              initialFilters={
+                isEdit && editing?.danh_muc_sp
+                  ? {
+                      linh_vuc: editing.danh_muc_sp.linh_vuc,
+                      nhiem_vu: editing.danh_muc_sp.nhiem_vu ?? undefined,
+                    }
+                  : undefined
+              }
             />
             {errors.danh_muc_sp_id && (
               <p className="mt-1 text-xs text-red-600">

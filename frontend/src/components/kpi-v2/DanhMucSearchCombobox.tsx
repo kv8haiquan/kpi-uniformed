@@ -44,8 +44,8 @@ export function DanhMucSearchCombobox({
   const [error, setError] = useState<string | null>(null);
   const filterKey = useMemo(
     () =>
-      `${filters.linh_vuc ?? ''}|${filters.nhom_pl3 ?? ''}|${(filters.search ?? '').trim()}`,
-    [filters.linh_vuc, filters.nhom_pl3, filters.search]
+      `${filters.linh_vuc ?? ''}|${filters.nhiem_vu ?? ''}|${filters.nhom_pl3 ?? ''}|${(filters.search ?? '').trim()}`,
+    [filters.linh_vuc, filters.nhiem_vu, filters.nhom_pl3, filters.search]
   );
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   const requestSeq = useRef(0);
@@ -67,6 +67,7 @@ export function DanhMucSearchCombobox({
       kpiV2Service
         .searchDanhMucPL3({
           linh_vuc: filters.linh_vuc,
+          nhiem_vu: filters.nhiem_vu,
           nhom_pl3: filters.nhom_pl3,
           search: filters.search?.trim() || undefined,
           page,
@@ -95,7 +96,7 @@ export function DanhMucSearchCombobox({
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [filterKey, page, pageSize, filters.linh_vuc, filters.nhom_pl3, filters.search]);
+  }, [filterKey, page, pageSize, filters.linh_vuc, filters.nhiem_vu, filters.nhom_pl3, filters.search]);
 
   const hasMore = items.length < total;
 

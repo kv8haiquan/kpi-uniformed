@@ -273,6 +273,12 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
               <p className="text-sm font-semibold text-gray-900">
                 {selectedDM.ten_cong_viec}
               </p>
+              {selectedDM.nhiem_vu && (
+                <p className="mt-1 text-xs text-gray-700 whitespace-pre-line">
+                  <span className="text-gray-500">Nhiệm vụ:</span>{' '}
+                  {selectedDM.nhiem_vu}
+                </p>
+              )}
               <div className="mt-1 text-xs text-gray-700 space-x-4">
                 <span>Lĩnh vực: <strong>{selectedDM.linh_vuc}</strong></span>
                 <span>Nhóm: <strong>{selectedDM.nhom_pl3}</strong></span>

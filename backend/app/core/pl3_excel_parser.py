@@ -9,7 +9,13 @@ Dùng bởi:
 
 Logic (thống nhất với Phase A):
 - Detect 15 section headers I-XV bằng regex.
-- Skip dòng nhiệm vụ header (chỉ có cột B, không có cột C/D).
+- Carry-forward nhiệm vụ: dòng STT N.0 chỉ có cột B (header nhiệm vụ),
+  các dòng N.M bên dưới chỉ có cột C (công việc chi tiết) thuộc nhiệm
+  vụ N. Parser maintain `current_nhiem_vu` cập nhật mỗi khi cột B có
+  giá trị, reset khi sang lĩnh vực mới. Bug cũ (pre-2026-05): chỉ đọc
+  cột B của row hiện tại → 93% mục bị nhiem_vu=NULL.
+- Skip dòng nhiệm vụ header (chỉ có cột B, không có cột C/D) SAU KHI
+  đã update state.
 - Parse rows có đủ cong_viec_chi_tiet + san_pham_dau_ra + diem_cham + he_so + phan_nhom.
 - Fallback nhom_pl3 từ khung_diem nếu phan_nhom rỗng.
 - Append -r{row} cho duplicate ma_danh_muc.
@@ -194,14 +200,23 @@ def parse_pl3_excel(source) -> ParseResult:
     # 2) Parse data rows
     seen_ma: set[str] = set()
     duplicate_count = 0
+    # State machine: nhiệm vụ "đang mở" — cập nhật khi gặp row có cột B,
+    # reset khi sang lĩnh vực mới. Áp cho mọi row có công việc chi tiết
+    # nhưng cột B trống (= row con thuộc nhiệm vụ ở trên).
+    current_nhiem_vu: Optional[str] = None
 
     for r in range(DATA_START_ROW, ws.max_row + 1):
         stt_raw = ws.cell(row=r, column=COL_STT).value
 
         if _is_section_header(stt_raw):
+            # Sang lĩnh vực mới → reset state nhiệm vụ.
+            # Sub-heading nội bộ (vd "Công tác tổng hợp...") không match
+            # SECTION_REGEX (không bắt đầu bằng La Mã + dấu chấm) nên KHÔNG
+            # reset — giữ nhiệm vụ đang mở.
+            current_nhiem_vu = None
             continue
 
-        nhiem_vu = ws.cell(row=r, column=COL_NHIEM_VU).value
+        nhiem_vu_cell = ws.cell(row=r, column=COL_NHIEM_VU).value
         cong_viec = ws.cell(row=r, column=COL_CONG_VIEC).value
         san_pham = ws.cell(row=r, column=COL_SAN_PHAM).value
         phan_nhom_raw = ws.cell(row=r, column=COL_PHAN_NHOM).value
@@ -209,6 +224,12 @@ def parse_pl3_excel(source) -> ParseResult:
         diem_cham = _to_int(ws.cell(row=r, column=COL_DIEM_CHAM).value)
         he_so = _to_decimal(ws.cell(row=r, column=COL_HE_SO).value)
         ghi_chu = ws.cell(row=r, column=COL_GHI_CHU).value
+
+        # Cột B có data → cập nhật state nhiệm vụ. Trường hợp R8 (STT=1.0)
+        # và R41 (STT=7.0): vừa khai báo nhiệm vụ vừa kèm 1 công việc chi
+        # tiết → vẫn pass guard bên dưới và row đó nhận chính nhiệm vụ này.
+        if nhiem_vu_cell:
+            current_nhiem_vu = str(nhiem_vu_cell).strip()
 
         if not cong_viec or not san_pham or diem_cham is None or he_so is None:
             result.skipped_no_data += 1
@@ -268,7 +289,7 @@ def parse_pl3_excel(source) -> ParseResult:
             nguon_du_lieu="PL3",
             linh_vuc=linh_vuc,
             ten_linh_vuc=ten_linh_vuc,
-            nhiem_vu=str(nhiem_vu).strip()[:500] if nhiem_vu else None,
+            nhiem_vu=current_nhiem_vu[:500] if current_nhiem_vu else None,
             cong_viec_chi_tiet=str(cong_viec).strip(),
             san_pham_dau_ra=str(san_pham).strip(),
             nhom_pl3=nhom,

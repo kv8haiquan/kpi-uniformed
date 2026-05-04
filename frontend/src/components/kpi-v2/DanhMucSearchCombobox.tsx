@@ -158,6 +158,12 @@ export function DanhMucSearchCombobox({
                   </span>
                 </div>
                 <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                  {item.nhiem_vu && (
+                    <div className="whitespace-pre-line">
+                      <span className="text-gray-500">Nhiệm vụ:</span>{' '}
+                      <span className="text-gray-700">{item.nhiem_vu}</span>
+                    </div>
+                  )}
                   <div>
                     <span className="text-gray-500">Sản phẩm:</span>{' '}
                     {item.san_pham_dau_ra ?? '—'}

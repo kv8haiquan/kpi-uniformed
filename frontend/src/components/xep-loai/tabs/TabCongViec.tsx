@@ -48,6 +48,9 @@ interface ICongChuc {
   ho_ten: string;
   chuc_vu?: string;
   don_vi_ten?: string;
+  // Phase 3 (29/04/2026): phân biệt HĐ 111 vs LĐ thật trong tab phê duyệt
+  is_hd_111?: boolean;
+  is_lanh_dao?: boolean;
 }
 
 interface IKeKhai {
@@ -416,7 +419,7 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
   const [pageSize, setPageSize] = useState(50);
   
   // Counts
-  const [counts, setCounts] = useState({ pending: 0, pendingCC: 0, pendingLD: 0, approved: 0, rejected: 0, total: 0 });
+  const [counts, setCounts] = useState({ pending: 0, pendingCC: 0, pendingLD: 0, pendingHd111: 0, approved: 0, rejected: 0, total: 0 });
   
   // Modal đơn lẻ
   const [selectedItem, setSelectedItem] = useState<IKeKhai | null>(null);
@@ -478,14 +481,17 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
       ]);
       
       const pendingCC = pending.filter(d => d.source === 'CC').length;
-      const pendingLD = pending.filter(d => d.source === 'LD').length;
+      // Phase 3 (29/04/2026): tách số HĐ 111 khỏi LĐ thật trong nhóm "LD"
+      const pendingHd111 = pending.filter(d => d.source === 'LD' && d.cong_chuc?.is_hd_111 === true).length;
+      const pendingLD = pending.filter(d => d.source === 'LD').length - pendingHd111;
       const approvedCount = lichSu.filter(d => d.trang_thai === 'DA_PHE_DUYET').length;
       const rejectedCount = lichSu.filter(d => d.trang_thai === 'TU_CHOI').length;
-      
+
       setCounts({
         pending: pending.length,
         pendingCC,
         pendingLD,
+        pendingHd111,
         approved: approvedCount,
         rejected: rejectedCount,
         total: pending.length + approvedCount + rejectedCount,
@@ -907,6 +913,12 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
                   <span className="w-2 h-2 rounded-full bg-purple-500"></span>
                   <span className="text-gray-600">Lãnh đạo ({counts.pendingLD})</span>
                 </span>
+                {counts.pendingHd111 > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                    <span className="text-gray-600">HĐ 111 ({counts.pendingHd111})</span>
+                  </span>
+                )}
               </div>
             )}
 
@@ -1079,11 +1091,21 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
                         </td>
                       )}
                       <td className="px-3 py-3">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
-                          ${isCC ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}
-                        >
-                          {isCC ? 'CC' : 'LĐ'}
-                        </span>
+                        {(() => {
+                          // Phase 3 (29/04/2026): phân biệt HĐ 111 với LĐ thật
+                          const isHd111 = item.cong_chuc?.is_hd_111 === true;
+                          const badgeClass = isCC
+                            ? 'bg-blue-100 text-blue-800'
+                            : isHd111
+                              ? 'bg-teal-100 text-teal-800'
+                              : 'bg-purple-100 text-purple-800';
+                          const label = isCC ? 'CC' : isHd111 ? 'HĐ 111' : 'LĐ';
+                          return (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${badgeClass}`}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-3 py-3">
                         <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]" title={item.cong_chuc?.ho_ten || item.ho_ten || '-'}>

@@ -312,16 +312,25 @@ async def tinh_diem_lanh_dao(
     db: AsyncSession,
     cong_chuc_id: UUID,
     thang: int,
-    nam: int
+    nam: int,
+    *,
+    is_hd_111: bool = False,
 ) -> KetQuaTinhDiem:
     """
-    Tính điểm cho công chức GIỮ chức vụ lãnh đạo.
-    
+    Tính điểm cho công chức kê khai theo form Lãnh đạo.
+
     v1.1 (30/01/2026): Trả về thêm so_ngay_lam_viec, so_ngay_nghi
-    
-    Nguồn: ke_khai_lanh_dao (a,b,c) + danh_gia_dde (d,đ,e)
-    Công thức: KPI = (a + b + c + d + đ + e) / 6
-    
+    Phase 3 (29/04/2026): thêm flag is_hd_111 — HĐ 111 dùng cùng nguồn
+    ke_khai_lanh_dao nhưng KHÔNG có d/đ/e, KPI = (a + b + c) / 3.
+
+    Nguồn:
+    - ke_khai_lanh_dao (a, b, c)
+    - danh_gia_dde (d, đ, e) — chỉ cho LĐ thật, HĐ 111 bỏ qua
+
+    Công thức:
+    - LĐ thật: KPI = (a + b + c + d + đ + e) / 6 × 70
+    - HĐ 111:  KPI = (a + b + c) / 3 × 70
+
     Returns:
         KetQuaTinhDiem(diem_tcc, diem_kpi, diem_tong, xep_loai, so_ngay_lv, so_ngay_nghi)
     """
@@ -394,28 +403,34 @@ async def tinh_diem_lanh_dao(
         )
         c = tong_diem_chat_luong / Decimal(tong_sp) if tong_sp > 0 else Decimal("0")
     
-    # Lấy d, đ, e từ danh_gia_dde (đã phê duyệt)
-    dde_stmt = select(DanhGiaDDE).where(
-        DanhGiaDDE.cong_chuc_id == cong_chuc_id,
-        DanhGiaDDE.thang == thang,
-        DanhGiaDDE.nam == nam,
-        DanhGiaDDE.trang_thai == TrangThaiDDE.DA_PHE_DUYET.value,
-    )
-    dde_result = await db.execute(dde_stmt)
-    dde = dde_result.scalar_one_or_none()
-    
-    if dde:
-        # ⚠️ BUGFIX: Sử dụng đúng tên field và property helper
-        # Giá trị DDE là 50 hoặc 100 → chia 100 để thành tỷ lệ 0.5 hoặc 1.0
-        d = Decimal(str(dde.d_final)) / Decimal("100")
-        dd = Decimal(str(dde.dd_final)) / Decimal("100")
-        e = Decimal(str(dde.e_final)) / Decimal("100")
+    # Lấy d, đ, e — chỉ cho LĐ thật, HĐ 111 không có d/đ/e (Phase 3 — 29/04/2026).
+    if is_hd_111:
+        # HĐ 111: KPI = (a + b + c) / 3 — bỏ qua d/đ/e
+        kpi_ratio = (a + b + c) / Decimal("3")
     else:
-        # Chưa có đánh giá DDE → default 100% (tỷ lệ 1.0)
-        d, dd, e = Decimal("1.0"), Decimal("1.0"), Decimal("1.0")
-    
-    # KPI = (a + b + c + d + đ + e) / 6
-    kpi_ratio = (a + b + c + d + dd + e) / Decimal("6")
+        # Lãnh đạo: lấy d/đ/e từ danh_gia_dde (đã phê duyệt)
+        dde_stmt = select(DanhGiaDDE).where(
+            DanhGiaDDE.cong_chuc_id == cong_chuc_id,
+            DanhGiaDDE.thang == thang,
+            DanhGiaDDE.nam == nam,
+            DanhGiaDDE.trang_thai == TrangThaiDDE.DA_PHE_DUYET.value,
+        )
+        dde_result = await db.execute(dde_stmt)
+        dde = dde_result.scalar_one_or_none()
+
+        if dde:
+            # ⚠️ BUGFIX: Sử dụng đúng tên field và property helper
+            # Giá trị DDE là 50 hoặc 100 → chia 100 để thành tỷ lệ 0.5 hoặc 1.0
+            d = Decimal(str(dde.d_final)) / Decimal("100")
+            dd = Decimal(str(dde.dd_final)) / Decimal("100")
+            e = Decimal(str(dde.e_final)) / Decimal("100")
+        else:
+            # Chưa có đánh giá DDE → default 100% (tỷ lệ 1.0)
+            d, dd, e = Decimal("1.0"), Decimal("1.0"), Decimal("1.0")
+
+        # KPI = (a + b + c + d + đ + e) / 6
+        kpi_ratio = (a + b + c + d + dd + e) / Decimal("6")
+
     diem_kpi = kpi_ratio * Decimal("70")
     diem_tong = (diem_tcc or Decimal("0")) + (diem_kpi or Decimal("0"))
     xep_loai = tinh_xep_loai(diem_tong)
@@ -514,16 +529,20 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
     for cc in cong_chucs:
         # Xác định loại CC (lãnh đạo hay thường)
         is_lanh_dao = cc.vai_tro and cc.vai_tro.cap_bac in [
-            CapBacVaiTro.TRUONG_DON_VI, 
+            CapBacVaiTro.TRUONG_DON_VI,
             CapBacVaiTro.PHO_DON_VI
         ]
-        
+        # Phase 3 (29/04/2026): HĐ 111 dùng form LĐ → công thức 3 chỉ số.
+        is_hd_111 = cc.is_hd_111
+
         # Tính điểm - v1.1: nhận thêm so_ngay_lam_viec, so_ngay_nghi
         if is_lanh_dao:
             ket_qua = await tinh_diem_lanh_dao(db, cc.id, thang, nam)
+        elif is_hd_111:
+            ket_qua = await tinh_diem_lanh_dao(db, cc.id, thang, nam, is_hd_111=True)
         else:
             ket_qua = await tinh_diem_cong_chuc(db, cc.id, thang, nam)
-        
+
         # Cập nhật hoặc tạo chi tiết
         if cc.id in existing_map:
             ct = existing_map[cc.id]
@@ -664,9 +683,13 @@ async def tao_bao_cao_xep_loai(
             CapBacVaiTro.TRUONG_DON_VI,
             CapBacVaiTro.PHO_DON_VI
         ]
+        # Phase 3 (29/04/2026): HĐ 111 dùng form LĐ → công thức 3 chỉ số.
+        is_hd_111 = cc.is_hd_111
 
         if is_lanh_dao:
             ket_qua = await tinh_diem_lanh_dao(db, cc.id, thang, nam)
+        elif is_hd_111:
+            ket_qua = await tinh_diem_lanh_dao(db, cc.id, thang, nam, is_hd_111=True)
         else:
             ket_qua = await tinh_diem_cong_chuc(db, cc.id, thang, nam)
 

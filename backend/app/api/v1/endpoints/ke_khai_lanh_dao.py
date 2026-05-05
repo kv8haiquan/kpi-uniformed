@@ -161,8 +161,11 @@ def build_ke_khai_response(kk: KeKhaiLanhDao, include_cong_chuc: bool = False) -
         response["cong_chuc"] = {
             "id": kk.cong_chuc.id, "ma_cc": kk.cong_chuc.ma_cc,
             "ho_ten": kk.cong_chuc.ho_ten, "chuc_vu": kk.cong_chuc.chuc_vu,
+            # Phase 3 (29/04/2026): phân biệt HĐ 111 vs LĐ thật trong UI duyệt
+            "is_hd_111": kk.cong_chuc.is_hd_111,
+            "is_lanh_dao": kk.cong_chuc.is_lanh_dao,
         }
-    
+
     return response
 
 

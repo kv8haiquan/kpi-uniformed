@@ -26,7 +26,6 @@ import {
   TrangThaiTieuChiChung,
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
-import WidgetKpiLanhDaoV2 from '@/components/dashboard/WidgetKpiLanhDaoV2';
 
 // =============================================================================
 // TYPES
@@ -645,19 +644,6 @@ export default function DashboardPage() {
             <QuickActionCard icon="🖨️" title="Theo dõi, đánh giá Quý" description="Phiếu đánh giá & bảng kê công việc" href="/in-bang-ke" color="orange" />
           </div>
         </div>
-
-        {/* SECTION KPI LĐ V2: chỉ hiển thị cho LĐ + tháng ≥ 4/2026 */}
-        {isLanhDao && (
-          <div className="mb-8">
-            <WidgetKpiLanhDaoV2
-              thang={currentMonth}
-              nam={currentYear}
-              capBac={user?.vai_tro?.cap_bac}
-              isAdmin={isAdmin}
-              isCCT={isCCT}
-            />
-          </div>
-        )}
 
         {/* SECTION 2: PHÊ DUYỆT */}
         {isLanhDao && (

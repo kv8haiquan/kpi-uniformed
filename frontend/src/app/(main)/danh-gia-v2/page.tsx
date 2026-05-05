@@ -260,6 +260,8 @@ export default function DanhGiaV2Page() {
   const [tab, setTab] = useState<KPITab>('chinh_thuc');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
+  // Force LĐ V2 về tab "Chính thức" (V2 service chưa hỗ trợ tạm tính scope mở rộng)
+
   // Phase 3 KPI LĐ V2 (05/05/2026): KPI mới cho LĐ thật + tháng ≥ 4/2026
   const isLanhDao = user?.is_lanh_dao ?? false;
   const isHd111 = user?.is_hd_111 ?? false;
@@ -272,6 +274,13 @@ export default function DanhGiaV2Page() {
   useEffect(() => {
     if (!isAuthenticated) router.push('/login');
   }, [isAuthenticated, router]);
+
+  // LĐ V2: force tab "Chính thức"
+  useEffect(() => {
+    if (isV2ActiveForLeader && tab !== 'chinh_thuc') {
+      setTab('chinh_thuc');
+    }
+  }, [isV2ActiveForLeader, tab]);
 
   // Redirect:
   // - HĐ 111 → /danh-gia (form cũ)
@@ -390,13 +399,18 @@ export default function DanhGiaV2Page() {
   const xepLoai = tinhXepLoai(diemTong);
   const xlColor = getXepLoaiColor(xepLoai);
 
-  // Stats kê khai
-  const soDaDuyet = thongKe?.so_kekhai_da_duyet ?? 0;
-  const soChoDuyet = thongKe?.so_kekhai_cho_duyet ?? 0;
-  const soNhap = thongKe?.so_kekhai_nhap ?? 0;
+  // Stats kê khai (CC V2: từ thongKe; LĐ V2: từ kpiV2LD scope mở rộng)
+  const soDaDuyet = useLeaderV2
+    ? (kpiV2LD!.so_kekhai_records ?? 0)
+    : (thongKe?.so_kekhai_da_duyet ?? 0);
+  const soChoDuyet = useLeaderV2 ? 0 : (thongKe?.so_kekhai_cho_duyet ?? 0);
+  const soNhap = useLeaderV2 ? 0 : (thongKe?.so_kekhai_nhap ?? 0);
   const tongTamTinh = soDaDuyet + soChoDuyet + soNhap;
 
-  const isEmptyKPI = tongTamTinh === 0;
+  // Empty state: CC V2 = 0 kê khai; LĐ V2 = scope mở rộng = 0 SP
+  const isEmptyKPI = useLeaderV2
+    ? (kpiV2LD!.tong_sp_ke_khai === 0)
+    : (tongTamTinh === 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -477,11 +491,15 @@ export default function DanhGiaV2Page() {
         {!loading && !error && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-1.5 mb-6 flex gap-2">
             <button
-              onClick={() => setTab('tam_tinh')}
+              onClick={() => !isV2ActiveForLeader && setTab('tam_tinh')}
+              disabled={isV2ActiveForLeader}
+              title={isV2ActiveForLeader ? 'Tab Tạm tính chưa hỗ trợ scope LĐ — chỉ tính bản đã DA_PHE_DUYET' : ''}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
-                tab === 'tam_tinh'
-                  ? 'bg-amber-50 text-amber-700 border-2 border-amber-300 shadow-sm'
-                  : 'text-gray-500 hover:bg-gray-50 border-2 border-transparent'
+                isV2ActiveForLeader
+                  ? 'opacity-40 cursor-not-allowed text-gray-400 border-2 border-transparent'
+                  : tab === 'tam_tinh'
+                    ? 'bg-amber-50 text-amber-700 border-2 border-amber-300 shadow-sm'
+                    : 'text-gray-500 hover:bg-gray-50 border-2 border-transparent'
               }`}
             >
               <span>📝</span>
@@ -570,7 +588,7 @@ export default function DanhGiaV2Page() {
                 />
                 <ScoreCard
                   title={`Điểm KPI ${tab === 'tam_tinh' ? '(Tạm tính)' : ''}`}
-                  subtitle="3 chỉ số V2 (a, b, c)"
+                  subtitle={useLeaderV2 ? '6 chỉ số (a, b, c, d, đ, e)' : '3 chỉ số V2 (a, b, c)'}
                   value={diemKPI}
                   maxValue={70}
                   color="indigo"
@@ -635,9 +653,11 @@ export default function DanhGiaV2Page() {
                         label="Mẫu số V2 (SP)"
                         value={fmt(mauSo, 2)}
                         subLabel={
-                          tab === 'tam_tinh'
-                            ? `${tongTamTinh} bản`
-                            : `${soDaDuyet} bản đã duyệt`
+                          useLeaderV2
+                            ? `${soDaDuyet} bản trong scope`
+                            : tab === 'tam_tinh'
+                              ? `${tongTamTinh} bản`
+                              : `${soDaDuyet} bản đã duyệt`
                         }
                         bgColor="bg-blue-50"
                         textColor="text-blue-600"

@@ -64,6 +64,8 @@ interface IChiTietXepLoai {
   so_cv_c3_plus?: number;
   // Phân loại lãnh đạo/công chức
   is_lanh_dao?: boolean;
+  // HĐ 111 (Phase 3 — 29/04/2026): kê khai form LĐ, không có d/đ/e
+  is_hd_111?: boolean;
 }
 
 interface IBaoCaoXepLoai {
@@ -483,6 +485,10 @@ interface ChiTietCongChucModalProps {
 
 function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChucModalProps) {
   const isLanhDao = congChuc.is_lanh_dao === true;
+  // Phase 3 (29/04/2026): HĐ 111 kê khai form LĐ — load đúng bảng,
+  // nhưng KHÔNG có tab d/đ/e (backend chặn endpoint).
+  const isHd111 = congChuc.is_hd_111 === true;
+  const usesLeaderForm = isLanhDao || isHd111;
   const [activeDetailTab, setActiveDetailTab] = useState<'ke-khai' | 'tieu-chi' | 'dde' | 'nghi-phep'>('ke-khai');
   const [keKhaiList, setKeKhaiList] = useState<IKeKhaiCongViecBrief[]>([]);
   const [keKhaiLDList, setKeKhaiLDList] = useState<IKeKhaiLanhDaoBrief[]>([]);
@@ -497,12 +503,15 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
     if (!congChucId) return;
     setIsLoadingDetail(true);
 
-    if (isLanhDao) {
-      // Lãnh đạo: lấy kê khai LD + tiêu chí + d,đ,e + nghỉ phép
+    if (usesLeaderForm) {
+      // Lãnh đạo / HĐ 111: lấy kê khai LD + tiêu chí + nghỉ phép.
+      // d/đ/e chỉ load cho LĐ thật (HĐ 111 không có).
       Promise.all([
         baoCaoApi.getKeKhaiLanhDao(congChucId, thang, nam),
         baoCaoApi.getTieuChiChung(congChucId, thang, nam),
-        baoCaoApi.getDanhGiaDDE(congChucId, thang, nam),
+        isHd111
+          ? Promise.resolve<IDanhGiaDDE | null>(null)
+          : baoCaoApi.getDanhGiaDDE(congChucId, thang, nam),
         baoCaoApi.getNghiPhep(congChucId, thang, nam),
       ]).then(([kkLD, tc, dde, np]) => {
         setKeKhaiLDList(kkLD);
@@ -522,13 +531,19 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
         setNghiPhepList(np);
       }).finally(() => setIsLoadingDetail(false));
     }
-  }, [congChucId, thang, nam, isLanhDao]);
+  }, [congChucId, thang, nam, usesLeaderForm, isHd111]);
 
   const detailTabs = isLanhDao
     ? [
         { key: 'ke-khai' as const, label: 'Công việc lãnh đạo', count: keKhaiLDList.length },
         { key: 'tieu-chi' as const, label: 'Tiêu chí chung', count: null },
         { key: 'dde' as const, label: 'Đánh giá d, đ, e', count: null },
+        { key: 'nghi-phep' as const, label: 'Nghỉ phép', count: nghiPhepList.length },
+      ]
+    : isHd111
+    ? [
+        { key: 'ke-khai' as const, label: 'Công việc HĐ 111', count: keKhaiLDList.length },
+        { key: 'tieu-chi' as const, label: 'Tiêu chí chung', count: null },
         { key: 'nghi-phep' as const, label: 'Nghỉ phép', count: nghiPhepList.length },
       ]
     : [
@@ -544,7 +559,15 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
         <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">{congChuc.cong_chuc?.ho_ten}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-gray-900">{congChuc.cong_chuc?.ho_ten}</h3>
+                {isLanhDao && (
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700 font-medium" title="Lãnh đạo - công thức 6 chỉ số">👔 Lãnh đạo</span>
+                )}
+                {isHd111 && (
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-teal-100 text-teal-700 font-medium" title="HĐ 111 — kê khai form LĐ, công thức 3 chỉ số (a, b, c)">🤝 HĐ 111</span>
+                )}
+              </div>
               <p className="text-sm text-gray-500">{congChuc.cong_chuc?.ma_cc} {congChuc.cong_chuc?.chuc_vu ? `• ${congChuc.cong_chuc.chuc_vu}` : ''}</p>
               <div className="flex items-center gap-4 mt-2">
                 <span className="text-sm text-gray-600">Điểm TC: <strong>{congChuc.diem_tieu_chi_chung?.toFixed(1) || '-'}</strong></span>
@@ -595,10 +618,12 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
               {/* Tab Kê khai công việc */}
               {activeDetailTab === 'ke-khai' && (
                 <div>
-                  {isLanhDao ? (
-                    /* ============== KÊ KHAI LÃNH ĐẠO ============== */
+                  {usesLeaderForm ? (
+                    /* ============== KÊ KHAI LÃNH ĐẠO / HĐ 111 ============== */
                     keKhaiLDList.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">Không có công việc lãnh đạo trong tháng {thang}/{nam}</div>
+                      <div className="text-center py-8 text-gray-500">
+                        Không có công việc {isHd111 ? 'HĐ 111' : 'lãnh đạo'} trong tháng {thang}/{nam}
+                      </div>
                     ) : (
                       <>
                         <div className="border border-gray-200 rounded-lg overflow-hidden">

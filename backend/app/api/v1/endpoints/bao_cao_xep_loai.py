@@ -757,6 +757,9 @@ def build_chi_tiet_response(ct: ChiTietXepLoai) -> dict:
         "cong_chuc_id": ct.cong_chuc_id,
         "cong_chuc": None,
         "is_lanh_dao": ct.is_lanh_dao,
+        # Phase 3 (29/04/2026): HĐ 111 — kê khai form LĐ, không có d/đ/e.
+        # Suy ra từ vai_tro của CC (joined load) thay vì lưu cột riêng.
+        "is_hd_111": ct.cong_chuc.is_hd_111 if ct.cong_chuc else False,
         # v1.1: Thêm số ngày làm việc và nghỉ
         "so_ngay_lam_viec": float(ct.so_ngay_lam_viec) if ct.so_ngay_lam_viec is not None else None,
         "so_ngay_nghi": float(ct.so_ngay_nghi) if ct.so_ngay_nghi is not None else None,

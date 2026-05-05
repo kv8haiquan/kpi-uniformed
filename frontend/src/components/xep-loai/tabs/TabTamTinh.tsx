@@ -59,6 +59,8 @@ interface IRawItem {
 
   // Lãnh đạo
   is_lanh_dao?: boolean;
+  // HĐ 111 (Phase 3 — 29/04/2026): kê khai form LĐ, công thức 3 chỉ số (a, b, c)
+  is_hd_111?: boolean;
   tong_cong_viec?: number;
   tong_hoan_thanh?: number;
   tong_diem_chat_luong?: number;
@@ -104,6 +106,7 @@ interface IComputedItem {
   chuc_vu?: string;
   don_vi_ten?: string;
   is_lanh_dao?: boolean;
+  is_hd_111?: boolean;
 
   // Raw data (công chức)
   so_ngay_nghi: number;
@@ -164,8 +167,9 @@ function computeItem(raw: IRawItem): IComputedItem {
   const diem30 = raw.diem_30;
   let diem70: number;
 
-  if (raw.is_lanh_dao) {
-    // Lãnh đạo: backend đã tính đúng 6 chỉ số, dùng trực tiếp
+  if (raw.is_lanh_dao || raw.is_hd_111) {
+    // Lãnh đạo (6 chỉ số) + HĐ 111 (3 chỉ số, không có d/đ/e):
+    // backend đã tính đúng theo công thức tương ứng → dùng trực tiếp.
     diem70 = raw.diem_70;
   } else {
     // Công chức: tính lại từ raw SP data
@@ -186,6 +190,7 @@ function computeItem(raw: IRawItem): IComputedItem {
     chuc_vu: raw.chuc_vu,
     don_vi_ten: raw.don_vi_ten,
     is_lanh_dao: raw.is_lanh_dao,
+    is_hd_111: raw.is_hd_111,
 
     so_ngay_nghi: raw.so_ngay_nghi,
     so_ngay_lam_viec: raw.so_ngay_lam_viec,
@@ -542,13 +547,16 @@ export default function TabTamTinh({ thang, nam, capBac, onPendingCountChange }:
                       {thucTe.is_lanh_dao && (
                         <span className="ml-1 text-xs text-purple-600 font-normal" title="Lãnh đạo - công thức 6 chỉ số">(LĐ)</span>
                       )}
+                      {thucTe.is_hd_111 && (
+                        <span className="ml-1 text-xs text-teal-600 font-normal" title="HĐ 111 — kê khai form LĐ, công thức 3 chỉ số (a, b, c)">(HĐ 111)</span>
+                      )}
                     </div>
                     <div className="text-xs text-gray-500">{thucTe.ma_cc}</div>
                   </td>
                   <td className="px-4 py-3 text-gray-600 border-r text-xs">
                     {thucTe.don_vi_ten}
                   </td>
-                  {thucTe.is_lanh_dao ? (
+                  {(thucTe.is_lanh_dao || thucTe.is_hd_111) ? (
                     <>
                       <td className="px-2 py-3 text-center text-gray-400 border-r">-</td>
                       <td className="px-2 py-3 text-center text-gray-400 border-r bg-amber-50">-</td>
@@ -563,18 +571,28 @@ export default function TabTamTinh({ thang, nam, capBac, onPendingCountChange }:
                       <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{tamTinh.so_ngay_lam_viec}</td>
                     </>
                   )}
-                  {thucTe.is_lanh_dao ? (
+                  {(thucTe.is_lanh_dao || thucTe.is_hd_111) ? (
                     <>
                       <td className="px-2 py-3 text-center text-gray-900 border-r">{thucTe.tong_cong_viec ?? 0}</td>
                       <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{tamTinh.tong_cong_viec ?? 0}</td>
                       <td className="px-2 py-3 text-center text-gray-900 border-r">{thucTe.tong_hoan_thanh ?? 0}</td>
                       <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{tamTinh.tong_hoan_thanh ?? 0}</td>
-                      <td className="px-2 py-3 text-center text-gray-900 border-r" title={`d=${((thucTe.d_ket_qua ?? 1) * 100).toFixed(0)}% đ=${((thucTe.dd_to_chuc ?? 1) * 100).toFixed(0)}% e=${((thucTe.e_doan_ket ?? 1) * 100).toFixed(0)}%`}>
-                        d/đ/e
-                      </td>
-                      <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium" title={`d=${((tamTinh.d_ket_qua ?? 1) * 100).toFixed(0)}% đ=${((tamTinh.dd_to_chuc ?? 1) * 100).toFixed(0)}% e=${((tamTinh.e_doan_ket ?? 1) * 100).toFixed(0)}%`}>
-                        d/đ/e
-                      </td>
+                      {/* Cột d/đ/e: HĐ 111 không có, gạch "-" */}
+                      {thucTe.is_hd_111 ? (
+                        <>
+                          <td className="px-2 py-3 text-center text-gray-400 border-r">-</td>
+                          <td className="px-2 py-3 text-center text-gray-400 border-r bg-amber-50">-</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-2 py-3 text-center text-gray-900 border-r" title={`d=${((thucTe.d_ket_qua ?? 1) * 100).toFixed(0)}% đ=${((thucTe.dd_to_chuc ?? 1) * 100).toFixed(0)}% e=${((thucTe.e_doan_ket ?? 1) * 100).toFixed(0)}%`}>
+                            d/đ/e
+                          </td>
+                          <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium" title={`d=${((tamTinh.d_ket_qua ?? 1) * 100).toFixed(0)}% đ=${((tamTinh.dd_to_chuc ?? 1) * 100).toFixed(0)}% e=${((tamTinh.e_doan_ket ?? 1) * 100).toFixed(0)}%`}>
+                            d/đ/e
+                          </td>
+                        </>
+                      )}
                       <td className="px-2 py-3 text-center text-gray-400 border-r">-</td>
                       <td className="px-2 py-3 text-center text-gray-400 border-r bg-amber-50">-</td>
                     </>

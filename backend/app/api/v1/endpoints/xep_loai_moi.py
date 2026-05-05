@@ -786,6 +786,8 @@ async def get_tong_hop_xep_loai(
             "sp_chat_luong": diem_70_data["sp_chat_luong"],
             "sp_tien_do": diem_70_data["sp_tien_do"],
             "is_lanh_dao": cc.is_lanh_dao,
+            # Phase 3 (29/04/2026): HĐ 111 — kê khai form LĐ, công thức 3 chỉ số
+            "is_hd_111": cc.is_hd_111,
             "a_so_luong": diem_70_data["a_so_luong"],
             "b_chat_luong": diem_70_data["b_chat_luong"],
             "c_tien_do": diem_70_data["c_tien_do"],

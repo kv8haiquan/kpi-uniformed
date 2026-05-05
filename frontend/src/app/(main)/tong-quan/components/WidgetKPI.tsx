@@ -61,7 +61,7 @@ export default function WidgetKPI({ data, loading }: WidgetKPIProps) {
           {data.diem_thang_nay !== undefined && (
             <div className="text-center py-2">
               <div className="text-4xl font-bold text-blue-700">
-                {data.diem_thang_nay.toFixed(1)}
+                {data.diem_thang_nay.toFixed(2)}
               </div>
               <div className="text-xs text-gray-400 mt-1">điểm tháng này</div>
             </div>

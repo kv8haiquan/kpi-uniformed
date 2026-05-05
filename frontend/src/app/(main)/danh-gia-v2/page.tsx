@@ -67,10 +67,10 @@ function fmt(n: number, digits = 2) {
   if (!Number.isFinite(n)) return '0';
   return n.toFixed(digits);
 }
-function pct(v: number, digits = 1) {
+function pct(v: number, digits = 2) {
   // Tránh làm tròn LÊN 100% khi tỷ lệ thực < 1.0.
   // Vd: 5454.71 / 5455.96 = 0.999771 → (0.999771 × 100).toFixed(1) = "100.0%" (sai)
-  // Khi v < 1, dùng Math.floor để hiển thị "99.9%" thay vì "100.0%".
+  // Khi v < 1, dùng Math.floor để hiển thị "99.97%" thay vì "100.00%".
   const value = v * 100;
   if (v < 1) {
     const factor = Math.pow(10, digits);
@@ -210,7 +210,7 @@ function ScoreCard({
           <p className="text-xs text-gray-500">{subtitle}</p>
         </div>
         <div className="text-right">
-          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(1)}</p>
+          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(2)}</p>
           <p className="text-xs text-gray-500">/ {maxValue} điểm</p>
         </div>
       </div>
@@ -611,7 +611,7 @@ export default function DanhGiaV2Page() {
                       />
                       <StatBox
                         label="Điểm KPI"
-                        value={`${diemKPI.toFixed(1)}/70`}
+                        value={`${diemKPI.toFixed(2)}/70`}
                         bgColor="bg-purple-50"
                         textColor="text-purple-600"
                       />
@@ -650,11 +650,11 @@ export default function DanhGiaV2Page() {
                       <p className="text-sm text-gray-600 text-center">
                         <strong>Công thức V2:</strong> Điểm KPI = (a + b + c) / 3 × 70 ={' '}
                         <span className="text-indigo-600 font-medium">
-                          ({pct(a, 0)} + {pct(b, 0)} + {pct(c, 0)}) / 3 × 70
+                          ({pct(a, 2)} + {pct(b, 2)} + {pct(c, 2)}) / 3 × 70
                         </span>{' '}
                         ={' '}
                         <strong className="text-indigo-700">
-                          {diemKPI.toFixed(1)} điểm
+                          {diemKPI.toFixed(2)} điểm
                         </strong>
                       </p>
                       <p className="text-xs text-gray-500 text-center mt-1">

@@ -93,7 +93,7 @@ function getXepLoaiLabel(xepLoai: XepLoai): string {
   return labels[xepLoai];
 }
 
-function formatPercent(value: number, decimals: number = 1): string {
+function formatPercent(value: number, decimals: number = 2): string {
   // Tránh làm tròn LÊN 100% khi tỷ lệ thực < 1.0
   // (vd 0.999 × 100 = 99.9 nhưng 0.99977 × 100 = 99.977, toFixed(1) → "100.0%" sai).
   const v = value * 100;
@@ -146,7 +146,7 @@ function ScoreCard({ title, subtitle, value, maxValue, color, onClick }: ScoreCa
           <p className="text-xs text-gray-500">{subtitle}</p>
         </div>
         <div className="text-right">
-          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(1)}</p>
+          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(2)}</p>
           <p className="text-xs text-gray-500">/ {maxValue} điểm</p>
         </div>
       </div>
@@ -925,7 +925,7 @@ export default function DanhGiaPage() {
                         />
                         <StatBox
                           label="Điểm KPI"
-                          value={`${diemKPIQuyDoiCC.toFixed(1)}/70`}
+                          value={`${diemKPIQuyDoiCC.toFixed(2)}/70`}
                           bgColor="bg-purple-50"
                           textColor="text-purple-600"
                         />
@@ -961,8 +961,8 @@ export default function DanhGiaPage() {
                       <div className="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
                         <p className="text-sm text-gray-600 text-center">
                           <strong>Công thức:</strong> Điểm KPI = (a + b + c) / 3 × 70 = 
-                          <span className="text-indigo-600 font-medium"> ({formatPercent(aSoLuongCC, 0)} + {formatPercent(bChatLuongCC, 0)} + {formatPercent(cTienDoCC, 0)}) / 3 × 70 </span>
-                          = <strong className="text-indigo-700">{diemKPIQuyDoiCC.toFixed(1)} điểm</strong>
+                          <span className="text-indigo-600 font-medium"> ({formatPercent(aSoLuongCC, 2)} + {formatPercent(bChatLuongCC, 2)} + {formatPercent(cTienDoCC, 2)}) / 3 × 70 </span>
+                          = <strong className="text-indigo-700">{diemKPIQuyDoiCC.toFixed(2)} điểm</strong>
                         </p>
                       </div>
                     </>
@@ -1029,7 +1029,7 @@ export default function DanhGiaPage() {
                         />
                         <StatBox
                           label="Điểm KPI"
-                          value={`${diemKPIQuyDoiHd111.toFixed(1)}/70`}
+                          value={`${diemKPIQuyDoiHd111.toFixed(2)}/70`}
                           bgColor="bg-teal-50"
                           textColor="text-teal-600"
                         />
@@ -1067,8 +1067,8 @@ export default function DanhGiaPage() {
                           <strong>Công thức:</strong> Điểm KPI = (a + b + c) / 3 × 70
                         </p>
                         <p className="text-sm text-teal-600 font-medium text-center mt-1">
-                          = ({formatPercent(aLD, 0)} + {formatPercent(bLD, 0)} + {formatPercent(cLD, 0)}) / 3 × 70
-                          = <strong className="text-teal-700">{diemKPIQuyDoiHd111.toFixed(1)} điểm</strong>
+                          = ({formatPercent(aLD, 2)} + {formatPercent(bLD, 2)} + {formatPercent(cLD, 2)}) / 3 × 70
+                          = <strong className="text-teal-700">{diemKPIQuyDoiHd111.toFixed(2)} điểm</strong>
                         </p>
                       </div>
 
@@ -1143,7 +1143,7 @@ export default function DanhGiaPage() {
                         />
                         <StatBox
                           label="Điểm KPI"
-                          value={`${diemKPIQuyDoiLD.toFixed(1)}/70`}
+                          value={`${diemKPIQuyDoiLD.toFixed(2)}/70`}
                           bgColor="bg-pink-50"
                           textColor="text-pink-600"
                         />
@@ -1202,8 +1202,8 @@ export default function DanhGiaPage() {
                           <strong>Công thức:</strong> Điểm KPI = (a + b + c + d + đ + e) / 6 × 70
                         </p>
                         <p className="text-sm text-purple-600 font-medium text-center mt-1">
-                          = ({formatPercent(aLD, 0)} + {formatPercent(bLD, 0)} + {formatPercent(cLD, 0)} + {formatPercent(dLD, 0)} + {formatPercent(ddLD, 0)} + {formatPercent(eLD, 0)}) / 6 × 70 
-                          = <strong className="text-purple-700">{diemKPIQuyDoiLD.toFixed(1)} điểm</strong>
+                          = ({formatPercent(aLD, 2)} + {formatPercent(bLD, 2)} + {formatPercent(cLD, 2)} + {formatPercent(dLD, 2)} + {formatPercent(ddLD, 2)} + {formatPercent(eLD, 2)}) / 6 × 70 
+                          = <strong className="text-purple-700">{diemKPIQuyDoiLD.toFixed(2)} điểm</strong>
                         </p>
                       </div>
 

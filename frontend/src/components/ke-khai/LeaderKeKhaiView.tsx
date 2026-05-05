@@ -93,6 +93,16 @@ function TabHeader({
   );
 }
 
+// Format tỷ lệ % với 2 chữ số thập phân, không làm tròn LÊN 100% khi v < 1.
+function pctSafe(v: number, digits = 2): string {
+  const value = v * 100;
+  if (v < 1) {
+    const factor = Math.pow(10, digits);
+    return (Math.floor(value * factor) / factor).toFixed(digits);
+  }
+  return value.toFixed(digits);
+}
+
 function SummaryCard({ thongKe, dde }: { thongKe: IThongKeKeKhaiLanhDao | null; dde: IDanhGiaDDEResponse | null }) {
   if (!thongKe) return null;
 
@@ -109,15 +119,15 @@ function SummaryCard({ thongKe, dde }: { thongKe: IThongKeKeKhaiLanhDao | null; 
         </div>
         <div className="text-center">
           <p className="text-xs text-gray-500">a. Số lượng</p>
-          <p className="text-xl font-bold text-blue-600">{(diemKPI.a_so_luong * 100).toFixed(0)}%</p>
+          <p className="text-xl font-bold text-blue-600">{pctSafe(diemKPI.a_so_luong)}%</p>
         </div>
         <div className="text-center">
           <p className="text-xs text-gray-500">b. Chất lượng</p>
-          <p className="text-xl font-bold text-green-600">{(diemKPI.b_chat_luong * 100).toFixed(0)}%</p>
+          <p className="text-xl font-bold text-green-600">{pctSafe(diemKPI.b_chat_luong)}%</p>
         </div>
         <div className="text-center">
           <p className="text-xs text-gray-500">c. Tiến độ</p>
-          <p className="text-xl font-bold text-amber-600">{(diemKPI.c_tien_do * 100).toFixed(0)}%</p>
+          <p className="text-xl font-bold text-amber-600">{pctSafe(diemKPI.c_tien_do)}%</p>
         </div>
       </div>
 
@@ -147,7 +157,7 @@ function SummaryCard({ thongKe, dde }: { thongKe: IThongKeKeKhaiLanhDao | null; 
           <p className="text-sm text-gray-600">Công thức: (a + b + c + d + đ + e) / 6 × 70</p>
           <div className="text-right">
             <p className="text-sm text-gray-500">Điểm KPI:</p>
-            <p className="text-3xl font-bold text-indigo-700">{diemKPI.diem_kpi_quy_doi.toFixed(1)}<span className="text-sm text-gray-500">/70</span></p>
+            <p className="text-3xl font-bold text-indigo-700">{diemKPI.diem_kpi_quy_doi.toFixed(2)}<span className="text-sm text-gray-500">/70</span></p>
           </div>
         </div>
       </div>

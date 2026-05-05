@@ -110,7 +110,8 @@ function headerCell(text, opts = {}) {
 }
 
 function numCell(value, opts = {}) {
-  const formatted = typeof value === "number" ? (Number.isInteger(value) ? value.toString() : value.toFixed(1)) : String(value || "");
+  // Số thập phân làm tròn đến 2 chữ số (theo yêu cầu Chi cục: điểm KPI/SP1).
+  const formatted = typeof value === "number" ? (Number.isInteger(value) ? value.toString() : value.toFixed(2)) : String(value || "");
   return cell(
     [para([txt(formatted, { size: opts.fontSize || FONT_SIZE_NORMAL })], { alignment: AlignmentType.CENTER })],
     opts
@@ -120,6 +121,12 @@ function numCell(value, opts = {}) {
 function formatNum(v) {
   if (v === null || v === undefined) return "0";
   return Number.isInteger(v) ? v.toString() : Number(v).toFixed(1);
+}
+
+// Format dành cho điểm KPI/TC/Tổng (2 chữ số thập phân theo yêu cầu Chi cục).
+function formatScore(v) {
+  if (v === null || v === undefined) return "0";
+  return Number.isInteger(v) ? Number(v).toFixed(2) : Number(v).toFixed(2);
 }
 
 // =============================================================================
@@ -208,14 +215,14 @@ function buildMau01(data) {
   
   // II. KPI
   children.push(headerPara("II. KẾT QUẢ THEO DÕI, ĐÁNH GIÁ THEO KPI"));
-  children.push(para([txt(`Điểm KPI (×70): ${formatNum(data.diem_kpi)} / 70 điểm`)]));
+  children.push(para([txt(`Điểm KPI (×70): ${formatScore(data.diem_kpi)} / 70 điểm`)]));
   children.push(emptyPara());
-  
+
   // III. Tổng hợp
   children.push(headerPara("III. TỔNG HỢP KẾT QUẢ THEO DÕI, ĐÁNH GIÁ CÔNG CHỨC"));
-  children.push(para([txt("1. Điểm tiêu chí chung: "), txt(`${formatNum(data.diem_tieu_chi_chung)} / 30 điểm`, { bold: true })]));
-  children.push(para([txt("2. Điểm KPI (×70): "), txt(`${formatNum(data.diem_kpi)} / 70 điểm`, { bold: true })]));
-  children.push(para([txt("3. Tổng điểm: "), txt(`${formatNum(data.diem_tong)} / 100 điểm`, { bold: true })]));
+  children.push(para([txt("1. Điểm tiêu chí chung: "), txt(`${formatScore(data.diem_tieu_chi_chung)} / 30 điểm`, { bold: true })]));
+  children.push(para([txt("2. Điểm KPI (×70): "), txt(`${formatScore(data.diem_kpi)} / 70 điểm`, { bold: true })]));
+  children.push(para([txt("3. Tổng điểm: "), txt(`${formatScore(data.diem_tong)} / 100 điểm`, { bold: true })]));
   children.push(para([txt("4. Xếp loại: "), txt(`${data.xep_loai} - ${XEP_LOAI_MAP[data.xep_loai] || ""}`, { bold: true })]));
   children.push(emptyPara());
   children.push(para([txt("5. Ưu điểm: "), txt("..........................................................")]));
@@ -347,9 +354,9 @@ function buildMau02(data) {
   
   // Tổng hợp điểm
   children.push(headerPara("TỔNG HỢP"));
-  children.push(para([txt("Điểm tiêu chí chung: "), txt(`${formatNum(data.diem_tieu_chi_chung)} / 30 điểm`, { bold: true })]));
-  children.push(para([txt("Điểm KPI (×70): "), txt(`${formatNum(data.diem_kpi)} / 70 điểm`, { bold: true })]));
-  children.push(para([txt("Tổng điểm: "), txt(`${formatNum(data.diem_tong)} / 100 điểm`, { bold: true })]));
+  children.push(para([txt("Điểm tiêu chí chung: "), txt(`${formatScore(data.diem_tieu_chi_chung)} / 30 điểm`, { bold: true })]));
+  children.push(para([txt("Điểm KPI (×70): "), txt(`${formatScore(data.diem_kpi)} / 70 điểm`, { bold: true })]));
+  children.push(para([txt("Tổng điểm: "), txt(`${formatScore(data.diem_tong)} / 100 điểm`, { bold: true })]));
   children.push(para([txt("Xếp loại: "), txt(`${data.xep_loai} - ${XEP_LOAI_MAP[data.xep_loai] || ""}`, { bold: true })]));
   children.push(emptyPara());
   children.push(emptyPara());

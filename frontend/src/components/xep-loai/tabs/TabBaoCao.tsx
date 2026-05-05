@@ -570,9 +570,9 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
               </div>
               <p className="text-sm text-gray-500">{congChuc.cong_chuc?.ma_cc} {congChuc.cong_chuc?.chuc_vu ? `• ${congChuc.cong_chuc.chuc_vu}` : ''}</p>
               <div className="flex items-center gap-4 mt-2">
-                <span className="text-sm text-gray-600">Điểm TC: <strong>{congChuc.diem_tieu_chi_chung?.toFixed(1) || '-'}</strong></span>
-                <span className="text-sm text-gray-600">Điểm KPI: <strong>{congChuc.diem_kpi?.toFixed(1) || '-'}</strong></span>
-                <span className="text-sm text-gray-600">Tổng: <strong className="text-lg">{congChuc.diem_tong?.toFixed(1) || '-'}</strong></span>
+                <span className="text-sm text-gray-600">Điểm TC: <strong>{congChuc.diem_tieu_chi_chung?.toFixed(2) || '-'}</strong></span>
+                <span className="text-sm text-gray-600">Điểm KPI: <strong>{congChuc.diem_kpi?.toFixed(2) || '-'}</strong></span>
+                <span className="text-sm text-gray-600">Tổng: <strong className="text-lg">{congChuc.diem_tong?.toFixed(2) || '-'}</strong></span>
                 <XepLoaiBadge xepLoai={congChuc.xep_loai_he_thong || congChuc.xep_loai_tu_dong} size="md" />
               </div>
             </div>
@@ -830,11 +830,11 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
                                   <span className="text-sm text-gray-500">Điểm tự chấm (CC)</span>
-                                  <div className="text-2xl font-bold text-gray-900">{totalCC.toFixed(1)} <span className="text-sm text-gray-500">/ 30</span></div>
+                                  <div className="text-2xl font-bold text-gray-900">{totalCC.toFixed(2)} <span className="text-sm text-gray-500">/ 30</span></div>
                                 </div>
                                 <div>
                                   <span className="text-sm text-gray-500">Điểm lãnh đạo duyệt</span>
-                                  <div className="text-2xl font-bold text-blue-700">{totalLD.toFixed(1)} <span className="text-sm text-gray-500">/ 30</span></div>
+                                  <div className="text-2xl font-bold text-blue-700">{totalLD.toFixed(2)} <span className="text-sm text-gray-500">/ 30</span></div>
                                 </div>
                               </div>
                             </div>
@@ -854,28 +854,28 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
                                   <tr className="hover:bg-gray-50">
                                     <td className="px-4 py-3 font-medium text-gray-900">Nhóm I: Phẩm chất chính trị, đạo đức</td>
                                     <td className="px-4 py-3 text-center text-gray-500">10</td>
-                                    <td className="px-4 py-3 text-center font-medium">{n1.cc.toFixed(1)}</td>
-                                    <td className="px-4 py-3 text-center font-medium text-blue-700">{(tongHop?.nhom_1_diem ?? n1.ld).toFixed(1)}</td>
+                                    <td className="px-4 py-3 text-center font-medium">{n1.cc.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-center font-medium text-blue-700">{(tongHop?.nhom_1_diem ?? n1.ld).toFixed(2)}</td>
                                   </tr>
                                   <tr className="hover:bg-gray-50">
                                     <td className="px-4 py-3 font-medium text-gray-900">Nhóm II: Năng lực chuyên môn, nghiệp vụ</td>
                                     <td className="px-4 py-3 text-center text-gray-500">10</td>
-                                    <td className="px-4 py-3 text-center font-medium">{n2.cc.toFixed(1)}</td>
-                                    <td className="px-4 py-3 text-center font-medium text-blue-700">{(tongHop?.nhom_2_diem ?? n2.ld).toFixed(1)}</td>
+                                    <td className="px-4 py-3 text-center font-medium">{n2.cc.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-center font-medium text-blue-700">{(tongHop?.nhom_2_diem ?? n2.ld).toFixed(2)}</td>
                                   </tr>
                                   <tr className="hover:bg-gray-50">
                                     <td className="px-4 py-3 font-medium text-gray-900">Nhóm III: Năng lực đổi mới, sáng tạo</td>
                                     <td className="px-4 py-3 text-center text-gray-500">10</td>
-                                    <td className="px-4 py-3 text-center font-medium">{n3.cc.toFixed(1)}</td>
-                                    <td className="px-4 py-3 text-center font-medium text-blue-700">{(tongHop?.nhom_3_diem ?? n3.ld).toFixed(1)}</td>
+                                    <td className="px-4 py-3 text-center font-medium">{n3.cc.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-center font-medium text-blue-700">{(tongHop?.nhom_3_diem ?? n3.ld).toFixed(2)}</td>
                                   </tr>
                                 </tbody>
                                 <tfoot>
                                   <tr className="bg-gray-50 border-t border-gray-200 font-semibold">
                                     <td className="px-4 py-3 text-gray-900">Tổng cộng</td>
                                     <td className="px-4 py-3 text-center text-gray-700">30</td>
-                                    <td className="px-4 py-3 text-center">{totalCC.toFixed(1)}</td>
-                                    <td className="px-4 py-3 text-center text-blue-700">{totalLD.toFixed(1)}</td>
+                                    <td className="px-4 py-3 text-center">{totalCC.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-center text-blue-700">{totalLD.toFixed(2)}</td>
                                   </tr>
                                 </tfoot>
                               </table>
@@ -999,7 +999,7 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
                           e = {ddeData.e_final ?? '-'}%{' '}
                           → Trung bình: <strong>
                             {ddeData.d_final != null && ddeData.dd_final != null && ddeData.e_final != null
-                              ? (((ddeData.d_final + ddeData.dd_final + ddeData.e_final) / 3)).toFixed(1)
+                              ? (((ddeData.d_final + ddeData.dd_final + ddeData.e_final) / 3)).toFixed(2)
                               : '-'}%
                           </strong>
                         </div>
@@ -1274,14 +1274,14 @@ function BaoCaoTableView({
                       )}
                     </td>
                     <td className="px-3 py-3 text-center font-medium text-gray-900">
-                      {ct.diem_tieu_chi_chung?.toFixed(1) || '-'}
+                      {ct.diem_tieu_chi_chung?.toFixed(2) || '-'}
                     </td>
                     <td className="px-3 py-3 text-center font-medium text-gray-900">
-                      {ct.diem_kpi?.toFixed(1) || '-'}
+                      {ct.diem_kpi?.toFixed(2) || '-'}
                     </td>
                     <td className="px-3 py-3 text-center">
                       <span className="font-bold text-lg text-gray-900">
-                        {ct.diem_tong?.toFixed(1) || '-'}
+                        {ct.diem_tong?.toFixed(2) || '-'}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-center">
@@ -1351,7 +1351,7 @@ function BaoCaoTableView({
               <p className="text-sm text-gray-600">{selectedChiTiet.cong_chuc?.ma_cc}</p>
               <div className="flex items-center gap-4 mt-2 text-sm">
                 <span className="text-gray-500">
-                  Điểm: <strong>{selectedChiTiet.diem_tong?.toFixed(1)}</strong>
+                  Điểm: <strong>{selectedChiTiet.diem_tong?.toFixed(2)}</strong>
                 </span>
                 <span className="text-gray-500">
                   Tự động: <XepLoaiBadge xepLoai={selectedChiTiet.xep_loai_he_thong || selectedChiTiet.xep_loai_tu_dong} />
@@ -1757,9 +1757,9 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
                           <div className="font-medium text-gray-900">{ct.cong_chuc?.ho_ten}</div>
                           <div className="text-xs text-gray-500">{ct.cong_chuc?.ma_cc}</div>
                         </td>
-                        <td className="px-3 py-2 text-center">{ct.diem_tieu_chi_chung?.toFixed(1) || '-'}</td>
-                        <td className="px-3 py-2 text-center">{ct.diem_kpi?.toFixed(1) || '-'}</td>
-                        <td className="px-3 py-2 text-center font-bold">{ct.diem_tong?.toFixed(1) || '-'}</td>
+                        <td className="px-3 py-2 text-center">{ct.diem_tieu_chi_chung?.toFixed(2) || '-'}</td>
+                        <td className="px-3 py-2 text-center">{ct.diem_kpi?.toFixed(2) || '-'}</td>
+                        <td className="px-3 py-2 text-center font-bold">{ct.diem_tong?.toFixed(2) || '-'}</td>
                         <td className="px-3 py-2 text-center">
                           {(ct.so_cv_c3_plus || 0) > 0 ? (
                             <span className="font-bold text-amber-700">{ct.so_cv_c3_plus}</span>

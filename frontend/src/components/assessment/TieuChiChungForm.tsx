@@ -282,7 +282,7 @@ function NhomTieuChiSection({
                 : 'bg-red-100 text-red-700'
             }`}
           >
-            {diemNhom.toFixed(1)} / {maxDiem} đ
+            {diemNhom.toFixed(2)} / {maxDiem} đ
           </div>
 
           <svg

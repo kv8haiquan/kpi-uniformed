@@ -171,7 +171,7 @@ function TieuChiChungWidget({
   return (
     <div className="text-center py-4">
       <div className="flex items-center justify-center gap-3 mb-4">
-        <div className="text-4xl font-bold text-gray-900">{diem.toFixed(1)}</div>
+        <div className="text-4xl font-bold text-gray-900">{diem.toFixed(2)}</div>
         <div className="text-left">
           <div className="text-sm text-gray-500">/ 30 điểm</div>
           <span className={`px-2 py-0.5 ${config.bg} ${config.text} text-xs rounded-full font-medium`}>

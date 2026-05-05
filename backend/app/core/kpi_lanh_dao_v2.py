@@ -249,25 +249,27 @@ async def calc_kpi_lanh_dao_v2(
         )
     cap_bac_str = cap_bac_str_map[cap_bac]
 
-    # Resolve scope SP
+    # Resolve scope SP TỔNG (theo cấp)
     has_phan_cong: Optional[bool] = None
     if cap_bac == CapBacVaiTro.PHO_DON_VI:
-        scope = await _sp_pdv_scope(db, user.id, thang, nam)
+        scope_total = await _sp_pdv_scope(db, user.id, thang, nam)
     elif cap_bac == CapBacVaiTro.TRUONG_DON_VI:
-        scope = await _sp_trong_don_vi(db, [user.don_vi_id], thang, nam)
+        scope_total = await _sp_trong_don_vi(db, [user.don_vi_id], thang, nam)
     else:  # PCCT / CCT
         ngay_chot = _ngay_chot_cua_thang(thang, nam)
         don_vi_ids = await get_don_vi_phu_trach(db, user.id, ngay_chot)
         has_phan_cong = len(don_vi_ids) > 0
-        scope = await _sp_trong_don_vi(db, don_vi_ids, thang, nam)
+        scope_total = await _sp_trong_don_vi(db, don_vi_ids, thang, nam)
 
-    # Tính tổng SP
-    tong_sp_ke_khai = sum(sp.so_sp_goc for sp in scope)
-    tong_sp_hoan_thanh = tong_sp_ke_khai  # DA_PHE_DUYET = đã hoàn thành
-    sp_chat_luong = sum(sp.so_sp_chat_luong for sp in scope)
-    sp_tien_do = sum(sp.so_sp_tien_do for sp in scope)
+    # Tách SP CHÍNH LĐ TỰ KÊ (cong_chuc_id == user.id) vs SP TỔNG
+    scope_self = [sp for sp in scope_total if sp.cong_chuc_id == user.id]
 
-    # a, b, c
+    # Tính tổng SP (TỔNG)
+    tong_sp_ke_khai = sum(sp.so_sp_goc for sp in scope_total)
+    tong_sp_hoan_thanh = tong_sp_ke_khai
+    sp_chat_luong = sum(sp.so_sp_chat_luong for sp in scope_total)
+    sp_tien_do = sum(sp.so_sp_tien_do for sp in scope_total)
+
     if tong_sp_ke_khai > 0:
         a = min(1.0, tong_sp_hoan_thanh / tong_sp_ke_khai)
         b = min(1.0, sp_tien_do / tong_sp_ke_khai)
@@ -275,10 +277,22 @@ async def calc_kpi_lanh_dao_v2(
     else:
         a = b = c = 0.0
 
+    # Tính tổng SP (TỰ KÊ — riêng LĐ)
+    tong_sp_self = sum(sp.so_sp_goc for sp in scope_self)
+    sp_cl_self = sum(sp.so_sp_chat_luong for sp in scope_self)
+    sp_td_self = sum(sp.so_sp_tien_do for sp in scope_self)
+
+    if tong_sp_self > 0:
+        a_self = min(1.0, tong_sp_self / tong_sp_self)  # = 1 (đã duyệt = hoàn thành)
+        b_self = min(1.0, sp_td_self / tong_sp_self)
+        c_self = min(1.0, sp_cl_self / tong_sp_self)
+    else:
+        a_self = b_self = c_self = 0.0
+
     # d, đ, e
     d, dd, e = await _get_dde(db, cong_chuc_id, thang, nam)
 
-    # Tổng KPI = (a+b+c+d+đ+e) / 6
+    # Tổng KPI = (a+b+c+d+đ+e) / 6 — DÙNG SCOPE TỔNG (a/b/c của tổng đơn vị)
     kpi_tong = (a + b + c + d + dd + e) / 6
 
     return {
@@ -286,17 +300,28 @@ async def calc_kpi_lanh_dao_v2(
         "thang": thang,
         "nam": nam,
         "cap_bac": cap_bac_str,
+        # ==================== SCOPE TỔNG (dùng để tính KPI chính thức) ====================
         "tong_sp_ke_khai": round(tong_sp_ke_khai, 4),
         "tong_sp_hoan_thanh": round(tong_sp_hoan_thanh, 4),
         "sp_chat_luong": round(sp_chat_luong, 4),
         "sp_tien_do": round(sp_tien_do, 4),
-        "so_kekhai_records": len(scope),  # tham khảo (số bản ghi)
+        "so_kekhai_records": len(scope_total),
         "a": round(a, 6),
         "b": round(b, 6),
         "c": round(c, 6),
+        # ==================== SCOPE LĐ TỰ KÊ (chỉ thông tin tham khảo) ====================
+        "tong_sp_ke_khai_self": round(tong_sp_self, 4),
+        "sp_chat_luong_self": round(sp_cl_self, 4),
+        "sp_tien_do_self": round(sp_td_self, 4),
+        "so_kekhai_records_self": len(scope_self),
+        "a_self": round(a_self, 6),
+        "b_self": round(b_self, 6),
+        "c_self": round(c_self, 6),
+        # ==================== d, đ, e từ danh_gia_dde ====================
         "d": round(d, 6),
         "dd": round(dd, 6),
         "e": round(e, 6),
+        # ==================== TỔNG KPI ====================
         "kpi_tong": round(kpi_tong, 6),
         "has_phan_cong": has_phan_cong,
         "is_v2_active": is_kpi_lanh_dao_v2_active(thang, nam),

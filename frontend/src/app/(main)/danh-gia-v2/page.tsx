@@ -162,6 +162,66 @@ function MetricCard({
   );
 }
 
+/** Card hiển thị 1 chỉ số (a/b/c) cho LĐ — 2 dòng: LĐ tự kê + Tổng phụ trách */
+function LeaderAbcCard({
+  label,
+  color,
+  selfPercent,
+  selfSubValue,
+  totalPercent,
+  totalSubValue,
+}: {
+  label: string;
+  color: 'indigo' | 'emerald' | 'amber';
+  selfPercent: number;
+  selfSubValue: string;
+  totalPercent: number;
+  totalSubValue: string;
+}) {
+  const colorMap = {
+    indigo: { bg: 'bg-indigo-600', text: 'text-indigo-700', soft: 'bg-indigo-50' },
+    emerald: { bg: 'bg-emerald-600', text: 'text-emerald-700', soft: 'bg-emerald-50' },
+    amber: { bg: 'bg-amber-600', text: 'text-amber-700', soft: 'bg-amber-50' },
+  };
+  const c = colorMap[color];
+  const fmtPct = (p: number) => `${p.toFixed(2)}%`;
+  return (
+    <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+      <div className="text-sm font-semibold text-gray-800 mb-3">{label}</div>
+
+      {/* Hàng 1: LĐ tự kê */}
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-gray-500 font-medium">LĐ tự kê</span>
+          <span className={`text-sm font-bold ${c.text}`}>{fmtPct(selfPercent)}</span>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-1.5 mb-1">
+          <div
+            className={`${c.bg} h-1.5 rounded-full transition-all duration-500`}
+            style={{ width: `${Math.min(selfPercent, 100)}%` }}
+          />
+        </div>
+        <p className="text-[11px] text-gray-400">{selfSubValue}</p>
+      </div>
+
+      {/* Hàng 2: Tổng phụ trách */}
+      <div className={`${c.soft} -mx-4 -mb-4 p-3 rounded-b-xl border-t border-gray-100`}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-gray-700 font-semibold">Tổng phụ trách</span>
+          <span className={`text-base font-bold ${c.text}`}>{fmtPct(totalPercent)}</span>
+        </div>
+        <div className="w-full bg-white/60 rounded-full h-2 mb-1">
+          <div
+            className={`${c.bg} h-2 rounded-full transition-all duration-500`}
+            style={{ width: `${Math.min(totalPercent, 100)}%` }}
+          />
+        </div>
+        <p className="text-[11px] text-gray-600">{totalSubValue}</p>
+      </div>
+    </div>
+  );
+}
+
 function ScoreCard({
   title,
   subtitle,
@@ -407,10 +467,9 @@ export default function DanhGiaV2Page() {
   const soNhap = useLeaderV2 ? 0 : (thongKe?.so_kekhai_nhap ?? 0);
   const tongTamTinh = soDaDuyet + soChoDuyet + soNhap;
 
-  // Empty state: CC V2 = 0 kê khai; LĐ V2 = scope mở rộng = 0 SP
-  const isEmptyKPI = useLeaderV2
-    ? (kpiV2LD!.tong_sp_ke_khai === 0)
-    : (tongTamTinh === 0);
+  // Empty state: CC V2 = 0 kê khai; LĐ V2 LUÔN có d/đ/e (mặc định 1.0)
+  // → không bao giờ empty, vẫn render widget để LĐ thấy đủ 6 chỉ số.
+  const isEmptyKPI = useLeaderV2 ? false : (tongTamTinh === 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -688,57 +747,89 @@ export default function DanhGiaV2Page() {
                       />
                     </div>
 
-                    {/* 3 chỉ số a/b/c */}
+                    {/* Chỉ số KPI: CC V2 = 3 cards a/b/c; LĐ V2 = 6 cards với
+                        a/b/c có 2 dòng (LĐ tự kê + Tổng phụ trách) + d/đ/e */}
                     <h3 className="text-sm font-medium text-gray-700 mb-4">
-                      {useLeaderV2 ? 'Sáu chỉ số (a, b, c, d, đ, e)' : 'Ba chỉ số (a, b, c)'}
+                      {useLeaderV2 ? 'Sáu chỉ số KPI Lãnh đạo (a, b, c, d, đ, e)' : 'Ba chỉ số (a, b, c)'}
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <MetricCard
-                        label="a. Tỷ lệ Số lượng"
-                        value={pct(a)}
-                        subValue={`${fmt(tongSpHoanThanh, 2)} / ${fmt(mauSo, 2)} SP`}
-                        color="indigo"
-                        percent={a * 100}
-                      />
-                      <MetricCard
-                        label="b. Tỷ lệ Chất lượng"
-                        value={pct(b)}
-                        subValue={`${fmt(tongSpCL, 2)} / ${fmt(mauSo, 2)} SP`}
-                        color="emerald"
-                        percent={b * 100}
-                      />
-                      <MetricCard
-                        label="c. Tỷ lệ Tiến độ"
-                        value={pct(c)}
-                        subValue={`${fmt(tongSpTD, 2)} / ${fmt(mauSo, 2)} SP`}
-                        color="amber"
-                        percent={c * 100}
-                      />
-                    </div>
 
-                    {/* 3 chỉ số d/đ/e — chỉ LĐ thật V2 */}
-                    {useLeaderV2 && (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                    {useLeaderV2 ? (
+                      <>
+                        {/* HÀNG 1: a / b / c — mỗi card 2 dòng (Tự kê + Tổng) */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <LeaderAbcCard
+                            label="a. Tỷ lệ Số lượng"
+                            color="indigo"
+                            selfPercent={kpiV2LD!.a_self * 100}
+                            selfSubValue={`${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} SP`}
+                            totalPercent={a * 100}
+                            totalSubValue={`${fmt(tongSpHoanThanh, 2)} / ${fmt(mauSo, 2)} SP`}
+                          />
+                          <LeaderAbcCard
+                            label="b. Tỷ lệ Chất lượng"
+                            color="emerald"
+                            selfPercent={kpiV2LD!.b_self * 100}
+                            selfSubValue={`${fmt(kpiV2LD!.sp_chat_luong_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} SP`}
+                            totalPercent={b * 100}
+                            totalSubValue={`${fmt(tongSpCL, 2)} / ${fmt(mauSo, 2)} SP`}
+                          />
+                          <LeaderAbcCard
+                            label="c. Tỷ lệ Tiến độ"
+                            color="amber"
+                            selfPercent={kpiV2LD!.c_self * 100}
+                            selfSubValue={`${fmt(kpiV2LD!.sp_tien_do_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} SP`}
+                            totalPercent={c * 100}
+                            totalSubValue={`${fmt(tongSpTD, 2)} / ${fmt(mauSo, 2)} SP`}
+                          />
+                        </div>
+
+                        {/* HÀNG 2: d/đ/e từ danh_gia_dde */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                          <MetricCard
+                            label="d. Kết quả đơn vị"
+                            value={pct(d)}
+                            subValue={d >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                            color="indigo"
+                            percent={d * 100}
+                          />
+                          <MetricCard
+                            label="đ. Tổ chức triển khai"
+                            value={pct(dd)}
+                            subValue={dd >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                            color="emerald"
+                            percent={dd * 100}
+                          />
+                          <MetricCard
+                            label="e. Đoàn kết nội bộ"
+                            value={pct(e)}
+                            subValue={e >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                            color="amber"
+                            percent={e * 100}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <MetricCard
-                          label="d. Kết quả đơn vị"
-                          value={pct(d)}
-                          subValue={d >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                          label="a. Tỷ lệ Số lượng"
+                          value={pct(a)}
+                          subValue={`${fmt(tongSpHoanThanh, 2)} / ${fmt(mauSo, 2)} SP`}
                           color="indigo"
-                          percent={d * 100}
+                          percent={a * 100}
                         />
                         <MetricCard
-                          label="đ. Tổ chức triển khai"
-                          value={pct(dd)}
-                          subValue={dd >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                          label="b. Tỷ lệ Chất lượng"
+                          value={pct(b)}
+                          subValue={`${fmt(tongSpCL, 2)} / ${fmt(mauSo, 2)} SP`}
                           color="emerald"
-                          percent={dd * 100}
+                          percent={b * 100}
                         />
                         <MetricCard
-                          label="e. Đoàn kết nội bộ"
-                          value={pct(e)}
-                          subValue={e >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                          label="c. Tỷ lệ Tiến độ"
+                          value={pct(c)}
+                          subValue={`${fmt(tongSpTD, 2)} / ${fmt(mauSo, 2)} SP`}
                           color="amber"
-                          percent={e * 100}
+                          percent={c * 100}
                         />
                       </div>
                     )}

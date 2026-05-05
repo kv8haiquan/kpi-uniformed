@@ -426,7 +426,7 @@ async def create_ke_khai_lanh_dao(
     if not check_is_lanh_dao(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
 
-    # Phase 3 (05/05/2026): LĐ thật từ tháng 5/2026 phải kê khai trên /ke-khai-v2
+    # Phase 3 (05/05/2026): LĐ thật từ tháng 4/2026 phải kê khai trên /ke-khai-v2
     # (HĐ 111 vẫn dùng form này như cũ)
     from app.core.kpi_lanh_dao_v2 import is_kpi_lanh_dao_v2_active
     if current_user.is_lanh_dao and is_kpi_lanh_dao_v2_active(payload.thang, payload.nam):
@@ -435,7 +435,7 @@ async def create_ke_khai_lanh_dao(
             detail=error_response(
                 code="LD_USE_V2",
                 message=(
-                    "Từ tháng 5/2026 lãnh đạo kê khai theo form mới (V2). "
+                    "Từ tháng 4/2026 lãnh đạo kê khai theo form mới (V2). "
                     "Vui lòng dùng /ke-khai-v2."
                 ),
             ),

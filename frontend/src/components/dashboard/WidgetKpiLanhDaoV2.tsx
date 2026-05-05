@@ -36,7 +36,7 @@ const LANH_DAO_CAP_BAC = new Set([
   'CHI_CUC_TRUONG',
 ]);
 
-const FROM_THANG = 4;
+const FROM_THANG = 4;  // áp dụng từ tháng 4/2026 (xem app/core/kpi_lanh_dao_v2.py)
 const FROM_NAM = 2026;
 
 function isV2Active(thang: number, nam: number): boolean {

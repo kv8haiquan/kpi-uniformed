@@ -52,7 +52,7 @@ from app.models.user_org import CapBacVaiTro, CongChuc, DonVi
 # =============================================================================
 
 KPI_LANH_DAO_V2_FROM_NAM = 2026
-KPI_LANH_DAO_V2_FROM_THANG = 5  # Đẩy từ 4 → 5 (giữ data tháng 4 trong ke_khai_lanh_dao)
+KPI_LANH_DAO_V2_FROM_THANG = 4  # Áp dụng từ tháng 4/2026 (data LĐ thật tháng 4 đã được soft delete + dump 05/05/2026)
 
 
 def is_kpi_lanh_dao_v2_active(thang: int, nam: int) -> bool:

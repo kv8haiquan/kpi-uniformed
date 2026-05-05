@@ -315,7 +315,7 @@ def _reject_leader_v2(current_user: CongChuc, thang: int, nam: int) -> None:
                     "code": "LEADER_NOT_ALLOWED_V2_BEFORE_FLAG",
                     "message": (
                         "Tháng này lãnh đạo vẫn kê khai theo form cũ "
-                        "(/ke-khai-lanh-dao). Form V2 chỉ áp từ tháng 5/2026."
+                        "(/ke-khai-lanh-dao). Form V2 chỉ áp từ tháng 4/2026."
                     ),
                 },
             },

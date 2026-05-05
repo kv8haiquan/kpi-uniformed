@@ -590,8 +590,8 @@ export default function DanhGiaPage() {
           </div>
         </div>
 
-        {/* ========== Phase 3 KPI LĐ V2 (05/05/2026): widget cho LĐ thật + tháng ≥ 5/2026 ========== */}
-        {isLanhDao && !isHd111 && (selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 5)) && (
+        {/* ========== Phase 3 KPI LĐ V2 (05/05/2026): widget cho LĐ thật + tháng ≥ 4/2026 ========== */}
+        {isLanhDao && !isHd111 && (selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 4)) && (
           <div className="mb-6">
             <WidgetKpiLanhDaoV2
               thang={selectedThang}

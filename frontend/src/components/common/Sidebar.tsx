@@ -161,14 +161,17 @@ function useMenuSections(): MenuSection[] {
     },
   ];
 
-  // Admin section — chỉ hiện khi là admin
-  if (isAdmin) {
-    sections.push({
-      title: 'Quản trị',
-      items: [
-        { label: 'Quản trị hệ thống', href: '/admin', icon: Settings },
-      ],
-    });
+  // Admin / CCT section — Quản trị hệ thống (admin), Phân công phụ trách (CCT + admin)
+  const isCCT = user?.vai_tro?.ma_vai_tro === 'CCT';
+  if (isAdmin || isCCT) {
+    const adminItems: MenuItem[] = [];
+    if (isAdmin) {
+      adminItems.push({ label: 'Quản trị hệ thống', href: '/admin', icon: Settings });
+    }
+    if (isAdmin || isCCT) {
+      adminItems.push({ label: 'Phân công phụ trách', href: '/phan-cong-phu-trach', icon: Settings });
+    }
+    sections.push({ title: 'Quản trị', items: adminItems });
   }
 
   return sections;

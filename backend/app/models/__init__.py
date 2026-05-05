@@ -125,6 +125,9 @@ from app.models.phieu_danh_gia import (
 # Công việc yêu thích (favorites cho /ke-khai-v2 - 30/04/2026)
 from app.models.cong_viec_yeu_thich import CongViecYeuThich
 
+# Phân công phụ trách (CCT/PCCT ↔ đơn vị, versioned — 05/05/2026)
+from app.models.phan_cong_phu_trach import PhanCongPhuTrach
+
 __all__ = [
     # ==========================================================================
     # BASE CLASSES
@@ -238,4 +241,9 @@ __all__ = [
     # CONG VIEC YEU THICH (favorites — 30/04/2026)
     # ==========================================================================
     "CongViecYeuThich",
+
+    # ==========================================================================
+    # PHAN CONG PHU TRACH (CCT/PCCT ↔ đơn vị — 05/05/2026)
+    # ==========================================================================
+    "PhanCongPhuTrach",
 ]

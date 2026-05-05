@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     ke_khai_v2,  # PL3 V2 (28/04/2026): Kê khai công việc theo PL3
     admin_pl3,   # PL3 V2 (28/04/2026): Admin CRUD danh mục PL3 + pin version
     admin_import,  # PL3 V2 (28/04/2026): Admin import Excel PL3
+    phan_cong_phu_trach,  # KPI LĐ mới (05/05/2026): Phân công CCT/PCCT phụ trách
 )
 
 # =============================================================================
@@ -223,4 +224,11 @@ api_router.include_router(
     phieu_danh_gia_quy.router,
     prefix="/phieu-danh-gia-quy",
     tags=["Phiếu đánh giá cá nhân quý"],
+)
+
+# Phân công CCT/PCCT phụ trách đơn vị (KPI LĐ mới - 05/05/2026)
+api_router.include_router(
+    phan_cong_phu_trach.router,
+    prefix="/phan-cong-phu-trach",
+    tags=["Phân công phụ trách"],
 )

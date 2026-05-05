@@ -19,6 +19,8 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { kpiV2Service } from '@/services/kpi-v2.service';
 import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
+import { kpiLanhDaoV2Service } from '@/services/kpiLanhDaoV2.service';
+import { IKpiLanhDaoV2 } from '@/types/kpiLanhDaoV2';
 import { isApiError } from '@/lib/axios';
 import { IThongKeKeKhaiThangV2, IKeKhaiV2Response } from '@/types/kpi-v2';
 import {
@@ -258,23 +260,44 @@ export default function DanhGiaV2Page() {
   const [tab, setTab] = useState<KPITab>('chinh_thuc');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
+  // Phase 3 KPI LĐ V2 (05/05/2026): KPI mới cho LĐ thật + tháng ≥ 4/2026
+  const isLanhDao = user?.is_lanh_dao ?? false;
+  const isHd111 = user?.is_hd_111 ?? false;
+  const isV2ActiveForLeader =
+    isLanhDao && !isHd111 &&
+    (selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 4));
+  const [kpiV2LD, setKpiV2LD] = useState<IKpiLanhDaoV2 | null>(null);
+
   // Auth gate
   useEffect(() => {
     if (!isAuthenticated) router.push('/login');
   }, [isAuthenticated, router]);
 
-  // Redirect nếu user pin V1 → /danh-gia
+  // Redirect:
+  // - HĐ 111 → /danh-gia (form cũ)
+  // - LĐ thật + tháng < 4/2026 → /danh-gia (form cũ)
+  // - CC pinned V1 → /danh-gia
+  // - LĐ thật V2 + CC V2 → ở lại /danh-gia-v2
   useEffect(() => {
-    if (user && user.effective_kpi_version === 'V1') {
+    if (!user) return;
+    if (user.is_hd_111) {
+      router.replace('/danh-gia');
+      return;
+    }
+    if (user.is_lanh_dao && !isV2ActiveForLeader) {
+      router.replace('/danh-gia');
+      return;
+    }
+    if (!user.is_lanh_dao && user.effective_kpi_version === 'V1') {
       router.replace('/danh-gia');
     }
-  }, [user, router]);
+  }, [user, router, isV2ActiveForLeader]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [thongKeRes, listRes, tcRes] = await Promise.allSettled([
+      const [thongKeRes, listRes, tcRes, kpiV2LDRes] = await Promise.allSettled([
         kpiV2Service.getThongKeThang(selectedThang, selectedNam),
         kpiV2Service.getMyKeKhai({
           thang: selectedThang,
@@ -282,17 +305,26 @@ export default function DanhGiaV2Page() {
           page_size: 100,
         }),
         tieuChiChungService.getKetQuaThang(selectedThang, selectedNam),
+        // LĐ thật + tháng ≥ 4/2026: load KPI V2 (scope mở rộng cấp dưới + d/đ/e)
+        isV2ActiveForLeader
+          ? kpiLanhDaoV2Service.getMyKpi(selectedThang, selectedNam)
+          : Promise.resolve(null),
       ]);
       if (thongKeRes.status === 'fulfilled') setThongKe(thongKeRes.value);
       if (listRes.status === 'fulfilled') setList(listRes.value.data);
       if (tcRes.status === 'fulfilled') setTieuChi(tcRes.value);
+      if (kpiV2LDRes.status === 'fulfilled' && kpiV2LDRes.value) {
+        setKpiV2LD(kpiV2LDRes.value as IKpiLanhDaoV2);
+      } else {
+        setKpiV2LD(null);
+      }
     } catch (err: unknown) {
       console.error(err);
       setError(isApiError(err) ? err.message : 'Lỗi tải dữ liệu');
     } finally {
       setLoading(false);
     }
-  }, [selectedThang, selectedNam]);
+  }, [selectedThang, selectedNam, isV2ActiveForLeader]);
 
   useEffect(() => {
     loadData();
@@ -303,26 +335,45 @@ export default function DanhGiaV2Page() {
   // ===========================================================================
 
   // Mẫu số: tab tạm tính = du_kien (NHAP+CHO+DA), tab chính thức = da_duyet
-  const mauSoChinhThuc = thongKe?.tong_sp_da_duyet ?? 0;
+  // LĐ V2 + tab chính thức: ƯU TIÊN số liệu từ /kpi-lanh-dao-v2/me (scope mở rộng).
+  const useLeaderV2 = kpiV2LD !== null && tab === 'chinh_thuc';
+
+  const mauSoChinhThuc = useLeaderV2
+    ? kpiV2LD!.tong_sp_ke_khai
+    : thongKe?.tong_sp_da_duyet ?? 0;
   const mauSoTamTinh = thongKe?.tong_sp_du_kien ?? 0;
   const mauSo = tab === 'chinh_thuc' ? mauSoChinhThuc : mauSoTamTinh;
 
-  const tongSpHoanThanh = tab === 'chinh_thuc' ? mauSoChinhThuc : mauSoTamTinh;
-  const tongSpCL =
-    tab === 'chinh_thuc'
-      ? thongKe?.tong_sp_chat_luong_da_duyet ?? 0
-      : thongKe?.tong_sp_chat_luong_tam_tinh ?? 0;
-  const tongSpTD =
-    tab === 'chinh_thuc'
-      ? thongKe?.tong_sp_tien_do_da_duyet ?? 0
-      : thongKe?.tong_sp_tien_do_tam_tinh ?? 0;
+  const tongSpHoanThanh = useLeaderV2
+    ? kpiV2LD!.tong_sp_hoan_thanh
+    : (tab === 'chinh_thuc' ? mauSoChinhThuc : mauSoTamTinh);
+  const tongSpCL = useLeaderV2
+    ? kpiV2LD!.sp_chat_luong
+    : (tab === 'chinh_thuc'
+        ? thongKe?.tong_sp_chat_luong_da_duyet ?? 0
+        : thongKe?.tong_sp_chat_luong_tam_tinh ?? 0);
+  const tongSpTD = useLeaderV2
+    ? kpiV2LD!.sp_tien_do
+    : (tab === 'chinh_thuc'
+        ? thongKe?.tong_sp_tien_do_da_duyet ?? 0
+        : thongKe?.tong_sp_tien_do_tam_tinh ?? 0);
 
   // 3 chỉ số (V2: mẫu số = tổng SP kê khai)
-  const a = mauSo > 0 ? Math.min(tongSpHoanThanh / mauSo, 1) : 0;
-  const b = mauSo > 0 ? Math.min(tongSpCL / mauSo, 1) : 0;
-  const c = mauSo > 0 ? Math.min(tongSpTD / mauSo, 1) : 0;
+  const a = useLeaderV2 ? kpiV2LD!.a : (mauSo > 0 ? Math.min(tongSpHoanThanh / mauSo, 1) : 0);
+  const b = useLeaderV2 ? kpiV2LD!.b : (mauSo > 0 ? Math.min(tongSpCL / mauSo, 1) : 0);
+  const c = useLeaderV2 ? kpiV2LD!.c : (mauSo > 0 ? Math.min(tongSpTD / mauSo, 1) : 0);
 
-  const kpiRatio = (a + b + c) / 3;
+  // d, đ, e — chỉ áp cho LĐ thật V2
+  const d = useLeaderV2 ? kpiV2LD!.d : 0;
+  const dd = useLeaderV2 ? kpiV2LD!.dd : 0;
+  const e = useLeaderV2 ? kpiV2LD!.e : 0;
+
+  // KPI ratio:
+  // - LĐ V2: (a+b+c+d+đ+e)/6
+  // - CC V2: (a+b+c)/3
+  const kpiRatio = useLeaderV2
+    ? (a + b + c + d + dd + e) / 6
+    : (a + b + c) / 3;
   const diemKPI = kpiRatio * 70;
 
   // ===========================================================================
@@ -617,9 +668,9 @@ export default function DanhGiaV2Page() {
                       />
                     </div>
 
-                    {/* 3 chỉ số */}
+                    {/* 3 chỉ số a/b/c */}
                     <h3 className="text-sm font-medium text-gray-700 mb-4">
-                      Ba chỉ số (a, b, c)
+                      {useLeaderV2 ? 'Sáu chỉ số (a, b, c, d, đ, e)' : 'Ba chỉ số (a, b, c)'}
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <MetricCard
@@ -645,25 +696,84 @@ export default function DanhGiaV2Page() {
                       />
                     </div>
 
+                    {/* 3 chỉ số d/đ/e — chỉ LĐ thật V2 */}
+                    {useLeaderV2 && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <MetricCard
+                          label="d. Kết quả đơn vị"
+                          value={pct(d)}
+                          subValue={d >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                          color="indigo"
+                          percent={d * 100}
+                        />
+                        <MetricCard
+                          label="đ. Tổ chức triển khai"
+                          value={pct(dd)}
+                          subValue={dd >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                          color="emerald"
+                          percent={dd * 100}
+                        />
+                        <MetricCard
+                          label="e. Đoàn kết nội bộ"
+                          value={pct(e)}
+                          subValue={e >= 1 ? '100% (đạt)' : '50% (không đạt)'}
+                          color="amber"
+                          percent={e * 100}
+                        />
+                      </div>
+                    )}
+
                     {/* Công thức */}
                     <div className="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">
-                      <p className="text-sm text-gray-600 text-center">
-                        <strong>Công thức V2:</strong> Điểm KPI = (a + b + c) / 3 × 70 ={' '}
-                        <span className="text-indigo-600 font-medium">
-                          ({pct(a, 2)} + {pct(b, 2)} + {pct(c, 2)}) / 3 × 70
-                        </span>{' '}
-                        ={' '}
-                        <strong className="text-indigo-700">
-                          {diemKPI.toFixed(2)} điểm
-                        </strong>
-                      </p>
-                      <p className="text-xs text-gray-500 text-center mt-1">
-                        Mẫu số V2 = Σ SP kê khai (
-                        {tab === 'tam_tinh'
-                          ? 'Nháp + Chờ + Đã duyệt'
-                          : 'chỉ Đã duyệt'}
-                        )
-                      </p>
+                      {useLeaderV2 ? (
+                        <>
+                          <p className="text-sm text-gray-600 text-center">
+                            <strong>Công thức Lãnh đạo V2:</strong> Điểm KPI =
+                            (a + b + c + d + đ + e) / 6 × 70
+                          </p>
+                          <p className="text-sm text-gray-700 text-center mt-1">
+                            ({pct(a, 2)} + {pct(b, 2)} + {pct(c, 2)} +{' '}
+                            {pct(d, 2)} + {pct(dd, 2)} + {pct(e, 2)}) / 6 × 70 ={' '}
+                            <strong className="text-indigo-700">
+                              {diemKPI.toFixed(2)} điểm
+                            </strong>
+                          </p>
+                          <p className="text-xs text-gray-500 text-center mt-2">
+                            Mẫu số = Σ SP đã kê khai trong scope phụ trách (
+                            {kpiV2LD?.cap_bac === 'PDV' && 'SP tự kê + SP CC do mình duyệt'}
+                            {kpiV2LD?.cap_bac === 'TDV' && 'toàn bộ SP đơn vị'}
+                            {(kpiV2LD?.cap_bac === 'PCCT' || kpiV2LD?.cap_bac === 'CCT') &&
+                              'gộp SP các đơn vị phụ trách'}
+                            ) — chỉ tính bản đã DA_PHE_DUYET
+                          </p>
+                          {(kpiV2LD?.cap_bac === 'PCCT' || kpiV2LD?.cap_bac === 'CCT') &&
+                            kpiV2LD?.has_phan_cong === false && (
+                              <p className="text-xs text-amber-700 text-center mt-2 font-medium">
+                                ⚠️ Chưa có phân công đơn vị phụ trách — KPI hiện chỉ tính d/đ/e.
+                              </p>
+                            )}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm text-gray-600 text-center">
+                            <strong>Công thức V2:</strong> Điểm KPI = (a + b + c) / 3 × 70 ={' '}
+                            <span className="text-indigo-600 font-medium">
+                              ({pct(a, 2)} + {pct(b, 2)} + {pct(c, 2)}) / 3 × 70
+                            </span>{' '}
+                            ={' '}
+                            <strong className="text-indigo-700">
+                              {diemKPI.toFixed(2)} điểm
+                            </strong>
+                          </p>
+                          <p className="text-xs text-gray-500 text-center mt-1">
+                            Mẫu số V2 = Σ SP kê khai (
+                            {tab === 'tam_tinh'
+                              ? 'Nháp + Chờ + Đã duyệt'
+                              : 'chỉ Đã duyệt'}
+                            )
+                          </p>
+                        </>
+                      )}
                     </div>
                   </>
                 )}

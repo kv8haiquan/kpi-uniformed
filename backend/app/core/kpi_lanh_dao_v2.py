@@ -7,34 +7,33 @@ Spec: docs/Ke_khai_LĐ/Phuong phap tinh KPI cho lanh dao.docx
 
 CÔNG THỨC SCOPE SP CHO TỪNG CẤP
 -------------------------------
-- PDV  = SP tự kê + SP của CC do PDV trực tiếp duyệt
-- TDV  = toàn bộ SP của đơn vị (CC + PDV trong đơn vị + TDV tự kê)
-         (CC khi kê khai chọn DUY NHẤT 1 người duyệt → không trùng)
+LĐ thật từ tháng 4/2026 đã chuyển sang cùng bảng `kpi_submission` (V2_PL3)
+như CC. Scope V2:
+
+- PDV  = SP của chính PDV tự kê + SP của CC do PDV trực tiếp duyệt
+- TDV  = toàn bộ SP của người thuộc đơn vị (CC + PDV + TDV tự kê)
+         (CC khi kê khai chọn DUY NHẤT 1 người duyệt → không trùng;
+          với scope TDV, lọc theo cong_chuc.don_vi_id)
 - PCCT = gộp toàn bộ SP của các đơn vị TDV mình phụ trách
 - CCT  = gộp SP các đơn vị các PCCT phụ trách + SP các đơn vị CCT trực tiếp
-         phụ trách
-         (Vì 1 đơn vị tại 1 thời điểm chỉ thuộc 1 LĐ cấp Chi cục →
-          không đếm trùng giữa SP PCCT và SP TDV trực tiếp)
+         phụ trách (trùng nếu phân công sai → ràng buộc UI ở phan_cong_phu_trach)
 
-TỔNG ĐIỂM KPI = (a + b + c + d + đ + e) / 6
-- a = số CV hoàn thành / tổng CV
-- b = (Σ max(0, 1 - so_loi_tien_do × 0.25)) / tổng CV
-- c = (Σ max(0, 1 - so_loi_chat_luong × 0.25)) / tổng CV
-- d, đ, e: từ danh_gia_dde (final / 100), thiếu → 1.0
+CÔNG THỨC ĐIỂM (giống CC V2 + thêm d/đ/e):
+- Mẫu số: tổng SP gốc quy đổi (sum so_sp_goc_quy_doi của các bản DA_PHE_DUYET).
+- a = tổng SP đã hoàn thành / mẫu số (tỷ lệ số lượng — DA_PHE_DUYET = hoàn thành).
+- b = tổng SP đạt tiến độ (sum so_sp_tien_do) / mẫu số.
+- c = tổng SP đạt chất lượng (sum so_sp_chat_luong) / mẫu số.
+- d, đ, e từ danh_gia_dde (final / 100), thiếu → 1.0.
+- KPI = (a + b + c + d + đ + e) / 6  (∈ [0, 1])
 
-Trong scope:
-- "CV của CC" = ke_khai_cong_viec, trạng thái DA_PHE_DUYET, không xóa
-- "CV của LĐ tự kê" = ke_khai_lanh_dao, trạng thái DA_PHE_DUYET, không xóa
-- Hoàn thành: ke_khai_cong_viec đã DA_PHE_DUYET coi như hoàn thành.
-  ke_khai_lanh_dao có trang_thai_hoan_thanh = DA_HOAN_THANH.
-
-PHIÊN BẢN: 1.0 (05/05/2026)
+PHIÊN BẢN: 2.0 (05/05/2026) — đổi sang SP quy đổi để khớp UI CC V2.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Optional, Sequence
 from uuid import UUID
 
@@ -42,9 +41,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
-from app.models.leader_kpi import DanhGiaDDE, KeKhaiLanhDao, TrangThaiHoanThanh
+from app.models.leader_kpi import DanhGiaDDE
 from app.models.phan_cong_phu_trach import PhanCongPhuTrach
-from app.models.user_org import CapBacVaiTro, CongChuc, DonVi
+from app.models.user_org import CapBacVaiTro, CongChuc
 
 
 # =============================================================================
@@ -52,7 +51,7 @@ from app.models.user_org import CapBacVaiTro, CongChuc, DonVi
 # =============================================================================
 
 KPI_LANH_DAO_V2_FROM_NAM = 2026
-KPI_LANH_DAO_V2_FROM_THANG = 4  # Áp dụng từ tháng 4/2026 (data LĐ thật tháng 4 đã được soft delete + dump 05/05/2026)
+KPI_LANH_DAO_V2_FROM_THANG = 4
 
 
 def is_kpi_lanh_dao_v2_active(thang: int, nam: int) -> bool:
@@ -61,25 +60,25 @@ def is_kpi_lanh_dao_v2_active(thang: int, nam: int) -> bool:
 
 
 # =============================================================================
-# DATA CLASS — 1 BẢN GHI CV TRONG SCOPE
+# DATA CLASS — 1 BẢN GHI SP QUY ĐỔI TRONG SCOPE
 # =============================================================================
 
 @dataclass
-class _CV:
-    """Bản ghi CV chuẩn hóa (từ ke_khai_cong_viec hoặc ke_khai_lanh_dao)."""
-    nguon: str  # "CC" | "LD"
+class _SP:
+    """Bản ghi SP đã quy đổi (từ kpi_submission V2, DA_PHE_DUYET)."""
     cong_chuc_id: UUID
     don_vi_id: Optional[UUID]
-    so_loi_chat_luong: int
-    so_loi_tien_do: int
-    hoan_thanh: bool
+    so_sp_goc: float        # so_sp_goc_quy_doi — đóng góp vào mẫu số
+    so_sp_chat_luong: float
+    so_sp_tien_do: float
 
 
-def _diem_loi(so_loi: int) -> float:
-    """Điểm 1 CV theo số lỗi: max(0, 1 - lỗi × 0.25)."""
-    if so_loi is None or so_loi < 0:
-        return 1.0
-    return max(0.0, 1.0 - so_loi * 0.25)
+def _to_float(v) -> float:
+    if v is None:
+        return 0.0
+    if isinstance(v, Decimal):
+        return float(v)
+    return float(v)
 
 
 # =============================================================================
@@ -91,15 +90,7 @@ async def get_don_vi_phu_trach(
     lanh_dao_id: UUID,
     ngay: date,
 ) -> list[UUID]:
-    """
-    Trả về list don_vi_id mà 1 LĐ phụ trách tại ngày `ngay`.
-
-    Đọc bảng phan_cong_phu_trach, filter:
-    - is_deleted = False
-    - lanh_dao_id = ?
-    - hieu_luc_tu <= ngay
-    - hieu_luc_den IS NULL OR hieu_luc_den >= ngay
-    """
+    """Trả về list don_vi_id mà 1 LĐ phụ trách tại ngày `ngay`."""
     stmt = (
         select(PhanCongPhuTrach.don_vi_id)
         .where(
@@ -116,215 +107,76 @@ async def get_don_vi_phu_trach(
     return list(rows)
 
 
-# =============================================================================
-# HELPERS — LẤY CV THEO SCOPE
-# =============================================================================
-
 def _ngay_chot_cua_thang(thang: int, nam: int) -> date:
     """Ngày dùng để check phân công phụ trách trong tháng (cuối tháng)."""
     if thang == 12:
         return date(nam, 12, 31)
-    # Ngày trước ngày 1 của tháng kế tiếp
     from datetime import timedelta
     return date(nam, thang + 1, 1) - timedelta(days=1)
 
 
-async def _cv_cc_do_nguoi_duyet(
-    db: AsyncSession,
-    nguoi_phe_duyet_id: UUID,
-    thang: int,
-    nam: int,
-) -> list[_CV]:
-    """CV của CC do `nguoi_phe_duyet_id` trực tiếp duyệt, đã DA_PHE_DUYET."""
-    stmt = (
-        select(
-            KeKhaiCongViec.cong_chuc_id,
-            CongChuc.don_vi_id,
-            KeKhaiCongViec.so_loi_chat_luong,
-            KeKhaiCongViec.so_loi_tien_do,
-        )
-        .join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id)
-        .where(
-            KeKhaiCongViec.thang == thang,
-            KeKhaiCongViec.nam == nam,
-            KeKhaiCongViec.is_deleted == False,  # noqa: E712
-            KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
-            KeKhaiCongViec.nguoi_phe_duyet_id == nguoi_phe_duyet_id,
-        )
-    )
-    rows = (await db.execute(stmt)).all()
-    return [
-        _CV(
-            nguon="CC",
-            cong_chuc_id=r[0],
-            don_vi_id=r[1],
-            so_loi_chat_luong=r[2] or 0,
-            so_loi_tien_do=r[3] or 0,
-            hoan_thanh=True,  # DA_PHE_DUYET = đã hoàn thành
-        )
-        for r in rows
-    ]
-
-
-async def _cv_cc_trong_don_vi(
-    db: AsyncSession,
-    don_vi_ids: Sequence[UUID],
-    thang: int,
-    nam: int,
-) -> list[_CV]:
-    """Toàn bộ CV của CC trong các đơn vị, đã DA_PHE_DUYET."""
-    if not don_vi_ids:
-        return []
-    stmt = (
-        select(
-            KeKhaiCongViec.cong_chuc_id,
-            CongChuc.don_vi_id,
-            KeKhaiCongViec.so_loi_chat_luong,
-            KeKhaiCongViec.so_loi_tien_do,
-        )
-        .join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id)
-        .where(
-            KeKhaiCongViec.thang == thang,
-            KeKhaiCongViec.nam == nam,
-            KeKhaiCongViec.is_deleted == False,  # noqa: E712
-            KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
-            CongChuc.don_vi_id.in_(list(don_vi_ids)),
-        )
-    )
-    rows = (await db.execute(stmt)).all()
-    return [
-        _CV(
-            nguon="CC",
-            cong_chuc_id=r[0],
-            don_vi_id=r[1],
-            so_loi_chat_luong=r[2] or 0,
-            so_loi_tien_do=r[3] or 0,
-            hoan_thanh=True,
-        )
-        for r in rows
-    ]
-
-
-async def _cv_ld_tu_ke(
-    db: AsyncSession,
-    cong_chuc_ids: Sequence[UUID],
-    thang: int,
-    nam: int,
-) -> list[_CV]:
-    """CV của LĐ tự kê (ke_khai_lanh_dao), đã DA_PHE_DUYET."""
-    if not cong_chuc_ids:
-        return []
-    stmt = (
-        select(
-            KeKhaiLanhDao.cong_chuc_id,
-            CongChuc.don_vi_id,
-            KeKhaiLanhDao.so_loi_chat_luong,
-            KeKhaiLanhDao.so_loi_tien_do,
-            KeKhaiLanhDao.trang_thai_hoan_thanh,
-        )
-        .join(CongChuc, CongChuc.id == KeKhaiLanhDao.cong_chuc_id)
-        .where(
-            KeKhaiLanhDao.thang == thang,
-            KeKhaiLanhDao.nam == nam,
-            KeKhaiLanhDao.is_deleted == False,  # noqa: E712
-            KeKhaiLanhDao.trang_thai == "DA_PHE_DUYET",
-            KeKhaiLanhDao.cong_chuc_id.in_(list(cong_chuc_ids)),
-        )
-    )
-    rows = (await db.execute(stmt)).all()
-    return [
-        _CV(
-            nguon="LD",
-            cong_chuc_id=r[0],
-            don_vi_id=r[1],
-            so_loi_chat_luong=r[2] or 0,
-            so_loi_tien_do=r[3] or 0,
-            hoan_thanh=(r[4] == TrangThaiHoanThanh.DA_HOAN_THANH),
-        )
-        for r in rows
-    ]
-
-
-async def _list_lanh_dao_cua_don_vi(
-    db: AsyncSession,
-    don_vi_ids: Sequence[UUID],
-    cap_bacs: Sequence[CapBacVaiTro],
-) -> list[UUID]:
-    """List ID các LĐ thuộc đơn vị (filter theo cấp bậc)."""
-    if not don_vi_ids:
-        return []
-    from app.models.user_org import VaiTro
-    stmt = (
-        select(CongChuc.id)
-        .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
-        .where(
-            CongChuc.don_vi_id.in_(list(don_vi_ids)),
-            CongChuc.is_deleted == False,  # noqa: E712
-            CongChuc.is_active == True,  # noqa: E712
-            VaiTro.cap_bac.in_(list(cap_bacs)),
-        )
-    )
-    rows = (await db.execute(stmt)).scalars().all()
-    return list(rows)
-
-
 # =============================================================================
-# RESOLVE SCOPE THEO CẤP
+# HELPERS — LẤY SP THEO SCOPE (TỪ kpi_submission V2 ĐÃ DA_PHE_DUYET)
 # =============================================================================
 
-async def _scope_pdv(
-    db: AsyncSession, user: CongChuc, thang: int, nam: int
-) -> list[_CV]:
-    """PDV: SP tự kê + SP CC do PDV trực tiếp duyệt."""
-    cv_self = await _cv_ld_tu_ke(db, [user.id], thang, nam)
-    cv_duyet = await _cv_cc_do_nguoi_duyet(db, user.id, thang, nam)
-    return cv_self + cv_duyet
-
-
-async def _scope_tdv(
-    db: AsyncSession, user: CongChuc, thang: int, nam: int
-) -> list[_CV]:
-    """TDV: toàn bộ CV của CC trong đơn vị + CV PDV/TDV tự kê."""
-    don_vi_ids = [user.don_vi_id]
-    cv_cc = await _cv_cc_trong_don_vi(db, don_vi_ids, thang, nam)
-
-    # Lấy cả TDV (chính user) + tất cả PDV trong đơn vị → CV tự kê
-    leader_ids = await _list_lanh_dao_cua_don_vi(
-        db,
-        don_vi_ids,
-        [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI],
+_BASE_SELECT = (
+    select(
+        KeKhaiCongViec.cong_chuc_id,
+        CongChuc.don_vi_id,
+        KeKhaiCongViec.so_sp_goc_quy_doi,
+        KeKhaiCongViec.so_sp_chat_luong,
+        KeKhaiCongViec.so_sp_tien_do,
     )
-    cv_ld = await _cv_ld_tu_ke(db, leader_ids, thang, nam)
+    .join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id)
+)
 
-    return cv_cc + cv_ld
+
+def _row_to_sp(r) -> _SP:
+    return _SP(
+        cong_chuc_id=r[0],
+        don_vi_id=r[1],
+        so_sp_goc=_to_float(r[2]),
+        so_sp_chat_luong=_to_float(r[3]),
+        so_sp_tien_do=_to_float(r[4]),
+    )
 
 
-async def _scope_pcct_or_cct(
-    db: AsyncSession, user: CongChuc, thang: int, nam: int
-) -> list[_CV]:
+async def _sp_pdv_scope(
+    db: AsyncSession, user_id: UUID, thang: int, nam: int
+) -> list[_SP]:
     """
-    PCCT/CCT: gộp toàn bộ SP của các đơn vị mình phụ trách
-    (theo bảng phan_cong_phu_trach tại ngày cuối tháng).
-
-    Bao gồm:
-    - CV của CC trong các đơn vị
-    - CV PDV/TDV trong các đơn vị tự kê
+    PDV: SP do user_id tự kê + SP do user_id trực tiếp duyệt.
+    PDV không tự duyệt mình (chọn TDV khi kê) → OR không trùng.
     """
-    ngay_chot = _ngay_chot_cua_thang(thang, nam)
-    don_vi_ids = await get_don_vi_phu_trach(db, user.id, ngay_chot)
+    stmt = _BASE_SELECT.where(
+        KeKhaiCongViec.thang == thang,
+        KeKhaiCongViec.nam == nam,
+        KeKhaiCongViec.is_deleted == False,  # noqa: E712
+        KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
+        or_(
+            KeKhaiCongViec.cong_chuc_id == user_id,
+            KeKhaiCongViec.nguoi_phe_duyet_id == user_id,
+        ),
+    )
+    rows = (await db.execute(stmt)).all()
+    return [_row_to_sp(r) for r in rows]
+
+
+async def _sp_trong_don_vi(
+    db: AsyncSession, don_vi_ids: Sequence[UUID], thang: int, nam: int
+) -> list[_SP]:
+    """Toàn bộ SP của user thuộc các đơn vị (CC + PDV/TDV tự kê)."""
     if not don_vi_ids:
-        # Chưa có phân công → scope rỗng
         return []
-
-    cv_cc = await _cv_cc_trong_don_vi(db, don_vi_ids, thang, nam)
-    leader_ids = await _list_lanh_dao_cua_don_vi(
-        db,
-        don_vi_ids,
-        [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI],
+    stmt = _BASE_SELECT.where(
+        KeKhaiCongViec.thang == thang,
+        KeKhaiCongViec.nam == nam,
+        KeKhaiCongViec.is_deleted == False,  # noqa: E712
+        KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
+        CongChuc.don_vi_id.in_(list(don_vi_ids)),
     )
-    cv_ld = await _cv_ld_tu_ke(db, leader_ids, thang, nam)
-
-    return cv_cc + cv_ld
+    rows = (await db.execute(stmt)).all()
+    return [_row_to_sp(r) for r in rows]
 
 
 # =============================================================================
@@ -361,15 +213,15 @@ async def calc_kpi_lanh_dao_v2(
     Tính KPI lãnh đạo theo công thức MỚI cho 1 LĐ ở 1 tháng.
 
     Returns:
-        dict với các field:
-        - cong_chuc_id, thang, nam
-        - cap_bac (PDV/TDV/PCCT/CCT)
-        - tong_cv, tong_hoan_thanh
-        - tong_cv_cc, tong_cv_ld (breakdown theo nguồn)
-        - a, b, c, d, dd, e (chỉ số 0..1)
-        - kpi_tong (0..1)
-        - has_phan_cong (bool — chỉ áp với PCCT/CCT)
-        - is_v2_active (bool)
+        dict với các field (đồng dạng output của tinh_diem_kpi_70_v2 cho CC):
+        - cong_chuc_id, thang, nam, cap_bac
+        - tong_sp_ke_khai (mẫu số), tong_sp_hoan_thanh
+        - sp_chat_luong, sp_tien_do
+        - a, b, c (chỉ số 0..1; b = tỷ lệ tiến độ; c = tỷ lệ chất lượng)
+        - d, dd, e (chỉ số 0..1)
+        - kpi_tong (∈ [0, 1])
+        - has_phan_cong (chỉ áp PCCT/CCT)
+        - is_v2_active
     """
     from sqlalchemy.orm import selectinload
 
@@ -397,26 +249,31 @@ async def calc_kpi_lanh_dao_v2(
         )
     cap_bac_str = cap_bac_str_map[cap_bac]
 
-    # Resolve scope
+    # Resolve scope SP
+    has_phan_cong: Optional[bool] = None
     if cap_bac == CapBacVaiTro.PHO_DON_VI:
-        scope = await _scope_pdv(db, user, thang, nam)
+        scope = await _sp_pdv_scope(db, user.id, thang, nam)
     elif cap_bac == CapBacVaiTro.TRUONG_DON_VI:
-        scope = await _scope_tdv(db, user, thang, nam)
+        scope = await _sp_trong_don_vi(db, [user.don_vi_id], thang, nam)
     else:  # PCCT / CCT
-        scope = await _scope_pcct_or_cct(db, user, thang, nam)
+        ngay_chot = _ngay_chot_cua_thang(thang, nam)
+        don_vi_ids = await get_don_vi_phu_trach(db, user.id, ngay_chot)
+        has_phan_cong = len(don_vi_ids) > 0
+        scope = await _sp_trong_don_vi(db, don_vi_ids, thang, nam)
 
-    # Tính a, b, c
-    n = len(scope)
-    if n == 0:
-        a = b = c = 0.0
-        tong_hoan_thanh = 0
+    # Tính tổng SP
+    tong_sp_ke_khai = sum(sp.so_sp_goc for sp in scope)
+    tong_sp_hoan_thanh = tong_sp_ke_khai  # DA_PHE_DUYET = đã hoàn thành
+    sp_chat_luong = sum(sp.so_sp_chat_luong for sp in scope)
+    sp_tien_do = sum(sp.so_sp_tien_do for sp in scope)
+
+    # a, b, c
+    if tong_sp_ke_khai > 0:
+        a = min(1.0, tong_sp_hoan_thanh / tong_sp_ke_khai)
+        b = min(1.0, sp_tien_do / tong_sp_ke_khai)
+        c = min(1.0, sp_chat_luong / tong_sp_ke_khai)
     else:
-        tong_hoan_thanh = sum(1 for cv in scope if cv.hoan_thanh)
-        sum_td = sum(_diem_loi(cv.so_loi_tien_do) for cv in scope)
-        sum_cl = sum(_diem_loi(cv.so_loi_chat_luong) for cv in scope)
-        a = tong_hoan_thanh / n
-        b = sum_td / n
-        c = sum_cl / n
+        a = b = c = 0.0
 
     # d, đ, e
     d, dd, e = await _get_dde(db, cong_chuc_id, thang, nam)
@@ -424,22 +281,16 @@ async def calc_kpi_lanh_dao_v2(
     # Tổng KPI = (a+b+c+d+đ+e) / 6
     kpi_tong = (a + b + c + d + dd + e) / 6
 
-    # Phân công phụ trách (chỉ áp PCCT/CCT)
-    has_phan_cong: Optional[bool] = None
-    if cap_bac in (CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG):
-        ngay_chot = _ngay_chot_cua_thang(thang, nam)
-        dvs = await get_don_vi_phu_trach(db, cong_chuc_id, ngay_chot)
-        has_phan_cong = len(dvs) > 0
-
     return {
         "cong_chuc_id": str(cong_chuc_id),
         "thang": thang,
         "nam": nam,
         "cap_bac": cap_bac_str,
-        "tong_cv": n,
-        "tong_hoan_thanh": tong_hoan_thanh,
-        "tong_cv_cc": sum(1 for cv in scope if cv.nguon == "CC"),
-        "tong_cv_ld": sum(1 for cv in scope if cv.nguon == "LD"),
+        "tong_sp_ke_khai": round(tong_sp_ke_khai, 4),
+        "tong_sp_hoan_thanh": round(tong_sp_hoan_thanh, 4),
+        "sp_chat_luong": round(sp_chat_luong, 4),
+        "sp_tien_do": round(sp_tien_do, 4),
+        "so_kekhai_records": len(scope),  # tham khảo (số bản ghi)
         "a": round(a, 6),
         "b": round(b, 6),
         "c": round(c, 6),

@@ -18,7 +18,6 @@ from sqlalchemy import select
 from app.core.kpi_lanh_dao_v2 import (
     KPI_LANH_DAO_V2_FROM_NAM,
     KPI_LANH_DAO_V2_FROM_THANG,
-    _diem_loi,
     _ngay_chot_cua_thang,
     calc_kpi_lanh_dao_v2,
     get_don_vi_phu_trach,
@@ -48,26 +47,6 @@ class TestFeatureFlag:
             KPI_LANH_DAO_V2_FROM_THANG - 1, KPI_LANH_DAO_V2_FROM_NAM
         )
         assert not is_kpi_lanh_dao_v2_active(12, KPI_LANH_DAO_V2_FROM_NAM - 1)
-
-
-class TestDiemLoi:
-    def test_zero_loi_full_score(self):
-        assert _diem_loi(0) == 1.0
-
-    def test_one_loi(self):
-        assert _diem_loi(1) == 0.75
-
-    def test_two_loi(self):
-        assert _diem_loi(2) == 0.5
-
-    def test_four_loi_zero(self):
-        assert _diem_loi(4) == 0.0
-
-    def test_five_loi_clamped_zero(self):
-        assert _diem_loi(5) == 0.0
-
-    def test_none_treated_as_zero(self):
-        assert _diem_loi(None) == 1.0
 
 
 class TestNgayChotCuaThang:
@@ -180,9 +159,8 @@ class TestCalcKpiLanhDaoV2:
         assert result["cap_bac"] == "PDV"
         for key in ("a", "b", "c", "d", "dd", "e", "kpi_tong"):
             assert 0.0 <= result[key] <= 1.0, f"{key}={result[key]}"
-        assert result["tong_cv"] >= 0
-        assert result["tong_hoan_thanh"] <= result["tong_cv"]
-        assert result["tong_cv_cc"] + result["tong_cv_ld"] == result["tong_cv"]
+        assert result["tong_sp_ke_khai"] >= 0
+        assert result["tong_sp_hoan_thanh"] <= result["tong_sp_ke_khai"]
 
     @pytest.mark.asyncio
     async def test_invariants_tdv(self, db_session, tdv_user):
@@ -193,11 +171,11 @@ class TestCalcKpiLanhDaoV2:
 
     @pytest.mark.asyncio
     async def test_cct_no_assignment_empty_scope(self, db_session, cct_user):
-        """CCT chưa có phân công → tong_cv = 0, KPI chỉ là (d+đ+e)/6."""
+        """CCT chưa có phân công → tổng SP = 0, KPI chỉ là (d+đ+e)/6."""
         result = await calc_kpi_lanh_dao_v2(db_session, cct_user.id, 5, 2026)
         assert result["cap_bac"] == "CCT"
         assert result["has_phan_cong"] is False
-        assert result["tong_cv"] == 0
+        assert result["tong_sp_ke_khai"] == 0
         assert result["a"] == 0.0
         assert result["b"] == 0.0
         assert result["c"] == 0.0
@@ -210,8 +188,8 @@ class TestCalcKpiLanhDaoV2:
         result = await calc_kpi_lanh_dao_v2(db_session, cct_user.id, 4, 2026)
         assert result["cap_bac"] == "CCT"
         assert result["has_phan_cong"] is True
-        # HQCK-MC là đơn vị to nhất → tong_cv > 0
-        assert result["tong_cv"] > 0
+        # HQCK-MC là đơn vị to nhất → tong_sp_ke_khai > 0
+        assert result["tong_sp_ke_khai"] > 0
 
     @pytest.mark.asyncio
     async def test_is_v2_active_flag(self, db_session, tdv_user):

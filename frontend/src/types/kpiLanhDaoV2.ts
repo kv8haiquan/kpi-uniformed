@@ -10,14 +10,16 @@ export interface IKpiLanhDaoV2 {
   nam: number;
   cap_bac: 'PDV' | 'TDV' | 'PCCT' | 'CCT';
 
-  tong_cv: number;
-  tong_hoan_thanh: number;
-  tong_cv_cc: number;
-  tong_cv_ld: number;
+  // Phase 3 fix (05/05/2026): SP quy đổi (so_sp_goc_quy_doi) thay vì đếm CV
+  tong_sp_ke_khai: number;
+  tong_sp_hoan_thanh: number;
+  sp_chat_luong: number;
+  sp_tien_do: number;
+  so_kekhai_records: number;
 
-  a: number;
-  b: number;
-  c: number;
+  a: number;  // hoàn thành
+  b: number;  // tỷ lệ tiến độ
+  c: number;  // tỷ lệ chất lượng
   d: number;
   dd: number;
   e: number;

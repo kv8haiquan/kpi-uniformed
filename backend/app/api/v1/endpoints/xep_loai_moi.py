@@ -359,11 +359,13 @@ async def tinh_diem_kpi_70_lanh_dao(
             diem_70 = min(70.0, diem_kpi * 70.0)
             return {
                 "is_lanh_dao": True,
-                "tong_cong_viec": v2["tong_cv"],
-                "tong_hoan_thanh": v2["tong_hoan_thanh"],
-                "tong_diem_chat_luong": v2["c"] * v2["tong_cv"],
-                "tong_diem_tien_do": v2["b"] * v2["tong_cv"],
-                "tong_loi_chat_luong": 0,  # không truy hồi từ v2 (UI chỉ dùng a/b/c)
+                # V2 dùng SP quy đổi → "tong_cong_viec" giữ làm số bản ghi để
+                # FE cũ không vỡ, nhưng các SP fields phản ánh đúng số học.
+                "tong_cong_viec": v2["so_kekhai_records"],
+                "tong_hoan_thanh": v2["tong_sp_hoan_thanh"],
+                "tong_diem_chat_luong": v2["sp_chat_luong"],
+                "tong_diem_tien_do": v2["sp_tien_do"],
+                "tong_loi_chat_luong": 0,
                 "tong_loi_tien_do": 0,
                 "a_so_luong": v2["a"],
                 "b_tien_do": v2["b"],
@@ -376,10 +378,11 @@ async def tinh_diem_kpi_70_lanh_dao(
                 "so_ngay_trong_thang": 0,
                 "so_ngay_nghi": 0,
                 "so_ngay_lam_viec": 0,
-                "sp_duoc_giao": 0,
-                "tong_sp_hoan_thanh": v2["tong_hoan_thanh"],
-                "sp_chat_luong": 0,
-                "sp_tien_do": 0,
+                "sp_duoc_giao": v2["tong_sp_ke_khai"],
+                "tong_sp_hoan_thanh": v2["tong_sp_hoan_thanh"],
+                "sp_chat_luong": v2["sp_chat_luong"],
+                "sp_tien_do": v2["sp_tien_do"],
+                "tong_sp_ke_khai": v2["tong_sp_ke_khai"],
                 "b_chat_luong": v2["c"],
                 "c_tien_do": v2["b"],
             }

@@ -55,9 +55,6 @@ import { IKetQuaTieuChiChungResponse, TrangThaiTieuChiChung } from '@/types/tieu
 import { IThongKeKeKhaiLanhDao, IDanhGiaDDEResponse } from '@/types/leader-kpi';
 import ExportButton, { ExportFormat } from '@/components/common/ExportButton';
 import { exportService } from '@/services/export.service';
-import WidgetKpiLanhDaoV2 from '@/components/dashboard/WidgetKpiLanhDaoV2';
-import { kpiLanhDaoV2Service } from '@/services/kpiLanhDaoV2.service';
-import { IKpiLanhDaoV2 } from '@/types/kpiLanhDaoV2';
 
 // =============================================================================
 // CONSTANTS & HELPERS
@@ -256,8 +253,6 @@ export default function DanhGiaPage() {
   // State cho Lãnh đạo
   const [thongKeLD, setThongKeLD] = useState<IThongKeKeKhaiLanhDao | null>(null);
   const [ddeData, setDdeData] = useState<IDanhGiaDDEResponse | null>(null);
-  // Phase 3 KPI LĐ V2 (05/05/2026): KPI mới cho LĐ thật + tháng ≥ 4/2026
-  const [kpiV2LD, setKpiV2LD] = useState<IKpiLanhDaoV2 | null>(null);
 
   // State cho tab KPI (v2.7.0)
   const [kpiTab, setKpiTab] = useState<KPITab>('chinh_thuc');
@@ -272,12 +267,19 @@ export default function DanhGiaPage() {
   }, [isAuthenticated, router]);
 
   // V2 REDIRECT (02/05/2026) — chặn user vào nhầm trang đánh giá V1.
-  // Lãnh đạo + HĐ 111 luôn được auth.py ép effective_kpi_version='V1'.
+  // Phase 3 KPI LĐ V2 (05/05/2026): LĐ thật + tháng ≥ 4/2026 cũng dùng V2 UI.
   useEffect(() => {
     if (user?.effective_kpi_version === 'V2_PL3') {
       router.replace('/danh-gia-v2');
+      return;
     }
-  }, [user?.effective_kpi_version, router]);
+    const isV2ActiveForLeader =
+      isLanhDao && !isHd111 &&
+      (selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 4));
+    if (isV2ActiveForLeader) {
+      router.replace('/danh-gia-v2');
+    }
+  }, [user?.effective_kpi_version, isLanhDao, isHd111, selectedThang, selectedNam, router]);
 
   // =========================================================================
   // LOAD DATA
@@ -290,38 +292,19 @@ export default function DanhGiaPage() {
       if (usesLeaderForm) {
         // LÃNH ĐẠO + HĐ 111: Load thống kê kê khai LĐ + Tiêu chí chung.
         // HĐ 111 không có d/đ/e (backend chặn) → bỏ qua DDE.
-        // Phase 3 KPI LĐ V2 (05/05/2026): LĐ thật + tháng ≥ 4/2026 thêm
-        // load /kpi-lanh-dao-v2/me để có scope mở rộng (CC + cấp dưới).
-        const isV2ActiveForLeader =
-          isLanhDao && !isHd111 &&
-          (selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 4));
-
-        const [thongKeResult, tcResult, ddeResult, kpiV2Result] = await Promise.allSettled([
+        // (Phase 3: LĐ thật + tháng ≥ 4/2026 đã được redirect sang /danh-gia-v2.)
+        const [thongKeResult, tcResult, ddeResult] = await Promise.allSettled([
           leaderKPIService.getThongKe(selectedThang, selectedNam),
           tieuChiChungService.getKetQuaThang(selectedThang, selectedNam),
           isHd111
             ? Promise.resolve(null)
             : leaderKPIService.getDanhGiaDDE(selectedThang, selectedNam),
-          isV2ActiveForLeader
-            ? kpiLanhDaoV2Service.getMyKpi(selectedThang, selectedNam)
-            : Promise.resolve(null),
         ]);
 
         if (thongKeResult.status === 'fulfilled') setThongKeLD(thongKeResult.value);
         if (tcResult.status === 'fulfilled') setTieuChiChung(tcResult.value);
         if (!isHd111 && ddeResult.status === 'fulfilled' && ddeResult.value) {
-          console.log('[DanhGia] DDE data:', ddeResult.value);
           setDdeData(ddeResult.value as IDanhGiaDDEResponse);
-        } else if (!isHd111 && ddeResult.status === 'rejected') {
-          console.warn('[DanhGia] DDE load failed:', ddeResult.reason);
-        }
-        if (kpiV2Result.status === 'fulfilled' && kpiV2Result.value) {
-          setKpiV2LD(kpiV2Result.value as IKpiLanhDaoV2);
-        } else if (kpiV2Result.status === 'rejected') {
-          console.warn('[DanhGia] KPI V2 load failed:', kpiV2Result.reason);
-          setKpiV2LD(null);
-        } else {
-          setKpiV2LD(null);
         }
       } else {
         // CÔNG CHỨC: Load kê khai SP + ngày nghỉ + tiêu chí chung
@@ -433,32 +416,21 @@ export default function DanhGiaPage() {
 
   // v2.8.3: Tính a, b, c cho lãnh đạo - KHÔNG CÒN FALLBACK
   // a = Số việc hoàn thành / Tổng việc
-  // b = Tổng điểm tiến độ / Tổng việc (mỗi CV: điểm = max(0, 1 - lỗi × 0.25))
+  // b = Tổng điểm tiến độ / Tổng việc
   // c = Tổng điểm chất lượng / Tổng việc
-  // Phase 3 KPI LĐ V2 (05/05/2026): nếu kpiV2LD có (LĐ thật + tháng ≥ 4/2026)
-  // → ƯU TIÊN dùng a/b/c từ V2 (đã gồm SP cấp dưới). HĐ 111 không có kpiV2LD
-  // nên vẫn rơi xuống nhánh tự tính từ thongKeLD như cũ.
-  const useV2Numbers = kpiV2LD !== null && kpiTab === 'chinh_thuc';
+  // (LĐ thật V2 đã chuyển sang /danh-gia-v2 — trang này chỉ phục vụ HĐ 111
+  // và LĐ tháng < 4/2026.)
+  const aLD = targetLDHienThi > 0 ? Math.min(cvHoanThanhHienThi / targetLDHienThi, 1) : 0;
+  const bLD = targetLDHienThi > 0 ? Math.min(diemTienDoHienThi / targetLDHienThi, 1) : 0;
+  const cLD = targetLDHienThi > 0 ? Math.min(diemChatLuongHienThi / targetLDHienThi, 1) : 0;
 
-  const aLD = useV2Numbers
-    ? kpiV2LD!.a
-    : (targetLDHienThi > 0 ? Math.min(cvHoanThanhHienThi / targetLDHienThi, 1) : 0);
-  const bLD = useV2Numbers
-    ? kpiV2LD!.b
-    : (targetLDHienThi > 0 ? Math.min(diemTienDoHienThi / targetLDHienThi, 1) : 0);
-  const cLD = useV2Numbers
-    ? kpiV2LD!.c
-    : (targetLDHienThi > 0 ? Math.min(diemChatLuongHienThi / targetLDHienThi, 1) : 0);
-
-  // d, đ, e từ DDE (100 hoặc 50 → convert thành tỷ lệ)
-  // v2.7.3: Dùng d_final (ưu tiên giá trị phê duyệt, fallback về tự đánh giá)
-  // V2 cũng đọc d/đ/e từ danh_gia_dde (đồng nhất với endpoint /kpi-lanh-dao-v2/me)
-  const dLD = useV2Numbers ? kpiV2LD!.d : (ddeData?.d_final ?? ddeData?.d_ket_qua_don_vi ?? 100) / 100;
-  const ddLD = useV2Numbers ? kpiV2LD!.dd : (ddeData?.dd_final ?? ddeData?.dd_to_chuc_trien_khai ?? 100) / 100;
-  const eLD = useV2Numbers ? kpiV2LD!.e : (ddeData?.e_final ?? ddeData?.e_doan_ket_noi_bo ?? 100) / 100;
+  // d, đ, e từ DDE
+  const dLD = (ddeData?.d_final ?? ddeData?.d_ket_qua_don_vi ?? 100) / 100;
+  const ddLD = (ddeData?.dd_final ?? ddeData?.dd_to_chuc_trien_khai ?? 100) / 100;
+  const eLD = (ddeData?.e_final ?? ddeData?.e_doan_ket_noi_bo ?? 100) / 100;
 
   // Điểm KPI Lãnh đạo = (a + b + c + d + đ + e) / 6 × 70
-  const diemKPILD = useV2Numbers ? kpiV2LD!.kpi_tong : (aLD + bLD + cLD + dLD + ddLD + eLD) / 6;
+  const diemKPILD = (aLD + bLD + cLD + dLD + ddLD + eLD) / 6;
   const diemKPIQuyDoiLD = diemKPILD * 70;
 
   // Điểm KPI HĐ 111 = (a + b + c) / 3 × 70 (cùng a/b/c như LĐ, bỏ d/đ/e)
@@ -618,19 +590,6 @@ export default function DanhGiaPage() {
             )}
           </div>
         </div>
-
-        {/* ========== Phase 3 KPI LĐ V2 (05/05/2026): widget cho LĐ thật + tháng ≥ 4/2026 ========== */}
-        {isLanhDao && !isHd111 && (selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 4)) && (
-          <div className="mb-6">
-            <WidgetKpiLanhDaoV2
-              thang={selectedThang}
-              nam={selectedNam}
-              capBac={user?.vai_tro?.cap_bac}
-              isAdmin={user?.is_system_admin}
-              isCCT={user?.vai_tro?.ma_vai_tro === 'CCT'}
-            />
-          </div>
-        )}
 
         {/* ========== v2.10: GLOBAL TAB SELECTOR ========== */}
         {!isLoading && !error && (

@@ -407,7 +407,9 @@ function buildMau03(data) {
   );
   
   children.push(emptyPara());
-  children.push(titlePara(data.title));
+  // Title cố định theo Mẫu mới (BaoCao_DonVi_03_2026.docx — 05/05/2026):
+  // "BẢNG TỔNG HỢP KẾT QUẢ ĐÁNH GIÁ CÔNG CHỨC-NGƯỜI LAO ĐỘNG".
+  children.push(titlePara("BẢNG TỔNG HỢP KẾT QUẢ ĐÁNH GIÁ CÔNG CHỨC-NGƯỜI LAO ĐỘNG"));
   // Nếu data.quy được truyền → header "Quý X năm Y", ngược lại "Tháng X năm Y"
   const periodText = data.quy
     ? `Quý ${data.quy} năm ${data.nam}`
@@ -417,10 +419,11 @@ function buildMau03(data) {
     children.push(para([txt(`Đơn vị: ${data.don_vi_name}`, { italics: true })], { alignment: AlignmentType.CENTER }));
   }
   children.push(emptyPara());
-  
-  // 10 cột: STT, Họ tên, Đơn vị, Chức vụ, Điểm TC, Điểm KPI, Điểm tổng, XL Hệ thống, XL ĐT duyệt, XL CCT duyệt, Ghi chú
+
+  // 11 cột: STT, Họ tên, Đơn vị, Chức vụ, Điểm TC, Điểm KPI, Tổng điểm,
+  // ĐG Hệ thống, ĐG ĐT duyệt, ĐG CCT duyệt, Ghi chú
   const cols = [450, 1600, 1200, 1000, 700, 700, 700, 700, 700, 700, 621];
-  
+
   const headerRow = new TableRow({ children: [
     headerCell("STT", { width: cols[0], fontSize: 16 }),
     headerCell("Họ và tên", { width: cols[1], fontSize: 16 }),
@@ -429,9 +432,9 @@ function buildMau03(data) {
     headerCell("Điểm TC", { width: cols[4], fontSize: 16 }),
     headerCell("Điểm KPI", { width: cols[5], fontSize: 16 }),
     headerCell("Tổng điểm", { width: cols[6], fontSize: 16 }),
-    headerCell("XL Hệ thống", { width: cols[7], fontSize: 16 }),
-    headerCell("XL ĐT duyệt", { width: cols[8], fontSize: 16 }),
-    headerCell("XL CCT duyệt", { width: cols[9], fontSize: 16 }),
+    headerCell("ĐG Hệ thống", { width: cols[7], fontSize: 16 }),
+    headerCell("ĐG ĐT duyệt", { width: cols[8], fontSize: 16 }),
+    headerCell("ĐG CCT duyệt", { width: cols[9], fontSize: 16 }),
     headerCell("Ghi chú", { width: cols[10], fontSize: 16 }),
   ]});
   
@@ -461,15 +464,15 @@ function buildMau03(data) {
   
   children.push(emptyPara());
   
-  // Thống kê
+  // Thống kê — theo Mẫu mới (BaoCao_DonVi_03_2026.docx — 05/05/2026):
+  // "Mức" cho A/B/C, "Loại" cho D, KHÔNG hiển thị E.
   const tk = data.thong_ke || {};
   children.push(para([
     txt("Tổng số: ", { bold: true }), txt(`${tk.tong || 0} công chức`),
-    txt("  |  Loại A: ", { bold: true }), txt(`${tk.A || 0}`),
-    txt("  |  Loại B: ", { bold: true }), txt(`${tk.B || 0}`),
-    txt("  |  Loại C: ", { bold: true }), txt(`${tk.C || 0}`),
+    txt("  |  Mức A: ", { bold: true }), txt(`${tk.A || 0}`),
+    txt("  |  Mức B: ", { bold: true }), txt(`${tk.B || 0}`),
+    txt("  |  Mức C: ", { bold: true }), txt(`${tk.C || 0}`),
     txt("  |  Loại D: ", { bold: true }), txt(`${tk.D || 0}`),
-    txt("  |  Loại E: ", { bold: true }), txt(`${tk.E || 0}`),
   ]));
   children.push(emptyPara());
   children.push(emptyPara());

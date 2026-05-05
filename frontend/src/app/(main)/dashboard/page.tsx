@@ -26,6 +26,7 @@ import {
   TrangThaiTieuChiChung,
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
+import WidgetPhanCongPhuTrach from '@/components/dashboard/WidgetPhanCongPhuTrach';
 
 // =============================================================================
 // TYPES
@@ -644,6 +645,13 @@ export default function DashboardPage() {
             <QuickActionCard icon="🖨️" title="Theo dõi, đánh giá Quý" description="Phiếu đánh giá & bảng kê công việc" href="/in-bang-ke" color="orange" />
           </div>
         </div>
+
+        {/* SECTION: PHÂN CÔNG PHỤ TRÁCH (chỉ PCCT/CCT — Phase 3+, 05/05/2026) */}
+        {(maVaiTro === 'PCCT' || maVaiTro === 'CCT') && (
+          <div className="mb-8">
+            <WidgetPhanCongPhuTrach visible={true} />
+          </div>
+        )}
 
         {/* SECTION 2: PHÊ DUYỆT */}
         {isLanhDao && (

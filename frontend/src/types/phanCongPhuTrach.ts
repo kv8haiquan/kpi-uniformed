@@ -61,3 +61,31 @@ export interface IDonViKhaDung {
   ten_don_vi: string;
   loai_don_vi: string;
 }
+
+// Phase 3+ (05/05/2026): PCCT/CCT tự cập nhật phân công
+export interface IMyActiveAssignment {
+  phan_cong_id: string;
+  don_vi_id: string;
+  ma_don_vi: string;
+  ten_don_vi: string;
+  hieu_luc_tu: string;
+}
+
+export interface IDonViWithCurrent {
+  id: string;
+  ma_don_vi: string;
+  ten_don_vi: string;
+  loai_don_vi: string;
+  current_lanh_dao_id: string | null;
+  current_lanh_dao_ma_cc: string | null;
+  current_lanh_dao_ho_ten: string | null;
+  is_mine: boolean;
+}
+
+export interface IPhanCongConflict {
+  don_vi_id: string;
+  ma_don_vi: string;
+  ten_don_vi: string;
+  lanh_dao_ma_cc: string | null;
+  lanh_dao_ho_ten: string | null;
+}

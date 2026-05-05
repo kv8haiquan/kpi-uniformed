@@ -9,7 +9,9 @@
 import apiClient from '@/lib/axios';
 import {
   IDonViKhaDung,
+  IDonViWithCurrent,
   ILanhDaoKhaDung,
+  IMyActiveAssignment,
   IPhanCongCreateRequest,
   IPhanCongKetThucRequest,
   IPhanCongPhuTrach,
@@ -72,6 +74,27 @@ export const phanCongPhuTrachService = {
   async getDonViKhaDung(): Promise<IDonViKhaDung[]> {
     const r = await apiClient.get<IBackendResponse<IDonViKhaDung[]>>(
       `${BASE}/_meta/don-vi-kha-dung`,
+    );
+    return r.data.data;
+  },
+
+  // ===== Self-service cho PCCT/CCT (Phase 3+, 05/05/2026) =====
+  async getMyActiveAssignments(): Promise<IMyActiveAssignment[]> {
+    const r = await apiClient.get<IBackendResponse<IMyActiveAssignment[]>>(`${BASE}/me/active`);
+    return r.data.data;
+  },
+
+  async getDonViWithCurrent(): Promise<IDonViWithCurrent[]> {
+    const r = await apiClient.get<IBackendResponse<IDonViWithCurrent[]>>(
+      `${BASE}/_meta/don-vi-with-current`,
+    );
+    return r.data.data;
+  },
+
+  async replaceMyAssignments(donViIds: string[]): Promise<{ so_don_vi_phu_trach: number }> {
+    const r = await apiClient.put<IBackendResponse<{ so_don_vi_phu_trach: number }>>(
+      `${BASE}/me/replace`,
+      { don_vi_ids: donViIds },
     );
     return r.data.data;
   },

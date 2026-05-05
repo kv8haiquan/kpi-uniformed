@@ -19,6 +19,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -433,6 +434,254 @@ async def delete_phan_cong(
     pc.is_deleted = True
     await db.flush()
     return success_response(data={"id": str(pc_id)}, message="Đã xóa phân công")
+
+
+# =============================================================================
+# PCCT/CCT TỰ CẬP NHẬT PHÂN CÔNG CỦA CHÍNH MÌNH (Phase 3+, 05/05/2026)
+# =============================================================================
+
+class ReplaceMyPhanCongRequest(BaseModel):
+    """Body cho PCCT/CCT tự thay thế toàn bộ phân công đang active của mình."""
+    don_vi_ids: List[UUID] = Field(default_factory=list, description="Danh sách don_vi_id muốn phụ trách")
+
+
+def _check_user_is_lanh_dao_chi_cuc(user: CongChuc) -> None:
+    """Chỉ PCCT hoặc CCT được tự gán phân công."""
+    if not user.vai_tro or user.vai_tro.cap_bac not in ALLOWED_LEADER_CAP_BAC:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PCPT_403_NOT_LD_CC",
+                    "message": "Chỉ CCT/PCCT được tự cập nhật phân công",
+                },
+            },
+        )
+
+
+@router.get(
+    "/me/active",
+    summary="Lấy danh sách đơn vị mà PCCT/CCT đang phụ trách (active hôm nay)",
+)
+async def get_my_active_assignments(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    _check_user_is_lanh_dao_chi_cuc(current_user)
+    today = date.today()
+    stmt = (
+        select(PhanCongPhuTrach)
+        .options(selectinload(PhanCongPhuTrach.don_vi))
+        .where(
+            PhanCongPhuTrach.lanh_dao_id == current_user.id,
+            PhanCongPhuTrach.is_deleted == False,  # noqa: E712
+            PhanCongPhuTrach.hieu_luc_tu <= today,
+            or_(
+                PhanCongPhuTrach.hieu_luc_den.is_(None),
+                PhanCongPhuTrach.hieu_luc_den >= today,
+            ),
+        )
+        .order_by(PhanCongPhuTrach.hieu_luc_tu)
+    )
+    rows = (await db.execute(stmt)).scalars().unique().all()
+    data = [
+        {
+            "phan_cong_id": str(r.id),
+            "don_vi_id": str(r.don_vi_id),
+            "ma_don_vi": r.don_vi.ma_don_vi if r.don_vi else None,
+            "ten_don_vi": r.don_vi.ten_don_vi if r.don_vi else None,
+            "hieu_luc_tu": r.hieu_luc_tu.isoformat(),
+        }
+        for r in rows
+    ]
+    return success_response(data=data)
+
+
+@router.get(
+    "/_meta/don-vi-with-current",
+    summary="Danh sách đơn vị + LĐ đang phụ trách hiện tại (cho UI checkbox)",
+)
+async def list_don_vi_with_current_assignee(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """
+    Trả về list đơn vị (loại trừ LDCC, DEPT-ADMIN) kèm thông tin LĐ đang
+    phụ trách hôm nay (nếu có). Dùng để cảnh báo khi PCCT chọn đơn vị
+    đã có người khác phụ trách.
+    """
+    today = date.today()
+
+    # Lấy đơn vị khả dụng
+    stmt_dv = (
+        select(DonVi)
+        .where(
+            DonVi.is_deleted == False,  # noqa: E712
+            DonVi.is_active == True,  # noqa: E712
+            DonVi.ma_don_vi.notin_(EXCLUDED_DON_VI_MA),
+        )
+        .order_by(DonVi.thu_tu_hien_thi, DonVi.ma_don_vi)
+    )
+    don_vi_list = (await db.execute(stmt_dv)).scalars().all()
+
+    # Lấy phân công active hôm nay
+    stmt_pc = (
+        select(PhanCongPhuTrach)
+        .options(selectinload(PhanCongPhuTrach.lanh_dao))
+        .where(
+            PhanCongPhuTrach.is_deleted == False,  # noqa: E712
+            PhanCongPhuTrach.hieu_luc_tu <= today,
+            or_(
+                PhanCongPhuTrach.hieu_luc_den.is_(None),
+                PhanCongPhuTrach.hieu_luc_den >= today,
+            ),
+        )
+    )
+    rows = (await db.execute(stmt_pc)).scalars().unique().all()
+    by_don_vi: dict[UUID, PhanCongPhuTrach] = {r.don_vi_id: r for r in rows}
+
+    data = []
+    for dv in don_vi_list:
+        pc = by_don_vi.get(dv.id)
+        is_mine = pc is not None and pc.lanh_dao_id == current_user.id
+        data.append({
+            "id": str(dv.id),
+            "ma_don_vi": dv.ma_don_vi,
+            "ten_don_vi": dv.ten_don_vi,
+            "loai_don_vi": dv.loai_don_vi.value,
+            "current_lanh_dao_id": str(pc.lanh_dao_id) if pc else None,
+            "current_lanh_dao_ma_cc": pc.lanh_dao.ma_cc if pc and pc.lanh_dao else None,
+            "current_lanh_dao_ho_ten": pc.lanh_dao.ho_ten if pc and pc.lanh_dao else None,
+            "is_mine": is_mine,
+        })
+    return success_response(data=data)
+
+
+@router.put(
+    "/me/replace",
+    summary="PCCT/CCT thay thế toàn bộ phân công đang active của chính mình",
+    description=(
+        "Soft-delete các phân công active hiện tại của user, sau đó tạo phân "
+        "công mới cho các don_vi_id trong list. Nếu đơn vị đang được LĐ khác "
+        "phụ trách → trả 409 với danh sách conflict."
+    ),
+)
+async def replace_my_assignments(
+    payload: ReplaceMyPhanCongRequest,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    _check_user_is_lanh_dao_chi_cuc(current_user)
+
+    today = date.today()
+    new_don_vi_ids = list({d for d in payload.don_vi_ids})  # dedupe
+
+    # Validate đơn vị (tồn tại + không thuộc EXCLUDED)
+    if new_don_vi_ids:
+        stmt_dv = select(DonVi).where(DonVi.id.in_(new_don_vi_ids))
+        dv_rows = (await db.execute(stmt_dv)).scalars().all()
+        if len(dv_rows) != len(new_don_vi_ids):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "success": False,
+                    "error": {"code": "PCPT_400_DV", "message": "Có đơn vị không hợp lệ"},
+                },
+            )
+        for dv in dv_rows:
+            if dv.ma_don_vi in EXCLUDED_DON_VI_MA or not dv.is_active or dv.is_deleted:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "success": False,
+                        "error": {
+                            "code": "PCPT_400_DV_EXCLUDED",
+                            "message": f"Đơn vị {dv.ma_don_vi} không được phân công",
+                        },
+                    },
+                )
+
+    # Check conflict: đơn vị đang được LĐ KHÁC phụ trách hôm nay?
+    if new_don_vi_ids:
+        stmt_conflict = (
+            select(PhanCongPhuTrach)
+            .options(selectinload(PhanCongPhuTrach.lanh_dao), selectinload(PhanCongPhuTrach.don_vi))
+            .where(
+                PhanCongPhuTrach.don_vi_id.in_(new_don_vi_ids),
+                PhanCongPhuTrach.lanh_dao_id != current_user.id,
+                PhanCongPhuTrach.is_deleted == False,  # noqa: E712
+                PhanCongPhuTrach.hieu_luc_tu <= today,
+                or_(
+                    PhanCongPhuTrach.hieu_luc_den.is_(None),
+                    PhanCongPhuTrach.hieu_luc_den >= today,
+                ),
+            )
+        )
+        conflicts = (await db.execute(stmt_conflict)).scalars().unique().all()
+        if conflicts:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "PCPT_409_TAKEN",
+                        "message": "Một số đơn vị đã có lãnh đạo khác phụ trách",
+                        "conflicts": [
+                            {
+                                "don_vi_id": str(c.don_vi_id),
+                                "ma_don_vi": c.don_vi.ma_don_vi if c.don_vi else None,
+                                "ten_don_vi": c.don_vi.ten_don_vi if c.don_vi else None,
+                                "lanh_dao_ma_cc": c.lanh_dao.ma_cc if c.lanh_dao else None,
+                                "lanh_dao_ho_ten": c.lanh_dao.ho_ten if c.lanh_dao else None,
+                            }
+                            for c in conflicts
+                        ],
+                    },
+                },
+            )
+
+    # Soft-delete tất cả phân công ACTIVE hiện tại của user
+    stmt_existing = (
+        select(PhanCongPhuTrach)
+        .where(
+            PhanCongPhuTrach.lanh_dao_id == current_user.id,
+            PhanCongPhuTrach.is_deleted == False,  # noqa: E712
+            PhanCongPhuTrach.hieu_luc_tu <= today,
+            or_(
+                PhanCongPhuTrach.hieu_luc_den.is_(None),
+                PhanCongPhuTrach.hieu_luc_den >= today,
+            ),
+        )
+    )
+    existing = (await db.execute(stmt_existing)).scalars().all()
+    existing_dv_ids = {pc.don_vi_id for pc in existing}
+
+    # Đơn vị nào đã có sẵn trong existing và còn trong list mới → giữ nguyên
+    # Đơn vị nào trong existing nhưng không còn trong list mới → soft delete
+    # Đơn vị nào trong list mới mà chưa có trong existing → tạo mới
+    new_set = set(new_don_vi_ids)
+    for pc in existing:
+        if pc.don_vi_id not in new_set:
+            pc.is_deleted = True
+
+    to_create_ids = [d for d in new_don_vi_ids if d not in existing_dv_ids]
+    for dv_id in to_create_ids:
+        new_pc = PhanCongPhuTrach(
+            lanh_dao_id=current_user.id,
+            don_vi_id=dv_id,
+            hieu_luc_tu=today,
+            hieu_luc_den=None,
+            ghi_chu=None,
+        )
+        db.add(new_pc)
+
+    await db.flush()
+
+    return success_response(
+        data={"so_don_vi_phu_trach": len(new_don_vi_ids)},
+        message=f"Cập nhật phân công thành công ({len(new_don_vi_ids)} đơn vị)",
+    )
 
 
 # =============================================================================

@@ -26,6 +26,7 @@ import {
   TrangThaiTieuChiChung,
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
+import WidgetKpiLanhDaoV2 from '@/components/dashboard/WidgetKpiLanhDaoV2';
 
 // =============================================================================
 // TYPES
@@ -637,13 +638,26 @@ export default function DashboardPage() {
         <div className="mb-8">
           <SectionHeader icon="📌" title="Công việc của tôi" subtitle="Các tác vụ cá nhân hàng tháng" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <QuickActionCard icon="📝" title="Kê khai công việc" description="Kê khai sản phẩm tháng" href="/ke-khai" color="blue" />
+            <QuickActionCard icon="📝" title="Kê khai công việc" description="Kê khai sản phẩm tháng" href="/ke-khai-v2" color="blue" />
             <QuickActionCard icon="✍️" title="Tự chấm điểm" description="Tiêu chí chung (30đ)" href="/danh-gia/tu-cham-diem" color="purple" />
-            <QuickActionCard icon="📊" title="Xem đánh giá" description="Kết quả KPI của bạn" href="/danh-gia" color="green" />
+            <QuickActionCard icon="📊" title="Xem đánh giá" description="Kết quả KPI của bạn" href="/danh-gia-v2" color="green" />
             <QuickActionCard icon="🗓️" title="Nghỉ phép" description="Đăng ký và quản lý" href="/nghi-phep" color="cyan" />
             <QuickActionCard icon="🖨️" title="Theo dõi, đánh giá Quý" description="Phiếu đánh giá & bảng kê công việc" href="/in-bang-ke" color="orange" />
           </div>
         </div>
+
+        {/* SECTION KPI LĐ V2: chỉ hiển thị cho LĐ + tháng ≥ 4/2026 */}
+        {isLanhDao && (
+          <div className="mb-8">
+            <WidgetKpiLanhDaoV2
+              thang={currentMonth}
+              nam={currentYear}
+              capBac={user?.vai_tro?.cap_bac}
+              isAdmin={isAdmin}
+              isCCT={isCCT}
+            />
+          </div>
+        )}
 
         {/* SECTION 2: PHÊ DUYỆT */}
         {isLanhDao && (

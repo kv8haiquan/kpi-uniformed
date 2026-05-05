@@ -90,14 +90,11 @@ function useMenuSections(): MenuSection[] {
   const thongBaoCount = useThongBaoCount();
   const { user } = useAuthStore();
 
-  // PL3 V2 (28/04/2026): hiển thị label "Kê khai công việc" và "Đánh giá" trỏ
-  // về route theo effective_kpi_version. Default V2_PL3 trên test env.
-  const kpiVersion = user?.effective_kpi_version ?? 'V2_PL3';
-  const keKhaiHref = kpiVersion === 'V2_PL3' ? '/ke-khai-v2' : '/ke-khai';
-  const keKhaiLabel =
-    kpiVersion === 'V2_PL3' ? 'Kê khai công việc (V2)' : 'Kê khai công việc';
-  const danhGiaHref = kpiVersion === 'V2_PL3' ? '/danh-gia-v2' : '/danh-gia';
-  const danhGiaLabel = kpiVersion === 'V2_PL3' ? 'Đánh giá (V2)' : 'Đánh giá';
+  // 05/05/2026: V2_PL3 là chuẩn duy nhất — bỏ link tới các trang V1 cũ.
+  const keKhaiHref = '/ke-khai-v2';
+  const keKhaiLabel = 'Kê khai công việc';
+  const danhGiaHref = '/danh-gia-v2';
+  const danhGiaLabel = 'Đánh giá';
 
   // HKG (01/05/2026 — UAT feature flag): visible cho admin/leadership/HKG-roles.
   // Đọc platform_roles từ user (populate từ /me) hoặc decode JWT làm fallback.

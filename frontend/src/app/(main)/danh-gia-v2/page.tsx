@@ -68,7 +68,15 @@ function fmt(n: number, digits = 2) {
   return n.toFixed(digits);
 }
 function pct(v: number, digits = 1) {
-  return (v * 100).toFixed(digits) + '%';
+  // Tránh làm tròn LÊN 100% khi tỷ lệ thực < 1.0.
+  // Vd: 5454.71 / 5455.96 = 0.999771 → (0.999771 × 100).toFixed(1) = "100.0%" (sai)
+  // Khi v < 1, dùng Math.floor để hiển thị "99.9%" thay vì "100.0%".
+  const value = v * 100;
+  if (v < 1) {
+    const factor = Math.pow(10, digits);
+    return (Math.floor(value * factor) / factor).toFixed(digits) + '%';
+  }
+  return value.toFixed(digits) + '%';
 }
 
 const TRANG_THAI_LABEL: Record<string, string> = {

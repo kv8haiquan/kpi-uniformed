@@ -94,7 +94,14 @@ function getXepLoaiLabel(xepLoai: XepLoai): string {
 }
 
 function formatPercent(value: number, decimals: number = 1): string {
-  return (value * 100).toFixed(decimals) + '%';
+  // Tránh làm tròn LÊN 100% khi tỷ lệ thực < 1.0
+  // (vd 0.999 × 100 = 99.9 nhưng 0.99977 × 100 = 99.977, toFixed(1) → "100.0%" sai).
+  const v = value * 100;
+  if (value < 1) {
+    const factor = Math.pow(10, decimals);
+    return (Math.floor(v * factor) / factor).toFixed(decimals) + '%';
+  }
+  return v.toFixed(decimals) + '%';
 }
 
 function formatNumber(value: number | null | undefined): string {

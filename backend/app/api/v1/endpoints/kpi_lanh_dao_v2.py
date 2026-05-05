@@ -109,6 +109,7 @@ async def get_kpi_v2_cua_toi(
     current_user: ActiveUserDep,
     thang: int = Query(..., ge=1, le=12),
     nam: int = Query(..., ge=2025, le=2099),
+    tam_tinh: bool = Query(default=False, description="True = tính cả NHAP/CHO_PHE_DUYET"),
 ):
     _check_thang_nam(thang, nam)
 
@@ -124,7 +125,7 @@ async def get_kpi_v2_cua_toi(
             },
         )
 
-    data = await calc_kpi_lanh_dao_v2(db, current_user.id, thang, nam)
+    data = await calc_kpi_lanh_dao_v2(db, current_user.id, thang, nam, tam_tinh=tam_tinh)
     return success_response(data=data)
 
 
@@ -141,12 +142,13 @@ async def get_kpi_v2_cua_nguoi_khac(
     db: DatabaseDep,
     thang: int = Query(..., ge=1, le=12),
     nam: int = Query(..., ge=2025, le=2099),
+    tam_tinh: bool = Query(default=False),
     current_user: CongChuc = Depends(require_roles("CCT")),
 ):
     _check_thang_nam(thang, nam)
 
     try:
-        data = await calc_kpi_lanh_dao_v2(db, cong_chuc_id, thang, nam)
+        data = await calc_kpi_lanh_dao_v2(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

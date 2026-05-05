@@ -65,12 +65,16 @@ def is_kpi_lanh_dao_v2_active(thang: int, nam: int) -> bool:
 
 @dataclass
 class _SP:
-    """Bản ghi SP đã quy đổi (từ kpi_submission V2, DA_PHE_DUYET)."""
+    """Bản ghi SP đã quy đổi (từ kpi_submission V2)."""
     cong_chuc_id: UUID
     don_vi_id: Optional[UUID]
-    so_sp_goc: float        # so_sp_goc_quy_doi — đóng góp vào mẫu số
-    so_sp_chat_luong: float
-    so_sp_tien_do: float
+    trang_thai: TrangThaiKeKhai
+    so_luong: int
+    so_sp_goc: float                 # so_sp_goc_quy_doi → mẫu số
+    so_sp_chat_luong_chot: float     # so_sp_chat_luong (chỉ dùng khi DA_PHE_DUYET)
+    so_sp_tien_do_chot: float
+    tu_dg_cl: int                    # tu_danh_gia_chat_luong (cho NHAP/CHO)
+    tu_dg_td: int
 
 
 def _to_float(v) -> float:
@@ -79,6 +83,29 @@ def _to_float(v) -> float:
     if isinstance(v, Decimal):
         return float(v)
     return float(v)
+
+
+def _resolve_sp_cl_td(sp: _SP) -> tuple[float, float]:
+    """
+    Trả (sp_chat_luong, sp_tien_do) tùy trạng thái:
+    - DA_PHE_DUYET: dùng giá trị đã chốt (LĐ duyệt).
+    - NHAP/CHO_PHE_DUYET (tạm tính): tính từ tu_danh_gia của CC.
+      Mỗi CV đóng góp: max(0, so_sp_goc - 0.25 × so_loi × sp_per_unit)
+    """
+    if sp.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET:
+        return sp.so_sp_chat_luong_chot, sp.so_sp_tien_do_chot
+
+    so_luong_v = sp.so_luong or 1
+    if sp.so_sp_goc > 0 and so_luong_v > 0:
+        sp_per_unit = sp.so_sp_goc / so_luong_v
+        max_loi = so_luong_v * 4
+        loi_cl = min(sp.tu_dg_cl or 0, max_loi)
+        loi_td = min(sp.tu_dg_td or 0, max_loi)
+        return (
+            max(sp.so_sp_goc - 0.25 * loi_cl * sp_per_unit, 0.0),
+            max(sp.so_sp_goc - 0.25 * loi_td * sp_per_unit, 0.0),
+        )
+    return sp.so_sp_goc, sp.so_sp_goc
 
 
 # =============================================================================
@@ -123,9 +150,13 @@ _BASE_SELECT = (
     select(
         KeKhaiCongViec.cong_chuc_id,
         CongChuc.don_vi_id,
+        KeKhaiCongViec.trang_thai,
+        KeKhaiCongViec.so_luong,
         KeKhaiCongViec.so_sp_goc_quy_doi,
         KeKhaiCongViec.so_sp_chat_luong,
         KeKhaiCongViec.so_sp_tien_do,
+        KeKhaiCongViec.tu_danh_gia_chat_luong,
+        KeKhaiCongViec.tu_danh_gia_tien_do,
     )
     .join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id)
 )
@@ -135,14 +166,32 @@ def _row_to_sp(r) -> _SP:
     return _SP(
         cong_chuc_id=r[0],
         don_vi_id=r[1],
-        so_sp_goc=_to_float(r[2]),
-        so_sp_chat_luong=_to_float(r[3]),
-        so_sp_tien_do=_to_float(r[4]),
+        trang_thai=r[2],
+        so_luong=r[3] or 1,
+        so_sp_goc=_to_float(r[4]),
+        so_sp_chat_luong_chot=_to_float(r[5]),
+        so_sp_tien_do_chot=_to_float(r[6]),
+        tu_dg_cl=r[7] or 0,
+        tu_dg_td=r[8] or 0,
     )
 
 
+def _allowed_states(tam_tinh: bool) -> list[TrangThaiKeKhai]:
+    if tam_tinh:
+        return [
+            TrangThaiKeKhai.NHAP,
+            TrangThaiKeKhai.CHO_PHE_DUYET,
+            TrangThaiKeKhai.DA_PHE_DUYET,
+        ]
+    return [TrangThaiKeKhai.DA_PHE_DUYET]
+
+
 async def _sp_pdv_scope(
-    db: AsyncSession, user_id: UUID, thang: int, nam: int
+    db: AsyncSession,
+    user_id: UUID,
+    thang: int,
+    nam: int,
+    tam_tinh: bool = False,
 ) -> list[_SP]:
     """
     PDV: SP do user_id tự kê + SP do user_id trực tiếp duyệt.
@@ -152,7 +201,7 @@ async def _sp_pdv_scope(
         KeKhaiCongViec.thang == thang,
         KeKhaiCongViec.nam == nam,
         KeKhaiCongViec.is_deleted == False,  # noqa: E712
-        KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
+        KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
         or_(
             KeKhaiCongViec.cong_chuc_id == user_id,
             KeKhaiCongViec.nguoi_phe_duyet_id == user_id,
@@ -163,7 +212,11 @@ async def _sp_pdv_scope(
 
 
 async def _sp_trong_don_vi(
-    db: AsyncSession, don_vi_ids: Sequence[UUID], thang: int, nam: int
+    db: AsyncSession,
+    don_vi_ids: Sequence[UUID],
+    thang: int,
+    nam: int,
+    tam_tinh: bool = False,
 ) -> list[_SP]:
     """Toàn bộ SP của user thuộc các đơn vị (CC + PDV/TDV tự kê)."""
     if not don_vi_ids:
@@ -172,7 +225,7 @@ async def _sp_trong_don_vi(
         KeKhaiCongViec.thang == thang,
         KeKhaiCongViec.nam == nam,
         KeKhaiCongViec.is_deleted == False,  # noqa: E712
-        KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
+        KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
         CongChuc.don_vi_id.in_(list(don_vi_ids)),
     )
     rows = (await db.execute(stmt)).all()
@@ -208,20 +261,16 @@ async def calc_kpi_lanh_dao_v2(
     cong_chuc_id: UUID,
     thang: int,
     nam: int,
+    *,
+    tam_tinh: bool = False,
 ) -> dict:
     """
     Tính KPI lãnh đạo theo công thức MỚI cho 1 LĐ ở 1 tháng.
 
-    Returns:
-        dict với các field (đồng dạng output của tinh_diem_kpi_70_v2 cho CC):
-        - cong_chuc_id, thang, nam, cap_bac
-        - tong_sp_ke_khai (mẫu số), tong_sp_hoan_thanh
-        - sp_chat_luong, sp_tien_do
-        - a, b, c (chỉ số 0..1; b = tỷ lệ tiến độ; c = tỷ lệ chất lượng)
-        - d, dd, e (chỉ số 0..1)
-        - kpi_tong (∈ [0, 1])
-        - has_phan_cong (chỉ áp PCCT/CCT)
-        - is_v2_active
+    Args:
+        tam_tinh: False (default) → chỉ DA_PHE_DUYET (chính thức).
+                  True → cả NHAP/CHO_PHE_DUYET/DA_PHE_DUYET (dùng tu_danh_gia
+                  cho bản chưa duyệt).
     """
     from sqlalchemy.orm import selectinload
 
@@ -252,23 +301,31 @@ async def calc_kpi_lanh_dao_v2(
     # Resolve scope SP TỔNG (theo cấp)
     has_phan_cong: Optional[bool] = None
     if cap_bac == CapBacVaiTro.PHO_DON_VI:
-        scope_total = await _sp_pdv_scope(db, user.id, thang, nam)
+        scope_total = await _sp_pdv_scope(db, user.id, thang, nam, tam_tinh=tam_tinh)
     elif cap_bac == CapBacVaiTro.TRUONG_DON_VI:
-        scope_total = await _sp_trong_don_vi(db, [user.don_vi_id], thang, nam)
+        scope_total = await _sp_trong_don_vi(
+            db, [user.don_vi_id], thang, nam, tam_tinh=tam_tinh
+        )
     else:  # PCCT / CCT
         ngay_chot = _ngay_chot_cua_thang(thang, nam)
         don_vi_ids = await get_don_vi_phu_trach(db, user.id, ngay_chot)
         has_phan_cong = len(don_vi_ids) > 0
-        scope_total = await _sp_trong_don_vi(db, don_vi_ids, thang, nam)
+        scope_total = await _sp_trong_don_vi(
+            db, don_vi_ids, thang, nam, tam_tinh=tam_tinh
+        )
 
     # Tách SP CHÍNH LĐ TỰ KÊ (cong_chuc_id == user.id) vs SP TỔNG
     scope_self = [sp for sp in scope_total if sp.cong_chuc_id == user.id]
 
-    # Tính tổng SP (TỔNG)
+    # Tính tổng SP (TỔNG) — dùng _resolve_sp_cl_td để tự xử lý NHAP/CHO/DA
     tong_sp_ke_khai = sum(sp.so_sp_goc for sp in scope_total)
-    tong_sp_hoan_thanh = tong_sp_ke_khai
-    sp_chat_luong = sum(sp.so_sp_chat_luong for sp in scope_total)
-    sp_tien_do = sum(sp.so_sp_tien_do for sp in scope_total)
+    tong_sp_hoan_thanh = tong_sp_ke_khai  # bản trong allowed = đã / sắp hoàn thành
+    sp_chat_luong = 0.0
+    sp_tien_do = 0.0
+    for sp in scope_total:
+        cl, td = _resolve_sp_cl_td(sp)
+        sp_chat_luong += cl
+        sp_tien_do += td
 
     if tong_sp_ke_khai > 0:
         a = min(1.0, tong_sp_hoan_thanh / tong_sp_ke_khai)
@@ -279,11 +336,15 @@ async def calc_kpi_lanh_dao_v2(
 
     # Tính tổng SP (TỰ KÊ — riêng LĐ)
     tong_sp_self = sum(sp.so_sp_goc for sp in scope_self)
-    sp_cl_self = sum(sp.so_sp_chat_luong for sp in scope_self)
-    sp_td_self = sum(sp.so_sp_tien_do for sp in scope_self)
+    sp_cl_self = 0.0
+    sp_td_self = 0.0
+    for sp in scope_self:
+        cl, td = _resolve_sp_cl_td(sp)
+        sp_cl_self += cl
+        sp_td_self += td
 
     if tong_sp_self > 0:
-        a_self = min(1.0, tong_sp_self / tong_sp_self)  # = 1 (đã duyệt = hoàn thành)
+        a_self = 1.0  # bản trong allowed = hoàn thành
         b_self = min(1.0, sp_td_self / tong_sp_self)
         c_self = min(1.0, sp_cl_self / tong_sp_self)
     else:
@@ -325,4 +386,5 @@ async def calc_kpi_lanh_dao_v2(
         "kpi_tong": round(kpi_tong, 6),
         "has_phan_cong": has_phan_cong,
         "is_v2_active": is_kpi_lanh_dao_v2_active(thang, nam),
+        "tam_tinh": tam_tinh,
     }

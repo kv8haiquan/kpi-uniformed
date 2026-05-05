@@ -21,16 +21,21 @@ export const kpiLanhDaoV2Service = {
     return r.data.data;
   },
 
-  async getMyKpi(thang: number, nam: number): Promise<IKpiLanhDaoV2> {
+  async getMyKpi(thang: number, nam: number, tamTinh = false): Promise<IKpiLanhDaoV2> {
     const r = await apiClient.get<IBackendResponse<IKpiLanhDaoV2>>(`${BASE}/me`, {
-      params: { thang, nam },
+      params: { thang, nam, tam_tinh: tamTinh },
     });
     return r.data.data;
   },
 
-  async getKpiOf(congChucId: string, thang: number, nam: number): Promise<IKpiLanhDaoV2> {
+  async getKpiOf(
+    congChucId: string,
+    thang: number,
+    nam: number,
+    tamTinh = false,
+  ): Promise<IKpiLanhDaoV2> {
     const r = await apiClient.get<IBackendResponse<IKpiLanhDaoV2>>(`${BASE}/${congChucId}`, {
-      params: { thang, nam },
+      params: { thang, nam, tam_tinh: tamTinh },
     });
     return r.data.data;
   },

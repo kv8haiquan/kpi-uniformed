@@ -335,12 +335,7 @@ export default function DanhGiaV2Page() {
     if (!isAuthenticated) router.push('/login');
   }, [isAuthenticated, router]);
 
-  // LĐ V2: force tab "Chính thức"
-  useEffect(() => {
-    if (isV2ActiveForLeader && tab !== 'chinh_thuc') {
-      setTab('chinh_thuc');
-    }
-  }, [isV2ActiveForLeader, tab]);
+  // (LĐ V2 đã hỗ trợ tab tạm tính từ 05/05/2026 — không force tab nữa.)
 
   // Redirect:
   // - HĐ 111 → /danh-gia (form cũ)
@@ -374,9 +369,9 @@ export default function DanhGiaV2Page() {
           page_size: 100,
         }),
         tieuChiChungService.getKetQuaThang(selectedThang, selectedNam),
-        // LĐ thật + tháng ≥ 4/2026: load KPI V2 (scope mở rộng cấp dưới + d/đ/e)
+        // LĐ thật + tháng ≥ 4/2026: load KPI V2 theo TAB (chính thức / tạm tính)
         isV2ActiveForLeader
-          ? kpiLanhDaoV2Service.getMyKpi(selectedThang, selectedNam)
+          ? kpiLanhDaoV2Service.getMyKpi(selectedThang, selectedNam, tab === 'tam_tinh')
           : Promise.resolve(null),
       ]);
       if (thongKeRes.status === 'fulfilled') setThongKe(thongKeRes.value);
@@ -393,7 +388,7 @@ export default function DanhGiaV2Page() {
     } finally {
       setLoading(false);
     }
-  }, [selectedThang, selectedNam, isV2ActiveForLeader]);
+  }, [selectedThang, selectedNam, isV2ActiveForLeader, tab]);
 
   useEffect(() => {
     loadData();
@@ -404,8 +399,9 @@ export default function DanhGiaV2Page() {
   // ===========================================================================
 
   // Mẫu số: tab tạm tính = du_kien (NHAP+CHO+DA), tab chính thức = da_duyet
-  // LĐ V2 + tab chính thức: ƯU TIÊN số liệu từ /kpi-lanh-dao-v2/me (scope mở rộng).
-  const useLeaderV2 = kpiV2LD !== null && tab === 'chinh_thuc';
+  // LĐ V2: ƯU TIÊN số liệu từ /kpi-lanh-dao-v2/me (scope mở rộng) cho CẢ 2 tab
+  // — backend reload data theo tab (tam_tinh=true/false).
+  const useLeaderV2 = kpiV2LD !== null && isV2ActiveForLeader;
 
   const mauSoChinhThuc = useLeaderV2
     ? kpiV2LD!.tong_sp_ke_khai
@@ -550,15 +546,11 @@ export default function DanhGiaV2Page() {
         {!loading && !error && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-1.5 mb-6 flex gap-2">
             <button
-              onClick={() => !isV2ActiveForLeader && setTab('tam_tinh')}
-              disabled={isV2ActiveForLeader}
-              title={isV2ActiveForLeader ? 'Tab Tạm tính chưa hỗ trợ scope LĐ — chỉ tính bản đã DA_PHE_DUYET' : ''}
+              onClick={() => setTab('tam_tinh')}
               className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
-                isV2ActiveForLeader
-                  ? 'opacity-40 cursor-not-allowed text-gray-400 border-2 border-transparent'
-                  : tab === 'tam_tinh'
-                    ? 'bg-amber-50 text-amber-700 border-2 border-amber-300 shadow-sm'
-                    : 'text-gray-500 hover:bg-gray-50 border-2 border-transparent'
+                tab === 'tam_tinh'
+                  ? 'bg-amber-50 text-amber-700 border-2 border-amber-300 shadow-sm'
+                  : 'text-gray-500 hover:bg-gray-50 border-2 border-transparent'
               }`}
             >
               <span>📝</span>

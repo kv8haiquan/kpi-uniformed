@@ -246,19 +246,49 @@ async def tinh_diem_cong_chuc(
     # =========================================================================
     # PL3 V2 (28/04/2026): Mẫu số = tổng SP kê khai đã duyệt
     # =========================================================================
-    is_v2 = (
-        danh_gia is not None
-        and getattr(danh_gia, "version_tinh_diem", "V1") == "V2_PL3"
+    # FIX 05/05/2026: check V2 dựa vào sự tồn tại KK V2_PL3 thực tế của CC
+    # (nguồn sự thật từ ke_khai_cong_viec). Trước đây check qua
+    # danh_gia.version_tinh_diem hoặc resolve_kpi_version (đọc danh_gia_thang
+    # ở step 1) — nhưng field này không được cập nhật khi platform default
+    # đổi sang V2_PL3 → CC V2 bị fallback V1 (target = ngày × 96) → điểm
+    # xếp loại lệch so với trang /danh-gia.
+    from app.core.kpi_version import VERSION_V2
+    v2_check_stmt = select(func.count(KeKhaiCongViec.id)).where(
+        KeKhaiCongViec.cong_chuc_id == cong_chuc_id,
+        KeKhaiCongViec.thang == thang,
+        KeKhaiCongViec.nam == nam,
+        KeKhaiCongViec.version_kekhai == "V2_PL3",
+        KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET,
+        KeKhaiCongViec.is_deleted == False,
     )
+    v2_count = (await db.execute(v2_check_stmt)).scalar() or 0
+    is_v2 = v2_count > 0
+
     if is_v2:
-        # V2: target_sp = tổng SP CC đã kê khai (đã duyệt)
-        # Cache vào danh_gia.tong_sp_ke_khai
-        target_sp = tong_sp_hoan_thanh
+        # V2: dispatch sang helper thống nhất với /danh-gia-v2
+        # (lọc version_kekhai='V2_PL3', mẫu số = SUM(so_sp_goc_quy_doi)).
+        from app.api.v1.endpoints.xep_loai_moi import tinh_diem_kpi_70_v2
+        v2_data = await tinh_diem_kpi_70_v2(db, cong_chuc_id, thang, nam, tam_tinh=False)
+        diem_kpi_v2 = Decimal(str(v2_data["diem_70"]))
+        diem_tong_v2 = (diem_tcc or Decimal("0")) + diem_kpi_v2
+        xep_loai_v2 = tinh_xep_loai(diem_tong_v2)
+        # Cache tong_sp_ke_khai vào danh_gia (để báo cáo tham chiếu)
         if danh_gia is not None:
-            danh_gia.tong_sp_ke_khai = target_sp
-    else:
-        # V1: target_sp = số ngày làm việc × 96 SP/ngày
-        target_sp = so_ngay_lam_viec * Decimal("96")
+            danh_gia.tong_sp_ke_khai = Decimal(str(v2_data["tong_sp_ke_khai"]))
+            # Cập nhật version_tinh_diem cho nhất quán
+            if getattr(danh_gia, "version_tinh_diem", None) != VERSION_V2:
+                danh_gia.version_tinh_diem = VERSION_V2
+        return KetQuaTinhDiem(
+            diem_tieu_chi_chung=diem_tcc,
+            diem_kpi=diem_kpi_v2,
+            diem_tong=diem_tong_v2,
+            xep_loai=xep_loai_v2.value,
+            so_ngay_lam_viec=so_ngay_lam_viec,
+            so_ngay_nghi=so_ngay_nghi,
+        )
+
+    # V1: target_sp = số ngày làm việc × 96 SP/ngày
+    target_sp = so_ngay_lam_viec * Decimal("96")
     
     # =========================================================================
     # 4. Tính các chỉ số a, b, c

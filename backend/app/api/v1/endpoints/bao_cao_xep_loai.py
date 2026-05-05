@@ -353,9 +353,12 @@ async def tinh_diem_lanh_dao(
     Phase 3 (29/04/2026): thêm flag is_hd_111 — HĐ 111 dùng cùng nguồn
     ke_khai_lanh_dao nhưng KHÔNG có d/đ/e, KPI = (a + b + c) / 3.
 
-    Nguồn:
-    - ke_khai_lanh_dao (a, b, c)
-    - danh_gia_dde (d, đ, e) — chỉ cho LĐ thật, HĐ 111 bỏ qua
+    Phase 3 KPI LĐ V2 (05/05/2026): từ tháng 5/2026 trở đi, LĐ thật KÊ KHAI
+    THEO FORM V2 (kpi_submission). Tính điểm:
+    - HĐ 111: vẫn đọc ke_khai_lanh_dao như cũ.
+    - LĐ thật + tháng < 5/2026: vẫn đọc ke_khai_lanh_dao như cũ.
+    - LĐ thật + tháng ≥ 5/2026: gọi calc_kpi_lanh_dao_v2 — scope mở rộng
+      sang SP cấp dưới (xem app.core.kpi_lanh_dao_v2).
 
     Công thức:
     - LĐ thật: KPI = (a + b + c + d + đ + e) / 6 × 70
@@ -365,7 +368,11 @@ async def tinh_diem_lanh_dao(
         KetQuaTinhDiem(diem_tcc, diem_kpi, diem_tong, xep_loai, so_ngay_lv, so_ngay_nghi)
     """
     from app.api.v1.endpoints.nghi_phep import tinh_tong_ngay_nghi_thang
-    
+    from app.core.kpi_lanh_dao_v2 import (
+        calc_kpi_lanh_dao_v2,
+        is_kpi_lanh_dao_v2_active,
+    )
+
     # Lấy điểm tiêu chí chung từ danh_gia_thang
     dg_stmt = select(DanhGiaThang).where(
         DanhGiaThang.cong_chuc_id == cong_chuc_id,
@@ -376,6 +383,35 @@ async def tinh_diem_lanh_dao(
     dg_result = await db.execute(dg_stmt)
     danh_gia = dg_result.scalar_one_or_none()
     diem_tcc = danh_gia.diem_tieu_chi_chung if danh_gia else Decimal("0")
+
+    # =====================================================================
+    # NHÁNH MỚI (Phase 3 — 05/05/2026): LĐ thật + tháng ≥ 5/2026 → gọi V2
+    # HĐ 111 vẫn đi theo nhánh cũ bên dưới.
+    # =====================================================================
+    if not is_hd_111 and is_kpi_lanh_dao_v2_active(thang, nam):
+        try:
+            v2_result = await calc_kpi_lanh_dao_v2(db, cong_chuc_id, thang, nam)
+        except ValueError:
+            # Không phải LĐ → fallback (an toàn)
+            v2_result = None
+
+        if v2_result is not None:
+            kpi_ratio_v2 = Decimal(str(v2_result["kpi_tong"]))
+            diem_kpi_v2 = kpi_ratio_v2 * Decimal("70")
+            diem_tong_v2 = (diem_tcc or Decimal("0")) + diem_kpi_v2
+
+            nghi_phep_data = await tinh_tong_ngay_nghi_thang(db, cong_chuc_id, thang, nam)
+            so_ngay_lam_viec_v2 = Decimal(str(nghi_phep_data.get("so_ngay_lam_viec", 0)))
+            so_ngay_nghi_v2 = Decimal(str(nghi_phep_data.get("tong_ngay_nghi", 0)))
+
+            return KetQuaTinhDiem(
+                diem_tieu_chi_chung=diem_tcc,
+                diem_kpi=diem_kpi_v2,
+                diem_tong=diem_tong_v2,
+                xep_loai=tinh_xep_loai(diem_tong_v2).value,
+                so_ngay_lam_viec=so_ngay_lam_viec_v2,
+                so_ngay_nghi=so_ngay_nghi_v2,
+            )
     
     # =========================================================================
     # Tính số ngày làm việc và nghỉ (v1.1)

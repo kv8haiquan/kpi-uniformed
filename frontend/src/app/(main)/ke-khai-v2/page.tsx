@@ -82,12 +82,28 @@ export default function KeKhaiV2Page() {
   // Phase 2: filter trạng thái (null = tất cả)
   const [filterTrangThai, setFilterTrangThai] = useState<string | null>(null);
 
-  // Redirect nếu user pin V1
+  // Redirect nếu user không thuộc đối tượng V2:
+  // - HĐ 111: luôn dùng form cũ (/ke-khai)
+  // - LĐ thật: chỉ dùng V2 từ tháng 5/2026 trở đi (Phase 3, 05/05/2026)
+  // - CC pinned V1: dùng /ke-khai
   useEffect(() => {
-    if (user && user.effective_kpi_version === 'V1') {
+    if (!user) return;
+    const isLanhDao = user.is_lanh_dao;
+    const isHd111 = user.is_hd_111;
+    const isV2ActiveForLeader = nam > 2026 || (nam === 2026 && thang >= 5);
+
+    if (isHd111) {
+      router.replace('/ke-khai');
+      return;
+    }
+    if (isLanhDao && !isV2ActiveForLeader) {
+      router.replace('/ke-khai');
+      return;
+    }
+    if (!isLanhDao && user.effective_kpi_version === 'V1') {
       router.replace('/ke-khai');
     }
-  }, [user, router]);
+  }, [user, router, thang, nam]);
 
   const reload = useCallback(async () => {
     setLoading(true);

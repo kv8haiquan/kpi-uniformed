@@ -342,7 +342,50 @@ async def tinh_diem_kpi_70_lanh_dao(
     - đ = dd_to_chuc_trien_khai / 100
     - e = e_doan_ket_noi_bo / 100
     - Điểm = (a + b + c + d + đ + e) / 6 × 70
+
+    Phase 3 KPI LĐ V2 (05/05/2026): từ tháng 5/2026, scope a/b/c mở rộng
+    sang SP cấp dưới (calc_kpi_lanh_dao_v2 trong app.core.kpi_lanh_dao_v2).
     """
+    # Phase 3 V2: tháng ≥ 5/2026 → gọi service v2 (lấy chính thức = DA_PHE_DUYET)
+    from app.core.kpi_lanh_dao_v2 import (
+        calc_kpi_lanh_dao_v2,
+        is_kpi_lanh_dao_v2_active,
+    )
+
+    if not tam_tinh and is_kpi_lanh_dao_v2_active(thang, nam):
+        try:
+            v2 = await calc_kpi_lanh_dao_v2(db, cong_chuc_id, thang, nam)
+            diem_kpi = v2["kpi_tong"]
+            diem_70 = min(70.0, diem_kpi * 70.0)
+            return {
+                "is_lanh_dao": True,
+                "tong_cong_viec": v2["tong_cv"],
+                "tong_hoan_thanh": v2["tong_hoan_thanh"],
+                "tong_diem_chat_luong": v2["c"] * v2["tong_cv"],
+                "tong_diem_tien_do": v2["b"] * v2["tong_cv"],
+                "tong_loi_chat_luong": 0,  # không truy hồi từ v2 (UI chỉ dùng a/b/c)
+                "tong_loi_tien_do": 0,
+                "a_so_luong": v2["a"],
+                "b_tien_do": v2["b"],
+                "c_chat_luong": v2["c"],
+                "d_ket_qua": v2["d"],
+                "dd_to_chuc": v2["dd"],
+                "e_doan_ket": v2["e"],
+                "diem_kpi": diem_kpi,
+                "diem_70": diem_70,
+                "so_ngay_trong_thang": 0,
+                "so_ngay_nghi": 0,
+                "so_ngay_lam_viec": 0,
+                "sp_duoc_giao": 0,
+                "tong_sp_hoan_thanh": v2["tong_hoan_thanh"],
+                "sp_chat_luong": 0,
+                "sp_tien_do": 0,
+                "b_chat_luong": v2["c"],
+                "c_tien_do": v2["b"],
+            }
+        except ValueError:
+            pass  # fallback nhánh cũ
+
     # Xác định trạng thái được tính
     if tam_tinh:
         allowed_statuses = [

@@ -175,7 +175,7 @@ class TestCalcKpiLanhDaoV2:
         """Lấy 1 PDV bất kỳ → KPI/a/b/c/d/đ/e đều ∈ [0, 1]."""
         stmt = select(CongChuc).join(VaiTro).where(VaiTro.ma_vai_tro == "PDV").limit(1)
         pdv = (await db_session.execute(stmt)).scalar_one()
-        result = await calc_kpi_lanh_dao_v2(db_session, pdv.id, 4, 2026)
+        result = await calc_kpi_lanh_dao_v2(db_session, pdv.id, 5, 2026)
 
         assert result["cap_bac"] == "PDV"
         for key in ("a", "b", "c", "d", "dd", "e", "kpi_tong"):
@@ -186,7 +186,7 @@ class TestCalcKpiLanhDaoV2:
 
     @pytest.mark.asyncio
     async def test_invariants_tdv(self, db_session, tdv_user):
-        result = await calc_kpi_lanh_dao_v2(db_session, tdv_user.id, 4, 2026)
+        result = await calc_kpi_lanh_dao_v2(db_session, tdv_user.id, 5, 2026)
         assert result["cap_bac"] == "TDV"
         for key in ("a", "b", "c", "d", "dd", "e", "kpi_tong"):
             assert 0.0 <= result[key] <= 1.0
@@ -194,7 +194,7 @@ class TestCalcKpiLanhDaoV2:
     @pytest.mark.asyncio
     async def test_cct_no_assignment_empty_scope(self, db_session, cct_user):
         """CCT chưa có phân công → tong_cv = 0, KPI chỉ là (d+đ+e)/6."""
-        result = await calc_kpi_lanh_dao_v2(db_session, cct_user.id, 4, 2026)
+        result = await calc_kpi_lanh_dao_v2(db_session, cct_user.id, 5, 2026)
         assert result["cap_bac"] == "CCT"
         assert result["has_phan_cong"] is False
         assert result["tong_cv"] == 0
@@ -206,6 +206,7 @@ class TestCalcKpiLanhDaoV2:
 
     @pytest.mark.asyncio
     async def test_cct_with_assignment_has_scope(self, db_session, cct_user, phan_cong_seed):
+        # Dùng tháng 4/2026 (có dataset thực) — calc function không check feature flag
         result = await calc_kpi_lanh_dao_v2(db_session, cct_user.id, 4, 2026)
         assert result["cap_bac"] == "CCT"
         assert result["has_phan_cong"] is True
@@ -214,7 +215,7 @@ class TestCalcKpiLanhDaoV2:
 
     @pytest.mark.asyncio
     async def test_is_v2_active_flag(self, db_session, tdv_user):
-        result_apr = await calc_kpi_lanh_dao_v2(db_session, tdv_user.id, 4, 2026)
+        result_apr = await calc_kpi_lanh_dao_v2(db_session, tdv_user.id, 5, 2026)
         assert result_apr["is_v2_active"] is True
 
         result_mar = await calc_kpi_lanh_dao_v2(db_session, tdv_user.id, 3, 2026)
@@ -226,4 +227,4 @@ class TestCalcKpiLanhDaoV2:
         stmt = select(CongChuc).join(VaiTro).where(VaiTro.ma_vai_tro == "CC").limit(1)
         cc = (await db_session.execute(stmt)).scalar_one()
         with pytest.raises(ValueError):
-            await calc_kpi_lanh_dao_v2(db_session, cc.id, 4, 2026)
+            await calc_kpi_lanh_dao_v2(db_session, cc.id, 5, 2026)

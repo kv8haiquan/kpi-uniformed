@@ -1071,7 +1071,18 @@ async def export_ca_nhan(
     # Lãnh đạo + HĐ 111 kê khai theo form ke_khai_lanh_dao (không có data
     # trong ke_khai_cong_viec). Đọc đúng bảng để Mẫu 02 không trống.
     # Phase 3 (29/04/2026): mở rộng cho HĐ 111.
-    if target_user.kekhai_dung_form_lanh_dao:
+    # Phase 3 KPI LĐ V2 (05/05/2026): từ tháng 5/2026, LĐ THẬT đã chuyển
+    # sang kê khai trên ke_khai_cong_viec (form V2). HĐ 111 vẫn giữ form cũ.
+    from app.core.kpi_lanh_dao_v2 import is_kpi_lanh_dao_v2_active
+    use_old_form = (
+        target_user.kekhai_dung_form_lanh_dao
+        and not (
+            target_user.is_lanh_dao
+            and not target_user.is_hd_111
+            and is_kpi_lanh_dao_v2_active(thang, nam)
+        )
+    )
+    if use_old_form:
         ke_khai_ld = await _get_ke_khai_lanh_dao_list(db, target_user.id, thang, nam)
         mau02_data = _build_mau02_data_lanh_dao_style(target_user, thang, nam, ke_khai_ld, chi_tiet_xl)
     else:

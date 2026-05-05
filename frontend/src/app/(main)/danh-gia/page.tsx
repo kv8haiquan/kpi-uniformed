@@ -55,6 +55,7 @@ import { IKetQuaTieuChiChungResponse, TrangThaiTieuChiChung } from '@/types/tieu
 import { IThongKeKeKhaiLanhDao, IDanhGiaDDEResponse } from '@/types/leader-kpi';
 import ExportButton, { ExportFormat } from '@/components/common/ExportButton';
 import { exportService } from '@/services/export.service';
+import WidgetKpiLanhDaoV2 from '@/components/dashboard/WidgetKpiLanhDaoV2';
 
 // =============================================================================
 // CONSTANTS & HELPERS
@@ -588,6 +589,19 @@ export default function DanhGiaPage() {
             )}
           </div>
         </div>
+
+        {/* ========== Phase 3 KPI LĐ V2 (05/05/2026): widget cho LĐ thật + tháng ≥ 5/2026 ========== */}
+        {isLanhDao && !isHd111 && (selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 5)) && (
+          <div className="mb-6">
+            <WidgetKpiLanhDaoV2
+              thang={selectedThang}
+              nam={selectedNam}
+              capBac={user?.vai_tro?.cap_bac}
+              isAdmin={user?.is_system_admin}
+              isCCT={user?.vai_tro?.ma_vai_tro === 'CCT'}
+            />
+          </div>
+        )}
 
         {/* ========== v2.10: GLOBAL TAB SELECTOR ========== */}
         {!isLoading && !error && (

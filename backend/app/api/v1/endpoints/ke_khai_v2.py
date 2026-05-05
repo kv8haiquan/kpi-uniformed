@@ -33,10 +33,11 @@ from app.core.kpi_calculator_v2 import (
     calculate_so_sp_goc_quy_doi_v2,
     calculate_sp_dat_v2,
 )
+from app.core.kpi_lanh_dao_v2 import is_kpi_lanh_dao_v2_active
 from app.models.cong_viec_yeu_thich import CongViecYeuThich
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.task_catalog import DanhMucSpCongViec
-from app.models.user_org import CongChuc
+from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
 from app.schemas.common import (
     DataResponse,
     Pagination,
@@ -288,20 +289,12 @@ def _check_v2_or_400(kk: KeKhaiCongViec) -> None:
         )
 
 
-def _reject_leader_v2(current_user: CongChuc) -> None:
-    """LOCKED 4: V2_PL3 chỉ áp cho công chức.
-    Phase 3 (29/04/2026): HD_111 cũng dùng form lãnh đạo, không kê khai V2."""
-    if current_user.is_lanh_dao:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "success": False,
-                "error": {
-                    "code": "LEADER_NOT_ALLOWED_V2",
-                    "message": "Lãnh đạo kê khai theo V1, vui lòng dùng /ke-khai",
-                },
-            },
-        )
+def _reject_leader_v2(current_user: CongChuc, thang: int, nam: int) -> None:
+    """LOCKED 4 + Phase 3 (05/05/2026):
+    - HĐ 111 LUÔN dùng form lãnh đạo, không kê khai V2 (giữ nguyên).
+    - LĐ thật: tháng < KPI_LANH_DAO_V2_FROM (5/2026) vẫn dùng form cũ;
+      tháng ≥ flag → cho phép kê khai V2 (cùng bảng kpi_submission với CC).
+    """
     if current_user.is_hd_111:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -313,6 +306,105 @@ def _reject_leader_v2(current_user: CongChuc) -> None:
                 },
             },
         )
+    if current_user.is_lanh_dao and not is_kpi_lanh_dao_v2_active(thang, nam):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "LEADER_NOT_ALLOWED_V2_BEFORE_FLAG",
+                    "message": (
+                        "Tháng này lãnh đạo vẫn kê khai theo form cũ "
+                        "(/ke-khai-lanh-dao). Form V2 chỉ áp từ tháng 5/2026."
+                    ),
+                },
+            },
+        )
+
+
+# =============================================================================
+# AUTO-FILL nguoi_phe_duyet_id THEO CẤP BẬC LÃNH ĐẠO
+# =============================================================================
+
+async def _resolve_default_phe_duyet_for_leader(
+    db: AsyncSession, current_user: CongChuc, thang: int, nam: int
+) -> Optional[UUID]:
+    """
+    Trả về ID người phê duyệt mặc định cho LĐ tự kê khai (tháng ≥ 5/2026).
+
+    - PDV  → TDV cùng đơn vị (lấy bất kỳ; nếu không có TDV → CCT).
+    - TDV  → PCCT phụ trách đơn vị tại ngày cuối tháng (nếu chưa phân công → CCT).
+    - PCCT → CCT.
+    - CCT  → chính mình (tự phê duyệt).
+
+    Nếu không resolve được → None (caller giữ giá trị do client nhập, hoặc 400).
+    """
+    cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    if cap_bac is None:
+        return None
+
+    if cap_bac == CapBacVaiTro.CHI_CUC_TRUONG:
+        return current_user.id
+
+    # Lấy CCT (1 người duy nhất)
+    cct_stmt = (
+        select(CongChuc.id)
+        .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+        .where(
+            VaiTro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG,
+            CongChuc.is_deleted == False,  # noqa: E712
+            CongChuc.is_active == True,  # noqa: E712
+        )
+        .limit(1)
+    )
+    cct_id = (await db.execute(cct_stmt)).scalar_one_or_none()
+
+    if cap_bac == CapBacVaiTro.PHO_CHI_CUC_TRUONG:
+        return cct_id
+
+    if cap_bac == CapBacVaiTro.TRUONG_DON_VI:
+        # Tìm PCCT phụ trách đơn vị này tại ngày cuối tháng
+        from app.core.kpi_lanh_dao_v2 import _ngay_chot_cua_thang
+        from app.models.phan_cong_phu_trach import PhanCongPhuTrach
+        from sqlalchemy import or_
+
+        ngay_chot = _ngay_chot_cua_thang(thang, nam)
+        stmt = (
+            select(PhanCongPhuTrach.lanh_dao_id)
+            .join(CongChuc, CongChuc.id == PhanCongPhuTrach.lanh_dao_id)
+            .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+            .where(
+                PhanCongPhuTrach.don_vi_id == current_user.don_vi_id,
+                PhanCongPhuTrach.is_deleted == False,  # noqa: E712
+                PhanCongPhuTrach.hieu_luc_tu <= ngay_chot,
+                or_(
+                    PhanCongPhuTrach.hieu_luc_den.is_(None),
+                    PhanCongPhuTrach.hieu_luc_den >= ngay_chot,
+                ),
+                VaiTro.cap_bac == CapBacVaiTro.PHO_CHI_CUC_TRUONG,
+            )
+            .limit(1)
+        )
+        pcct_id = (await db.execute(stmt)).scalar_one_or_none()
+        return pcct_id or cct_id
+
+    if cap_bac == CapBacVaiTro.PHO_DON_VI:
+        # TDV cùng đơn vị
+        stmt = (
+            select(CongChuc.id)
+            .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+            .where(
+                CongChuc.don_vi_id == current_user.don_vi_id,
+                VaiTro.cap_bac == CapBacVaiTro.TRUONG_DON_VI,
+                CongChuc.is_deleted == False,  # noqa: E712
+                CongChuc.is_active == True,  # noqa: E712
+            )
+            .limit(1)
+        )
+        tdv_id = (await db.execute(stmt)).scalar_one_or_none()
+        return tdv_id or cct_id
+
+    return None
 
 
 # =============================================================================
@@ -496,7 +588,7 @@ async def create_kekhai_v2(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"success": False, "error": {"code": "PERM_QLDV", "message": "QLDV không có quyền kê khai"}},
         )
-    _reject_leader_v2(current_user)
+    _reject_leader_v2(current_user, payload.thang, payload.nam)
 
     # Validate danh mục PL3
     dm = await _load_pl3_danh_muc(db, payload.danh_muc_sp_id)
@@ -504,8 +596,15 @@ async def create_kekhai_v2(
     # LOCKED 12: 1 tháng = 1 version
     await _check_no_v1_in_month(db, current_user.id, payload.thang, payload.nam)
 
+    # LĐ tự kê (tháng ≥ 5/2026): nếu client không gửi nguoi_phe_duyet_id → auto-fill
+    nguoi_phe_duyet_id = payload.nguoi_phe_duyet_id
+    if current_user.is_lanh_dao and nguoi_phe_duyet_id is None:
+        nguoi_phe_duyet_id = await _resolve_default_phe_duyet_for_leader(
+            db, current_user, payload.thang, payload.nam
+        )
+
     # Người phê duyệt
-    await _validate_phe_duyet(db, payload.nguoi_phe_duyet_id)
+    await _validate_phe_duyet(db, nguoi_phe_duyet_id)
 
     # Tính SP gốc quy đổi + SP đạt CL/TĐ (theo tự đánh giá CC)
     so_sp_goc = calculate_so_sp_goc_quy_doi_v2(payload.so_luong, dm.he_so_quy_doi)
@@ -526,7 +625,7 @@ async def create_kekhai_v2(
         cap_do_id=None,  # V2 không dùng C1-C5
         so_luong=payload.so_luong,
         he_so_thuc_te=None,  # LOCKED 14: không cho override
-        nguoi_phe_duyet_id=payload.nguoi_phe_duyet_id,
+        nguoi_phe_duyet_id=nguoi_phe_duyet_id,
         mo_ta_cong_viec=payload.mo_ta_cong_viec,
         is_doi_moi_sang_tao=payload.is_doi_moi_sang_tao,
         ngay_deadline=payload.ngay_deadline,
@@ -574,16 +673,22 @@ async def create_kekhai_v2_multi_day(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"success": False, "error": {"code": "PERM_QLDV", "message": "QLDV không có quyền kê khai"}},
         )
-    _reject_leader_v2(current_user)
-
     dm = await _load_pl3_danh_muc(db, payload.danh_muc_sp_id)
 
     first_date = payload.ngay_thuc_hien_list[0]
     thang = first_date.month
     nam = first_date.year
 
+    _reject_leader_v2(current_user, thang, nam)
+
     await _check_no_v1_in_month(db, current_user.id, thang, nam)
-    await _validate_phe_duyet(db, payload.nguoi_phe_duyet_id)
+
+    nguoi_phe_duyet_id = payload.nguoi_phe_duyet_id
+    if current_user.is_lanh_dao and nguoi_phe_duyet_id is None:
+        nguoi_phe_duyet_id = await _resolve_default_phe_duyet_for_leader(
+            db, current_user, thang, nam
+        )
+    await _validate_phe_duyet(db, nguoi_phe_duyet_id)
 
     so_sp_goc = calculate_so_sp_goc_quy_doi_v2(payload.so_luong, dm.he_so_quy_doi)
     so_sp_cl = calculate_sp_dat_v2(
@@ -605,7 +710,7 @@ async def create_kekhai_v2_multi_day(
             cap_do_id=None,
             so_luong=payload.so_luong,
             he_so_thuc_te=None,
-            nguoi_phe_duyet_id=payload.nguoi_phe_duyet_id,
+            nguoi_phe_duyet_id=nguoi_phe_duyet_id,
             mo_ta_cong_viec=payload.mo_ta_cong_viec,
             is_doi_moi_sang_tao=payload.is_doi_moi_sang_tao,
             tu_danh_gia_chat_luong=payload.tu_danh_gia_chat_luong,
@@ -677,11 +782,11 @@ async def list_my_favorites(
 ) -> dict:
     """Trả về list favorites của user, mới nhất trước.
 
-    LĐ và HĐ 111 không dùng V2 → trả [] để FE đơn giản hoá.
+    HĐ 111 không dùng V2 → trả []. LĐ thật từ 5/2026 được dùng favorites.
     Tự động loại bỏ favorites trỏ đến danh mục đã soft-delete /
     không còn nguon_du_lieu='PL3' / inactive.
     """
-    if current_user.is_lanh_dao or current_user.is_hd_111:
+    if current_user.is_hd_111:
         return success_response(data=[])
 
     stmt = (
@@ -721,7 +826,19 @@ async def add_favorite(
     current_user: ActiveUserDep,
 ) -> dict:
     """Thêm 1 favorite. Idempotent: nếu đã tồn tại trả về bản ghi cũ."""
-    _reject_leader_v2(current_user)
+    # Favorites: chỉ chặn HĐ 111 (luôn dùng form cũ); LĐ thật được phép
+    # vì có thể kê khai V2 từ tháng 5/2026.
+    if current_user.is_hd_111:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "HD_111_NOT_ALLOWED_V2",
+                    "message": "HĐ 111 không dùng favorites V2",
+                },
+            },
+        )
 
     # Validate danh mục là PL3, active, còn sống
     dm = await _load_pl3_danh_muc(db, payload.danh_muc_sp_id)
@@ -801,9 +918,9 @@ async def list_recent_danh_muc(
     - Bỏ qua tháng không có data (vd: nghỉ thai sản).
     - Tối đa 3 tháng có data.
 
-    LĐ / HĐ 111 / QLDV → trả [] (V2 không áp dụng).
+    HĐ 111 / QLDV → trả []. LĐ thật từ 5/2026 dùng V2 nên có recent.
     """
-    if current_user.is_lanh_dao or current_user.is_hd_111 or is_qldv(current_user):
+    if current_user.is_hd_111 or is_qldv(current_user):
         return success_response(data=[])
 
     # Tìm tối đa 3 (thang, nam) có ke_khai_v2 trước (thang, nam) hiện tại.

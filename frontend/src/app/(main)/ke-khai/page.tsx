@@ -105,6 +105,17 @@ export default function KeKhaiPage() {
   }, [isQldv, router]);
 
   // ==========================================================================
+  // PHASE 3 (05/05/2026) — LĐ thật + tháng ≥ 5/2026 dùng form V2
+  // (HĐ 111 vẫn ở form cũ; LĐ tháng < 5/2026 vẫn ở form cũ)
+  // ==========================================================================
+  useEffect(() => {
+    const isV2Active = selectedNam > 2026 || (selectedNam === 2026 && selectedThang >= 5);
+    if (isLanhDao && !isHd111 && isV2Active) {
+      router.replace('/ke-khai-v2');
+    }
+  }, [isLanhDao, isHd111, selectedThang, selectedNam, router]);
+
+  // ==========================================================================
   // V2 READ-ONLY MODE (02/05/2026) — CC V2 chỉ xem dữ liệu V1 cũ để đối chiếu.
   // Lãnh đạo + HĐ 111 dùng LeaderKeKhaiView (V1 hợp lệ) nên không bị ảnh hưởng.
   // ==========================================================================

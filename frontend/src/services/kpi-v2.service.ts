@@ -17,6 +17,7 @@
 import apiClient from '@/lib/axios';
 import { IDataResponse, IPaginatedResponse } from '@/types/api';
 import {
+  ICongTac,
   IDanhMucPL3,
   IFavoriteItem,
   IKeKhaiV2CreateRequest,
@@ -41,9 +42,18 @@ async function getLinhVuc(): Promise<ILinhVuc[]> {
   return res.data.data;
 }
 
-async function getNhiemVu(linhVuc: string): Promise<INhiemVu[]> {
+async function getCongTac(linhVuc: string): Promise<ICongTac[]> {
+  const res = await apiClient.get<IDataResponse<ICongTac[]>>(
+    `/danh-muc/cong-tac?linh_vuc=${encodeURIComponent(linhVuc)}`
+  );
+  return res.data.data;
+}
+
+async function getNhiemVu(linhVuc: string, congTac?: string): Promise<INhiemVu[]> {
+  const qs = new URLSearchParams({ linh_vuc: linhVuc });
+  if (congTac !== undefined) qs.append('cong_tac', congTac);
   const res = await apiClient.get<IDataResponse<INhiemVu[]>>(
-    `/danh-muc/nhiem-vu?linh_vuc=${encodeURIComponent(linhVuc)}`
+    `/danh-muc/nhiem-vu?${qs.toString()}`
   );
   return res.data.data;
 }
@@ -53,8 +63,8 @@ async function searchDanhMucPL3(
 ): Promise<IPaginatedResponse<IDanhMucPL3>> {
   const search = new URLSearchParams();
   if (params.linh_vuc) search.append('linh_vuc', params.linh_vuc);
+  if (params.cong_tac !== undefined) search.append('cong_tac', params.cong_tac);
   if (params.nhiem_vu) search.append('nhiem_vu', params.nhiem_vu);
-  if (params.nhom_pl3 !== undefined) search.append('nhom_pl3', String(params.nhom_pl3));
   if (params.search) search.append('search', params.search);
   if (params.page) search.append('page', String(params.page));
   if (params.size) search.append('size', String(params.size));
@@ -181,6 +191,7 @@ async function getRecent(thang: number, nam: number): Promise<IRecentItem[]> {
 
 export const kpiV2Service = {
   getLinhVuc,
+  getCongTac,
   getNhiemVu,
   searchDanhMucPL3,
   createKeKhai,

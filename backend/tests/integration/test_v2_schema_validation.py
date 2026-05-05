@@ -55,6 +55,13 @@ class TestExtraFieldRejection:
         with pytest.raises(ValidationError):
             KeKhaiV2Update(he_so_thuc_te="1.5")
 
+    def test_reject_thang_nam_in_update(self):
+        # Regression: tháng/năm immutable sau khi tạo — KeKhaiV2Update
+        # KHÔNG được nhận thang/nam (FE phải strip trước khi gửi).
+        with pytest.raises(ValidationError) as exc:
+            KeKhaiV2Update(thang=4, nam=2026, so_luong=2)
+        assert "thang" in str(exc.value) or "nam" in str(exc.value)
+
     def test_reject_cap_do_id_in_multi_day(self):
         with pytest.raises(ValidationError):
             KeKhaiV2NhieuNgayCreate(

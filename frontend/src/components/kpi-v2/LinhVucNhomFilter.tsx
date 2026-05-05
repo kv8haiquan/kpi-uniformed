@@ -3,7 +3,7 @@
 /**
  * components/kpi-v2/LinhVucNhomFilter.tsx
  * =======================================
- * Filter combo cho V2_PL3: chọn lĩnh vực + nhóm + keyword search.
+ * Filter combo cho V2_PL3: chọn lĩnh vực + công tác + nhiệm vụ + keyword search.
  *
  * Decision Phase D câu 2: SKIP "lĩnh vực gợi ý" (chưa có endpoint
  * don-vi/{id}/linh-vuc-mac-dinh) — chỉ hiển thị 15 lĩnh vực thông thường.
@@ -13,14 +13,20 @@ import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 
 import { kpiV2Service } from '@/services/kpi-v2.service';
-import { ILinhVuc } from '@/types/kpi-v2';
+import { ICongTac, ILinhVuc } from '@/types/kpi-v2';
 
 import { NhiemVuCombobox } from './NhiemVuCombobox';
 
+/**
+ * cong_tac value semantics:
+ *   - undefined → không filter công tác (lấy toàn bộ lĩnh vực)
+ *   - "__null__" → chỉ lấy nhóm "Chung" (cong_tac IS NULL trong DB)
+ *   - tên cụ thể → exact match
+ */
 export interface ILinhVucNhomValue {
   linh_vuc?: string;
+  cong_tac?: string;
   nhiem_vu?: string;
-  nhom_pl3?: number;
   search?: string;
 }
 
@@ -30,18 +36,11 @@ interface Props {
   className?: string;
 }
 
-const NHOM_OPTIONS = [
-  { value: undefined, label: 'Tất cả' },
-  { value: 1, label: 'Nhóm 1' },
-  { value: 2, label: 'Nhóm 2' },
-  { value: 3, label: 'Nhóm 3' },
-  { value: 4, label: 'Nhóm 4' },
-  { value: 5, label: 'Nhóm 5' },
-];
-
 export function LinhVucNhomFilter({ value, onChange, className }: Props) {
   const [linhVucList, setLinhVucList] = useState<ILinhVuc[]>([]);
   const [loadingLV, setLoadingLV] = useState(true);
+  const [congTacList, setCongTacList] = useState<ICongTac[]>([]);
+  const [loadingCT, setLoadingCT] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -60,6 +59,30 @@ export function LinhVucNhomFilter({ value, onChange, className }: Props) {
     };
   }, []);
 
+  // Load công tác mỗi khi đổi lĩnh vực
+  useEffect(() => {
+    if (!value.linh_vuc) {
+      setCongTacList([]);
+      return;
+    }
+    let mounted = true;
+    setLoadingCT(true);
+    kpiV2Service
+      .getCongTac(value.linh_vuc)
+      .then((data) => {
+        if (mounted) setCongTacList(data);
+      })
+      .catch(() => {
+        if (mounted) setCongTacList([]);
+      })
+      .finally(() => {
+        if (mounted) setLoadingCT(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [value.linh_vuc]);
+
   return (
     <div className={`space-y-3 ${className ?? ''}`}>
       {/* Lĩnh vực */}
@@ -72,8 +95,13 @@ export function LinhVucNhomFilter({ value, onChange, className }: Props) {
           value={value.linh_vuc ?? ''}
           onChange={(e) => {
             const next = e.target.value || undefined;
-            // Đổi lĩnh vực → reset nhiem_vu (mục cũ không còn hợp lệ)
-            onChange({ ...value, linh_vuc: next, nhiem_vu: undefined });
+            // Đổi lĩnh vực → reset cong_tac + nhiem_vu (mục cũ không còn hợp lệ)
+            onChange({
+              ...value,
+              linh_vuc: next,
+              cong_tac: undefined,
+              nhiem_vu: undefined,
+            });
           }}
           disabled={loadingLV}
         >
@@ -86,37 +114,51 @@ export function LinhVucNhomFilter({ value, onChange, className }: Props) {
         </select>
       </div>
 
+      {/* Công tác — sub-heading giữa Lĩnh vực và Nhiệm vụ */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Công tác
+          {value.linh_vuc && !loadingCT && (
+            <span className="ml-1 text-xs font-normal text-gray-500">
+              ({congTacList.length} công tác)
+            </span>
+          )}
+        </label>
+        <select
+          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none disabled:bg-gray-100"
+          value={value.cong_tac ?? ''}
+          onChange={(e) => {
+            const raw = e.target.value;
+            // '' → undefined (Tất cả công tác); '__null__' giữ nguyên (nhóm Chung)
+            const next = raw === '' ? undefined : raw;
+            onChange({ ...value, cong_tac: next, nhiem_vu: undefined });
+          }}
+          disabled={!value.linh_vuc || loadingCT}
+        >
+          <option value="">
+            {!value.linh_vuc
+              ? '— Chọn lĩnh vực trước —'
+              : '— Tất cả công tác —'}
+          </option>
+          {value.linh_vuc && (
+            <option value="__null__">(Chung — chưa phân công tác)</option>
+          )}
+          {congTacList.map((ct) => (
+            <option key={ct.cong_tac} value={ct.cong_tac}>
+              {ct.thu_tu ? `${ct.thu_tu}. ` : ''}
+              {ct.cong_tac}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Nhiệm vụ — combobox có search, disable nếu chưa chọn lĩnh vực */}
       <NhiemVuCombobox
         linhVuc={value.linh_vuc}
+        congTac={value.cong_tac}
         value={value.nhiem_vu}
         onChange={(nv) => onChange({ ...value, nhiem_vu: nv })}
       />
-
-      {/* Nhóm chip filter */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Nhóm</label>
-        <div className="flex flex-wrap gap-2">
-          {NHOM_OPTIONS.map((opt) => {
-            const active = value.nhom_pl3 === opt.value;
-            return (
-              <button
-                key={String(opt.value)}
-                type="button"
-                onClick={() => onChange({ ...value, nhom_pl3: opt.value })}
-                className={[
-                  'px-3 py-1.5 rounded-full text-xs font-medium border transition',
-                  active
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
-                ].join(' ')}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
 
       {/* Search keyword */}
       <div>

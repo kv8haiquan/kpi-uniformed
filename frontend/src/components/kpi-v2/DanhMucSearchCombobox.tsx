@@ -44,8 +44,8 @@ export function DanhMucSearchCombobox({
   const [error, setError] = useState<string | null>(null);
   const filterKey = useMemo(
     () =>
-      `${filters.linh_vuc ?? ''}|${filters.nhiem_vu ?? ''}|${filters.nhom_pl3 ?? ''}|${(filters.search ?? '').trim()}`,
-    [filters.linh_vuc, filters.nhiem_vu, filters.nhom_pl3, filters.search]
+      `${filters.linh_vuc ?? ''}|${filters.cong_tac ?? ''}|${filters.nhiem_vu ?? ''}|${(filters.search ?? '').trim()}`,
+    [filters.linh_vuc, filters.cong_tac, filters.nhiem_vu, filters.search]
   );
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   const requestSeq = useRef(0);
@@ -67,8 +67,8 @@ export function DanhMucSearchCombobox({
       kpiV2Service
         .searchDanhMucPL3({
           linh_vuc: filters.linh_vuc,
+          cong_tac: filters.cong_tac,
           nhiem_vu: filters.nhiem_vu,
-          nhom_pl3: filters.nhom_pl3,
           search: filters.search?.trim() || undefined,
           page,
           size: pageSize,
@@ -96,7 +96,7 @@ export function DanhMucSearchCombobox({
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [filterKey, page, pageSize, filters.linh_vuc, filters.nhiem_vu, filters.nhom_pl3, filters.search]);
+  }, [filterKey, page, pageSize, filters.linh_vuc, filters.cong_tac, filters.nhiem_vu, filters.search]);
 
   const hasMore = items.length < total;
 
@@ -158,6 +158,12 @@ export function DanhMucSearchCombobox({
                   </span>
                 </div>
                 <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                  {item.cong_tac && (
+                    <div className="whitespace-pre-line">
+                      <span className="text-gray-500">Công tác:</span>{' '}
+                      <span className="text-gray-700">{item.cong_tac}</span>
+                    </div>
+                  )}
                   {item.nhiem_vu && (
                     <div className="whitespace-pre-line">
                       <span className="text-gray-500">Nhiệm vụ:</span>{' '}

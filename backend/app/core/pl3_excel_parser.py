@@ -55,6 +55,8 @@ COL_HE_SO = 12
 COL_GHI_CHU = 13
 
 SECTION_REGEX = re.compile(r"^([IVXLCDM]+)\.\s*(.+)$")
+ROMAN_BARE_REGEX = re.compile(r"^[IVXLCDM]+$")
+NUMBER_STT_REGEX = re.compile(r"^\d+(\.\d+)?$")
 
 # Tolerance khi check he_so == diem_cham/25 (Excel có thể nhập làm tròn)
 HE_SO_TOLERANCE = Decimal("0.05")
@@ -72,6 +74,8 @@ class ParsedRow:
     nguon_du_lieu: str  # luôn 'PL3'
     linh_vuc: str
     ten_linh_vuc: Optional[str]
+    cong_tac: Optional[str]
+    cong_tac_thu_tu: Optional[int]
     nhiem_vu: Optional[str]
     cong_viec_chi_tiet: str
     san_pham_dau_ra: str
@@ -147,6 +151,52 @@ def _is_section_header(val) -> Optional[tuple[str, str]]:
     return None
 
 
+def _detect_cong_tac_heading(ws, row: int) -> Optional[str]:
+    """Detect dòng heading "Công tác" — sub-heading giữa lĩnh vực và nhiệm vụ.
+
+    Hai pattern xuất hiện trong file PL3 hiện tại:
+
+    Pattern A (chuẩn — 58 dòng): Cột A bold + có text + KHÔNG match số STT
+    (N hoặc N.M) và KHÔNG match La Mã ("I", "II.", ...). Ví dụ:
+        R53  A=[Bold]"Công tác tổng hợp và tham mưu giúp việc"
+        R132 A=[Bold]"Công tác Văn thư"
+
+    Pattern B (4 dòng trong Section III "CÔNG TÁC ĐẢNG"): Cột A rỗng
+    hoặc bare-Roman ("I", "II"), cột B có text, cột C rỗng. Ví dụ:
+        R445 A=""    B="Công tác nghiệp vụ chuyên môn"        C=""
+        R446 A="I"   B="Công tác Ban Tổ chức Đảng ủy"          C=""
+        R494 A=""    B="Công tác UBKT Đảng ủy"                  C=""
+        R530 A=""    B="Công tác Tuyên giáo và Dân vận..."      C=""
+
+    Trả về tên công tác (đã strip) hoặc None.
+    """
+    a_cell = ws.cell(row=row, column=COL_STT)
+    a_val = a_cell.value
+    a_bold = bool(a_cell.font and a_cell.font.bold)
+    a_str = str(a_val).strip() if a_val is not None else ""
+
+    b_val = ws.cell(row=row, column=COL_NHIEM_VU).value
+    b_str = str(b_val).strip() if b_val is not None else ""
+
+    c_val = ws.cell(row=row, column=COL_CONG_VIEC).value
+    c_str = str(c_val).strip() if c_val is not None else ""
+
+    # Pattern A: bold cột A + text + không phải số/Roman bare/Roman.section
+    if a_bold and a_str and not NUMBER_STT_REGEX.match(a_str) \
+            and not ROMAN_BARE_REGEX.match(a_str) \
+            and not SECTION_REGEX.match(a_str):
+        return a_str
+
+    # Pattern B: cột A rỗng/bare-Roman + cột B có text + cột C rỗng
+    a_is_empty_or_roman = (not a_str) or ROMAN_BARE_REGEX.match(a_str)
+    if a_is_empty_or_roman and b_str and not c_str:
+        # Loại trừ trường hợp đây thực ra là 1 nhiệm vụ N.0 (cột A có số)
+        if not NUMBER_STT_REGEX.match(a_str) and not SECTION_REGEX.match(a_str):
+            return b_str
+
+    return None
+
+
 # =============================================================================
 # PARSE
 # =============================================================================
@@ -204,16 +254,35 @@ def parse_pl3_excel(source) -> ParseResult:
     # reset khi sang lĩnh vực mới. Áp cho mọi row có công việc chi tiết
     # nhưng cột B trống (= row con thuộc nhiệm vụ ở trên).
     current_nhiem_vu: Optional[str] = None
+    # State machine: công tác "đang mở" — sub-heading bold cột A (hoặc
+    # cột B trong Section III). Reset khi sang lĩnh vực mới. Tăng
+    # cong_tac_thu_tu mỗi khi gặp công tác mới trong cùng lĩnh vực.
+    current_cong_tac: Optional[str] = None
+    current_cong_tac_thu_tu: Optional[int] = None
+    cong_tac_counter_in_lv: int = 0
 
     for r in range(DATA_START_ROW, ws.max_row + 1):
         stt_raw = ws.cell(row=r, column=COL_STT).value
 
         if _is_section_header(stt_raw):
-            # Sang lĩnh vực mới → reset state nhiệm vụ.
+            # Sang lĩnh vực mới → reset state nhiệm vụ + công tác.
             # Sub-heading nội bộ (vd "Công tác tổng hợp...") không match
             # SECTION_REGEX (không bắt đầu bằng La Mã + dấu chấm) nên KHÔNG
             # reset — giữ nhiệm vụ đang mở.
             current_nhiem_vu = None
+            current_cong_tac = None
+            current_cong_tac_thu_tu = None
+            cong_tac_counter_in_lv = 0
+            continue
+
+        # Detect heading "Công tác" — chỉ chạy khi row chưa được xác định
+        # là dòng dữ liệu (heading thường có cột C rỗng).
+        cong_tac_heading = _detect_cong_tac_heading(ws, r)
+        if cong_tac_heading:
+            cong_tac_counter_in_lv += 1
+            current_cong_tac = cong_tac_heading[:500]
+            current_cong_tac_thu_tu = cong_tac_counter_in_lv
+            # Heading row không có công việc chi tiết → bỏ qua phần còn lại
             continue
 
         nhiem_vu_cell = ws.cell(row=r, column=COL_NHIEM_VU).value
@@ -289,6 +358,8 @@ def parse_pl3_excel(source) -> ParseResult:
             nguon_du_lieu="PL3",
             linh_vuc=linh_vuc,
             ten_linh_vuc=ten_linh_vuc,
+            cong_tac=current_cong_tac,
+            cong_tac_thu_tu=current_cong_tac_thu_tu,
             nhiem_vu=current_nhiem_vu[:500] if current_nhiem_vu else None,
             cong_viec_chi_tiet=str(cong_viec).strip(),
             san_pham_dau_ra=str(san_pham).strip(),

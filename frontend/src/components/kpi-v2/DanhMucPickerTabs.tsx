@@ -345,6 +345,12 @@ function SimpleList({
                 </span>
               </div>
               <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                {dm.cong_tac && (
+                  <div className="whitespace-pre-line">
+                    <span className="text-gray-500">Công tác:</span>{' '}
+                    <span className="text-gray-700">{dm.cong_tac}</span>
+                  </div>
+                )}
                 {dm.nhiem_vu && (
                   <div className="whitespace-pre-line">
                     <span className="text-gray-500">Nhiệm vụ:</span>{' '}

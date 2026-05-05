@@ -337,6 +337,18 @@ class DanhMucSpCongViec(BaseModelWithSoftDelete):
         comment="Cột B Excel PL3"
     )
 
+    cong_tac: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Tên công tác — sub-heading bold cột A trong Excel PL3 (chỉ V2_PL3)"
+    )
+
+    cong_tac_thu_tu: Mapped[Optional[int]] = mapped_column(
+        SmallInteger,
+        nullable=True,
+        comment="Thứ tự công tác trong lĩnh vực (1..N), NULL nếu chưa phân công tác"
+    )
+
     cong_viec_chi_tiet: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
@@ -423,6 +435,7 @@ class DanhMucSpCongViec(BaseModelWithSoftDelete):
         Index("idx_dmsp_linh_vuc", "linh_vuc"),
         Index("idx_dmsp_nhom_pl3", "nhom_pl3"),
         Index("idx_dmsp_nguon_du_lieu", "nguon_du_lieu"),
+        Index("idx_dmsp_linh_vuc_cong_tac", "linh_vuc", "cong_tac_thu_tu"),
     )
     
     def __repr__(self) -> str:

@@ -135,6 +135,9 @@ class DanhMucPL3BriefResponse(BaseModel):
     san_pham_dau_ra: Optional[str] = None
     linh_vuc: Optional[str] = None
     ten_linh_vuc: Optional[str] = None
+    cong_tac: Optional[str] = None
+    cong_tac_thu_tu: Optional[int] = None
+    nhiem_vu: Optional[str] = None
     nhom_pl3: Optional[int] = None
     khung_diem_toi_da: Optional[int] = None
     diem_cham: Optional[int] = None

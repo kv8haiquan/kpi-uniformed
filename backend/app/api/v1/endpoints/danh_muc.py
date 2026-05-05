@@ -457,14 +457,61 @@ async def get_linh_vuc_list_pl3(
 
 
 @router.get(
+    "/cong-tac",
+    summary="Danh sách công tác PL3 (V2) — distinct theo lĩnh vực",
+    description="""
+    Trả về danh sách distinct công tác (sub-heading bold cột A trong Excel PL3)
+    cho dropdown filter cấp 2 — chèn giữa Lĩnh vực và Nhiệm vụ trong UI V2.
+
+    Yêu cầu query param `linh_vuc` (I-XV). Sắp xếp theo `cong_tac_thu_tu`
+    (thứ tự xuất hiện trong Excel).
+
+    Một số lĩnh vực không phân nhóm công tác (vd II) → trả về list rỗng.
+    Phần nhiệm vụ "Chung" (`cong_tac IS NULL`) hiển thị như tùy chọn riêng
+    ở frontend, không trả ở endpoint này.
+
+    **Quyền:** mọi user đăng nhập.
+    """,
+)
+async def get_cong_tac_pl3(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    linh_vuc: str = Query(..., description="Mã lĩnh vực La Mã (I-XV)"),
+) -> dict:
+    """Distinct cong_tac lọc theo linh_vuc, sort theo cong_tac_thu_tu."""
+    stmt = (
+        select(
+            DanhMucSpCongViec.cong_tac,
+            DanhMucSpCongViec.cong_tac_thu_tu,
+        )
+        .where(DanhMucSpCongViec.nguon_du_lieu == "PL3")
+        .where(DanhMucSpCongViec.is_active == True)
+        .where(DanhMucSpCongViec.is_deleted == False)
+        .where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
+        .where(DanhMucSpCongViec.cong_tac.isnot(None))
+        .distinct()
+        .order_by(
+            DanhMucSpCongViec.cong_tac_thu_tu.asc().nulls_last(),
+            DanhMucSpCongViec.cong_tac.asc(),
+        )
+    )
+    rows = (await db.execute(stmt)).all()
+    data = [{"cong_tac": r[0], "thu_tu": r[1]} for r in rows if r[0]]
+    return success_response(data=data)
+
+
+@router.get(
     "/nhiem-vu",
-    summary="Danh sách nhiệm vụ PL3 (V2) — distinct theo lĩnh vực",
+    summary="Danh sách nhiệm vụ PL3 (V2) — distinct theo lĩnh vực + công tác",
     description="""
     Trả về danh sách distinct nhiệm vụ (cột B Excel PL3) cho dropdown filter
-    cấp 2 trong modal kê khai V2.
+    cấp 3 trong modal kê khai V2.
 
     Yêu cầu query param `linh_vuc` (I-XV). Nhiệm vụ giữa các lĩnh vực có
     thể trùng tên nên BẮT BUỘC truyền lĩnh vực để tránh nhập nhằng.
+
+    Optional `cong_tac`: nếu truyền chuỗi rỗng `""` hoặc giá trị đặc biệt
+    `"__null__"` → chỉ trả nhiệm vụ thuộc nhóm "Chung" (cong_tac IS NULL).
 
     **Quyền:** mọi user đăng nhập.
     """,
@@ -473,8 +520,13 @@ async def get_nhiem_vu_pl3(
     db: DatabaseDep,
     current_user: ActiveUserDep,
     linh_vuc: str = Query(..., description="Mã lĩnh vực La Mã (I-XV)"),
+    cong_tac: Optional[str] = Query(
+        default=None,
+        max_length=500,
+        description='Tên công tác — exact match. Truyền "__null__" để lọc nhóm "Chung" (chưa phân công tác).',
+    ),
 ) -> dict:
-    """Distinct nhiem_vu lọc theo linh_vuc."""
+    """Distinct nhiem_vu lọc theo linh_vuc + (optional) cong_tac."""
     stmt = (
         select(DanhMucSpCongViec.nhiem_vu)
         .where(DanhMucSpCongViec.nguon_du_lieu == "PL3")
@@ -482,9 +534,13 @@ async def get_nhiem_vu_pl3(
         .where(DanhMucSpCongViec.is_deleted == False)
         .where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
         .where(DanhMucSpCongViec.nhiem_vu.isnot(None))
-        .distinct()
-        .order_by(DanhMucSpCongViec.nhiem_vu.asc())
     )
+    if cong_tac is not None:
+        if cong_tac == "" or cong_tac == "__null__":
+            stmt = stmt.where(DanhMucSpCongViec.cong_tac.is_(None))
+        else:
+            stmt = stmt.where(DanhMucSpCongViec.cong_tac == cong_tac)
+    stmt = stmt.distinct().order_by(DanhMucSpCongViec.nhiem_vu.asc())
     rows = (await db.execute(stmt)).scalars().all()
     data = [{"nhiem_vu": nv} for nv in rows if nv]
     return success_response(data=data)
@@ -511,6 +567,11 @@ async def get_sp_cong_viec_pl3(
     db: DatabaseDep,
     current_user: ActiveUserDep,
     linh_vuc: Optional[str] = Query(default=None, description="I-XV"),
+    cong_tac: Optional[str] = Query(
+        default=None,
+        max_length=500,
+        description='Tên công tác — exact match. Truyền "__null__" để lọc nhóm "Chung".',
+    ),
     nhiem_vu: Optional[str] = Query(default=None, max_length=500, description="Tên nhiệm vụ — exact match"),
     nhom_pl3: Optional[int] = Query(default=None, ge=1, le=5),
     search: Optional[str] = Query(default=None, min_length=1, max_length=200),
@@ -534,6 +595,14 @@ async def get_sp_cong_viec_pl3(
     if linh_vuc:
         base_query = base_query.where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
         count_query = count_query.where(DanhMucSpCongViec.linh_vuc == linh_vuc.upper())
+
+    if cong_tac is not None:
+        if cong_tac == "" or cong_tac == "__null__":
+            base_query = base_query.where(DanhMucSpCongViec.cong_tac.is_(None))
+            count_query = count_query.where(DanhMucSpCongViec.cong_tac.is_(None))
+        else:
+            base_query = base_query.where(DanhMucSpCongViec.cong_tac == cong_tac)
+            count_query = count_query.where(DanhMucSpCongViec.cong_tac == cong_tac)
 
     if nhiem_vu:
         base_query = base_query.where(DanhMucSpCongViec.nhiem_vu == nhiem_vu)
@@ -573,6 +642,8 @@ async def get_sp_cong_viec_pl3(
             "san_pham_dau_ra": dm.san_pham_dau_ra,
             "linh_vuc": dm.linh_vuc,
             "ten_linh_vuc": dm.ten_linh_vuc,
+            "cong_tac": dm.cong_tac,
+            "cong_tac_thu_tu": dm.cong_tac_thu_tu,
             "nhom_pl3": dm.nhom_pl3,
             "khung_diem_toi_da": dm.khung_diem_toi_da,
             "diem_cham": dm.diem_cham,

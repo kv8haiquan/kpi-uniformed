@@ -26,6 +26,8 @@ export interface IDanhMucPL3 {
   cong_viec_chi_tiet: string | null;
   san_pham_dau_ra: string | null;
   nhiem_vu: string | null;
+  cong_tac: string | null;          // sub-heading bold cột A trong PL3 Excel
+  cong_tac_thu_tu: number | null;   // thứ tự công tác trong lĩnh vực (1..N)
   mo_ta?: string | null;  // ghi chú thêm (cột M trong Excel hoặc admin nhập)
   nguon_du_lieu?: string;  // 'V1' | 'PL3'
   linh_vuc: string;        // 'I'..'XV'
@@ -52,6 +54,14 @@ export interface ILinhVuc {
  */
 export interface INhiemVu {
   nhiem_vu: string;
+}
+
+/**
+ * Công tác (sub-heading giữa Lĩnh vực và Nhiệm vụ) — distinct theo lĩnh vực.
+ */
+export interface ICongTac {
+  cong_tac: string;
+  thu_tu: number | null;
 }
 
 // =============================================================================
@@ -195,8 +205,8 @@ export interface IKeKhaiV2MultiDayResponse {
 
 export interface ISearchPL3Params {
   linh_vuc?: string;
+  cong_tac?: string;   // exact match. "__null__" = nhóm "Chung" (cong_tac IS NULL).
   nhiem_vu?: string;
-  nhom_pl3?: number;
   search?: string;
   page?: number;
   size?: number;

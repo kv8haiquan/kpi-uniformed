@@ -224,6 +224,11 @@ export function KpiMultiDayModalV2({ open, onClose, onSuccess, thang, nam }: Pro
               <p className="text-sm font-semibold text-gray-900">
                 {selectedDM.ten_cong_viec}
               </p>
+              {selectedDM.cong_tac && (
+                <p className="text-xs text-gray-700 whitespace-pre-line mt-1">
+                  <span className="text-gray-500">Công tác:</span> {selectedDM.cong_tac}
+                </p>
+              )}
               {selectedDM.nhiem_vu && (
                 <p className="text-xs text-gray-700 whitespace-pre-line mt-1">
                   <span className="text-gray-500">Nhiệm vụ:</span> {selectedDM.nhiem_vu}

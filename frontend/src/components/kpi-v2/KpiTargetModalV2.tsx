@@ -163,11 +163,11 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const payload = {
+      // BE schema KeKhaiV2Update có extra="forbid" và không nhận thang/nam
+      // (kê khai đã tạo thì tháng/năm immutable) → chỉ gửi thang/nam khi create.
+      const commonPayload = {
         danh_muc_sp_id: data.danh_muc_sp_id,
         so_luong: data.so_luong,
-        thang: data.thang,
-        nam: data.nam,
         ngay_thuc_hien: data.ngay_thuc_hien || undefined,
         mo_ta_cong_viec: data.mo_ta_cong_viec || undefined,
         is_doi_moi_sang_tao: data.is_doi_moi_sang_tao,
@@ -182,8 +182,12 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
       };
 
       const saved = isEdit && editing
-        ? await kpiV2Service.updateKeKhai(editing.id, payload)
-        : await kpiV2Service.createKeKhai(payload);
+        ? await kpiV2Service.updateKeKhai(editing.id, commonPayload)
+        : await kpiV2Service.createKeKhai({
+            ...commonPayload,
+            thang: data.thang,
+            nam: data.nam,
+          });
 
       if (sendApprove) {
         // Reuse endpoint V1 /ke-khai/{id}/gui-duyet (hoạt động cho V2)
@@ -254,6 +258,10 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
                 isEdit && editing?.danh_muc_sp
                   ? {
                       linh_vuc: editing.danh_muc_sp.linh_vuc,
+                      cong_tac:
+                        editing.danh_muc_sp.cong_tac === null
+                          ? '__null__'
+                          : editing.danh_muc_sp.cong_tac ?? undefined,
                       nhiem_vu: editing.danh_muc_sp.nhiem_vu ?? undefined,
                     }
                   : undefined
@@ -273,6 +281,12 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
               <p className="text-sm font-semibold text-gray-900">
                 {selectedDM.ten_cong_viec}
               </p>
+              {selectedDM.cong_tac && (
+                <p className="mt-1 text-xs text-gray-700 whitespace-pre-line">
+                  <span className="text-gray-500">Công tác:</span>{' '}
+                  {selectedDM.cong_tac}
+                </p>
+              )}
               {selectedDM.nhiem_vu && (
                 <p className="mt-1 text-xs text-gray-700 whitespace-pre-line">
                   <span className="text-gray-500">Nhiệm vụ:</span>{' '}

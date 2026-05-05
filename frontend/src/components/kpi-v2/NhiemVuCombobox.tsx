@@ -25,13 +25,20 @@ import { INhiemVu } from '@/types/kpi-v2';
 interface Props {
   /** Mã lĩnh vực (I-XV). Bắt buộc — nếu null → combobox disabled. */
   linhVuc?: string;
+  /**
+   * Mã công tác (optional). Khi có:
+   *   - chuỗi rỗng `""` → lọc nhóm "Chung" (cong_tac IS NULL)
+   *   - tên công tác   → lọc đúng tên đó
+   *   - undefined      → không filter công tác (lấy toàn bộ lĩnh vực)
+   */
+  congTac?: string;
   /** Giá trị nhiệm vụ đang chọn (exact string từ DB). */
   value?: string;
   onChange: (nhiemVu: string | undefined) => void;
   className?: string;
 }
 
-export function NhiemVuCombobox({ linhVuc, value, onChange, className }: Props) {
+export function NhiemVuCombobox({ linhVuc, congTac, value, onChange, className }: Props) {
   const [items, setItems] = useState<INhiemVu[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -39,7 +46,7 @@ export function NhiemVuCombobox({ linhVuc, value, onChange, className }: Props) 
   const wrapRef = useRef<HTMLDivElement>(null);
   const requestSeq = useRef(0);
 
-  // Load nhiệm vụ khi đổi lĩnh vực
+  // Load nhiệm vụ khi đổi lĩnh vực hoặc công tác
   useEffect(() => {
     if (!linhVuc) {
       setItems([]);
@@ -47,8 +54,11 @@ export function NhiemVuCombobox({ linhVuc, value, onChange, className }: Props) 
     }
     const seq = ++requestSeq.current;
     setLoading(true);
+    // congTac === '' → backend hiểu là "__null__" (nhóm Chung).
+    const ctParam =
+      congTac === undefined ? undefined : congTac === '' ? '__null__' : congTac;
     kpiV2Service
-      .getNhiemVu(linhVuc)
+      .getNhiemVu(linhVuc, ctParam)
       .then((data) => {
         if (seq !== requestSeq.current) return;
         setItems(data);
@@ -61,7 +71,7 @@ export function NhiemVuCombobox({ linhVuc, value, onChange, className }: Props) 
         if (seq !== requestSeq.current) return;
         setLoading(false);
       });
-  }, [linhVuc]);
+  }, [linhVuc, congTac]);
 
   // Đóng dropdown khi click ngoài
   useEffect(() => {

@@ -22,6 +22,7 @@ import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
 import { kpiLanhDaoV2Service } from '@/services/kpiLanhDaoV2.service';
 import { IKpiLanhDaoV2 } from '@/types/kpiLanhDaoV2';
 import LeaderCongViecTable from '@/components/danh-gia-v2/LeaderCongViecTable';
+import LichSuDieuChinhModal from '@/components/danh-gia-v2/LichSuDieuChinhModal';
 import { isApiError } from '@/lib/axios';
 import { IThongKeKeKhaiThangV2, IKeKhaiV2Response } from '@/types/kpi-v2';
 import {
@@ -320,6 +321,8 @@ export default function DanhGiaV2Page() {
 
   const [tab, setTab] = useState<KPITab>('chinh_thuc');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  // Modal lịch sử điều chỉnh CV (Yêu cầu 2)
+  const [lichSuKkId, setLichSuKkId] = useState<string | null>(null);
 
   // Force LĐ V2 về tab "Chính thức" (V2 service chưa hỗ trợ tạm tính scope mở rộng)
 
@@ -901,7 +904,7 @@ export default function DanhGiaV2Page() {
                     Chi tiết các bản kê khai ({list.length})
                   </h2>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Bấm vào dòng có badge lỗi để xem mô tả chi tiết.
+                    Bấm vào dòng có badge lỗi để xem mô tả. Bấm <b>Lịch sử</b> để xem các lần lãnh đạo điều chỉnh CV (nếu có).
                   </p>
                 </div>
                 <div className="overflow-x-auto">
@@ -917,6 +920,7 @@ export default function DanhGiaV2Page() {
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP TĐ</th>
                         <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Lỗi</th>
                         <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
+                        <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Lịch sử</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
@@ -1017,10 +1021,19 @@ export default function DanhGiaV2Page() {
                                   {TRANG_THAI_LABEL[kk.trang_thai] ?? kk.trang_thai}
                                 </span>
                               </td>
+                              <td className="px-4 py-2 text-center">
+                                <button
+                                  onClick={() => setLichSuKkId(kk.id)}
+                                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                                  title="Xem lịch sử lãnh đạo điều chỉnh CV này"
+                                >
+                                  Xem
+                                </button>
+                              </td>
                             </tr>
                             {isExpanded && hasErr && (
                               <tr key={`${kk.id}-detail`} className="bg-gray-50">
-                                <td colSpan={9} className="px-6 py-3">
+                                <td colSpan={10} className="px-6 py-3">
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                                     {(tdgCl > 0 || tdgTd > 0) && (
                                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
@@ -1156,6 +1169,13 @@ export default function DanhGiaV2Page() {
           </div>
         )}
       </main>
+
+      {/* Modal lịch sử điều chỉnh CV */}
+      <LichSuDieuChinhModal
+        open={lichSuKkId !== null}
+        keKhaiId={lichSuKkId}
+        onClose={() => setLichSuKkId(null)}
+      />
     </div>
   );
 }

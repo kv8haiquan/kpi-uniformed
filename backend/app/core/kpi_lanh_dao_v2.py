@@ -256,6 +256,128 @@ async def _get_dde(
 # MAIN — TÍNH KPI V2 CHO 1 LĐ
 # =============================================================================
 
+async def list_cong_viec_lanh_dao_v2(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+    *,
+    tam_tinh: bool = False,
+    loai: str = "all",
+) -> list[dict]:
+    """
+    List chi tiết CV trong scope KPI của 1 LĐ — phục vụ trang xem chi tiết.
+
+    Args:
+        loai: "tu_lam" (chỉ CV LĐ tự kê) | "cap_duoi" (chỉ CV của người khác)
+              | "all" (tất cả).
+
+    Returns: list dict gồm thông tin CV + người kê + danh mục SP + SP quy đổi.
+    """
+    from sqlalchemy.orm import selectinload as _sel
+
+    # Load LĐ
+    user = (
+        await db.execute(
+            select(CongChuc)
+            .options(_sel(CongChuc.vai_tro))
+            .where(CongChuc.id == cong_chuc_id, CongChuc.is_deleted == False)  # noqa: E712
+        )
+    ).scalar_one_or_none()
+    if not user or not user.vai_tro:
+        raise ValueError(f"Không tìm thấy lãnh đạo {cong_chuc_id}")
+
+    cap_bac = user.vai_tro.cap_bac
+
+    # Resolve scope (giống calc_kpi_lanh_dao_v2 nhưng query chi tiết hơn)
+    from app.models.task_catalog import DanhMucSpCongViec
+
+    base_q = (
+        select(KeKhaiCongViec, CongChuc, DanhMucSpCongViec)
+        .join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id)
+        .join(
+            DanhMucSpCongViec,
+            DanhMucSpCongViec.id == KeKhaiCongViec.danh_muc_sp_id,
+            isouter=True,
+        )
+        .where(
+            KeKhaiCongViec.thang == thang,
+            KeKhaiCongViec.nam == nam,
+            KeKhaiCongViec.is_deleted == False,  # noqa: E712
+            KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
+        )
+    )
+
+    if cap_bac == CapBacVaiTro.PHO_DON_VI:
+        base_q = base_q.where(
+            or_(
+                KeKhaiCongViec.cong_chuc_id == user.id,
+                KeKhaiCongViec.nguoi_phe_duyet_id == user.id,
+            )
+        )
+    elif cap_bac == CapBacVaiTro.TRUONG_DON_VI:
+        base_q = base_q.where(CongChuc.don_vi_id == user.don_vi_id)
+    elif cap_bac in (CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG):
+        ngay_chot = _ngay_chot_cua_thang(thang, nam)
+        don_vi_ids = await get_don_vi_phu_trach(db, user.id, ngay_chot)
+        if not don_vi_ids:
+            return []
+        base_q = base_q.where(CongChuc.don_vi_id.in_(don_vi_ids))
+    else:
+        raise ValueError(f"Cấp bậc {cap_bac} không hỗ trợ V2")
+
+    # Filter "loai"
+    if loai == "tu_lam":
+        base_q = base_q.where(KeKhaiCongViec.cong_chuc_id == user.id)
+    elif loai == "cap_duoi":
+        base_q = base_q.where(KeKhaiCongViec.cong_chuc_id != user.id)
+
+    base_q = base_q.order_by(KeKhaiCongViec.ngay_thuc_hien.desc(), CongChuc.ho_ten)
+
+    rows = (await db.execute(base_q)).all()
+
+    out = []
+    for kk, cc, dm in rows:
+        # Tính sp_cl/sp_td theo trạng thái (giống _resolve_sp_cl_td)
+        sp_obj = _SP(
+            cong_chuc_id=cc.id,
+            don_vi_id=cc.don_vi_id,
+            trang_thai=kk.trang_thai,
+            so_luong=kk.so_luong or 1,
+            so_sp_goc=_to_float(kk.so_sp_goc_quy_doi),
+            so_sp_chat_luong_chot=_to_float(kk.so_sp_chat_luong),
+            so_sp_tien_do_chot=_to_float(kk.so_sp_tien_do),
+            tu_dg_cl=kk.tu_danh_gia_chat_luong or 0,
+            tu_dg_td=kk.tu_danh_gia_tien_do or 0,
+        )
+        sp_cl, sp_td = _resolve_sp_cl_td(sp_obj)
+        is_self = cc.id == user.id
+        out.append({
+            "ke_khai_id": str(kk.id),
+            "loai": "TU_LAM" if is_self else "CAP_DUOI",
+            "cong_chuc_id": str(cc.id),
+            "ma_cc": cc.ma_cc,
+            "ho_ten": cc.ho_ten,
+            "chuc_vu": cc.chuc_vu,
+            "danh_muc_sp_id": str(dm.id) if dm else None,
+            "ma_danh_muc": dm.ma_danh_muc if dm else None,
+            "ten_cong_viec": dm.ten_cong_viec if dm else None,
+            "linh_vuc": dm.linh_vuc if dm else None,
+            "nhom_pl3": dm.nhom_pl3 if dm else None,
+            "ngay_thuc_hien": kk.ngay_thuc_hien.isoformat() if kk.ngay_thuc_hien else None,
+            "so_luong": kk.so_luong,
+            "so_sp_goc_quy_doi": _to_float(kk.so_sp_goc_quy_doi),
+            "sp_chat_luong": sp_cl,
+            "sp_tien_do": sp_td,
+            "so_loi_chat_luong": kk.so_loi_chat_luong or 0,
+            "so_loi_tien_do": kk.so_loi_tien_do or 0,
+            "tu_danh_gia_chat_luong": kk.tu_danh_gia_chat_luong or 0,
+            "tu_danh_gia_tien_do": kk.tu_danh_gia_tien_do or 0,
+            "trang_thai": kk.trang_thai.value if hasattr(kk.trang_thai, "value") else str(kk.trang_thai),
+        })
+    return out
+
+
 async def calc_kpi_lanh_dao_v2(
     db: AsyncSession,
     cong_chuc_id: UUID,

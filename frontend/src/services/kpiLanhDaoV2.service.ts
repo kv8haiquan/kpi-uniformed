@@ -5,7 +5,7 @@
  */
 
 import apiClient from '@/lib/axios';
-import { IKpiLanhDaoV2, IKpiLanhDaoV2FeatureFlag } from '@/types/kpiLanhDaoV2';
+import { ICongViecLanhDaoV2, IKpiLanhDaoV2, IKpiLanhDaoV2FeatureFlag } from '@/types/kpiLanhDaoV2';
 
 interface IBackendResponse<T> {
   success: boolean;
@@ -37,6 +37,20 @@ export const kpiLanhDaoV2Service = {
     const r = await apiClient.get<IBackendResponse<IKpiLanhDaoV2>>(`${BASE}/${congChucId}`, {
       params: { thang, nam, tam_tinh: tamTinh },
     });
+    return r.data.data;
+  },
+
+  // Yêu cầu 1 (06/05/2026): list CV trong scope KPI LĐ
+  async getMyCongViec(
+    thang: number,
+    nam: number,
+    tamTinh = false,
+    loai: 'all' | 'tu_lam' | 'cap_duoi' = 'all',
+  ): Promise<ICongViecLanhDaoV2[]> {
+    const r = await apiClient.get<IBackendResponse<ICongViecLanhDaoV2[]>>(
+      `${BASE}/me/cong-viec`,
+      { params: { thang, nam, tam_tinh: tamTinh, loai } },
+    );
     return r.data.data;
   },
 };

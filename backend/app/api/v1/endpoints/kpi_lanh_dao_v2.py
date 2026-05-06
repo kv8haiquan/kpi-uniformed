@@ -25,6 +25,7 @@ from app.core.kpi_lanh_dao_v2 import (
     KPI_LANH_DAO_V2_FROM_THANG,
     calc_kpi_lanh_dao_v2,
     is_kpi_lanh_dao_v2_active,
+    list_cong_viec_lanh_dao_v2,
 )
 from app.models.user_org import CapBacVaiTro, CongChuc
 from app.schemas.common import success_response
@@ -132,6 +133,33 @@ async def get_kpi_v2_cua_toi(
 # =============================================================================
 # GET KPI CỦA NGƯỜI KHÁC (CCT + ADMIN)
 # =============================================================================
+
+@router.get(
+    "/me/cong-viec",
+    summary="List chi tiết CV trong scope KPI của LĐ (yêu cầu 1 - 06/05/2026)",
+)
+async def get_cong_viec_v2_cua_toi(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int = Query(..., ge=1, le=12),
+    nam: int = Query(..., ge=2025, le=2099),
+    tam_tinh: bool = Query(default=False),
+    loai: str = Query(default="all", pattern="^(all|tu_lam|cap_duoi)$"),
+):
+    _check_thang_nam(thang, nam)
+    if not current_user.vai_tro or current_user.vai_tro.cap_bac not in LANH_DAO_CAP_BAC:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {"code": "KPI_V2_NOT_LD", "message": "Chỉ lãnh đạo có chức năng này"},
+            },
+        )
+    data = await list_cong_viec_lanh_dao_v2(
+        db, current_user.id, thang, nam, tam_tinh=tam_tinh, loai=loai
+    )
+    return success_response(data=data)
+
 
 @router.get(
     "/{cong_chuc_id}",

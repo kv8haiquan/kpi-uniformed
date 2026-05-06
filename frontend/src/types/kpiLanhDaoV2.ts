@@ -47,3 +47,28 @@ export interface IKpiLanhDaoV2FeatureFlag {
   tu_nam: number;
   mo_ta: string;
 }
+
+// Yêu cầu 1 (06/05/2026): list chi tiết CV trong scope KPI LĐ
+export interface ICongViecLanhDaoV2 {
+  ke_khai_id: string;
+  loai: 'TU_LAM' | 'CAP_DUOI';
+  cong_chuc_id: string;
+  ma_cc: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+  danh_muc_sp_id: string | null;
+  ma_danh_muc: string | null;
+  ten_cong_viec: string | null;
+  linh_vuc: string | null;
+  nhom_pl3: number | null;
+  ngay_thuc_hien: string | null;
+  so_luong: number;
+  so_sp_goc_quy_doi: number;
+  sp_chat_luong: number;
+  sp_tien_do: number;
+  so_loi_chat_luong: number;
+  so_loi_tien_do: number;
+  tu_danh_gia_chat_luong: number;
+  tu_danh_gia_tien_do: number;
+  trang_thai: string;
+}

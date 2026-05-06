@@ -21,6 +21,7 @@ import { kpiV2Service } from '@/services/kpi-v2.service';
 import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
 import { kpiLanhDaoV2Service } from '@/services/kpiLanhDaoV2.service';
 import { IKpiLanhDaoV2 } from '@/types/kpiLanhDaoV2';
+import LeaderCongViecTable from '@/components/danh-gia-v2/LeaderCongViecTable';
 import { isApiError } from '@/lib/axios';
 import { IThongKeKeKhaiThangV2, IKeKhaiV2Response } from '@/types/kpi-v2';
 import {
@@ -883,7 +884,16 @@ export default function DanhGiaV2Page() {
               </div>
             </div>
 
-            {/* BLOCK CHI TIẾT KÊ KHAI V2 (collapsible chi tiết lỗi) */}
+            {/* BLOCK CHI TIẾT CV TRONG SCOPE LĐ (Yêu cầu 1, 06/05/2026) — chỉ LĐ thật V2 */}
+            {useLeaderV2 && (
+              <LeaderCongViecTable
+                thang={selectedThang}
+                nam={selectedNam}
+                tamTinh={tab === 'tam_tinh'}
+              />
+            )}
+
+            {/* BLOCK CHI TIẾT KÊ KHAI V2 (collapsible chi tiết lỗi) — CC V2 */}
             {list.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200">

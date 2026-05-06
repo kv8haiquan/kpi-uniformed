@@ -114,7 +114,11 @@ Monthly cycle: Staff **declares** work (ke_khai) → Unit leader **reviews/appro
 
 ## Database
 
-- Docker PostgreSQL exposed on port **5433** (not default 5432)
+> ⚠️ **CẢNH BÁO QUAN TRỌNG**: DB tại `localhost:5432` (theo `backend/.env`) **CHÍNH LÀ PRODUCTION** đang được công chức kê khai live. KHÔNG bao giờ chạy E2E test, smoke test có write/update trên DB này mà không có user xác nhận. Mọi test data phải cleanup. Cấm chạy `INSERT/UPDATE/DELETE` không transactional rollback.
+>
+> Địa chỉ `27.71.229.103` ở phần `QUY TẮC TUYỆT ĐỐI` bên dưới CHỈ là cảnh báo cho tương lai khi deploy lên server riêng — hiện tại chưa dùng.
+
+- PostgreSQL exposed on port **5432** (`backend/.env`: `DB_HOST=localhost`, `DB_PORT=5432`)
 - Migrations in `backend/alembic/versions/` - auto-run on app startup
 - Default credentials after seed: username = staff code (e.g., `20ZZ-0224`), password = `123456`
 - Environment config via `backend/.env` (copy from `.env.example`)

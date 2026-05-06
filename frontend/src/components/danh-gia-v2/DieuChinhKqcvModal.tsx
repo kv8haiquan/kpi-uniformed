@@ -26,7 +26,7 @@ function getApiErrorMessage(err: unknown, fallback: string): string {
 export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Props) {
   const [loiCl, setLoiCl] = useState(0);
   const [loiTd, setLoiTd] = useState(0);
-  const [loaiTru, setLoaiTru] = useState(false);
+  const [chuaHt, setChuaHt] = useState(false);
   const [lyDo, setLyDo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,24 +36,16 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
     // (chỉ sync khi mở modal — dùng local state init từ cv)
   }
 
-  const reset = () => {
-    setLoiCl(cv?.so_loi_chat_luong ?? 0);
-    setLoiTd(cv?.so_loi_tien_do ?? 0);
-    setLoaiTru(false);  // mặc định không loại trừ
-    setLyDo('');
-    setError(null);
-  };
-
   // Reset state khi mở modal mới
-  const wasOpen = (DieuChinhKqcvModal as any)._wasOpen ?? false;
+  const wasOpen = (DieuChinhKqcvModal as unknown as { _wasOpen?: boolean })._wasOpen ?? false;
   if (open && !wasOpen && cv) {
     setLoiCl(cv.so_loi_chat_luong);
     setLoiTd(cv.so_loi_tien_do);
-    setLoaiTru(false);
+    setChuaHt(cv.is_chua_hoan_thanh ?? false);
     setLyDo('');
     setError(null);
   }
-  (DieuChinhKqcvModal as any)._wasOpen = open;
+  (DieuChinhKqcvModal as unknown as { _wasOpen?: boolean })._wasOpen = open;
 
   if (!open || !cv) return null;
 
@@ -70,7 +62,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
         gia_tri_moi: {
           so_loi_chat_luong: loiCl,
           so_loi_tien_do: loiTd,
-          is_loai_tru_kpi: loaiTru,
+          is_chua_hoan_thanh: chuaHt,
         },
         ly_do: lyDo.trim(),
       });
@@ -89,7 +81,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
   const isChanged =
     loiCl !== cv.so_loi_chat_luong ||
     loiTd !== cv.so_loi_tien_do ||
-    loaiTru !== false;
+    chuaHt !== (cv.is_chua_hoan_thanh ?? false);
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -124,7 +116,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
                 value={loiCl}
                 onChange={(e) => setLoiCl(Math.max(0, parseInt(e.target.value || '0', 10)))}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                disabled={loaiTru}
+                disabled={chuaHt}
               />
               <p className="text-[11px] text-gray-500 mt-0.5">CC tự đánh giá: {cv.tu_danh_gia_chat_luong} · Hiện tại: {cv.so_loi_chat_luong}</p>
             </div>
@@ -138,25 +130,25 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
                 value={loiTd}
                 onChange={(e) => setLoiTd(Math.max(0, parseInt(e.target.value || '0', 10)))}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                disabled={loaiTru}
+                disabled={chuaHt}
               />
               <p className="text-[11px] text-gray-500 mt-0.5">CC tự đánh giá: {cv.tu_danh_gia_tien_do} · Hiện tại: {cv.so_loi_tien_do}</p>
             </div>
           </div>
 
-          {/* Cờ loại trừ */}
+          {/* Cờ chưa hoàn thành */}
           <label className="flex items-start gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50 cursor-pointer">
             <input
               type="checkbox"
-              checked={loaiTru}
-              onChange={(e) => setLoaiTru(e.target.checked)}
+              checked={chuaHt}
+              onChange={(e) => setChuaHt(e.target.checked)}
               className="mt-0.5 w-4 h-4"
             />
             <div className="flex-1">
-              <div className="text-sm font-medium text-amber-900">Loại CV này khỏi KPI</div>
+              <div className="text-sm font-medium text-amber-900">Đánh dấu CV CHƯA HOÀN THÀNH</div>
               <p className="text-xs text-amber-700 mt-0.5">
-                Khi tích, CV này sẽ KHÔNG được tính vào mẫu số/tử số KPI (cả của CC lẫn của bạn).
-                Dùng khi CV không phù hợp / kê khai sai loại.
+                Khi tích, CV này VẪN tính vào mẫu số (tổng SP kê khai), nhưng đóng <b>0</b> vào
+                tử số <b>a / b / c</b> → cả 3 chỉ số đều giảm. Dùng khi CC kê nhưng thực tế chưa làm xong.
               </p>
             </div>
           </label>

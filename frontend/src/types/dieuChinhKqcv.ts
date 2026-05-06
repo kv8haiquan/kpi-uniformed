@@ -7,7 +7,7 @@
 export interface IGiaTriKQCV {
   so_loi_chat_luong: number;
   so_loi_tien_do: number;
-  is_loai_tru_kpi: boolean;
+  is_chua_hoan_thanh: boolean;
 }
 
 export interface ICongChucBriefDC {

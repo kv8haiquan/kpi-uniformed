@@ -71,4 +71,5 @@ export interface ICongViecLanhDaoV2 {
   tu_danh_gia_chat_luong: number;
   tu_danh_gia_tien_do: number;
   trang_thai: string;
+  is_chua_hoan_thanh: boolean;
 }

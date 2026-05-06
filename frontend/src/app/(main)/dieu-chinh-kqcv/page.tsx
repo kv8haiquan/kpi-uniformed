@@ -210,8 +210,8 @@ export default function DieuChinhKqcvPage() {
               if (old.so_loi_tien_do !== neu.so_loi_tien_do) {
                 change.push(`TĐ: ${old.so_loi_tien_do} → ${neu.so_loi_tien_do}`);
               }
-              if (old.is_loai_tru_kpi !== neu.is_loai_tru_kpi) {
-                change.push(neu.is_loai_tru_kpi ? '⛔ Loại khỏi KPI' : '✓ Đưa lại vào KPI');
+              if (old.is_chua_hoan_thanh !== neu.is_chua_hoan_thanh) {
+                change.push(neu.is_chua_hoan_thanh ? '⏳ Đánh dấu CHƯA HOÀN THÀNH' : '✓ Đã hoàn thành');
               }
               return (
                 <tr key={dc.id} className="border-t border-gray-100 hover:bg-gray-50">

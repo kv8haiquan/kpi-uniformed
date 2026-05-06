@@ -102,11 +102,11 @@ export default function LichSuDieuChinhModal({ open, keKhaiId, onClose }: Props)
                     to: String(neu.so_loi_tien_do),
                   });
                 }
-                if (old.is_loai_tru_kpi !== neu.is_loai_tru_kpi) {
+                if (old.is_chua_hoan_thanh !== neu.is_chua_hoan_thanh) {
                   change.push({
-                    label: 'Cờ loại trừ KPI',
-                    from: old.is_loai_tru_kpi ? 'CÓ' : 'KHÔNG',
-                    to: neu.is_loai_tru_kpi ? 'CÓ' : 'KHÔNG',
+                    label: 'Đánh dấu chưa hoàn thành',
+                    from: old.is_chua_hoan_thanh ? 'CÓ' : 'KHÔNG',
+                    to: neu.is_chua_hoan_thanh ? 'CÓ' : 'KHÔNG',
                   });
                 }
 

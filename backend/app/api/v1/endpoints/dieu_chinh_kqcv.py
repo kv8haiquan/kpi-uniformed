@@ -177,7 +177,7 @@ def _snapshot_kk(kk: KeKhaiCongViec) -> dict:
     return {
         "so_loi_chat_luong": int(kk.so_loi_chat_luong or 0),
         "so_loi_tien_do": int(kk.so_loi_tien_do or 0),
-        "is_loai_tru_kpi": bool(kk.is_loai_tru_kpi),
+        "is_chua_hoan_thanh": bool(kk.is_chua_hoan_thanh),
     }
 
 
@@ -220,7 +220,7 @@ async def _apply_to_kekhai(db: AsyncSession, dc: DieuChinhKqcv) -> None:
     new = dc.gia_tri_moi
     kk.so_loi_chat_luong = int(new.get("so_loi_chat_luong", 0))
     kk.so_loi_tien_do = int(new.get("so_loi_tien_do", 0))
-    kk.is_loai_tru_kpi = bool(new.get("is_loai_tru_kpi", False))
+    kk.is_chua_hoan_thanh = bool(new.get("is_chua_hoan_thanh", False))
 
     # Recompute SP CL/TĐ (V2)
     if kk.so_sp_goc_quy_doi and kk.so_luong:

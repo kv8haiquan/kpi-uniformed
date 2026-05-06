@@ -75,6 +75,7 @@ class _SP:
     so_sp_tien_do_chot: float
     tu_dg_cl: int                    # tu_danh_gia_chat_luong (cho NHAP/CHO)
     tu_dg_td: int
+    is_chua_hoan_thanh: bool         # LĐ đánh dấu chưa HT → đóng 0 vào tử số a/b/c
 
 
 def _to_float(v) -> float:
@@ -157,6 +158,7 @@ _BASE_SELECT = (
         KeKhaiCongViec.so_sp_tien_do,
         KeKhaiCongViec.tu_danh_gia_chat_luong,
         KeKhaiCongViec.tu_danh_gia_tien_do,
+        KeKhaiCongViec.is_chua_hoan_thanh,
     )
     .join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id)
 )
@@ -173,6 +175,7 @@ def _row_to_sp(r) -> _SP:
         so_sp_tien_do_chot=_to_float(r[6]),
         tu_dg_cl=r[7] or 0,
         tu_dg_td=r[8] or 0,
+        is_chua_hoan_thanh=bool(r[9]),
     )
 
 
@@ -202,7 +205,6 @@ async def _sp_pdv_scope(
         KeKhaiCongViec.thang == thang,
         KeKhaiCongViec.nam == nam,
         KeKhaiCongViec.is_deleted == False,  # noqa: E712
-        KeKhaiCongViec.is_loai_tru_kpi == False,  # noqa: E712
         KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
         or_(
             KeKhaiCongViec.cong_chuc_id == user_id,
@@ -228,7 +230,6 @@ async def _sp_trong_don_vi(
         KeKhaiCongViec.thang == thang,
         KeKhaiCongViec.nam == nam,
         KeKhaiCongViec.is_deleted == False,  # noqa: E712
-        KeKhaiCongViec.is_loai_tru_kpi == False,  # noqa: E712
         KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
         CongChuc.don_vi_id.in_(list(don_vi_ids)),
     )
@@ -353,6 +354,7 @@ async def list_cong_viec_lanh_dao_v2(
             so_sp_tien_do_chot=_to_float(kk.so_sp_tien_do),
             tu_dg_cl=kk.tu_danh_gia_chat_luong or 0,
             tu_dg_td=kk.tu_danh_gia_tien_do or 0,
+            is_chua_hoan_thanh=bool(kk.is_chua_hoan_thanh),
         )
         sp_cl, sp_td = _resolve_sp_cl_td(sp_obj)
         is_self = cc.id == user.id
@@ -378,6 +380,7 @@ async def list_cong_viec_lanh_dao_v2(
             "tu_danh_gia_chat_luong": kk.tu_danh_gia_chat_luong or 0,
             "tu_danh_gia_tien_do": kk.tu_danh_gia_tien_do or 0,
             "trang_thai": kk.trang_thai.value if hasattr(kk.trang_thai, "value") else str(kk.trang_thai),
+            "is_chua_hoan_thanh": bool(kk.is_chua_hoan_thanh),
         })
     return out
 
@@ -443,18 +446,23 @@ async def calc_kpi_lanh_dao_v2(
     # Tách SP CHÍNH LĐ TỰ KÊ (cong_chuc_id == user.id) vs SP TỔNG
     scope_self = [sp for sp in scope_total if sp.cong_chuc_id == user.id]
 
-    # Tính tổng SP (TỔNG) — dùng _resolve_sp_cl_td để tự xử lý NHAP/CHO/DA
+    # Tính tổng SP (TỔNG)
+    # Mẫu số: TẤT CẢ SP gốc (kể cả CV chưa HT)
+    # Tử số a/b/c: CV is_chua_hoan_thanh = true → đóng 0 (giảm cả 3 chỉ số)
     tong_sp_ke_khai = sum(sp.so_sp_goc for sp in scope_total)
-    tong_sp_hoan_thanh = tong_sp_ke_khai  # bản trong allowed = đã / sắp hoàn thành
+    sp_hoan_thanh = 0.0
     sp_chat_luong = 0.0
     sp_tien_do = 0.0
     for sp in scope_total:
+        if sp.is_chua_hoan_thanh:
+            continue  # CV chưa HT → tử số += 0
         cl, td = _resolve_sp_cl_td(sp)
+        sp_hoan_thanh += sp.so_sp_goc
         sp_chat_luong += cl
         sp_tien_do += td
 
     if tong_sp_ke_khai > 0:
-        a = min(1.0, tong_sp_hoan_thanh / tong_sp_ke_khai)
+        a = min(1.0, sp_hoan_thanh / tong_sp_ke_khai)
         b = min(1.0, sp_tien_do / tong_sp_ke_khai)
         c = min(1.0, sp_chat_luong / tong_sp_ke_khai)
     else:
@@ -462,19 +470,26 @@ async def calc_kpi_lanh_dao_v2(
 
     # Tính tổng SP (TỰ KÊ — riêng LĐ)
     tong_sp_self = sum(sp.so_sp_goc for sp in scope_self)
+    sp_ht_self = 0.0
     sp_cl_self = 0.0
     sp_td_self = 0.0
     for sp in scope_self:
+        if sp.is_chua_hoan_thanh:
+            continue
         cl, td = _resolve_sp_cl_td(sp)
+        sp_ht_self += sp.so_sp_goc
         sp_cl_self += cl
         sp_td_self += td
 
     if tong_sp_self > 0:
-        a_self = 1.0  # bản trong allowed = hoàn thành
+        a_self = min(1.0, sp_ht_self / tong_sp_self)
         b_self = min(1.0, sp_td_self / tong_sp_self)
         c_self = min(1.0, sp_cl_self / tong_sp_self)
     else:
         a_self = b_self = c_self = 0.0
+
+    # tong_sp_hoan_thanh dùng cho response field
+    tong_sp_hoan_thanh = sp_hoan_thanh
 
     # d, đ, e
     d, dd, e = await _get_dde(db, cong_chuc_id, thang, nam)

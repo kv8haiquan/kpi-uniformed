@@ -15,7 +15,7 @@ class GiaTriKQCV(BaseModel):
     """3 trường LĐ có thể sửa."""
     so_loi_chat_luong: int = Field(default=0, ge=0)
     so_loi_tien_do: int = Field(default=0, ge=0)
-    is_loai_tru_kpi: bool = Field(default=False)
+    is_chua_hoan_thanh: bool = Field(default=False, description="Đánh dấu CV chưa hoàn thành (a/b/c đều giảm)")
 
 
 class DieuChinhCreateRequest(BaseModel):
@@ -60,7 +60,7 @@ class KeKhaiBrief(BaseModel):
     so_luong: int
     so_loi_chat_luong: int
     so_loi_tien_do: int
-    is_loai_tru_kpi: bool
+    is_chua_hoan_thanh: bool
 
 
 class DieuChinhResponse(BaseModel):

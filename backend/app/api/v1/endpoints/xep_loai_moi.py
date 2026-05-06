@@ -82,13 +82,13 @@ async def tinh_diem_kpi_70_v2(
             KeKhaiCongViec.tu_danh_gia_chat_luong,
             KeKhaiCongViec.tu_danh_gia_tien_do,
             KeKhaiCongViec.he_so_quy_doi_snapshot,
+            KeKhaiCongViec.is_chua_hoan_thanh,
         )
         .where(KeKhaiCongViec.cong_chuc_id == cong_chuc_id)
         .where(KeKhaiCongViec.thang == thang)
         .where(KeKhaiCongViec.nam == nam)
         .where(KeKhaiCongViec.version_kekhai == "V2_PL3")
         .where(KeKhaiCongViec.is_deleted == False)  # noqa: E712
-        .where(KeKhaiCongViec.is_loai_tru_kpi == False)  # noqa: E712 — loại CV bị LĐ điều chỉnh loại
         .where(KeKhaiCongViec.trang_thai.in_(allowed))
     )
     rows = (await db.execute(stmt)).all()
@@ -98,13 +98,18 @@ async def tinh_diem_kpi_70_v2(
     sp_cl = Decimal("0")
     sp_td = Decimal("0")
 
-    for trang_thai, so_luong, sp_goc, sp_cl_row, sp_td_row, tu_dg_cl, tu_dg_td, he_so in rows:
+    for trang_thai, so_luong, sp_goc, sp_cl_row, sp_td_row, tu_dg_cl, tu_dg_td, he_so, is_chua_ht in rows:
         sp_goc_d = Decimal(str(sp_goc or 0))
         so_luong_v = so_luong or 1
 
-        # Mẫu số = mọi bản trong allowed status
+        # Mẫu số = mọi bản trong allowed status (KỂ CẢ CV chưa HT)
         tong_sp_ke_khai += sp_goc_d
-        tong_hoan_thanh += sp_goc_d  # CC: mọi bản đã duyệt = đã hoàn thành
+
+        # Yêu cầu 2: CV bị LĐ đánh dấu chưa HT → đóng 0 vào tử số a/b/c
+        if is_chua_ht:
+            continue
+
+        tong_hoan_thanh += sp_goc_d
 
         if trang_thai == TrangThaiKeKhai.DA_PHE_DUYET:
             sp_cl += Decimal(str(sp_cl_row or 0))

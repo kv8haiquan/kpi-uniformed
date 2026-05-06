@@ -65,7 +65,8 @@ def is_kpi_lanh_dao_v2_active(thang: int, nam: int) -> bool:
 
 @dataclass
 class _SP:
-    """Bản ghi SP đã quy đổi (từ kpi_submission V2)."""
+    """Bản ghi SP đã quy đổi (từ kpi_submission V2 + override điều chỉnh)."""
+    ke_khai_id: UUID
     cong_chuc_id: UUID
     don_vi_id: Optional[UUID]
     trang_thai: TrangThaiKeKhai
@@ -75,7 +76,8 @@ class _SP:
     so_sp_tien_do_chot: float
     tu_dg_cl: int                    # tu_danh_gia_chat_luong (cho NHAP/CHO)
     tu_dg_td: int
-    is_chua_hoan_thanh: bool         # LĐ đánh dấu chưa HT → đóng 0 vào tử số a/b/c
+    he_so_quy_doi: float             # snapshot — dùng khi recompute sau override
+    is_chua_hoan_thanh: bool         # từ dieu_chinh_kqcv override (mặc định false)
 
 
 def _to_float(v) -> float:
@@ -149,6 +151,7 @@ def _ngay_chot_cua_thang(thang: int, nam: int) -> date:
 
 _BASE_SELECT = (
     select(
+        KeKhaiCongViec.id,
         KeKhaiCongViec.cong_chuc_id,
         CongChuc.don_vi_id,
         KeKhaiCongViec.trang_thai,
@@ -158,7 +161,7 @@ _BASE_SELECT = (
         KeKhaiCongViec.so_sp_tien_do,
         KeKhaiCongViec.tu_danh_gia_chat_luong,
         KeKhaiCongViec.tu_danh_gia_tien_do,
-        KeKhaiCongViec.is_chua_hoan_thanh,
+        KeKhaiCongViec.he_so_quy_doi_snapshot,
     )
     .join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id)
 )
@@ -166,17 +169,86 @@ _BASE_SELECT = (
 
 def _row_to_sp(r) -> _SP:
     return _SP(
-        cong_chuc_id=r[0],
-        don_vi_id=r[1],
-        trang_thai=r[2],
-        so_luong=r[3] or 1,
-        so_sp_goc=_to_float(r[4]),
-        so_sp_chat_luong_chot=_to_float(r[5]),
-        so_sp_tien_do_chot=_to_float(r[6]),
-        tu_dg_cl=r[7] or 0,
-        tu_dg_td=r[8] or 0,
-        is_chua_hoan_thanh=bool(r[9]),
+        ke_khai_id=r[0],
+        cong_chuc_id=r[1],
+        don_vi_id=r[2],
+        trang_thai=r[3],
+        so_luong=r[4] or 1,
+        so_sp_goc=_to_float(r[5]),
+        so_sp_chat_luong_chot=_to_float(r[6]),
+        so_sp_tien_do_chot=_to_float(r[7]),
+        tu_dg_cl=r[8] or 0,
+        tu_dg_td=r[9] or 0,
+        he_so_quy_doi=_to_float(r[10]) if r[10] else 0.0,
+        is_chua_hoan_thanh=False,  # default; sẽ override từ dieu_chinh_kqcv
     )
+
+
+# =============================================================================
+# OVERRIDE TỪ dieu_chinh_kqcv (Yêu cầu 2 mới — chỉ ảnh hưởng KPI LĐ)
+# =============================================================================
+
+async def _load_dieu_chinh_overrides(
+    db: AsyncSession, ke_khai_ids: Sequence[UUID]
+) -> dict[UUID, dict]:
+    """
+    Trả map ke_khai_id → {so_loi_chat_luong, so_loi_tien_do, is_chua_hoan_thanh}
+    của bản điều chỉnh DA_PHE_DUYET MỚI NHẤT cho mỗi CV.
+
+    Dùng để override khi tính KPI LĐ. KPI CC không gọi function này → giữ
+    giá trị gốc trong kpi_submission.
+    """
+    if not ke_khai_ids:
+        return {}
+    from app.models.dieu_chinh_kqcv import DieuChinhKqcv
+    stmt = (
+        select(DieuChinhKqcv)
+        .where(
+            DieuChinhKqcv.ke_khai_id.in_(list(ke_khai_ids)),
+            DieuChinhKqcv.trang_thai == "DA_PHE_DUYET",
+            DieuChinhKqcv.is_deleted == False,  # noqa: E712
+        )
+        .order_by(DieuChinhKqcv.ke_khai_id, DieuChinhKqcv.ngay_phe_duyet.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    out: dict[UUID, dict] = {}
+    for r in rows:
+        # Lấy bản đầu tiên gặp = mới nhất (đã ORDER ngay_phe_duyet DESC)
+        if r.ke_khai_id in out:
+            continue
+        new = r.gia_tri_moi or {}
+        out[r.ke_khai_id] = {
+            "so_loi_chat_luong": int(new.get("so_loi_chat_luong", 0)),
+            "so_loi_tien_do": int(new.get("so_loi_tien_do", 0)),
+            "is_chua_hoan_thanh": bool(new.get("is_chua_hoan_thanh", False)),
+        }
+    return out
+
+
+def _apply_overrides_inplace(scope: list[_SP], overrides: dict[UUID, dict]) -> None:
+    """
+    Apply override từ dieu_chinh_kqcv vào _SP list (mutate inplace).
+    Recompute SP CL/TĐ từ so_loi_* mới + he_so_quy_doi đã snapshot.
+    """
+    if not overrides:
+        return
+    for sp in scope:
+        ov = overrides.get(sp.ke_khai_id)
+        if not ov:
+            continue
+        sp.is_chua_hoan_thanh = ov["is_chua_hoan_thanh"]
+        # Recompute sp_cl/sp_td theo so_loi mới (chỉ áp khi CV đã DA_PHE_DUYET)
+        if sp.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET and sp.he_so_quy_doi > 0:
+            so_luong_v = sp.so_luong or 1
+            sp_per_unit = sp.so_sp_goc / so_luong_v if so_luong_v > 0 else 0
+            max_loi = so_luong_v * 4
+            loi_cl = min(ov["so_loi_chat_luong"], max_loi)
+            loi_td = min(ov["so_loi_tien_do"], max_loi)
+            sp.so_sp_chat_luong_chot = max(sp.so_sp_goc - 0.25 * loi_cl * sp_per_unit, 0.0)
+            sp.so_sp_tien_do_chot = max(sp.so_sp_goc - 0.25 * loi_td * sp_per_unit, 0.0)
+            # Cập nhật tu_dg để consistent (cho UI hiển thị nếu cần)
+            sp.tu_dg_cl = loi_cl
+            sp.tu_dg_td = loi_td
 
 
 def _allowed_states(tam_tinh: bool) -> list[TrangThaiKeKhai]:
@@ -198,8 +270,7 @@ async def _sp_pdv_scope(
 ) -> list[_SP]:
     """
     PDV: SP do user_id tự kê + SP do user_id trực tiếp duyệt.
-    PDV không tự duyệt mình (chọn TDV khi kê) → OR không trùng.
-    Loại trừ CV có is_loai_tru_kpi = true (LĐ đã đánh dấu loại).
+    Apply override từ dieu_chinh_kqcv (chỉ ảnh hưởng KPI LĐ).
     """
     stmt = _BASE_SELECT.where(
         KeKhaiCongViec.thang == thang,
@@ -212,7 +283,10 @@ async def _sp_pdv_scope(
         ),
     )
     rows = (await db.execute(stmt)).all()
-    return [_row_to_sp(r) for r in rows]
+    scope = [_row_to_sp(r) for r in rows]
+    overrides = await _load_dieu_chinh_overrides(db, [sp.ke_khai_id for sp in scope])
+    _apply_overrides_inplace(scope, overrides)
+    return scope
 
 
 async def _sp_trong_don_vi(
@@ -223,7 +297,7 @@ async def _sp_trong_don_vi(
     tam_tinh: bool = False,
 ) -> list[_SP]:
     """Toàn bộ SP của user thuộc các đơn vị (CC + PDV/TDV tự kê).
-    Loại trừ CV có is_loai_tru_kpi = true."""
+    Apply override từ dieu_chinh_kqcv (chỉ ảnh hưởng KPI LĐ)."""
     if not don_vi_ids:
         return []
     stmt = _BASE_SELECT.where(
@@ -234,7 +308,10 @@ async def _sp_trong_don_vi(
         CongChuc.don_vi_id.in_(list(don_vi_ids)),
     )
     rows = (await db.execute(stmt)).all()
-    return [_row_to_sp(r) for r in rows]
+    scope = [_row_to_sp(r) for r in rows]
+    overrides = await _load_dieu_chinh_overrides(db, [sp.ke_khai_id for sp in scope])
+    _apply_overrides_inplace(scope, overrides)
+    return scope
 
 
 # =============================================================================
@@ -341,10 +418,20 @@ async def list_cong_viec_lanh_dao_v2(
 
     rows = (await db.execute(base_q)).all()
 
+    # Load overrides cho LĐ — lấy giá trị mới nếu CV đã có điều chỉnh DA_PHE_DUYET
+    ke_khai_ids = [kk.id for kk, _, _ in rows]
+    overrides = await _load_dieu_chinh_overrides(db, ke_khai_ids)
+
     out = []
     for kk, cc, dm in rows:
-        # Tính sp_cl/sp_td theo trạng thái (giống _resolve_sp_cl_td)
+        ov = overrides.get(kk.id)
+        # Áp dụng override (nếu có) — đây là giá trị LĐ đang dùng tính KPI
+        eff_loi_cl = ov["so_loi_chat_luong"] if ov else (kk.so_loi_chat_luong or 0)
+        eff_loi_td = ov["so_loi_tien_do"] if ov else (kk.so_loi_tien_do or 0)
+        eff_chua_ht = ov["is_chua_hoan_thanh"] if ov else False
+
         sp_obj = _SP(
+            ke_khai_id=kk.id,
             cong_chuc_id=cc.id,
             don_vi_id=cc.don_vi_id,
             trang_thai=kk.trang_thai,
@@ -354,8 +441,11 @@ async def list_cong_viec_lanh_dao_v2(
             so_sp_tien_do_chot=_to_float(kk.so_sp_tien_do),
             tu_dg_cl=kk.tu_danh_gia_chat_luong or 0,
             tu_dg_td=kk.tu_danh_gia_tien_do or 0,
-            is_chua_hoan_thanh=bool(kk.is_chua_hoan_thanh),
+            he_so_quy_doi=_to_float(kk.he_so_quy_doi_snapshot) if kk.he_so_quy_doi_snapshot else 0.0,
+            is_chua_hoan_thanh=eff_chua_ht,
         )
+        if ov:
+            _apply_overrides_inplace([sp_obj], {kk.id: ov})
         sp_cl, sp_td = _resolve_sp_cl_td(sp_obj)
         is_self = cc.id == user.id
         out.append({
@@ -375,12 +465,17 @@ async def list_cong_viec_lanh_dao_v2(
             "so_sp_goc_quy_doi": _to_float(kk.so_sp_goc_quy_doi),
             "sp_chat_luong": sp_cl,
             "sp_tien_do": sp_td,
-            "so_loi_chat_luong": kk.so_loi_chat_luong or 0,
-            "so_loi_tien_do": kk.so_loi_tien_do or 0,
+            # Giá trị HIỆU LỰC (sau override) — LĐ đang dùng tính KPI
+            "so_loi_chat_luong": eff_loi_cl,
+            "so_loi_tien_do": eff_loi_td,
             "tu_danh_gia_chat_luong": kk.tu_danh_gia_chat_luong or 0,
             "tu_danh_gia_tien_do": kk.tu_danh_gia_tien_do or 0,
             "trang_thai": kk.trang_thai.value if hasattr(kk.trang_thai, "value") else str(kk.trang_thai),
-            "is_chua_hoan_thanh": bool(kk.is_chua_hoan_thanh),
+            "is_chua_hoan_thanh": eff_chua_ht,
+            "co_dieu_chinh": ov is not None,  # NEW: badge cho UI
+            # Giá trị gốc của CC (để hiển thị "đã điều chỉnh từ X → Y")
+            "so_loi_chat_luong_goc": kk.so_loi_chat_luong or 0,
+            "so_loi_tien_do_goc": kk.so_loi_tien_do or 0,
         })
     return out
 

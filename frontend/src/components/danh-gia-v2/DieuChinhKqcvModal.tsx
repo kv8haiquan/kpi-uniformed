@@ -94,13 +94,23 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
         </div>
 
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
+          {/* Lưu ý nghiệp vụ */}
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900">
+            <p className="font-medium">ℹ️ Lưu ý:</p>
+            <p className="text-xs mt-1">
+              Điều chỉnh này CHỈ ảnh hưởng đến <b>KPI của bạn</b> (lãnh đạo).
+              KPI của công chức <b>KHÔNG bị tác động</b>. Mục đích: tránh liên đới
+              khi có lý do bất khả kháng / khách quan.
+            </p>
+          </div>
+
           {/* Thông tin CV */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
             <div className="text-xs text-gray-500 uppercase mb-1">Công việc</div>
             <div className="font-medium text-gray-900">{cv.ten_cong_viec || cv.ma_danh_muc}</div>
             <div className="text-xs text-gray-600 mt-1">
               Người kê: <b>{cv.ho_ten}</b> ({cv.ma_cc}) · Ngày: {cv.ngay_thuc_hien?.split('-').reverse().join('/')} ·
-              SL: <b>{cv.so_luong}</b> · SP gốc: <b>{cv.so_sp_goc_quy_doi.toFixed(2)}</b>
+              SL: <b>{cv.so_luong}</b> · Điểm gốc: <b>{cv.so_sp_goc_quy_doi.toFixed(2)}</b>
             </div>
           </div>
 
@@ -147,7 +157,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
             <div className="flex-1">
               <div className="text-sm font-medium text-amber-900">Đánh dấu CV CHƯA HOÀN THÀNH</div>
               <p className="text-xs text-amber-700 mt-0.5">
-                Khi tích, CV này VẪN tính vào mẫu số (tổng SP kê khai), nhưng đóng <b>0</b> vào
+                Khi tích, CV này VẪN tính vào mẫu số (tổng điểm kê khai), nhưng đóng <b>0</b> vào
                 tử số <b>a / b / c</b> → cả 3 chỉ số đều giảm. Dùng khi CC kê nhưng thực tế chưa làm xong.
               </p>
             </div>
@@ -177,7 +187,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
 
         <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between">
           <span className="text-xs text-gray-500">
-            Sau khi gửi duyệt, cấp trên của bạn sẽ phê duyệt rồi mới áp dụng.
+            Sau khi gửi duyệt, cấp trên duyệt → KPI của bạn cập nhật. KPI CC không đổi.
           </span>
           <div className="flex gap-2">
             <button

@@ -337,15 +337,6 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         comment="Khóa dữ liệu sau khi CCT phê duyệt báo cáo xếp loại tháng"
     )
 
-    # Yêu cầu 2 (06/05/2026): LĐ đánh dấu CV chưa hoàn thành.
-    # CV vẫn vào mẫu số nhưng đóng 0 vào tử số a/b/c → cả 3 chỉ số đều giảm.
-    is_chua_hoan_thanh: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        server_default="false",
-        comment="CV chưa hoàn thành (LĐ điều chỉnh): vẫn vào mẫu số, đóng 0 vào a/b/c"
-    )
-
     # -------------------------------------------------------------------------
     # PL3 V2 (28/04/2026) — VERSION + SNAPSHOT (LOCKED 10, 13)
     # -------------------------------------------------------------------------

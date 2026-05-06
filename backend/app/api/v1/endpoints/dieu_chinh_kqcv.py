@@ -173,11 +173,26 @@ async def _check_ke_khai_in_scope(
         )
 
 
-def _snapshot_kk(kk: KeKhaiCongViec) -> dict:
+async def _snapshot_kk(db: AsyncSession, kk: KeKhaiCongViec) -> dict:
+    """
+    Snapshot giá trị HIỆU LỰC HIỆN TẠI cho LĐ trước khi sửa:
+    - Nếu CV đã có 1 bản điều chỉnh DA_PHE_DUYET trước đó → snapshot lấy từ đó
+      (= giá trị LĐ đang dùng tính KPI).
+    - Nếu chưa có → lấy từ kpi_submission (giá trị gốc của CC).
+    """
+    from app.core.kpi_lanh_dao_v2 import _load_dieu_chinh_overrides
+    overrides = await _load_dieu_chinh_overrides(db, [kk.id])
+    ov = overrides.get(kk.id)
+    if ov:
+        return {
+            "so_loi_chat_luong": ov["so_loi_chat_luong"],
+            "so_loi_tien_do": ov["so_loi_tien_do"],
+            "is_chua_hoan_thanh": ov["is_chua_hoan_thanh"],
+        }
     return {
         "so_loi_chat_luong": int(kk.so_loi_chat_luong or 0),
         "so_loi_tien_do": int(kk.so_loi_tien_do or 0),
-        "is_chua_hoan_thanh": bool(kk.is_chua_hoan_thanh),
+        "is_chua_hoan_thanh": False,
     }
 
 
@@ -212,25 +227,10 @@ def _to_response(dc: DieuChinhKqcv) -> dict:
     return DieuChinhResponse.model_validate(dc).model_dump(mode="json")
 
 
-async def _apply_to_kekhai(db: AsyncSession, dc: DieuChinhKqcv) -> None:
-    """Apply gia_tri_moi vào kpi_submission + recompute SP CL/TĐ."""
-    kk = (
-        await db.execute(select(KeKhaiCongViec).where(KeKhaiCongViec.id == dc.ke_khai_id))
-    ).scalar_one()
-    new = dc.gia_tri_moi
-    kk.so_loi_chat_luong = int(new.get("so_loi_chat_luong", 0))
-    kk.so_loi_tien_do = int(new.get("so_loi_tien_do", 0))
-    kk.is_chua_hoan_thanh = bool(new.get("is_chua_hoan_thanh", False))
-
-    # Recompute SP CL/TĐ (V2)
-    if kk.so_sp_goc_quy_doi and kk.so_luong:
-        he_so = kk.he_so_quy_doi_snapshot or (kk.so_sp_goc_quy_doi / kk.so_luong)
-        kk.so_sp_chat_luong = calculate_sp_dat_v2(
-            kk.so_luong, Decimal(str(he_so)), kk.so_loi_chat_luong
-        )
-        kk.so_sp_tien_do = calculate_sp_dat_v2(
-            kk.so_luong, Decimal(str(he_so)), kk.so_loi_tien_do
-        )
+# Note (06/05/2026): _apply_to_kekhai đã bị BỎ.
+# Theo quyết định nghiệp vụ mới: điều chỉnh CHỈ ảnh hưởng KPI LĐ, KHÔNG đụng
+# kpi_submission. KPI CC giữ nguyên giá trị gốc; KPI LĐ đọc override từ
+# bảng dieu_chinh_kqcv (xem _load_dieu_chinh_overrides trong kpi_lanh_dao_v2.py).
 
 
 # =============================================================================
@@ -298,7 +298,7 @@ async def create_dieu_chinh(
         ke_khai_id=kk.id,
         nguoi_dieu_chinh_id=current_user.id,
         nguoi_phe_duyet_id=npd_id,
-        gia_tri_cu=_snapshot_kk(kk),
+        gia_tri_cu=await _snapshot_kk(db, kk),
         gia_tri_moi=payload.gia_tri_moi.model_dump(),
         ly_do=payload.ly_do,
         trang_thai=TT_NHAP,
@@ -389,14 +389,12 @@ async def phe_duyet(
     if dc.trang_thai != TT_CHO:
         raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "DCKQCV_400_STATE", "message": "Chỉ duyệt khi đang CHO_PHE_DUYET"}})
 
-    # Apply
-    await _apply_to_kekhai(db, dc)
-
+    # Phê duyệt → KPI LĐ đọc override từ bảng này (KHÔNG đụng kpi_submission của CC)
     dc.trang_thai = TT_DA
     dc.y_kien_phe_duyet = payload.y_kien
     dc.ngay_phe_duyet = datetime.now(tz=timezone.utc)
     data = await _flush_and_response(db, dc)
-    return success_response(data=data, message="Đã duyệt + áp dụng")
+    return success_response(data=data, message="Đã duyệt — KPI lãnh đạo đã cập nhật")
 
 
 # =============================================================================

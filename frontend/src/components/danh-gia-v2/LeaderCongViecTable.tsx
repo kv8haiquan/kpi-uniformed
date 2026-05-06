@@ -107,7 +107,7 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
               </span>
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Tổng SP gốc: <b>{fmt(totals.sp_goc)}</b> · CL: <b>{fmt(totals.sp_cl)}</b> · TĐ: <b>{fmt(totals.sp_td)}</b>
+              Tổng điểm gốc: <b>{fmt(totals.sp_goc)}</b> · CL: <b>{fmt(totals.sp_cl)}</b> · TĐ: <b>{fmt(totals.sp_td)}</b>
             </p>
           </div>
 
@@ -180,9 +180,9 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Công việc</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Ngày</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">SL</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP gốc</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP CL</th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP TĐ</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm gốc</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm CL</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm TĐ</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Lỗi</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Hành động</th>
@@ -203,7 +203,17 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
                       </span>
                     </td>
                     <td className="px-3 py-2">
-                      <div className="text-gray-900">{it.ho_ten}</div>
+                      <div className="text-gray-900 flex items-center gap-1.5">
+                        {it.ho_ten}
+                        {it.co_dieu_chinh && (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-medium"
+                            title={`LĐ đã điều chỉnh — giá trị gốc của CC: CL ${it.so_loi_chat_luong_goc} / TĐ ${it.so_loi_tien_do_goc}. Chỉ ảnh hưởng KPI LĐ, KHÔNG đụng KPI CC.`}
+                          >
+                            ✎ Đã ĐC
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-gray-500">{it.ma_cc}</div>
                     </td>
                     <td className="px-3 py-2 text-xs font-mono text-gray-600">{it.ma_danh_muc || '—'}</td>

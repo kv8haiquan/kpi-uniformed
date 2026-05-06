@@ -72,4 +72,8 @@ export interface ICongViecLanhDaoV2 {
   tu_danh_gia_tien_do: number;
   trang_thai: string;
   is_chua_hoan_thanh: boolean;
+  // 06/05/2026: badge "đã điều chỉnh" + giá trị gốc của CC
+  co_dieu_chinh: boolean;
+  so_loi_chat_luong_goc: number;
+  so_loi_tien_do_goc: number;
 }

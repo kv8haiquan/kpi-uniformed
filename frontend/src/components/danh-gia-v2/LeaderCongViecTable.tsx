@@ -45,6 +45,7 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'tu_lam' | 'cap_duoi'>('all');
+  const [filterCcId, setFilterCcId] = useState<string>(''); // '' = tất cả
   const [editing, setEditing] = useState<ICongViecLanhDaoV2 | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -64,44 +65,96 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
     return () => { cancelled = true; };
   }, [thang, nam, tamTinh, filter, reloadKey]);
 
+  // Danh sách CC distinct trong items (cho dropdown filter)
+  const ccOptions = useMemo(() => {
+    const map = new Map<string, { id: string; ho_ten: string; ma_cc: string; count: number }>();
+    for (const it of items) {
+      const ex = map.get(it.cong_chuc_id);
+      if (ex) ex.count += 1;
+      else map.set(it.cong_chuc_id, { id: it.cong_chuc_id, ho_ten: it.ho_ten, ma_cc: it.ma_cc, count: 1 });
+    }
+    return Array.from(map.values()).sort((a, b) => a.ho_ten.localeCompare(b.ho_ten, 'vi'));
+  }, [items]);
+
+  // Items sau khi filter theo CC (client-side)
+  const displayItems = useMemo(() => {
+    if (!filterCcId) return items;
+    return items.filter((it) => it.cong_chuc_id === filterCcId);
+  }, [items, filterCcId]);
+
   const totals = useMemo(() => {
     const t = { sp_goc: 0, sp_cl: 0, sp_td: 0 };
-    for (const it of items) {
+    for (const it of displayItems) {
       t.sp_goc += it.so_sp_goc_quy_doi;
       t.sp_cl += it.sp_chat_luong;
       t.sp_td += it.sp_tien_do;
     }
     return t;
-  }, [items]);
+  }, [displayItems]);
 
   const fmt = (n: number) => n.toFixed(2);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-medium text-gray-900">
-            Chi tiết công việc trong scope KPI ({items.length})
-          </h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Tổng SP gốc: <b>{fmt(totals.sp_goc)}</b> · CL: <b>{fmt(totals.sp_cl)}</b> · TĐ: <b>{fmt(totals.sp_td)}</b>
-          </p>
+      <div className="px-6 py-4 border-b border-gray-200 space-y-3">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-base font-medium text-gray-900">
+              Chi tiết công việc trong scope KPI{' '}
+              <span className="text-sm font-normal text-gray-500">
+                ({displayItems.length}
+                {filterCcId && items.length !== displayItems.length ? ` / ${items.length}` : ''})
+              </span>
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Tổng SP gốc: <b>{fmt(totals.sp_goc)}</b> · CL: <b>{fmt(totals.sp_cl)}</b> · TĐ: <b>{fmt(totals.sp_td)}</b>
+            </p>
+          </div>
+
+          {/* Filter Loại */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 text-sm">
+            {(['all', 'tu_lam', 'cap_duoi'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
+                  filter === f ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {f === 'all' ? 'Tất cả' : f === 'tu_lam' ? 'Tự làm' : 'Cấp dưới'}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Filter */}
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 text-sm">
-          {(['all', 'tu_lam', 'cap_duoi'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-md font-medium transition-colors ${
-                filter === f ? 'bg-white shadow text-gray-900' : 'text-gray-600 hover:text-gray-900'
-              }`}
+        {/* Filter Công chức (chỉ hiển thị khi có ≥ 2 CC khác nhau) */}
+        {ccOptions.length >= 2 && (
+          <div className="flex items-center gap-2 text-sm">
+            <label className="text-xs font-medium text-gray-600 whitespace-nowrap">
+              Lọc theo công chức:
+            </label>
+            <select
+              value={filterCcId}
+              onChange={(e) => setFilterCcId(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1 text-sm flex-1 max-w-md"
             >
-              {f === 'all' ? 'Tất cả' : f === 'tu_lam' ? 'Tự làm' : 'Cấp dưới'}
-            </button>
-          ))}
-        </div>
+              <option value="">— Tất cả ({ccOptions.length} người · {items.length} CV) —</option>
+              {ccOptions.map((cc) => (
+                <option key={cc.id} value={cc.id}>
+                  {cc.ho_ten} ({cc.ma_cc}) — {cc.count} CV
+                </option>
+              ))}
+            </select>
+            {filterCcId && (
+              <button
+                onClick={() => setFilterCcId('')}
+                className="text-xs text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
+              >
+                Bỏ lọc
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -112,8 +165,10 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
 
       {loading ? (
         <div className="p-8 text-center text-sm text-gray-500">Đang tải...</div>
-      ) : items.length === 0 ? (
-        <div className="p-8 text-center text-sm text-gray-500">Không có công việc trong scope</div>
+      ) : displayItems.length === 0 ? (
+        <div className="p-8 text-center text-sm text-gray-500">
+          {items.length === 0 ? 'Không có công việc trong scope' : 'Không có CV cho công chức đã chọn'}
+        </div>
       ) : (
         <div className="overflow-x-auto max-h-[600px]">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -134,7 +189,7 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
-              {items.map((it) => {
+              {displayItems.map((it) => {
                 const loiCl = (it.trang_thai === 'DA_PHE_DUYET' ? it.so_loi_chat_luong : it.tu_danh_gia_chat_luong) || 0;
                 const loiTd = (it.trang_thai === 'DA_PHE_DUYET' ? it.so_loi_tien_do : it.tu_danh_gia_tien_do) || 0;
                 const hasErr = loiCl > 0 || loiTd > 0;

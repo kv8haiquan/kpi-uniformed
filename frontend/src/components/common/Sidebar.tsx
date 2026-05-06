@@ -113,6 +113,10 @@ function useMenuSections(): MenuSection[] {
     { label: danhGiaLabel, href: danhGiaHref, icon: BarChart3 },
     { label: 'Xếp loại', href: '/xep-loai', icon: Trophy },
     { label: 'Nghỉ phép', href: '/nghi-phep', icon: CalendarDays },
+    // Yêu cầu 2 (06/05/2026): điều chỉnh KQCV — chỉ LĐ thật (không phải HĐ 111)
+    ...(user?.is_lanh_dao && !user?.is_hd_111
+      ? [{ label: 'Điều chỉnh KQCV', href: '/dieu-chinh-kqcv', icon: CheckSquare }]
+      : []),
   ];
 
   const sections: MenuSection[] = [

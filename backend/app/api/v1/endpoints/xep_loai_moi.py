@@ -88,6 +88,7 @@ async def tinh_diem_kpi_70_v2(
         .where(KeKhaiCongViec.nam == nam)
         .where(KeKhaiCongViec.version_kekhai == "V2_PL3")
         .where(KeKhaiCongViec.is_deleted == False)  # noqa: E712
+        .where(KeKhaiCongViec.is_loai_tru_kpi == False)  # noqa: E712 — loại CV bị LĐ điều chỉnh loại
         .where(KeKhaiCongViec.trang_thai.in_(allowed))
     )
     rows = (await db.execute(stmt)).all()

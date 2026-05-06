@@ -337,6 +337,14 @@ class KeKhaiCongViec(BaseModelWithSoftDelete):
         comment="Khóa dữ liệu sau khi CCT phê duyệt báo cáo xếp loại tháng"
     )
 
+    # Yêu cầu 2 (06/05/2026): LĐ điều chỉnh — loại trừ CV khỏi KPI
+    is_loai_tru_kpi: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        comment="LĐ điều chỉnh: loại trừ CV khỏi KPI (cả CC lẫn LĐ)"
+    )
+
     # -------------------------------------------------------------------------
     # PL3 V2 (28/04/2026) — VERSION + SNAPSHOT (LOCKED 10, 13)
     # -------------------------------------------------------------------------

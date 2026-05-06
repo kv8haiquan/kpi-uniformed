@@ -128,6 +128,9 @@ from app.models.cong_viec_yeu_thich import CongViecYeuThich
 # Phân công phụ trách (CCT/PCCT ↔ đơn vị, versioned — 05/05/2026)
 from app.models.phan_cong_phu_trach import PhanCongPhuTrach
 
+# Điều chỉnh KQCV (LĐ sửa CV của CC/cấp dưới — Yêu cầu 2, 06/05/2026)
+from app.models.dieu_chinh_kqcv import DieuChinhKqcv
+
 __all__ = [
     # ==========================================================================
     # BASE CLASSES
@@ -246,4 +249,9 @@ __all__ = [
     # PHAN CONG PHU TRACH (CCT/PCCT ↔ đơn vị — 05/05/2026)
     # ==========================================================================
     "PhanCongPhuTrach",
+
+    # ==========================================================================
+    # DIEU CHINH KQCV (Yêu cầu 2 — 06/05/2026)
+    # ==========================================================================
+    "DieuChinhKqcv",
 ]

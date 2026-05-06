@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { kpiLanhDaoV2Service } from '@/services/kpiLanhDaoV2.service';
 import { ICongViecLanhDaoV2 } from '@/types/kpiLanhDaoV2';
+import DieuChinhKqcvModal from './DieuChinhKqcvModal';
 
 interface Props {
   thang: number;
@@ -44,6 +45,8 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'tu_lam' | 'cap_duoi'>('all');
+  const [editing, setEditing] = useState<ICongViecLanhDaoV2 | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +62,7 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [thang, nam, tamTinh, filter]);
+  }, [thang, nam, tamTinh, filter, reloadKey]);
 
   const totals = useMemo(() => {
     const t = { sp_goc: 0, sp_cl: 0, sp_td: 0 };
@@ -127,6 +130,7 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
                 <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP TĐ</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Lỗi</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Hành động</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-100">
@@ -183,6 +187,18 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
                         {TRANG_THAI_LABEL[it.trang_thai] ?? it.trang_thai}
                       </span>
                     </td>
+                    <td className="px-3 py-2 text-center">
+                      {it.trang_thai === 'DA_PHE_DUYET' && it.loai === 'CAP_DUOI' ? (
+                        <button
+                          onClick={() => setEditing(it)}
+                          className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                        >
+                          Sửa
+                        </button>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
@@ -190,6 +206,13 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
           </table>
         </div>
       )}
+
+      <DieuChinhKqcvModal
+        open={editing !== null}
+        cv={editing}
+        onClose={() => setEditing(null)}
+        onSuccess={() => setReloadKey((k) => k + 1)}
+      />
     </div>
   );
 }

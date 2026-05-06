@@ -196,11 +196,13 @@ async def _sp_pdv_scope(
     """
     PDV: SP do user_id tự kê + SP do user_id trực tiếp duyệt.
     PDV không tự duyệt mình (chọn TDV khi kê) → OR không trùng.
+    Loại trừ CV có is_loai_tru_kpi = true (LĐ đã đánh dấu loại).
     """
     stmt = _BASE_SELECT.where(
         KeKhaiCongViec.thang == thang,
         KeKhaiCongViec.nam == nam,
         KeKhaiCongViec.is_deleted == False,  # noqa: E712
+        KeKhaiCongViec.is_loai_tru_kpi == False,  # noqa: E712
         KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
         or_(
             KeKhaiCongViec.cong_chuc_id == user_id,
@@ -218,13 +220,15 @@ async def _sp_trong_don_vi(
     nam: int,
     tam_tinh: bool = False,
 ) -> list[_SP]:
-    """Toàn bộ SP của user thuộc các đơn vị (CC + PDV/TDV tự kê)."""
+    """Toàn bộ SP của user thuộc các đơn vị (CC + PDV/TDV tự kê).
+    Loại trừ CV có is_loai_tru_kpi = true."""
     if not don_vi_ids:
         return []
     stmt = _BASE_SELECT.where(
         KeKhaiCongViec.thang == thang,
         KeKhaiCongViec.nam == nam,
         KeKhaiCongViec.is_deleted == False,  # noqa: E712
+        KeKhaiCongViec.is_loai_tru_kpi == False,  # noqa: E712
         KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
         CongChuc.don_vi_id.in_(list(don_vi_ids)),
     )

@@ -30,6 +30,7 @@ from app.api.v1.endpoints import (
     admin_import,  # PL3 V2 (28/04/2026): Admin import Excel PL3
     phan_cong_phu_trach,  # KPI LĐ mới (05/05/2026): Phân công CCT/PCCT phụ trách
     kpi_lanh_dao_v2,      # KPI LĐ mới (05/05/2026): Công thức v2 từ tháng 4/2026
+    dieu_chinh_kqcv,      # Yêu cầu 2 (06/05/2026): LĐ điều chỉnh KQCV
 )
 
 # =============================================================================
@@ -239,4 +240,11 @@ api_router.include_router(
     kpi_lanh_dao_v2.router,
     prefix="/kpi-lanh-dao-v2",
     tags=["KPI Lãnh đạo (V2)"],
+)
+
+# Điều chỉnh KQCV của LĐ (Yêu cầu 2 — 06/05/2026)
+api_router.include_router(
+    dieu_chinh_kqcv.router,
+    prefix="/dieu-chinh-kqcv",
+    tags=["Điều chỉnh KQCV"],
 )

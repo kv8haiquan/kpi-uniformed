@@ -147,16 +147,28 @@ export default function LeaderAssessmentDDE({ thang, nam, onSaveSuccess }: Leade
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
+      // FIX (07/05/2026): RESET state trước khi load để tránh hiển thị
+      // data của tháng cũ khi đổi sang tháng chưa có DDE.
+      setExistingData(null);
+      setSuccessMessage(null);
+      setFormData({
+        d_ket_qua_don_vi: true,
+        d_ghi_chu: '',
+        dd_to_chuc_trien_khai: true,
+        dd_ghi_chu: '',
+        e_doan_ket_noi_bo: true,
+        e_ghi_chu: '',
+      });
 
       try {
         const [data, approvers] = await Promise.all([
           leaderKPIService.getDanhGiaDDE(thang, nam),
           leaderKPIService.getNguoiPheDuyetDDE(),
         ]);
-        
+
         setNguoiPheDuyetList(approvers);
         if (approvers.length > 0) setSelectedNguoiPheDuyet(approvers[0].id);
-        
+
         if (data) {
           setExistingData(data);
           setFormData({
@@ -168,6 +180,8 @@ export default function LeaderAssessmentDDE({ thang, nam, onSaveSuccess }: Leade
             e_ghi_chu: data.e_ghi_chu || '',
           });
         }
+        // Nếu data null (tháng chưa có DDE) → state đã reset ở trên,
+        // hiển thị form trống cho user kê khai mới.
       } catch (err) {
         console.error('Error loading DDE:', err);
       } finally {

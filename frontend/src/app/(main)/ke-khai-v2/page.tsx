@@ -39,6 +39,7 @@ import { isApiError } from '@/lib/axios';
 
 import { KpiTargetModalV2 } from '@/components/kpi-v2/KpiTargetModalV2';
 import { KpiMultiDayModalV2 } from '@/components/kpi-v2/KpiMultiDayModalV2';
+import LeaderAssessmentDDE from '@/components/ke-khai/LeaderAssessmentDDE';
 
 const TRANG_THAI_LABEL: Record<string, string> = {
   NHAP: 'Nháp',
@@ -278,19 +279,19 @@ export default function KeKhaiV2Page() {
         </div>
       </div>
 
-      {/* Banner Tổng SP */}
+      {/* Banner Tổng điểm */}
       {thongKe && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 px-5 py-4">
           <div className="flex items-start gap-3">
             <div className="flex-1">
               <p className="text-sm text-blue-900 font-medium">
-                Tổng SP đã kê khai tháng {String(thang).padStart(2, '0')}/{nam}
+                Tổng điểm đã kê khai tháng {String(thang).padStart(2, '0')}/{nam}
               </p>
               <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
                 <div>
                   <span className="text-gray-600">Đã duyệt:</span>{' '}
                   <strong className="text-green-700 text-base">
-                    {thongKe.tong_sp_da_duyet.toFixed(2)} SP
+                    {thongKe.tong_sp_da_duyet.toFixed(2)} điểm
                   </strong>
                   <p className="text-xs text-gray-500 mt-0.5">
                     Mẫu số chính thức tính KPI
@@ -299,13 +300,13 @@ export default function KeKhaiV2Page() {
                 <div>
                   <span className="text-gray-600">Chờ duyệt:</span>{' '}
                   <strong className="text-yellow-700 text-base">
-                    {thongKe.tong_sp_cho_duyet.toFixed(2)} SP
+                    {thongKe.tong_sp_cho_duyet.toFixed(2)} điểm
                   </strong>
                 </div>
                 <div>
                   <span className="text-gray-600">Dự kiến:</span>{' '}
                   <strong className="text-blue-700 text-base">
-                    {thongKe.tong_sp_du_kien.toFixed(2)} SP
+                    {thongKe.tong_sp_du_kien.toFixed(2)} điểm
                   </strong>
                 </div>
               </div>
@@ -518,7 +519,7 @@ export default function KeKhaiV2Page() {
                   SL
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  SP quy đổi
+                  Điểm quy đổi
                 </th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Lỗi CL/TĐ
@@ -616,7 +617,7 @@ export default function KeKhaiV2Page() {
                         </p>
                         {dm?.san_pham_dau_ra && (
                           <p className="text-xs text-gray-500 mt-0.5">
-                            SP: {dm.san_pham_dau_ra}
+                            Đầu ra: {dm.san_pham_dau_ra}
                           </p>
                         )}
                       </td>
@@ -822,6 +823,27 @@ export default function KeKhaiV2Page() {
           </table>
         </div>
       </div>
+
+      {/* Section đánh giá d/đ/e — chỉ LĐ thật + tháng ≥ 4/2026 (HĐ 111 không có DDE) */}
+      {user?.is_lanh_dao && !user?.is_hd_111 &&
+        (nam > 2026 || (nam === 2026 && thang >= 4)) && (
+          <div className="mt-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 bg-gradient-to-r from-purple-600 to-indigo-600">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <span>👔</span>
+                  Đánh giá năng lực lãnh đạo (d, đ, e)
+                </h2>
+                <p className="text-xs text-purple-100 mt-1">
+                  Tự đánh giá 3 chỉ số: Kết quả đơn vị · Tổ chức triển khai · Đoàn kết nội bộ
+                </p>
+              </div>
+              <div className="p-5">
+                <LeaderAssessmentDDE thang={thang} nam={nam} />
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Modals */}
       <KpiTargetModalV2

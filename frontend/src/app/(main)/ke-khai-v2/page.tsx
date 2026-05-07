@@ -79,6 +79,8 @@ export default function KeKhaiV2Page() {
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [submitConfirm, setSubmitConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // 06/05/2026: checkbox chọn từng CV để gửi duyệt
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Phase 2: filter trạng thái (null = tất cả)
   const [filterTrangThai, setFilterTrangThai] = useState<string | null>(null);
@@ -157,6 +159,37 @@ export default function KeKhaiV2Page() {
   );
   const actualDraftCount = draftList.length;
 
+  // CV nháp đã được tick (lọc theo selectedIds + hợp lệ)
+  const selectedDrafts = useMemo(
+    () => draftList.filter((kk) => selectedIds.has(kk.id)),
+    [draftList, selectedIds]
+  );
+
+  // Auto-clean: bỏ khỏi selectedIds những bản đã không còn NHAP (đã gửi/duyệt/xóa)
+  useEffect(() => {
+    const validIds = new Set(draftList.map((kk) => kk.id));
+    setSelectedIds((prev) => {
+      const next = new Set<string>();
+      for (const id of prev) if (validIds.has(id)) next.add(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [draftList]);
+
+  const allDraftsSelected = draftList.length > 0 && selectedIds.size === draftList.length;
+  const someDraftsSelected = selectedIds.size > 0 && !allDraftsSelected;
+
+  const toggleSelectAll = () => {
+    setSelectedIds(allDraftsSelected ? new Set() : new Set(draftList.map((kk) => kk.id)));
+  };
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   // Phase 2: counters cho 4 cards
   const counts = useMemo(() => {
     let nhap = 0;
@@ -183,12 +216,14 @@ export default function KeKhaiV2Page() {
   const isLocked = useMemo(() => list.some((kk) => kk.is_khoa), [list]);
 
   const handleBatchSubmit = async () => {
-    if (draftList.length === 0) {
-      alert('Không có bản nháp nào để gửi duyệt.');
+    // 06/05/2026: chỉ submit các CV nháp đã được TICK
+    const toSubmit = selectedDrafts;
+    if (toSubmit.length === 0) {
+      alert('Vui lòng tick chọn ít nhất 1 bản nháp để gửi duyệt.');
       setSubmitConfirm(false);
       return;
     }
-    const noApprover = draftList.filter((d) => !d.nguoi_phe_duyet_id);
+    const noApprover = toSubmit.filter((d) => !d.nguoi_phe_duyet_id);
     if (noApprover.length > 0) {
       alert(
         `Có ${noApprover.length} bản nháp chưa chọn người phê duyệt.\n` +
@@ -201,7 +236,7 @@ export default function KeKhaiV2Page() {
     setSubmitting(true);
     let ok = 0;
     let fail = 0;
-    for (const d of draftList) {
+    for (const d of toSubmit) {
       try {
         await kpiService.submitKeKhaiSingle(d.id, d.nguoi_phe_duyet_id!);
         ok++;
@@ -212,6 +247,8 @@ export default function KeKhaiV2Page() {
     }
     setSubmitting(false);
     setSubmitConfirm(false);
+    // Reset selection sau khi submit xong
+    setSelectedIds(new Set());
 
     if (fail > 0) {
       alert(
@@ -438,9 +475,18 @@ export default function KeKhaiV2Page() {
         {actualDraftCount > 0 && !isLocked && (
           <button
             onClick={() => setSubmitConfirm(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
+            disabled={selectedDrafts.length === 0}
+            title={
+              selectedDrafts.length === 0
+                ? 'Tick chọn các bản nháp trong bảng để gửi duyệt'
+                : `Gửi duyệt ${selectedDrafts.length} bản đã chọn`
+            }
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Send className="h-4 w-4" /> Gửi duyệt ({actualDraftCount})
+            <Send className="h-4 w-4" />
+            Gửi duyệt {selectedDrafts.length > 0
+              ? `${selectedDrafts.length} đã chọn`
+              : `(0 / ${actualDraftCount} nháp)`}
           </button>
         )}
         {isLocked && (
@@ -494,6 +540,21 @@ export default function KeKhaiV2Page() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
+                {/* Checkbox cột chọn — chỉ hiển thị khi có nháp + chưa khóa */}
+                <th className="px-3 py-3 w-10 text-center">
+                  {actualDraftCount > 0 && !isLocked ? (
+                    <input
+                      type="checkbox"
+                      checked={allDraftsSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someDraftsSelected;
+                      }}
+                      onChange={toggleSelectAll}
+                      title="Chọn / bỏ chọn tất cả nháp"
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                  ) : null}
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Mã
                 </th>
@@ -536,14 +597,14 @@ export default function KeKhaiV2Page() {
             <tbody className="bg-white divide-y divide-gray-100">
               {loading && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-sm text-gray-500">
+                  <td colSpan={14} className="px-4 py-8 text-center text-sm text-gray-500">
                     Đang tải…
                   </td>
                 </tr>
               )}
               {!loading && list.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-12 text-center">
+                  <td colSpan={14} className="px-4 py-12 text-center">
                     <FileText className="h-12 w-12 mx-auto text-gray-300 mb-3" />
                     <p className="text-sm text-gray-500 mb-3">
                       Chưa có kê khai V2 nào trong tháng này.
@@ -563,7 +624,7 @@ export default function KeKhaiV2Page() {
               )}
               {!loading && list.length > 0 && filteredList.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-12 text-center">
+                  <td colSpan={14} className="px-4 py-12 text-center">
                     <p className="text-sm text-gray-500 mb-3">
                       Không có kê khai nào với trạng thái này.
                     </p>
@@ -594,11 +655,29 @@ export default function KeKhaiV2Page() {
                   kk.y_kien_lanh_dao
                 );
                 const isExpanded = expandedRowId === kk.id;
+                const isDraft = kk.trang_thai === 'NHAP';
+                const isSelected = selectedIds.has(kk.id);
                 return (
                   <Fragment key={kk.id}>
                     <tr
-                      className={isExpanded ? 'bg-gray-50' : 'hover:bg-gray-50'}
+                      className={
+                        isSelected
+                          ? 'bg-blue-50'
+                          : isExpanded
+                            ? 'bg-gray-50'
+                            : 'hover:bg-gray-50'
+                      }
                     >
+                      <td className="px-3 py-3 text-center">
+                        {isDraft && !isLocked ? (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectOne(kk.id)}
+                            className="w-4 h-4 cursor-pointer"
+                          />
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3 text-xs text-gray-600 font-mono">
                         {dm?.ma_danh_muc ?? '—'}
                       </td>
@@ -724,7 +803,7 @@ export default function KeKhaiV2Page() {
                     {/* Expandable detail row — chi tiết mô tả lỗi */}
                     {isExpanded && hasAnyError && (
                       <tr className="bg-gray-50">
-                        <td colSpan={13} className="px-6 py-3">
+                        <td colSpan={14} className="px-6 py-3">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             {(tuDgCl > 0 || tuDgTd > 0 || kk.ghi_chu_tu_danh_gia) && (
                               <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
@@ -877,8 +956,13 @@ export default function KeKhaiV2Page() {
               Xác nhận gửi duyệt
             </h3>
             <p className="text-gray-600 mb-3">
-              Bạn có chắc muốn gửi <strong>{actualDraftCount} bản kê khai</strong>{' '}
+              Bạn có chắc muốn gửi <strong>{selectedDrafts.length} bản kê khai đã chọn</strong>{' '}
               đi phê duyệt?
+              {selectedDrafts.length < actualDraftCount && (
+                <span className="block text-xs text-gray-500 mt-1">
+                  ({actualDraftCount - selectedDrafts.length} bản nháp khác sẽ giữ nguyên)
+                </span>
+              )}
             </p>
             <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-4">
               ⚠️ Sau khi gửi, bạn sẽ không thể sửa/xóa các bản này (trừ khi bị từ chối).

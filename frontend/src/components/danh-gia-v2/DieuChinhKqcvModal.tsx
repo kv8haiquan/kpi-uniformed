@@ -26,7 +26,6 @@ function getApiErrorMessage(err: unknown, fallback: string): string {
 export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Props) {
   const [loiCl, setLoiCl] = useState(0);
   const [loiTd, setLoiTd] = useState(0);
-  const [chuaHt, setChuaHt] = useState(false);
   const [lyDo, setLyDo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +40,6 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
   if (open && !wasOpen && cv) {
     setLoiCl(cv.so_loi_chat_luong);
     setLoiTd(cv.so_loi_tien_do);
-    setChuaHt(cv.is_chua_hoan_thanh ?? false);
     setLyDo('');
     setError(null);
   }
@@ -62,7 +60,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
         gia_tri_moi: {
           so_loi_chat_luong: loiCl,
           so_loi_tien_do: loiTd,
-          is_chua_hoan_thanh: chuaHt,
+          is_chua_hoan_thanh: false,  // 07/05/2026: bỏ flag khỏi UI, luôn false
         },
         ly_do: lyDo.trim(),
       });
@@ -80,8 +78,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
 
   const isChanged =
     loiCl !== cv.so_loi_chat_luong ||
-    loiTd !== cv.so_loi_tien_do ||
-    chuaHt !== (cv.is_chua_hoan_thanh ?? false);
+    loiTd !== cv.so_loi_tien_do;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -126,7 +123,6 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
                 value={loiCl}
                 onChange={(e) => setLoiCl(Math.max(0, parseInt(e.target.value || '0', 10)))}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                disabled={chuaHt}
               />
               <p className="text-[11px] text-gray-500 mt-0.5">CC tự đánh giá: {cv.tu_danh_gia_chat_luong} · Hiện tại: {cv.so_loi_chat_luong}</p>
             </div>
@@ -140,28 +136,10 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
                 value={loiTd}
                 onChange={(e) => setLoiTd(Math.max(0, parseInt(e.target.value || '0', 10)))}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                disabled={chuaHt}
               />
               <p className="text-[11px] text-gray-500 mt-0.5">CC tự đánh giá: {cv.tu_danh_gia_tien_do} · Hiện tại: {cv.so_loi_tien_do}</p>
             </div>
           </div>
-
-          {/* Cờ chưa hoàn thành */}
-          <label className="flex items-start gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={chuaHt}
-              onChange={(e) => setChuaHt(e.target.checked)}
-              className="mt-0.5 w-4 h-4"
-            />
-            <div className="flex-1">
-              <div className="text-sm font-medium text-amber-900">Đánh dấu CV CHƯA HOÀN THÀNH</div>
-              <p className="text-xs text-amber-700 mt-0.5">
-                Khi tích, CV này VẪN tính vào mẫu số (tổng điểm kê khai), nhưng đóng <b>0</b> vào
-                tử số <b>a / b / c</b> → cả 3 chỉ số đều giảm. Dùng khi CC kê nhưng thực tế chưa làm xong.
-              </p>
-            </div>
-          </label>
 
           {/* Lý do */}
           <div>

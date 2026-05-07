@@ -368,8 +368,9 @@ async def tinh_diem_kpi_70_lanh_dao(
                 "tong_loi_chat_luong": 0,
                 "tong_loi_tien_do": 0,
                 "a_so_luong": v2["a"],
-                "b_tien_do": v2["b"],
-                "c_chat_luong": v2["c"],
+                # 07/05/2026: rename theo legacy convention v2.b=CL, v2.c=TĐ
+                "b_tien_do": v2["c"],
+                "c_chat_luong": v2["b"],
                 "d_ket_qua": v2["d"],
                 "dd_to_chuc": v2["dd"],
                 "e_doan_ket": v2["e"],
@@ -383,8 +384,8 @@ async def tinh_diem_kpi_70_lanh_dao(
                 "sp_chat_luong": v2["sp_chat_luong"],
                 "sp_tien_do": v2["sp_tien_do"],
                 "tong_sp_ke_khai": v2["tong_sp_ke_khai"],
-                "b_chat_luong": v2["c"],
-                "c_tien_do": v2["b"],
+                "b_chat_luong": v2["b"],
+                "c_tien_do": v2["c"],
             }
         except ValueError:
             pass  # fallback nhánh cũ

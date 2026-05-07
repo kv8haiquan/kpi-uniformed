@@ -556,10 +556,13 @@ async def calc_kpi_lanh_dao_v2(
         sp_chat_luong += cl
         sp_tien_do += td
 
+    # NAMING LEGACY (07/05/2026): b=CHẤT LƯỢNG, c=TIẾN ĐỘ — đồng bộ với
+    # convention UI và CC V2. (Spec gốc viết b=TĐ, c=CL nhưng codebase
+    # đã dùng legacy reversed ở mọi nơi → giữ consistency.)
     if tong_sp_ke_khai > 0:
         a = min(1.0, sp_hoan_thanh / tong_sp_ke_khai)
-        b = min(1.0, sp_tien_do / tong_sp_ke_khai)
-        c = min(1.0, sp_chat_luong / tong_sp_ke_khai)
+        b = min(1.0, sp_chat_luong / tong_sp_ke_khai)  # Chất lượng
+        c = min(1.0, sp_tien_do / tong_sp_ke_khai)    # Tiến độ
     else:
         a = b = c = 0.0
 
@@ -578,8 +581,8 @@ async def calc_kpi_lanh_dao_v2(
 
     if tong_sp_self > 0:
         a_self = min(1.0, sp_ht_self / tong_sp_self)
-        b_self = min(1.0, sp_td_self / tong_sp_self)
-        c_self = min(1.0, sp_cl_self / tong_sp_self)
+        b_self = min(1.0, sp_cl_self / tong_sp_self)  # Chất lượng
+        c_self = min(1.0, sp_td_self / tong_sp_self)  # Tiến độ
     else:
         a_self = b_self = c_self = 0.0
 

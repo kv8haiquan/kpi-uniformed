@@ -48,6 +48,9 @@ from meeting_service.api.endpoints.nhom_thanh_phan import (
     router as nhom_thanh_phan_router,
     router_cuoc_hop as nhom_thanh_phan_cuoc_hop_router,
 )
+from meeting_service.api.endpoints.presentation_rest import (
+    router as presentation_rest_router,
+)
 from meeting_service.scheduler import start_scheduler, stop_scheduler
 
 
@@ -102,6 +105,9 @@ app.include_router(thong_ke_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(cong_chuc_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(nhom_thanh_phan_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(nhom_thanh_phan_cuoc_hop_router, prefix="/api/v1/hop-khong-giay")
+
+# Phase 4.1 — Page-Sync REST endpoint (WS endpoint thêm ở BE_P5)
+app.include_router(presentation_rest_router, prefix="/api/v1/hop-khong-giay")
 
 
 @app.get("/health", tags=["System"])

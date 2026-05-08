@@ -93,14 +93,15 @@ function TabHeader({
   );
 }
 
-// Format tỷ lệ % với 2 chữ số thập phân, không làm tròn LÊN 100% khi v < 1.
-function pctSafe(v: number, digits = 2): string {
+// Format tỷ lệ % tối đa 6 chữ số thập phân (strip trailing zeros). Chặn nhảy
+// lên 100% khi v < 1 (làm tròn floating-point).
+function pctSafe(v: number, _digits = 6): string {
   const value = v * 100;
-  if (v < 1) {
-    const factor = Math.pow(10, digits);
-    return (Math.floor(value * factor) / factor).toFixed(digits);
+  if (v < 1 && value >= 100) {
+    const truncated = Math.floor(value * 1e6) / 1e6;
+    return truncated.toFixed(6).replace(/\.?0+$/, '');
   }
-  return value.toFixed(digits);
+  return value.toFixed(6).replace(/\.?0+$/, '');
 }
 
 function SummaryCard({ thongKe, dde }: { thongKe: IThongKeKeKhaiLanhDao | null; dde: IDanhGiaDDEResponse | null }) {
@@ -157,7 +158,7 @@ function SummaryCard({ thongKe, dde }: { thongKe: IThongKeKeKhaiLanhDao | null; 
           <p className="text-sm text-gray-600">Công thức: (a + b + c + d + đ + e) / 6 × 70</p>
           <div className="text-right">
             <p className="text-sm text-gray-500">Điểm KPI:</p>
-            <p className="text-3xl font-bold text-indigo-700">{diemKPI.diem_kpi_quy_doi.toFixed(2)}<span className="text-sm text-gray-500">/70</span></p>
+            <p className="text-3xl font-bold text-indigo-700">{diemKPI.diem_kpi_quy_doi.toFixed(6).replace(/\.?0+$/, '')}<span className="text-sm text-gray-500">/70</span></p>
           </div>
         </div>
       </div>

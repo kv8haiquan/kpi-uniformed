@@ -388,21 +388,21 @@ const {
                     </div>
                   )}
 
-                  {/* v2.7.0: Sản phẩm chuẩn */}
+                  {/* v2.7.0: Loại công việc */}
                   <div>
                     <label className="label">
-                      Sản phẩm chuẩn <span className="text-red-500">*</span>
+                      Loại công việc <span className="text-red-500">*</span>
                     </label>
                     <select
                       className="input"
                       value={selectedSpChuanId}
                       onChange={(e) => {
                         setSelectedSpChuanId(e.target.value);
-                        // Reset công việc đã chọn khi đổi SP chuẩn
+                        // Reset công việc đã chọn khi đổi loại CV
                         setValue('danh_muc_sp_id', '');
                       }}
                     >
-                      <option value="">-- Chọn sản phẩm chuẩn --</option>
+                      <option value="">-- Chọn loại công việc --</option>
                       {spChuanList.map((sp) => (
                         <option key={sp.id} value={sp.id}>
                           {sp.ma_sp} - {sp.ten_sp}
@@ -425,7 +425,7 @@ const {
 
                     {!selectedSpChuanId && (
                       <p className="text-xs text-gray-500 mt-1">
-                        Chọn loại sản phẩm trước, sau đó chọn công việc cụ thể
+                        Chọn loại công việc trước, sau đó chọn công việc cụ thể
                       </p>
                     )}
                   </div>
@@ -441,7 +441,7 @@ const {
                       disabled={!selectedSpChuanId}
                     >
                       <option value="">
-                        {selectedSpChuanId ? '-- Chọn công việc --' : '-- Vui lòng chọn SP chuẩn trước --'}
+                        {selectedSpChuanId ? '-- Chọn công việc --' : '-- Vui lòng chọn loại công việc trước --'}
                       </option>
                       {filteredDanhMucList.map((dm) => (
                         <option key={dm.id} value={dm.id}>
@@ -454,7 +454,7 @@ const {
                     )}
                     {selectedSpChuanId && filteredDanhMucList.length === 0 && (
                       <p className="text-xs text-yellow-600 mt-1">
-                        Không có công việc nào thuộc sản phẩm chuẩn này
+                        Không có công việc nào thuộc loại này
                       </p>
                     )}
                   </div>
@@ -534,7 +534,7 @@ const {
 
                               return (
                                 <p className="text-green-700 text-xs">
-                                  <strong>Hệ số ×{hesoCapDo}</strong> → {phut} phút (= {sp1.toFixed(2)} SP1)
+                                  <strong>Hệ số ×{hesoCapDo}</strong> → {phut} phút (= {sp1.toFixed(6).replace(/\.?0+$/, '')} điểm)
                                 </p>
                               );
                             })()}
@@ -647,7 +647,7 @@ const {
                       return (
                         <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-sm">
                           <p className="text-purple-700 text-xs">
-                            <strong>Tổng SP1 quy đổi:</strong> {tongSp1.toFixed(2)} SP1
+                            <strong>Tổng điểm quy đổi:</strong> {tongSp1.toFixed(6).replace(/\.?0+$/, '')} điểm
                           </p>
                         </div>
                       );

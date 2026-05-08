@@ -82,26 +82,16 @@ function getXepLoaiColor(xepLoai: XepLoai): { bg: string; text: string; border: 
   return colors[xepLoai];
 }
 
-function getXepLoaiLabel(xepLoai: XepLoai): string {
-  const labels: Record<XepLoai, string> = {
-    'A': 'Hoàn thành xuất sắc',
-    'B': 'Hoàn thành tốt',
-    'C': 'Hoàn thành',
-    'D': 'Không hoàn thành',
-    'E': 'Không đánh giá',
-  };
-  return labels[xepLoai];
-}
 
-function formatPercent(value: number, decimals: number = 2): string {
-  // Tránh làm tròn LÊN 100% khi tỷ lệ thực < 1.0
-  // (vd 0.999 × 100 = 99.9 nhưng 0.99977 × 100 = 99.977, toFixed(1) → "100.0%" sai).
+function formatPercent(value: number, _decimals: number = 6): string {
+  // Hiển thị tối đa 6 chữ số thập phân (strip trailing zeros). Vẫn chặn nhảy
+  // lên 100% khi v thực sự < 1 (do làm tròn floating-point).
   const v = value * 100;
-  if (value < 1) {
-    const factor = Math.pow(10, decimals);
-    return (Math.floor(v * factor) / factor).toFixed(decimals) + '%';
+  if (value < 1 && v >= 100) {
+    const truncated = Math.floor(v * 1e6) / 1e6;
+    return truncated.toFixed(6).replace(/\.?0+$/, '') + '%';
   }
-  return v.toFixed(decimals) + '%';
+  return v.toFixed(6).replace(/\.?0+$/, '') + '%';
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -146,7 +136,7 @@ function ScoreCard({ title, subtitle, value, maxValue, color, onClick }: ScoreCa
           <p className="text-xs text-gray-500">{subtitle}</p>
         </div>
         <div className="text-right">
-          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(2)}</p>
+          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(6).replace(/\.?0+$/, '')}</p>
           <p className="text-xs text-gray-500">/ {maxValue} điểm</p>
         </div>
       </div>
@@ -501,7 +491,7 @@ export default function DanhGiaPage() {
               <strong>Bạn đang dùng phiên bản KPI mới (V2_PL3).</strong>{' '}
               Trang này hiển thị công thức V1 (ngày × 96). Vào{' '}
               <a href="/danh-gia-v2" className="font-semibold underline">/danh-gia-v2</a>{' '}
-              để xem điểm KPI theo công thức V2 mới (mẫu số = tổng SP đã kê khai).
+              để xem điểm KPI theo công thức V2 mới (mẫu số = tổng điểm đã kê khai).
             </div>
             <button
               onClick={() => router.push('/danh-gia-v2')}
@@ -660,7 +650,6 @@ export default function DanhGiaPage() {
                   <div className={`${xepLoaiColorHienThi.bg} ${xepLoaiColorHienThi.border} border rounded-lg px-4 py-2`}>
                     <p className="text-xs text-gray-500">Xếp loại {kpiTab === 'tam_tinh' ? '(Tạm tính)' : ''}</p>
                     <p className={`text-2xl font-bold ${xepLoaiColorHienThi.text}`}>{xepLoaiHienThi}</p>
-                    <p className={`text-xs ${xepLoaiColorHienThi.text}`}>{getXepLoaiLabel(xepLoaiHienThi)}</p>
                   </div>
                 )}
               </div>
@@ -902,32 +891,32 @@ export default function DanhGiaPage() {
                           textColor="text-gray-600"
                         />
                         <StatBox
-                          label="Tổng SP1 được giao"
+                          label="Tổng điểm được giao"
                           value={formatNumber(targetSPHienThi)}
                           bgColor="bg-blue-50"
                           textColor="text-blue-600"
                         />
                         <StatBox
-                          label="Tổng SP1 hoàn thành"
+                          label="Tổng điểm hoàn thành"
                           value={formatNumber(spQuyDoiHienThi)}
                           bgColor="bg-green-50"
                           textColor="text-green-600"
                         />
                         <StatBox
-                          label="Tổng SP1 đạt CL"
+                          label="Tổng điểm đạt CL"
                           value={formatNumber(spChatLuongHienThi)}
                           bgColor="bg-emerald-50"
                           textColor="text-emerald-600"
                         />
                         <StatBox
-                          label="Tổng SP1 đạt TĐ"
+                          label="Tổng điểm đạt TĐ"
                           value={formatNumber(spTienDoHienThi)}
                           bgColor="bg-amber-50"
                           textColor="text-amber-600"
                         />
                         <StatBox
                           label="Điểm KPI"
-                          value={`${diemKPIQuyDoiCC.toFixed(2)}/70`}
+                          value={`${diemKPIQuyDoiCC.toFixed(6).replace(/\.?0+$/, '')}/70`}
                           bgColor="bg-purple-50"
                           textColor="text-purple-600"
                         />
@@ -939,21 +928,21 @@ export default function DanhGiaPage() {
                         <MetricCard
                           label="a. Tỷ lệ Số lượng"
                           value={formatPercent(aSoLuongCC)}
-                          subValue={`${formatNumber(spQuyDoiHienThi)} / ${formatNumber(targetSPHienThi)} SP1`}
+                          subValue={`${formatNumber(spQuyDoiHienThi)} / ${formatNumber(targetSPHienThi)} điểm`}
                           color="indigo"
                           percent={aSoLuongCC * 100}
                         />
                         <MetricCard
                           label="b. Tỷ lệ Chất lượng"
                           value={formatPercent(bChatLuongCC)}
-                          subValue={`${formatNumber(spChatLuongHienThi)} / ${formatNumber(targetSPHienThi)} SP1`}
+                          subValue={`${formatNumber(spChatLuongHienThi)} / ${formatNumber(targetSPHienThi)} điểm`}
                           color="emerald"
                           percent={bChatLuongCC * 100}
                         />
                         <MetricCard
                           label="c. Tỷ lệ Tiến độ"
                           value={formatPercent(cTienDoCC)}
-                          subValue={`${formatNumber(spTienDoHienThi)} / ${formatNumber(targetSPHienThi)} SP1`}
+                          subValue={`${formatNumber(spTienDoHienThi)} / ${formatNumber(targetSPHienThi)} điểm`}
                           color="amber"
                           percent={cTienDoCC * 100}
                         />
@@ -964,7 +953,7 @@ export default function DanhGiaPage() {
                         <p className="text-sm text-gray-600 text-center">
                           <strong>Công thức:</strong> Điểm KPI = (a + b + c) / 3 × 70 = 
                           <span className="text-indigo-600 font-medium"> ({formatPercent(aSoLuongCC, 2)} + {formatPercent(bChatLuongCC, 2)} + {formatPercent(cTienDoCC, 2)}) / 3 × 70 </span>
-                          = <strong className="text-indigo-700">{diemKPIQuyDoiCC.toFixed(2)} điểm</strong>
+                          = <strong className="text-indigo-700">{diemKPIQuyDoiCC.toFixed(6).replace(/\.?0+$/, '')} điểm</strong>
                         </p>
                       </div>
                     </>
@@ -1031,7 +1020,7 @@ export default function DanhGiaPage() {
                         />
                         <StatBox
                           label="Điểm KPI"
-                          value={`${diemKPIQuyDoiHd111.toFixed(2)}/70`}
+                          value={`${diemKPIQuyDoiHd111.toFixed(6).replace(/\.?0+$/, '')}/70`}
                           bgColor="bg-teal-50"
                           textColor="text-teal-600"
                         />
@@ -1070,7 +1059,7 @@ export default function DanhGiaPage() {
                         </p>
                         <p className="text-sm text-teal-600 font-medium text-center mt-1">
                           = ({formatPercent(aLD, 2)} + {formatPercent(bLD, 2)} + {formatPercent(cLD, 2)}) / 3 × 70
-                          = <strong className="text-teal-700">{diemKPIQuyDoiHd111.toFixed(2)} điểm</strong>
+                          = <strong className="text-teal-700">{diemKPIQuyDoiHd111.toFixed(6).replace(/\.?0+$/, '')} điểm</strong>
                         </p>
                       </div>
 
@@ -1145,7 +1134,7 @@ export default function DanhGiaPage() {
                         />
                         <StatBox
                           label="Điểm KPI"
-                          value={`${diemKPIQuyDoiLD.toFixed(2)}/70`}
+                          value={`${diemKPIQuyDoiLD.toFixed(6).replace(/\.?0+$/, '')}/70`}
                           bgColor="bg-pink-50"
                           textColor="text-pink-600"
                         />
@@ -1205,7 +1194,7 @@ export default function DanhGiaPage() {
                         </p>
                         <p className="text-sm text-purple-600 font-medium text-center mt-1">
                           = ({formatPercent(aLD, 2)} + {formatPercent(bLD, 2)} + {formatPercent(cLD, 2)} + {formatPercent(dLD, 2)} + {formatPercent(ddLD, 2)} + {formatPercent(eLD, 2)}) / 6 × 70 
-                          = <strong className="text-purple-700">{diemKPIQuyDoiLD.toFixed(2)} điểm</strong>
+                          = <strong className="text-purple-700">{diemKPIQuyDoiLD.toFixed(6).replace(/\.?0+$/, '')} điểm</strong>
                         </p>
                       </div>
 
@@ -1249,7 +1238,7 @@ export default function DanhGiaPage() {
                 })}
               </div>
               <p className="text-xs text-gray-500 mt-4 text-center">
-                * Loại A: Tỷ lệ ≤ 20% CC mức B trong đơn vị | Loại E: Không đánh giá (nghỉ cả tháng)
+                * Loại A: Tỷ lệ ≤ 20% CC mức B trong đơn vị | Loại E: nghỉ cả tháng
               </p>
             </div>
           </div>

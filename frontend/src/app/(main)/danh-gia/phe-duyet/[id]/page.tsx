@@ -139,15 +139,15 @@ function QuyetDinhModal({
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <p className="text-xs text-gray-500">Điểm TC chung</p>
-              <p className="text-lg font-semibold text-emerald-600">{chiTiet.diem_tieu_chi_chung.toFixed(2)}</p>
+              <p className="text-lg font-semibold text-emerald-600">{chiTiet.diem_tieu_chi_chung.toFixed(6).replace(/\.?0+$/, '')}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Điểm KPI</p>
-              <p className="text-lg font-semibold text-indigo-600">{chiTiet.diem_kpi.toFixed(2)}</p>
+              <p className="text-lg font-semibold text-indigo-600">{chiTiet.diem_kpi.toFixed(6).replace(/\.?0+$/, '')}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Điểm tổng</p>
-              <p className="text-lg font-semibold text-gray-900">{chiTiet.diem_tong.toFixed(2)}</p>
+              <p className="text-lg font-semibold text-gray-900">{chiTiet.diem_tong.toFixed(6).replace(/\.?0+$/, '')}</p>
             </div>
           </div>
           <div className="mt-3 flex justify-center gap-4">
@@ -692,7 +692,7 @@ export default function PheDuyetXepLoaiPage() {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-3 py-2 text-center font-medium">{ct.diem_tong.toFixed(2)}</td>
+                              <td className="px-3 py-2 text-center font-medium">{ct.diem_tong.toFixed(6).replace(/\.?0+$/, '')}</td>
                               <td className="px-3 py-2 text-center">
                                 <XepLoaiBadge xepLoai={xepLoaiDeXuat} size="sm" />
                               </td>

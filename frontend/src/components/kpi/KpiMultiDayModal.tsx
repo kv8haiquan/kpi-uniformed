@@ -330,10 +330,10 @@ export default function KpiMultiDayModal({
                       </div>
                     )}
 
-                    {/* Sản phẩm chuẩn */}
+                    {/* Loại công việc */}
                     <div>
                       <label className="label">
-                        Sản phẩm chuẩn <span className="text-red-500">*</span>
+                        Loại công việc <span className="text-red-500">*</span>
                       </label>
                       <select
                         className="input"
@@ -343,7 +343,7 @@ export default function KpiMultiDayModal({
                           setValue('danh_muc_sp_id', '');
                         }}
                       >
-                        <option value="">-- Chọn sản phẩm chuẩn --</option>
+                        <option value="">-- Chọn loại công việc --</option>
                         {spChuanList.map((sp) => (
                           <option key={sp.id} value={sp.id}>
                             {sp.ma_sp} - {sp.ten_sp}
@@ -366,7 +366,7 @@ export default function KpiMultiDayModal({
 
                       {!selectedSpChuanId && (
                         <p className="text-xs text-gray-500 mt-1">
-                          Chọn loại sản phẩm trước, sau đó chọn công việc cụ thể
+                          Chọn loại công việc trước, sau đó chọn công việc cụ thể
                         </p>
                       )}
                     </div>
@@ -382,7 +382,7 @@ export default function KpiMultiDayModal({
                         disabled={!selectedSpChuanId}
                       >
                         <option value="">
-                          {selectedSpChuanId ? '-- Chọn công việc --' : '-- Vui lòng chọn SP chuẩn trước --'}
+                          {selectedSpChuanId ? '-- Chọn công việc --' : '-- Vui lòng chọn loại công việc trước --'}
                         </option>
                         {filteredDanhMucList.map((dm) => (
                           <option key={dm.id} value={dm.id}>
@@ -470,7 +470,7 @@ export default function KpiMultiDayModal({
 
                                 return (
                                   <p className="text-green-700 text-xs">
-                                    <strong>Hệ số ×{hesoCapDo}</strong> → {phut} phút (= {sp1.toFixed(2)} SP1)
+                                    <strong>Hệ số ×{hesoCapDo}</strong> → {phut} phút (= {sp1.toFixed(6).replace(/\.?0+$/, '')} điểm)
                                   </p>
                                 );
                               })()}
@@ -573,7 +573,7 @@ export default function KpiMultiDayModal({
                         return (
                           <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-sm">
                             <p className="text-purple-700 text-xs">
-                              <strong>Tổng SP1 quy đổi:</strong> {tongSp1.toFixed(2)} SP1
+                              <strong>Tổng điểm quy đổi:</strong> {tongSp1.toFixed(6).replace(/\.?0+$/, '')} điểm
                             </p>
                           </div>
                         );
@@ -719,7 +719,7 @@ export default function KpiMultiDayModal({
                             Tổng số bản kê khai sẽ tạo: {totalDeclarations} bản
                           </p>
                           <p className="font-semibold">
-                            Tổng SP: {totalSP}
+                            Tổng điểm: {totalSP}
                           </p>
                         </div>
                       </div>

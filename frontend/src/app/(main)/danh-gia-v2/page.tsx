@@ -56,31 +56,20 @@ function getXepLoaiColor(xl: XepLoai) {
   return map[xl];
 }
 
-function getXepLoaiLabel(xl: XepLoai) {
-  const labels: Record<XepLoai, string> = {
-    A: 'Hoàn thành xuất sắc',
-    B: 'Hoàn thành tốt',
-    C: 'Hoàn thành',
-    D: 'Không hoàn thành',
-    E: 'Không đánh giá',
-  };
-  return labels[xl];
-}
 
-function fmt(n: number, digits = 2) {
+function fmt(n: number, _digits = 6) {
   if (!Number.isFinite(n)) return '0';
-  return n.toFixed(digits);
+  return n.toFixed(6).replace(/\.?0+$/, '');
 }
-function pct(v: number, digits = 2) {
-  // Tránh làm tròn LÊN 100% khi tỷ lệ thực < 1.0.
-  // Vd: 5454.71 / 5455.96 = 0.999771 → (0.999771 × 100).toFixed(1) = "100.0%" (sai)
-  // Khi v < 1, dùng Math.floor để hiển thị "99.97%" thay vì "100.00%".
+function pct(v: number, _digits = 6) {
+  // Hiển thị tối đa 6 chữ số thập phân (strip trailing zeros). Tránh nhảy lên
+  // 100% khi v thực sự < 1 (do làm tròn floating-point).
   const value = v * 100;
-  if (v < 1) {
-    const factor = Math.pow(10, digits);
-    return (Math.floor(value * factor) / factor).toFixed(digits) + '%';
+  if (v < 1 && value >= 100) {
+    const truncated = Math.floor(value * 1e6) / 1e6;
+    return truncated.toFixed(6).replace(/\.?0+$/, '') + '%';
   }
-  return value.toFixed(digits) + '%';
+  return value.toFixed(6).replace(/\.?0+$/, '') + '%';
 }
 
 const TRANG_THAI_LABEL: Record<string, string> = {
@@ -186,7 +175,7 @@ function LeaderAbcCard({
     amber: { bg: 'bg-amber-600', text: 'text-amber-700', soft: 'bg-amber-50' },
   };
   const c = colorMap[color];
-  const fmtPct = (p: number) => `${p.toFixed(2)}%`;
+  const fmtPct = (p: number) => `${p.toFixed(6).replace(/\.?0+$/, '')}%`;
   return (
     <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
       <div className="text-sm font-semibold text-gray-800 mb-3">{label}</div>
@@ -274,7 +263,7 @@ function ScoreCard({
           <p className="text-xs text-gray-500">{subtitle}</p>
         </div>
         <div className="text-right">
-          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(2)}</p>
+          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(6).replace(/\.?0+$/, '')}</p>
           <p className="text-xs text-gray-500">/ {maxValue} điểm</p>
         </div>
       </div>
@@ -478,7 +467,7 @@ export default function DanhGiaV2Page() {
         <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 flex items-start justify-between gap-3 text-sm">
           <div className="text-blue-900">
             <strong>Phiên bản KPI V2_PL3.</strong> Mẫu số ={' '}
-            <strong>tổng SP đã kê khai</strong> (không phải ngày × 96).{' '}
+            <strong>tổng điểm đã kê khai</strong> (không phải ngày × 96).{' '}
             Xem chi tiết tại{' '}
             <a href="/ke-khai-v2" className="font-semibold underline">
               /ke-khai-v2
@@ -505,7 +494,7 @@ export default function DanhGiaV2Page() {
                   📊 Đánh giá KPI (V2_PL3)
                 </h1>
                 <p className="text-gray-600 mt-1">
-                  Tháng {selectedThang}/{selectedNam} • Công thức V2 (mẫu số = tổng SP kê khai)
+                  Tháng {selectedThang}/{selectedNam} • Công thức V2 (mẫu số = tổng điểm kê khai)
                 </p>
               </div>
             </div>
@@ -607,7 +596,7 @@ export default function DanhGiaV2Page() {
                 </h2>
                 {tab === 'chinh_thuc' && tcChuaPheDuyet ? (
                   <div className="bg-gray-100 border border-gray-300 rounded-lg px-4 py-2">
-                    <p className="text-xs text-gray-500">Xếp loại</p>
+                    <p className="text-xs text-gray-500">Mức đánh giá</p>
                     <p className="text-lg font-bold text-gray-400">—</p>
                     <p className="text-xs text-gray-400">Chờ phê duyệt TC</p>
                   </div>
@@ -616,12 +605,9 @@ export default function DanhGiaV2Page() {
                     className={`${xlColor.bg} ${xlColor.border} border rounded-lg px-4 py-2`}
                   >
                     <p className="text-xs text-gray-500">
-                      Xếp loại {tab === 'tam_tinh' ? '(Tạm tính)' : ''}
+                      Mức đánh giá {tab === 'tam_tinh' ? '(Tạm tính)' : ''}
                     </p>
                     <p className={`text-2xl font-bold ${xlColor.text}`}>{xepLoai}</p>
-                    <p className={`text-xs ${xlColor.text}`}>
-                      {getXepLoaiLabel(xepLoai)}
-                    </p>
                   </div>
                 )}
               </div>
@@ -705,7 +691,7 @@ export default function DanhGiaV2Page() {
                     {/* StatBox */}
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
                       <StatBox
-                        label="Mẫu số V2 (SP)"
+                        label="Mẫu số V2 (điểm)"
                         value={fmt(mauSo, 2)}
                         subLabel={
                           useLeaderV2
@@ -718,26 +704,26 @@ export default function DanhGiaV2Page() {
                         textColor="text-blue-600"
                       />
                       <StatBox
-                        label="Tổng SP hoàn thành"
+                        label="Tổng điểm hoàn thành"
                         value={fmt(tongSpHoanThanh, 2)}
                         bgColor="bg-green-50"
                         textColor="text-green-600"
                       />
                       <StatBox
-                        label="Tổng SP đạt CL"
+                        label="Tổng điểm đạt CL"
                         value={fmt(tongSpCL, 2)}
                         bgColor="bg-emerald-50"
                         textColor="text-emerald-600"
                       />
                       <StatBox
-                        label="Tổng SP đạt TĐ"
+                        label="Tổng điểm đạt TĐ"
                         value={fmt(tongSpTD, 2)}
                         bgColor="bg-amber-50"
                         textColor="text-amber-600"
                       />
                       <StatBox
                         label="Điểm KPI"
-                        value={`${diemKPI.toFixed(2)}/70`}
+                        value={`${diemKPI.toFixed(6).replace(/\.?0+$/, '')}/70`}
                         bgColor="bg-purple-50"
                         textColor="text-purple-600"
                       />
@@ -757,25 +743,25 @@ export default function DanhGiaV2Page() {
                             label="a. Tỷ lệ Số lượng"
                             color="indigo"
                             selfPercent={kpiV2LD!.a_self * 100}
-                            selfSubValue={`${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} SP`}
+                            selfSubValue={`${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} điểm`}
                             totalPercent={a * 100}
-                            totalSubValue={`${fmt(tongSpHoanThanh, 2)} / ${fmt(mauSo, 2)} SP`}
+                            totalSubValue={`${fmt(tongSpHoanThanh, 2)} / ${fmt(mauSo, 2)} điểm`}
                           />
                           <LeaderAbcCard
                             label="b. Tỷ lệ Chất lượng"
                             color="emerald"
                             selfPercent={kpiV2LD!.b_self * 100}
-                            selfSubValue={`${fmt(kpiV2LD!.sp_chat_luong_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} SP`}
+                            selfSubValue={`${fmt(kpiV2LD!.sp_chat_luong_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} điểm`}
                             totalPercent={b * 100}
-                            totalSubValue={`${fmt(tongSpCL, 2)} / ${fmt(mauSo, 2)} SP`}
+                            totalSubValue={`${fmt(tongSpCL, 2)} / ${fmt(mauSo, 2)} điểm`}
                           />
                           <LeaderAbcCard
                             label="c. Tỷ lệ Tiến độ"
                             color="amber"
                             selfPercent={kpiV2LD!.c_self * 100}
-                            selfSubValue={`${fmt(kpiV2LD!.sp_tien_do_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} SP`}
+                            selfSubValue={`${fmt(kpiV2LD!.sp_tien_do_self, 2)} / ${fmt(kpiV2LD!.tong_sp_ke_khai_self, 2)} điểm`}
                             totalPercent={c * 100}
-                            totalSubValue={`${fmt(tongSpTD, 2)} / ${fmt(mauSo, 2)} SP`}
+                            totalSubValue={`${fmt(tongSpTD, 2)} / ${fmt(mauSo, 2)} điểm`}
                           />
                         </div>
 
@@ -809,21 +795,21 @@ export default function DanhGiaV2Page() {
                         <MetricCard
                           label="a. Tỷ lệ Số lượng"
                           value={pct(a)}
-                          subValue={`${fmt(tongSpHoanThanh, 2)} / ${fmt(mauSo, 2)} SP`}
+                          subValue={`${fmt(tongSpHoanThanh, 2)} / ${fmt(mauSo, 2)} điểm`}
                           color="indigo"
                           percent={a * 100}
                         />
                         <MetricCard
                           label="b. Tỷ lệ Chất lượng"
                           value={pct(b)}
-                          subValue={`${fmt(tongSpCL, 2)} / ${fmt(mauSo, 2)} SP`}
+                          subValue={`${fmt(tongSpCL, 2)} / ${fmt(mauSo, 2)} điểm`}
                           color="emerald"
                           percent={b * 100}
                         />
                         <MetricCard
                           label="c. Tỷ lệ Tiến độ"
                           value={pct(c)}
-                          subValue={`${fmt(tongSpTD, 2)} / ${fmt(mauSo, 2)} SP`}
+                          subValue={`${fmt(tongSpTD, 2)} / ${fmt(mauSo, 2)} điểm`}
                           color="amber"
                           percent={c * 100}
                         />
@@ -842,15 +828,15 @@ export default function DanhGiaV2Page() {
                             ({pct(a, 2)} + {pct(b, 2)} + {pct(c, 2)} +{' '}
                             {pct(d, 2)} + {pct(dd, 2)} + {pct(e, 2)}) / 6 × 70 ={' '}
                             <strong className="text-indigo-700">
-                              {diemKPI.toFixed(2)} điểm
+                              {diemKPI.toFixed(6).replace(/\.?0+$/, '')} điểm
                             </strong>
                           </p>
                           <p className="text-xs text-gray-500 text-center mt-2">
-                            Mẫu số = Σ SP đã kê khai trong scope phụ trách (
-                            {kpiV2LD?.cap_bac === 'PDV' && 'SP tự kê + SP CC do mình duyệt'}
-                            {kpiV2LD?.cap_bac === 'TDV' && 'toàn bộ SP đơn vị'}
+                            Mẫu số = Σ điểm đã kê khai trong scope phụ trách (
+                            {kpiV2LD?.cap_bac === 'PDV' && 'điểm tự kê + điểm CC do mình duyệt'}
+                            {kpiV2LD?.cap_bac === 'TDV' && 'toàn bộ điểm đơn vị'}
                             {(kpiV2LD?.cap_bac === 'PCCT' || kpiV2LD?.cap_bac === 'CCT') &&
-                              'gộp SP các đơn vị phụ trách'}
+                              'gộp điểm các đơn vị phụ trách'}
                             ) — chỉ tính bản đã DA_PHE_DUYET
                           </p>
                           {(kpiV2LD?.cap_bac === 'PCCT' || kpiV2LD?.cap_bac === 'CCT') &&
@@ -869,11 +855,11 @@ export default function DanhGiaV2Page() {
                             </span>{' '}
                             ={' '}
                             <strong className="text-indigo-700">
-                              {diemKPI.toFixed(2)} điểm
+                              {diemKPI.toFixed(6).replace(/\.?0+$/, '')} điểm
                             </strong>
                           </p>
                           <p className="text-xs text-gray-500 text-center mt-1">
-                            Mẫu số V2 = Σ SP kê khai (
+                            Mẫu số V2 = Σ điểm kê khai (
                             {tab === 'tam_tinh'
                               ? 'Nháp + Chờ + Đã duyệt'
                               : 'chỉ Đã duyệt'}
@@ -915,9 +901,9 @@ export default function DanhGiaV2Page() {
                         <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Công việc</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">SL</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Hệ số</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP gốc</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP CL</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">SP TĐ</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm gốc</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm CL</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm TĐ</th>
                         <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Lỗi</th>
                         <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Trạng thái</th>
                         <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Lịch sử</th>
@@ -959,16 +945,16 @@ export default function DanhGiaV2Page() {
                               </td>
                               <td className="px-4 py-2 text-right text-sm">{kk.so_luong}</td>
                               <td className="px-4 py-2 text-right text-sm font-mono text-blue-700">
-                                {kk.he_so_quy_doi_snapshot?.toFixed(2) ?? '—'}
+                                {kk.he_so_quy_doi_snapshot?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-right text-sm font-mono">
-                                {kk.so_sp_goc_quy_doi?.toFixed(2) ?? '—'}
+                                {kk.so_sp_goc_quy_doi?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-right text-sm font-mono text-emerald-700">
-                                {kk.so_sp_chat_luong?.toFixed(2) ?? '—'}
+                                {kk.so_sp_chat_luong?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-right text-sm font-mono text-amber-700">
-                                {kk.so_sp_tien_do?.toFixed(2) ?? '—'}
+                                {kk.so_sp_tien_do?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-center">
                                 {hasErr ? (
@@ -1137,7 +1123,7 @@ export default function DanhGiaV2Page() {
             {/* THANG XẾP LOẠI */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h3 className="font-medium text-gray-900 mb-4">
-                📊 Thang điểm xếp loại
+                📊 Thang điểm mức đánh giá
               </h3>
               <div className="grid grid-cols-5 gap-3">
                 {(['A', 'B', 'C', 'D', 'E'] as XepLoai[]).map((loai) => {
@@ -1163,7 +1149,7 @@ export default function DanhGiaV2Page() {
                 })}
               </div>
               <p className="text-xs text-gray-500 mt-4 text-center">
-                * Loại E: Không đánh giá (nghỉ thai sản hoặc mẫu số = 0)
+                * Mức E: nghỉ thai sản hoặc mẫu số = 0
               </p>
             </div>
           </div>

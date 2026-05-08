@@ -44,10 +44,10 @@ export function MauSoDisplay({
     return (
       <div className={className}>
         {showLabel && (
-          <span className="text-xs text-gray-500">Tổng SP kê khai:</span>
+          <span className="text-xs text-gray-500">Tổng điểm kê khai:</span>
         )}{' '}
-        <strong className="text-blue-700">{tong.toFixed(2)}</strong>
-        <span className="ml-1 text-xs text-gray-500">SP1</span>
+        <strong className="text-blue-700">{tong.toFixed(6).replace(/\.?0+$/, '')}</strong>
+        <span className="ml-1 text-xs text-gray-500">điểm</span>
       </div>
     );
   }
@@ -57,7 +57,7 @@ export function MauSoDisplay({
   const target = ngay * 96;
   return (
     <div className={className}>
-      {showLabel && <span className="text-xs text-gray-500">SP được giao:</span>}{' '}
+      {showLabel && <span className="text-xs text-gray-500">Điểm được giao:</span>}{' '}
       <strong>{target}</strong>
       <span className="ml-1 text-xs text-gray-500">
         ({ngay} ngày × 96)
@@ -86,7 +86,7 @@ export function KpiVersionBadge({ version, className }: VersionBadgeProps) {
       ].join(' ')}
       title={
         isV2
-          ? 'Mẫu số = tổng SP công chức kê khai (đã duyệt)'
+          ? 'Mẫu số = tổng điểm công chức kê khai (đã duyệt)'
           : 'Mẫu số = số ngày làm việc × 96'
       }
     >

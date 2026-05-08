@@ -385,7 +385,7 @@ function PreviewStep({
                   <td className="px-2 py-1 text-center">{r.nhom_pl3}</td>
                   <td className="px-2 py-1 text-right">{r.diem_cham}</td>
                   <td className="px-2 py-1 text-right font-mono">
-                    {r.he_so_quy_doi.toFixed(2)}
+                    {r.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}
                   </td>
                   <td className="px-2 py-1 text-center">
                     <span

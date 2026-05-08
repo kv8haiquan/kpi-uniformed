@@ -171,7 +171,7 @@ export function DanhMucSearchCombobox({
                     </div>
                   )}
                   <div>
-                    <span className="text-gray-500">Sản phẩm:</span>{' '}
+                    <span className="text-gray-500">Đầu ra:</span>{' '}
                     {item.san_pham_dau_ra ?? '—'}
                   </div>
                   <div className="flex flex-wrap gap-3">
@@ -181,7 +181,7 @@ export function DanhMucSearchCombobox({
                     <span>
                       <span className="text-gray-500">Hệ số:</span>{' '}
                       <strong className="text-blue-700">
-                        {item.he_so_quy_doi.toFixed(2)}
+                        {item.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}
                       </strong>
                     </span>
                     <span>

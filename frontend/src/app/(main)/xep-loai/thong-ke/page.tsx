@@ -195,17 +195,17 @@ function BangTheoDonVi({ thongKe }: { thongKe: IThongKeXepLoai }) {
  */
 function ThangDiemCard() {
   const items = [
-    { loai: 'A', diem: '≥ 90', moTa: 'Hoàn thành xuất sắc nhiệm vụ', color: getXepLoaiColor('A') },
-    { loai: 'B', diem: '70 - 89', moTa: 'Hoàn thành tốt nhiệm vụ', color: getXepLoaiColor('B') },
-    { loai: 'C', diem: '50 - 69', moTa: 'Hoàn thành nhiệm vụ', color: getXepLoaiColor('C') },
-    { loai: 'D', diem: '< 50', moTa: 'Không hoàn thành nhiệm vụ', color: getXepLoaiColor('D') },
-    { loai: 'E', diem: '0', moTa: 'Không đánh giá (nghỉ cả tháng)', color: getXepLoaiColor('E') },
+    { loai: 'A', diem: '≥ 90', color: getXepLoaiColor('A') },
+    { loai: 'B', diem: '70 - 89', color: getXepLoaiColor('B') },
+    { loai: 'C', diem: '50 - 69', color: getXepLoaiColor('C') },
+    { loai: 'D', diem: '< 50', color: getXepLoaiColor('D') },
+    { loai: 'E', diem: '0', color: getXepLoaiColor('E') },
   ];
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Thang điểm xếp loại</h3>
-      
+
       <div className="space-y-3">
         {items.map((item) => (
           <div key={item.loai} className="flex items-center gap-4">
@@ -213,7 +213,7 @@ function ThangDiemCard() {
               {item.loai}
             </div>
             <div className="flex-1">
-              <p className="font-medium text-gray-900">{item.moTa}</p>
+              <p className="font-medium text-gray-900">Loại {item.loai}</p>
               <p className="text-sm text-gray-500">Điểm: {item.diem}</p>
             </div>
           </div>

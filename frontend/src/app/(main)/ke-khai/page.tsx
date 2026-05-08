@@ -677,7 +677,7 @@ export default function KeKhaiPage() {
                     <th className="min-w-[200px]">Mô tả</th>
                     <th className="w-24">Cấp độ</th>
                     <th className="w-24 text-center">Số lượng</th>
-                    <th className="w-32 text-center">SP quy đổi</th>
+                    <th className="w-32 text-center">Điểm quy đổi</th>
                     {/* v2.7.4: Cột lỗi CL/TĐ */}
                     <th className="w-28 text-center">Lỗi CL/TĐ</th>
                     <th className="w-32">LĐ Phê duyệt</th>
@@ -756,7 +756,7 @@ export default function KeKhaiPage() {
                           <td className="text-center">
                             {item.so_sp_goc_quy_doi !== null ? (
                               <span className="font-medium text-green-600">
-                                {item.so_sp_goc_quy_doi.toFixed(2)}
+                                {item.so_sp_goc_quy_doi.toFixed(6).replace(/\.?0+$/, '')}
                               </span>
                             ) : (
                               <span className="text-gray-400">-</span>

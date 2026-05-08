@@ -13,11 +13,11 @@ import type { IKPIDashboardSummary } from '@/types/portal';
 // HELPER: màu xếp loại
 // =============================================================================
 
-const XEP_LOAI_STYLE: Record<string, { bg: string; text: string; label: string }> = {
-  A: { bg: 'bg-green-100', text: 'text-green-700', label: 'Xuất sắc' },
-  B: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Tốt' },
-  C: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Hoàn thành' },
-  D: { bg: 'bg-red-100', text: 'text-red-700', label: 'Không hoàn thành' },
+const XEP_LOAI_STYLE: Record<string, { bg: string; text: string }> = {
+  A: { bg: 'bg-green-100', text: 'text-green-700' },
+  B: { bg: 'bg-blue-100', text: 'text-blue-700' },
+  C: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  D: { bg: 'bg-red-100', text: 'text-red-700' },
 };
 
 // =============================================================================
@@ -61,7 +61,7 @@ export default function WidgetKPI({ data, loading }: WidgetKPIProps) {
           {data.diem_thang_nay !== undefined && (
             <div className="text-center py-2">
               <div className="text-4xl font-bold text-blue-700">
-                {data.diem_thang_nay.toFixed(2)}
+                {data.diem_thang_nay.toFixed(6).replace(/\.?0+$/, '')}
               </div>
               <div className="text-xs text-gray-400 mt-1">điểm tháng này</div>
             </div>
@@ -70,7 +70,6 @@ export default function WidgetKPI({ data, loading }: WidgetKPIProps) {
           {style && xepLoai && (
             <div className={`${style.bg} ${style.text} rounded-lg px-3 py-2 text-center`}>
               <span className="font-bold text-lg">Loại {xepLoai}</span>
-              <span className="ml-2 text-sm">— {style.label}</span>
             </div>
           )}
 

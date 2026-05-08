@@ -297,9 +297,9 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
                 <span>Lĩnh vực: <strong>{selectedDM.linh_vuc}</strong></span>
                 <span>Nhóm: <strong>{selectedDM.nhom_pl3}</strong></span>
                 <span>
-                  Hệ số quy đổi: <strong>{selectedDM.he_so_quy_doi.toFixed(2)}</strong>
+                  Hệ số quy đổi: <strong>{selectedDM.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}</strong>
                 </span>
-                <span>Sản phẩm: {selectedDM.san_pham_dau_ra ?? '—'}</span>
+                <span>Đầu ra: {selectedDM.san_pham_dau_ra ?? '—'}</span>
               </div>
             </section>
           )}
@@ -467,16 +467,16 @@ export function KpiTargetModalV2({ open, onClose, onSuccess, thang, nam, editing
           {selectedDM && (
             <section className="rounded-md bg-green-50 border border-green-200 px-4 py-3 space-y-1">
               <p className="text-sm text-green-900">
-                <strong>Tổng SP quy đổi:</strong>{' '}
-                {Number(watchedSoLuong) || 0} × {selectedDM.he_so_quy_doi.toFixed(2)} ={' '}
-                <strong className="text-lg">{tongSpQuyDoi.toFixed(2)}</strong> SP1
+                <strong>Tổng điểm quy đổi:</strong>{' '}
+                {Number(watchedSoLuong) || 0} × {selectedDM.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')} ={' '}
+                <strong className="text-lg">{tongSpQuyDoi.toFixed(6).replace(/\.?0+$/, '')}</strong> điểm
               </p>
               <p className="text-xs text-green-800">
-                <strong>SP đạt chất lượng:</strong>{' '}
-                <span className="font-mono">{spDatCL.toFixed(2)}</span> SP1
+                <strong>Điểm đạt chất lượng:</strong>{' '}
+                <span className="font-mono">{spDatCL.toFixed(6).replace(/\.?0+$/, '')}</span> điểm
                 {' • '}
-                <strong>SP đạt tiến độ:</strong>{' '}
-                <span className="font-mono">{spDatTD.toFixed(2)}</span> SP1
+                <strong>Điểm đạt tiến độ:</strong>{' '}
+                <span className="font-mono">{spDatTD.toFixed(6).replace(/\.?0+$/, '')}</span> điểm
               </p>
               <p className="text-[11px] text-green-700">
                 Mỗi lỗi trừ 25% × hệ số. Cap tối đa 4 lỗi/đơn vị (= -100%).

@@ -92,7 +92,7 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
     return t;
   }, [displayItems]);
 
-  const fmt = (n: number) => n.toFixed(2);
+  const fmt = (n: number) => n.toFixed(6).replace(/\.?0+$/, '');
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

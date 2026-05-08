@@ -172,7 +172,7 @@ function TieuChiChungWidget({
   return (
     <div className="text-center py-4">
       <div className="flex items-center justify-center gap-3 mb-4">
-        <div className="text-4xl font-bold text-gray-900">{diem.toFixed(2)}</div>
+        <div className="text-4xl font-bold text-gray-900">{diem.toFixed(6).replace(/\.?0+$/, '')}</div>
         <div className="text-left">
           <div className="text-sm text-gray-500">/ 30 điểm</div>
           <span className={`px-2 py-0.5 ${config.bg} ${config.text} text-xs rounded-full font-medium`}>
@@ -638,7 +638,7 @@ export default function DashboardPage() {
         <div className="mb-8">
           <SectionHeader icon="📌" title="Công việc của tôi" subtitle="Các tác vụ cá nhân hàng tháng" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <QuickActionCard icon="📝" title="Kê khai công việc" description="Kê khai sản phẩm tháng" href="/ke-khai-v2" color="blue" />
+            <QuickActionCard icon="📝" title="Kê khai công việc" description="Kê khai công việc tháng" href="/ke-khai-v2" color="blue" />
             <QuickActionCard icon="✍️" title="Tự chấm điểm" description="Tiêu chí chung (30đ)" href="/danh-gia/tu-cham-diem" color="purple" />
             <QuickActionCard icon="📊" title="Xem đánh giá" description="Kết quả KPI của bạn" href="/danh-gia-v2" color="green" />
             <QuickActionCard icon="🗓️" title="Nghỉ phép" description="Đăng ký và quản lý" href="/nghi-phep" color="cyan" />
@@ -671,9 +671,9 @@ export default function DashboardPage() {
           <div className="mb-8">
             <SectionHeader icon="📋" title="Quản lý đơn vị" subtitle={canEditManageUnit ? "Báo cáo và thống kê xếp loại công chức" : "Xem báo cáo xếp loại công chức (chỉ xem)"} />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <QuickActionCard icon="📊" title="Báo cáo Xếp loại" description={canEditManageUnit ? "Lập báo cáo xếp loại CC" : "Xem báo cáo xếp loại CC"} href="/xep-loai?tab=bao-cao" color="indigo" size="large" viewOnly={!canEditManageUnit} />
+              <QuickActionCard icon="📊" title="Báo cáo đánh giá, xếp loại" description={canEditManageUnit ? "Lập báo cáo đánh giá, xếp loại CC" : "Xem báo cáo đánh giá, xếp loại CC"} href="/xep-loai?tab=bao-cao" color="indigo" size="large" viewOnly={!canEditManageUnit} />
               <QuickActionCard icon="📐" title="Tạm tính KPI" description="Tổng hợp tạm tính điểm KPI tháng" href="/xep-loai?tab=tam-tinh" color="cyan" size="large" viewOnly={!canEditManageUnit} />
-              <QuickActionCard icon="🏆" title="Xếp loại quý" description="Tổng hợp đánh giá và xếp loại quý" href="/xep-loai?tab=quy" color="purple" size="large" viewOnly={!canEditManageUnit} />
+              <QuickActionCard icon="🏆" title="Đánh giá Quý" description="Tổng hợp đánh giá và xếp loại quý" href="/xep-loai?tab=quy" color="purple" size="large" viewOnly={!canEditManageUnit} />
             </div>
           </div>
         )}

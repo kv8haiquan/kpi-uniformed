@@ -44,17 +44,11 @@ export enum TrangThaiDanhGia {
 // =============================================================================
 
 /**
- * Lấy label tiếng Việt cho mức xếp loại.
+ * Trả về chữ cái mức đánh giá (A/B/C/D/E) — không kèm mô tả "Hoàn thành...".
+ * Theo yêu cầu nghiệp vụ: chỉ hiển thị "Mức đánh giá A/B/C/D/E".
  */
 export const getMucXepLoaiLabel = (muc: MucXepLoai): string => {
-  const labels: Record<MucXepLoai, string> = {
-    [MucXepLoai.A]: 'Hoàn thành xuất sắc nhiệm vụ',
-    [MucXepLoai.B]: 'Hoàn thành tốt nhiệm vụ',
-    [MucXepLoai.C]: 'Hoàn thành nhiệm vụ',
-    [MucXepLoai.D]: 'Không hoàn thành nhiệm vụ',
-    [MucXepLoai.E]: 'Không xếp loại',
-  };
-  return labels[muc] || muc;
+  return String(muc);
 };
 
 /**

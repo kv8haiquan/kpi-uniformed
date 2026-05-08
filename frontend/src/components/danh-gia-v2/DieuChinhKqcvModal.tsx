@@ -107,7 +107,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
             <div className="font-medium text-gray-900">{cv.ten_cong_viec || cv.ma_danh_muc}</div>
             <div className="text-xs text-gray-600 mt-1">
               Người kê: <b>{cv.ho_ten}</b> ({cv.ma_cc}) · Ngày: {cv.ngay_thuc_hien?.split('-').reverse().join('/')} ·
-              SL: <b>{cv.so_luong}</b> · Điểm gốc: <b>{cv.so_sp_goc_quy_doi.toFixed(2)}</b>
+              SL: <b>{cv.so_luong}</b> · Điểm gốc: <b>{cv.so_sp_goc_quy_doi.toFixed(6).replace(/\.?0+$/, '')}</b>
             </div>
           </div>
 

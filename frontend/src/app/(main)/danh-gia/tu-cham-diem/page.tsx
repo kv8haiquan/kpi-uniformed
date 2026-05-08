@@ -358,7 +358,7 @@ export default function TuChamDiemPage() {
             </div>
             <div className="text-right">
               <span className="text-sm text-gray-500">Điểm:</span>
-              <span className="ml-2 text-2xl font-bold text-blue-600">{diemPreview.tong_diem.toFixed(2)}/30</span>
+              <span className="ml-2 text-2xl font-bold text-blue-600">{diemPreview.tong_diem.toFixed(6).replace(/\.?0+$/, '')}/30</span>
             </div>
           </div>
         </div>
@@ -368,7 +368,7 @@ export default function TuChamDiemPage() {
             <span>📅 Ngày trong tháng: <strong>{ketQua.so_ngay_trong_thang}</strong></span>
             <span>🏖️ Nghỉ phép: <strong>{ketQua.so_ngay_nghi_phep}</strong></span>
             <span>💼 Làm việc: <strong>{ketQua.so_ngay_lam_viec}</strong></span>
-            <span>🎯 Target: <strong>{ketQua.target_kpi}</strong> SP</span>
+            <span>🎯 Target: <strong>{ketQua.target_kpi}</strong> điểm</span>
           </div>
         )}
 
@@ -393,15 +393,15 @@ export default function TuChamDiemPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-emerald-500">
           <div className="text-sm text-gray-500">Nhóm 1 - Phẩm chất chính trị</div>
-          <div className="text-xl font-bold text-emerald-600">{diemPreview.nhom_1_diem.toFixed(2)}/10</div>
+          <div className="text-xl font-bold text-emerald-600">{diemPreview.nhom_1_diem.toFixed(6).replace(/\.?0+$/, '')}/10</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-sky-500">
           <div className="text-sm text-gray-500">Nhóm 2 - Năng lực chuyên môn</div>
-          <div className="text-xl font-bold text-sky-600">{diemPreview.nhom_2_diem.toFixed(2)}/10</div>
+          <div className="text-xl font-bold text-sky-600">{diemPreview.nhom_2_diem.toFixed(6).replace(/\.?0+$/, '')}/10</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-amber-500">
           <div className="text-sm text-gray-500">Nhóm 3 - Năng lực đổi mới</div>
-          <div className="text-xl font-bold text-amber-600">{diemPreview.nhom_3_diem.toFixed(2)}/10</div>
+          <div className="text-xl font-bold text-amber-600">{diemPreview.nhom_3_diem.toFixed(6).replace(/\.?0+$/, '')}/10</div>
         </div>
       </div>
 

@@ -237,8 +237,23 @@ class CuocHopService:
     async def huy(self, ch: CuocHop, ly_do: str, user: TokenPayload) -> CuocHop:
         if ch.trang_thai == "HUY":
             return ch
+        was_dang_dien_ra = ch.trang_thai == "DANG_DIEN_RA"
+        now = datetime.now(timezone.utc)
         ch.trang_thai = "HUY"
-        ch.updated_at = datetime.now(timezone.utc)
+        ch.updated_at = now
+
+        # BE_P6: cleanup phiên trình chiếu defensive nếu đang active
+        # (cuộc họp bị hủy giữa lúc đang trình chiếu).
+        from sqlalchemy import update
+        from meeting_service.models.trang_thai_trinh_chieu import TrangThaiTrinhChieu
+        await self.db.execute(
+            update(TrangThaiTrinhChieu)
+            .where(
+                TrangThaiTrinhChieu.cuoc_hop_id == ch.id,
+                TrangThaiTrinhChieu.is_active.is_(True),
+            )
+            .values(is_active=False, ket_thuc_luc=now, cap_nhat_luc=now)
+        )
 
         tp_ids = await self._lay_thanh_phan_ids(ch.id)
         await gui_thong_bao_bulk(
@@ -261,6 +276,15 @@ class CuocHopService:
             chi_tiet={"ly_do": ly_do},
         )
         await self.db.flush()
+
+        # BE_P6: notify WS clients nếu cuộc họp bị hủy lúc đang DIEN_RA.
+        # Không cần broadcast nếu cuộc họp chưa start (LEN_KE_HOACH/DA_THONG_BAO)
+        # — không có WS client nào đang connect (REST chỉ cấp token cho
+        # DA_THONG_BAO trở lên, nhưng client thường chỉ connect khi DANG_DIEN_RA).
+        if was_dang_dien_ra:
+            from meeting_service.services.presentation_singletons import manager
+            await manager.close_channel(ch.id, reason="cancelled")
+
         return ch
 
     # ──────────────────────────────────────────────────────────────────
@@ -305,9 +329,11 @@ class CuocHopService:
     async def ket_thuc(self, ch: CuocHop, user: TokenPayload) -> CuocHop:
         """Chuyển trạng thái DANG_DIEN_RA → HOAN_THANH.
 
-        Side effect: cleanup trang_thai_trinh_chieu (set is_active=FALSE +
-        ket_thuc_luc=NOW) nếu phiên trình chiếu vẫn đang chạy. WS layer
-        sẽ broadcast meeting_ended event qua hook ở BE_P5.
+        Side effects:
+        - Cleanup trang_thai_trinh_chieu (set is_active=FALSE + ket_thuc_luc=NOW)
+          nếu phiên trình chiếu vẫn đang chạy.
+        - Hook BE_P6: gọi manager.close_channel('completed') để broadcast
+          meeting_ended tới mọi WS client + close graceful.
         """
         from fastapi import HTTPException
         from sqlalchemy import update
@@ -350,6 +376,11 @@ class CuocHopService:
             doi_tuong_id=ch.id,
         )
         await self.db.flush()
+
+        # BE_P6: notify mọi WS client cuộc họp đã kết thúc → close graceful.
+        from meeting_service.services.presentation_singletons import manager
+        await manager.close_channel(ch.id, reason="completed")
+
         return ch
 
     # ──────────────────────────────────────────────────────────────────

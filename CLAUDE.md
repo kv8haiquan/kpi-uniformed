@@ -181,7 +181,7 @@ Lý do: Cross-schema JOIN hoạt động bình thường, 1 connection pool, FK 
 | Legal Backend | 8003 | backend/legal_service/ | ✅ Đã chạy |
 | Portal Backend | 8004 | backend/portal_service/ | ✅ Đã chạy |
 | Common Backend | 8005 | backend/common_service/ | ✅ Đã chạy |
-| HKG Backend (Họp Không Giấy) | 8006 | backend/meeting_service/ | 🔄 G2 (Module 1) |
+| HKG Backend (Họp Không Giấy) | 8006 | backend/meeting_service/ | 🔄 G2 + Phase 4.1 page-sync (BE done 2026-05-09) |
 | Frontend | 3000 | frontend/ | ✅ Production |
 
 > **Reconciled 01/05/2026** — phát hiện portal_service (8004) và common_service (8005) chưa document trước đó (gốc rễ port conflict khi scaffold HKG).

@@ -43,7 +43,11 @@ from app.models.kpi_assessment import (
     TrangThaiTieuChi,
 )
 from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, TrangThaiHoanThanh
-from app.models.phieu_danh_gia import PhieuDanhGiaQuy, TrangThaiPhieuDanhGia
+from app.models.phieu_danh_gia import (
+    PhieuDanhGiaQuy,
+    PhieuDanhGiaThang,
+    TrangThaiPhieuDanhGia,
+)
 from app.models.task_catalog import DanhMucSpCongViec
 
 logger = logging.getLogger(__name__)
@@ -371,6 +375,20 @@ async def _lay_phieu_quy(
         .where(PhieuDanhGiaQuy.cong_chuc_id == cong_chuc_id)
         .where(PhieuDanhGiaQuy.quy == quy)
         .where(PhieuDanhGiaQuy.nam == nam)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def _lay_phieu_thang(
+    db, cong_chuc_id, thang: int, nam: int
+) -> Optional[PhieuDanhGiaThang]:
+    """Lấy phiếu đánh giá tháng của CC (None nếu chưa tạo)."""
+    stmt = (
+        select(PhieuDanhGiaThang)
+        .options(selectinload(PhieuDanhGiaThang.nguoi_phe_duyet))
+        .where(PhieuDanhGiaThang.cong_chuc_id == cong_chuc_id)
+        .where(PhieuDanhGiaThang.thang == thang)
+        .where(PhieuDanhGiaThang.nam == nam)
     )
     return (await db.execute(stmt)).scalar_one_or_none()
 
@@ -788,8 +806,39 @@ async def export_phieu_danh_gia(
 
                         tc_idx += 1
 
-    # Auto-fill ngày + tên CC/TDV/CCT vào footer (phiếu tháng — không có phiếu DB)
-    await _apply_auto_fill_chung(doc, db, cc, ngay_ky=None)
+    # Load phiếu THÁNG từ DB (nếu có) và fill mục 4/5/6 + ngày ký + tên LĐ
+    phieu_thang = await _lay_phieu_thang(db, cc.id, thang, nam)
+    ngay_ky: Optional[datetime] = None
+    ten_nguoi_duyet_override: Optional[str] = None
+
+    if phieu_thang is not None:
+        if phieu_thang.uu_diem:
+            _fill_section_after_heading(doc, "4. Ưu điểm", phieu_thang.uu_diem)
+        if phieu_thang.han_che:
+            _fill_section_after_heading(doc, "5. Hạn chế", phieu_thang.han_che)
+        if (
+            phieu_thang.y_kien_lanh_dao
+            and phieu_thang.trang_thai == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value
+        ):
+            _fill_section_after_heading(doc, "6. Ý kiến", phieu_thang.y_kien_lanh_dao)
+
+        if phieu_thang.trang_thai == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value:
+            ngay_ky = phieu_thang.ngay_phe_duyet
+        elif phieu_thang.trang_thai == TrangThaiPhieuDanhGia.CHO_PHE_DUYET.value:
+            ngay_ky = phieu_thang.ngay_gui_duyet
+
+        if phieu_thang.trang_thai in (
+            TrangThaiPhieuDanhGia.DA_PHE_DUYET.value,
+            TrangThaiPhieuDanhGia.BI_TU_CHOI.value,
+        ) and phieu_thang.nguoi_phe_duyet is not None:
+            ten_nguoi_duyet_override = phieu_thang.nguoi_phe_duyet.ho_ten or ""
+
+    # Auto-fill footer: ngày + tên CC + tên TDV/CCT
+    await _apply_auto_fill_chung(
+        doc, db, cc,
+        ngay_ky=ngay_ky,
+        ten_nguoi_duyet_override=ten_nguoi_duyet_override,
+    )
 
     # Lưu vào buffer
     buffer = io.BytesIO()
@@ -840,10 +889,13 @@ async def export_bang_ke_cong_viec(
     if nam < 2020 or nam > 2100:
         raise HTTPException(status_code=400, detail="Năm không hợp lệ")
 
-    # Load user
+    # Load user (kèm vai_tro để check is_hd_111)
     stmt_user = (
         select(CongChuc)
-        .options(selectinload(CongChuc.don_vi))
+        .options(
+            selectinload(CongChuc.don_vi),
+            selectinload(CongChuc.vai_tro),
+        )
         .where(CongChuc.id == current_user.id)
     )
     result_user = await db.execute(stmt_user)
@@ -852,14 +904,17 @@ async def export_bang_ke_cong_viec(
         raise HTTPException(status_code=404, detail="Không tìm thấy thông tin công chức")
 
     is_lanh_dao = cc.is_lanh_dao or False
+    # HĐ 111 (Phase 3 — 29/04/2026) kê khai dùng form Lãnh đạo (ke_khai_lanh_dao),
+    # nên PL-02 cũng phải đọc từ KeKhaiLanhDao thay vì KeKhaiCongViec — nếu không
+    # bảng kê sẽ rỗng.
+    dung_form_lanh_dao = bool(is_lanh_dao or cc.is_hd_111)
 
     # Lấy danh sách công việc đã kê khai trong tháng
-    # Nếu là lãnh đạo → query KeKhaiLanhDao, nếu không → KeKhaiCongViec
     cong_viec_list = []
     cong_viec_lanh_dao_list = []
 
     # CHÍNH SÁCH (17/04/2026): Bảng kê chính thức chỉ tổng hợp công việc ĐÃ PHÊ DUYỆT.
-    if is_lanh_dao:
+    if dung_form_lanh_dao:
         stmt_kkld = (
             select(KeKhaiLanhDao)
             .where(
@@ -896,7 +951,7 @@ async def export_bang_ke_cong_viec(
         cong_viec_list = result_kk.scalars().all()
 
     # Tính thống kê
-    if is_lanh_dao:
+    if dung_form_lanh_dao:
         # KeKhaiLanhDao: có trang_thai_hoan_thanh (DA_HOAN_THANH/CHUA_HOAN_THANH)
         tong_cv = len(cong_viec_lanh_dao_list)
         da_ht = sum(1 for cv in cong_viec_lanh_dao_list
@@ -976,8 +1031,8 @@ async def export_bang_ke_cong_viec(
             table_cv._element.remove(table_cv.rows[idx]._element)
 
         # Thêm row mới cho từng công việc
-        # Chọn danh sách dựa vào is_lanh_dao
-        data_source = cong_viec_lanh_dao_list if is_lanh_dao else cong_viec_list
+        # Chọn danh sách dựa vào kiểu kê khai (LĐ thật + HĐ 111 dùng KeKhaiLanhDao).
+        data_source = cong_viec_lanh_dao_list if dung_form_lanh_dao else cong_viec_list
 
         for idx, cv in enumerate(data_source, start=1):
             # Add new row (copy format từ row template cuối cùng)
@@ -988,8 +1043,8 @@ async def export_bang_ke_cong_viec(
             new_row.cells[0].text = str(idx)
             set_cell_font_times_new_roman(new_row.cells[0])
 
-            if is_lanh_dao:
-                # ===== MAPPING CHO LÃNH ĐẠO (KeKhaiLanhDao) =====
+            if dung_form_lanh_dao:
+                # ===== MAPPING CHO KÊ KHAI DẠNG LÃNH ĐẠO (KeKhaiLanhDao) =====
                 # (2) Nhiệm vụ được giao (tên công việc)
                 new_row.cells[1].text = cv.ten_cong_viec or "N/A"
                 set_cell_font_times_new_roman(new_row.cells[1])
@@ -1571,6 +1626,9 @@ async def export_bang_ke_cong_viec_quy(
         raise HTTPException(status_code=404, detail="Không tìm thấy thông tin công chức")
 
     is_lanh_dao = cc.is_lanh_dao or False
+    # HĐ 111 (Phase 3 — 29/04/2026) kê khai dùng form Lãnh đạo (ke_khai_lanh_dao),
+    # nên PL-02 quý cũng phải đọc từ KeKhaiLanhDao thay vì KeKhaiCongViec.
+    dung_form_lanh_dao = bool(is_lanh_dao or cc.is_hd_111)
 
     # CHÍNH SÁCH (20/04/2026): TDV và PCCT — liệt kê thêm CV CHO_PHE_DUYET (đánh
     # nhãn "[Chờ duyệt]") để đồng bộ với PL-01B quý (dùng tạm tính). CCT và
@@ -1587,7 +1645,7 @@ async def export_bang_ke_cong_viec_quy(
 
     # CHÍNH SÁCH (17/04/2026): Bảng kê quý chính thức chỉ tổng hợp công việc ĐÃ PHÊ DUYỆT,
     # ngoại lệ cho TDV/PCCT (xem chú thích gom_cho_duyet ở trên).
-    if is_lanh_dao:
+    if dung_form_lanh_dao:
         allowed_ld = [TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
         if gom_cho_duyet:
             allowed_ld.append(TrangThaiKeKhaiLD.CHO_PHE_DUYET.value)
@@ -1627,7 +1685,7 @@ async def export_bang_ke_cong_viec_quy(
         cong_viec_list = result_kk.scalars().all()
 
     # Tính thống kê (cộng gộp 3 tháng)
-    if is_lanh_dao:
+    if dung_form_lanh_dao:
         tong_cv = len(cong_viec_lanh_dao_list)
         da_ht = sum(1 for cv in cong_viec_lanh_dao_list
                     if cv.trang_thai_hoan_thanh == TrangThaiHoanThanh.DA_HOAN_THANH)
@@ -1695,8 +1753,8 @@ async def export_bang_ke_cong_viec_quy(
         for idx in reversed(rows_to_delete):
             table_cv._element.remove(table_cv.rows[idx]._element)
 
-        # Thêm row mới cho từng công việc
-        data_source = cong_viec_lanh_dao_list if is_lanh_dao else cong_viec_list
+        # Thêm row mới cho từng công việc (LĐ thật + HĐ 111 dùng KeKhaiLanhDao)
+        data_source = cong_viec_lanh_dao_list if dung_form_lanh_dao else cong_viec_list
 
         for idx, cv in enumerate(data_source, start=1):
             new_row = table_cv.add_row()
@@ -1705,8 +1763,8 @@ async def export_bang_ke_cong_viec_quy(
             new_row.cells[0].text = str(idx)
             set_cell_font_times_new_roman(new_row.cells[0])
 
-            if is_lanh_dao:
-                # ===== MAPPING CHO LÃNH ĐẠO =====
+            if dung_form_lanh_dao:
+                # ===== MAPPING CHO KÊ KHAI DẠNG LÃNH ĐẠO (LĐ thật + HĐ 111) =====
                 new_row.cells[1].text = cv.ten_cong_viec or "N/A"
                 set_cell_font_times_new_roman(new_row.cells[1])
 
@@ -1920,3 +1978,29 @@ async def export_bang_ke_cong_viec_quy_cua_cc(
     """TDV/CCT tải bảng kê công việc quý (PL-02) của CC cụ thể."""
     target_cc = await _load_cc_cho_in_boi_tdv(db, current_user, cong_chuc_id)
     return await export_bang_ke_cong_viec_quy(quy, nam, db, target_cc)
+
+
+@router.get("/phieu-danh-gia/{thang}/{nam}/cua-cc/{cong_chuc_id}")
+async def export_phieu_danh_gia_thang_cua_cc(
+    thang: int,
+    nam: int,
+    cong_chuc_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """TDV/CCT tải phiếu đánh giá tháng (PL-01A/01B) của CC cụ thể."""
+    target_cc = await _load_cc_cho_in_boi_tdv(db, current_user, cong_chuc_id)
+    return await export_phieu_danh_gia(thang, nam, db, target_cc)
+
+
+@router.get("/bang-ke-cong-viec/{thang}/{nam}/cua-cc/{cong_chuc_id}")
+async def export_bang_ke_cong_viec_thang_cua_cc(
+    thang: int,
+    nam: int,
+    cong_chuc_id: UUID,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """TDV/CCT tải bảng kê công việc tháng (PL-02) của CC cụ thể."""
+    target_cc = await _load_cc_cho_in_boi_tdv(db, current_user, cong_chuc_id)
+    return await export_bang_ke_cong_viec(thang, nam, db, target_cc)

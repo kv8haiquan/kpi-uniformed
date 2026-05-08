@@ -117,8 +117,10 @@ from app.models.lich_su_dieu_chinh import (
 )
 
 # Phiếu đánh giá cá nhân theo quý (v4.1.0 - 17/04/2026)
+# + theo tháng (08/05/2026)
 from app.models.phieu_danh_gia import (
     PhieuDanhGiaQuy,
+    PhieuDanhGiaThang,
     TrangThaiPhieuDanhGia,
 )
 
@@ -238,6 +240,7 @@ __all__ = [
     # PHIEU DANH GIA CA NHAN THEO QUY (v4.1.0)
     # ==========================================================================
     "PhieuDanhGiaQuy",
+    "PhieuDanhGiaThang",
     "TrangThaiPhieuDanhGia",
 
     # ==========================================================================

@@ -143,3 +143,73 @@ class KiemTraDuDieuKienResponse(BaseModel):
     so_cv_chua_duyet: int = 0
     so_tc_chua_duyet: int = 0
     chi_tiet_thang: list[ChiTietThangThieu] = Field(default_factory=list)
+
+
+# =============================================================================
+# SCHEMAS PHIẾU THÁNG (08/05/2026)
+# =============================================================================
+
+class UpsertPhieuThangRequest(BaseModel):
+    """CC tạo / cập nhật phiếu nháp tháng (mục 4 & 5)."""
+
+    thang: int = Field(..., ge=1, le=12, description="Tháng (1-12)")
+    nam: int = Field(..., ge=2020, le=2100, description="Năm")
+    uu_diem: Optional[str] = Field(None, description="Mục 4: Ưu điểm")
+    han_che: Optional[str] = Field(None, description="Mục 5: Hạn chế, khuyết điểm")
+
+
+class PhieuDanhGiaThangResponse(BaseModel):
+    """Chi tiết phiếu đánh giá tháng."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    cong_chuc_id: UUID
+    cong_chuc: Optional[NguoiKyResponse] = None
+
+    thang: int
+    nam: int
+
+    uu_diem: Optional[str] = None
+    han_che: Optional[str] = None
+    y_kien_lanh_dao: Optional[str] = None
+
+    trang_thai: str
+    ngay_gui_duyet: Optional[datetime] = None
+
+    nguoi_phe_duyet_id: Optional[UUID] = None
+    nguoi_phe_duyet: Optional[NguoiKyResponse] = None
+    ngay_phe_duyet: Optional[datetime] = None
+    ly_do_tu_choi: Optional[str] = None
+
+    created_at: datetime
+    updated_at: datetime
+
+
+class PhieuThangChoPheDuyetItem(BaseModel):
+    """1 dòng trong bảng phiếu tháng (TDV/CCT)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: Optional[UUID] = None
+    cong_chuc_id: UUID
+    ma_cc: str
+    ho_ten: str
+    chuc_vu: Optional[str] = None
+    don_vi_ten: Optional[str] = None
+    thang: int
+    nam: int
+    trang_thai: str
+    ngay_gui_duyet: Optional[datetime] = None
+    ngay_phe_duyet: Optional[datetime] = None
+    uu_diem: Optional[str] = None
+    han_che: Optional[str] = None
+    y_kien_lanh_dao: Optional[str] = None
+
+
+class KiemTraDuDieuKienThangResponse(BaseModel):
+    """Kiểm tra điều kiện gửi phiếu tháng — đếm CV/TC chưa duyệt trong tháng."""
+
+    thang: int
+    nam: int
+    co_van_de: bool
+    so_cv_chua_duyet: int = 0
+    so_tc_chua_duyet: int = 0

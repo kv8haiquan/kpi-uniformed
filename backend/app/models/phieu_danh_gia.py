@@ -195,3 +195,125 @@ class PhieuDanhGiaQuy(BaseModel):
             f"Q{self.quy}/{self.nam}, "
             f"trang_thai={self.trang_thai})>"
         )
+
+
+class PhieuDanhGiaThang(BaseModel):
+    """
+    Phiếu theo dõi, đánh giá công chức theo THÁNG.
+
+    Cấu trúc giống `PhieuDanhGiaQuy` (mục 4/5/6 + workflow 1 cấp), nhưng
+    key là (cong_chuc_id, thang, nam) thay vì (cong_chuc_id, quy, nam).
+
+    Thêm mới ngày 08/05/2026 để CC có thể tự nhận xét tháng và TDV/CCT
+    nhập ý kiến mục 6 trước khi tải PL-01A/01B tháng.
+    """
+
+    __tablename__ = "phieu_danh_gia_thang"
+
+    cong_chuc_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("cong_chuc.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="ID công chức sở hữu phiếu",
+    )
+
+    thang: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        comment="Tháng đánh giá (1-12)",
+    )
+
+    nam: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        comment="Năm đánh giá",
+    )
+
+    uu_diem: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Mục 4: Ưu điểm — CC tự nhập",
+    )
+
+    han_che: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Mục 5: Hạn chế, khuyết điểm — CC tự nhập",
+    )
+
+    y_kien_lanh_dao: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Mục 6: Ý kiến nhận xét của cấp có thẩm quyền",
+    )
+
+    trang_thai: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=TrangThaiPhieuDanhGia.NHAP.value,
+        server_default=TrangThaiPhieuDanhGia.NHAP.value,
+        index=True,
+        comment="Trạng thái: NHAP | CHO_PHE_DUYET | DA_PHE_DUYET | BI_TU_CHOI",
+    )
+
+    ngay_gui_duyet: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Ngày CC nhấn gửi duyệt lần gần nhất",
+    )
+
+    nguoi_phe_duyet_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("cong_chuc.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="ID người đã duyệt/từ chối (TDV hoặc CCT)",
+    )
+
+    ngay_phe_duyet: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Ngày duyệt/từ chối gần nhất",
+    )
+
+    ly_do_tu_choi: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Lý do từ chối (bắt buộc khi trang_thai=BI_TU_CHOI)",
+    )
+
+    cong_chuc: Mapped["CongChuc"] = relationship(
+        "CongChuc",
+        foreign_keys=[cong_chuc_id],
+        lazy="joined",
+    )
+
+    nguoi_phe_duyet: Mapped[Optional["CongChuc"]] = relationship(
+        "CongChuc",
+        foreign_keys=[nguoi_phe_duyet_id],
+        lazy="joined",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "cong_chuc_id", "thang", "nam",
+            name="uq_phieu_thang_cc_thang_nam",
+        ),
+        CheckConstraint("thang BETWEEN 1 AND 12", name="ck_phieu_thang_thang"),
+        CheckConstraint("nam BETWEEN 2020 AND 2100", name="ck_phieu_thang_nam"),
+        CheckConstraint(
+            "trang_thai IN ('NHAP','CHO_PHE_DUYET','DA_PHE_DUYET','BI_TU_CHOI')",
+            name="ck_phieu_thang_trang_thai",
+        ),
+        Index("idx_phieu_thang_cc_thang_nam", "cong_chuc_id", "thang", "nam"),
+        Index("idx_phieu_thang_trang_thai", "trang_thai"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PhieuDanhGiaThang(id={self.id}, "
+            f"cc_id={self.cong_chuc_id}, "
+            f"T{self.thang}/{self.nam}, "
+            f"trang_thai={self.trang_thai})>"
+        )

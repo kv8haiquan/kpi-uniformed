@@ -102,3 +102,73 @@ export interface KiemTraDuDieuKienResponse {
   so_tc_chua_duyet: number;
   chi_tiet_thang: ChiTietThangThieu[];
 }
+
+// ============================================================================
+// Phiếu THÁNG (08/05/2026)
+// ============================================================================
+
+export interface PhieuDanhGiaThang {
+  id: string;
+  cong_chuc_id: string;
+  cong_chuc: NguoiKy | null;
+
+  thang: number;
+  nam: number;
+
+  uu_diem: string | null;
+  han_che: string | null;
+  y_kien_lanh_dao: string | null;
+
+  trang_thai: TrangThaiPhieuDanhGia;
+  ngay_gui_duyet: string | null;
+
+  nguoi_phe_duyet_id: string | null;
+  nguoi_phe_duyet: NguoiKy | null;
+  ngay_phe_duyet: string | null;
+  ly_do_tu_choi: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertPhieuThangRequest {
+  thang: number;
+  nam: number;
+  uu_diem?: string | null;
+  han_che?: string | null;
+}
+
+export interface PhieuThangChoPheDuyetItem {
+  id: string | null;
+  cong_chuc_id: string;
+  ma_cc: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+  don_vi_ten: string | null;
+  thang: number;
+  nam: number;
+  trang_thai: TrangThaiPhieuDanhGia;
+  ngay_gui_duyet: string | null;
+  ngay_phe_duyet: string | null;
+  uu_diem: string | null;
+  han_che: string | null;
+  y_kien_lanh_dao: string | null;
+}
+
+export interface ChoPheDuyetThangResponse {
+  items: PhieuThangChoPheDuyetItem[];
+  pagination: {
+    page: number;
+    page_size: number;
+    total_items: number;
+    total_pages: number;
+  };
+}
+
+export interface KiemTraDuDieuKienThangResponse {
+  thang: number;
+  nam: number;
+  co_van_de: boolean;
+  so_cv_chua_duyet: number;
+  so_tc_chua_duyet: number;
+}

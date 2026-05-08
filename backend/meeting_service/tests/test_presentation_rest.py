@@ -224,15 +224,15 @@ async def test_get_state_ws_token_ttl_formula(
     """8/9: TTL = combine(ngay_hop, gio_ket_thuc, HCM) + 1h, capped NOW+6h.
 
     Đặt cuộc họp end trong NOW+1h → expected expires = NOW+2h (within cap).
+    Dùng end_target.date() làm ngay_hop để tránh cross-midnight bug.
     """
     now_hcm = datetime.now(HCM)
-    end_target = (now_hcm + timedelta(hours=1)).replace(microsecond=0)
-    start_target = (now_hcm - timedelta(minutes=30)).replace(microsecond=0)
+    end_target = (now_hcm + timedelta(hours=1)).replace(microsecond=0, second=0)
 
     cuoc_hop_id = await _create_meeting_in_status(
         client, db_session, chu_toa_user, seed_test_users, "DANG_DIEN_RA",
-        ngay_hop=now_hcm.date().isoformat(),
-        gio_bd=start_target.time().strftime("%H:%M"),
+        ngay_hop=end_target.date().isoformat(),
+        gio_bd="00:00",  # Bất kỳ — chỉ end thôi quyết định TTL
         gio_kt=end_target.time().strftime("%H:%M"),
     )
 
@@ -250,18 +250,22 @@ async def test_get_state_ws_token_ttl_formula(
 async def test_get_state_ws_token_fallback_no_gio_ket_thuc(
     client: AsyncClient, db_session: AsyncSession, chu_toa_user, seed_test_users
 ):
-    """9/9: gio_ket_thuc NULL → TTL = combine(ngay_hop, gio_bat_dau, HCM) + 4h."""
-    now_hcm = datetime.now(HCM)
-    start_target = (now_hcm - timedelta(minutes=30)).replace(microsecond=0)
+    """9/9: gio_ket_thuc NULL → TTL = combine(ngay_hop, gio_bat_dau, HCM) + 4h.
 
-    # Tạo với gio_kt nhập có sẵn rồi UPDATE NULL qua SQL (POST schema yêu cầu)
+    Dùng start_target = NOW + 30min để (start + 4h) < NOW + 6h cap, đồng thời
+    .date()/.time() trên cùng ngày → tránh cross-midnight bug.
+    """
+    now_hcm = datetime.now(HCM)
+    start_target = (now_hcm + timedelta(minutes=30)).replace(microsecond=0, second=0)
+
+    # Tạo với gio_kt placeholder rồi UPDATE NULL qua SQL (POST schema yêu cầu time)
     cuoc_hop_id = await _create_meeting_in_status(
         client, db_session, chu_toa_user, seed_test_users, "DA_THONG_BAO",
-        ngay_hop=now_hcm.date().isoformat(),
+        ngay_hop=start_target.date().isoformat(),
         gio_bd=start_target.time().strftime("%H:%M"),
         gio_kt=(start_target + timedelta(hours=2)).time().strftime("%H:%M"),
     )
-    # Force gio_ket_thuc = NULL
+    # Force gio_ket_thuc = NULL để trigger fallback
     await db_session.execute(
         sa_text("UPDATE meeting.cuoc_hop SET gio_ket_thuc = NULL WHERE id = :id"),
         {"id": str(cuoc_hop_id)},

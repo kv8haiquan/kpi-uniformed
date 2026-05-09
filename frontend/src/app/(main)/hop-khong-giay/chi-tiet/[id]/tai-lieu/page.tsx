@@ -19,6 +19,7 @@ import { errMsg } from '@/lib/hkg-error';
 import type { ITaiLieuListItem } from '@/types/hkg';
 import { useMeeting } from '@/components/hkg/MeetingContext';
 import { usePresentationSync } from '@/hooks/usePresentationSync';
+import { useTabLeader } from '@/hooks/useTabLeader';
 import PresentationViewerLazy from '@/components/hkg/presentation/PresentationViewerLazy';
 import { MeetingLifecycleButton } from '@/components/hkg/presentation/MeetingLifecycleButton';
 import { SyncStatusBadge } from '@/components/hkg/presentation/SyncStatusBadge';
@@ -42,6 +43,11 @@ export default function TaiLieuTabPage() {
   // Phase 4.1: WS sync
   const syncEnabled = !!ch && (SYNC_ENABLED_STATES as readonly string[]).includes(ch.trang_thai);
   const sync = usePresentationSync({ cuocHopId: id, enabled: syncEnabled });
+
+  // FE_P4: Multi-tab leader election. Chỉ tab "leader" mới có quyền gửi
+  // host action (page_change, start/end). Tab phụ chỉ xem.
+  const { isLeader } = useTabLeader(id, syncEnabled);
+  const canControlHost = sync.isHost && isLeader;
 
   // Local FE state cho đại biểu xem độc lập
   const [independentMode, setIndependentMode] = useState(false);
@@ -141,15 +147,18 @@ export default function TaiLieuTabPage() {
   // Presentation actions (host)
   // ────────────────────────────────────────────────────────────
   const handleStartPresent = (taiLieuId: string) => {
-    if (!sync.isHost) return;
+    if (!canControlHost) return;
     if (!sync.state.isActive) sync.startPresentation(taiLieuId, 1);
     else sync.changeDocument(taiLieuId, 1);
   };
 
-  const handleEndPresent = () => sync.endPresentation();
+  const handleEndPresent = () => {
+    if (!canControlHost) return;
+    sync.endPresentation();
+  };
 
   const handleHostPageChange = (page: number) => {
-    if (sync.isHost && !independentMode) sync.changePage(page);
+    if (canControlHost && !independentMode) sync.changePage(page);
   };
 
   // ────────────────────────────────────────────────────────────
@@ -167,9 +176,9 @@ export default function TaiLieuTabPage() {
   const handleLocalPageChange = (page: number) => setLocalPage(page);
 
   // Khi viewer có cả hai role: host (gửi page_change) hoặc đại biểu độc lập
-  // (chỉ update local). Đại biểu sync thì không có nút Prev/Next.
-  const viewerIsControllable = sync.isHost || independentMode;
-  const onViewerPageChange = sync.isHost
+  // (chỉ update local). Đại biểu sync hoặc tab phụ thì không có nút Prev/Next.
+  const viewerIsControllable = canControlHost || independentMode;
+  const onViewerPageChange = canControlHost
     ? handleHostPageChange
     : independentMode
       ? handleLocalPageChange
@@ -200,7 +209,7 @@ export default function TaiLieuTabPage() {
             )}
           </div>
 
-          {syncEnabled && sync.state.isActive && sync.isHost && (
+          {syncEnabled && sync.state.isActive && canControlHost && (
             <button
               onClick={handleEndPresent}
               className="inline-flex items-center gap-2 px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700"
@@ -217,6 +226,17 @@ export default function TaiLieuTabPage() {
               disabled={sync.status === 'closed' || sync.status === 'error'}
             />
           )}
+        </div>
+      )}
+
+      {/* FE_P4: Banner khi host đang ở tab phụ */}
+      {syncEnabled && sync.isHost && !isLeader && (
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded text-amber-800 text-sm flex items-center gap-2">
+          <span className="font-medium">Tab phụ:</span>
+          <span>
+            Bạn đang mở cuộc họp này ở nhiều tab. Vui lòng dùng tab chính để
+            điều khiển trình chiếu (page sync, bắt đầu/kết thúc).
+          </span>
         </div>
       )}
 
@@ -303,7 +323,7 @@ export default function TaiLieuTabPage() {
                 const isCurrent = sync.state.taiLieuId === tl.id;
                 const canPresent =
                   syncEnabled &&
-                  sync.isHost &&
+                  canControlHost &&
                   // chỉ PDF mới render được trong PresentationViewer
                   tl.extension?.toLowerCase() === 'pdf';
                 return (

@@ -414,6 +414,44 @@ export const nhomThanhPhanApi = {
 };
 
 // ════════════════════════════════════════════════════════════
+// MODULE 9 — PRESENTATION (Phase 4.1)
+// ════════════════════════════════════════════════════════════
+
+import type { IPresentationStateResponse } from '@/types/hkg-presentation';
+
+export const presentationApi = {
+  /**
+   * GET /cuoc-hop/{id}/presentation/state
+   * Trả state hiện tại + WS token (TTL ≤ 6h, scope=meeting:{id}).
+   * Endpoint UPSERT row meeting.trang_thai_trinh_chieu lazy.
+   */
+  getState: (cuoc_hop_id: string) =>
+    unwrap<IPresentationStateResponse>(
+      hkgApi.get(`/cuoc-hop/${cuoc_hop_id}/presentation/state`),
+    ),
+};
+
+/**
+ * Build URL WebSocket cho presentation channel.
+ *
+ * BE mount router tại `/api/v1/hop-khong-giay/ws/cuoc-hop/{id}/presentation`.
+ * Token đi qua query string vì FastAPI WebSocket không hỗ trợ
+ * Authorization header reliable cross-browser.
+ */
+export function buildPresentationWsUrl(
+  cuoc_hop_id: string,
+  ws_token: string,
+): string {
+  if (typeof window === 'undefined') return '';
+  const httpBase = HKG_API_URL.startsWith('http')
+    ? HKG_API_URL
+    : `${window.location.origin}${HKG_API_URL}`;
+  // http://host/api/v1/hop-khong-giay → ws://host/api/v1/hop-khong-giay
+  const wsBase = httpBase.replace(/^http/, 'ws');
+  return `${wsBase}/ws/cuoc-hop/${cuoc_hop_id}/presentation?token=${encodeURIComponent(ws_token)}`;
+}
+
+// ════════════════════════════════════════════════════════════
 // HEALTH (cho debug)
 // ════════════════════════════════════════════════════════════
 

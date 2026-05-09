@@ -26,6 +26,7 @@ import { SyncStatusBadge } from '@/components/hkg/presentation/SyncStatusBadge';
 import { IndependentViewBanner } from '@/components/hkg/presentation/IndependentViewBanner';
 import { ConfirmReturnDialog } from '@/components/hkg/presentation/ConfirmReturnDialog';
 import { ToggleModeButton } from '@/components/hkg/presentation/ToggleModeButton';
+import { OnboardingHint } from '@/components/hkg/presentation/OnboardingHint';
 
 // Trạng thái cuộc họp mà WS endpoint chấp nhận token (khớp BE
 // _VALID_STATES_FOR_TOKEN ở presentation_rest.py).
@@ -57,6 +58,10 @@ export default function TaiLieuTabPage() {
   // Signed URL của tài liệu đang trình chiếu (re-fetch khi taiLieuId đổi)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfUrlLoading, setPdfUrlLoading] = useState(false);
+  const [pdfNotFound, setPdfNotFound] = useState(false);
+
+  // FE_P5: Edge — banner khi cuộc họp kết thúc/hủy giữa session
+  const [sessionEnded, setSessionEnded] = useState<null | 'completed' | 'cancelled'>(null);
 
   // ────────────────────────────────────────────────────────────
   // Fetch list documents
@@ -76,21 +81,41 @@ export default function TaiLieuTabPage() {
 
   // ────────────────────────────────────────────────────────────
   // Re-fetch signed URL khi tài liệu trình chiếu đổi
+  // FE_P5 edge: 404 → pdfNotFound (host đã xóa giữa cuộc họp)
   // ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!sync.state.taiLieuId) {
       setPdfUrl(null);
+      setPdfNotFound(false);
       return;
     }
     let cancelled = false;
     setPdfUrlLoading(true);
+    setPdfNotFound(false);
     taiLieuApi
       .xemUrl(sync.state.taiLieuId)
       .then((r) => { if (!cancelled) setPdfUrl(r.url); })
-      .catch((e: unknown) => { if (!cancelled) setError(errMsg(e, 'Lỗi tải URL tài liệu')); })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        // axios error có .response?.status
+        const status = (e as { response?: { status?: number } })?.response?.status;
+        if (status === 404) {
+          setPdfNotFound(true);
+          setPdfUrl(null);
+        } else {
+          setError(errMsg(e, 'Lỗi tải URL tài liệu'));
+        }
+      })
       .finally(() => { if (!cancelled) setPdfUrlLoading(false); });
     return () => { cancelled = true; };
   }, [sync.state.taiLieuId]);
+
+  // FE_P5 edge: track meeting_ended event giữa session để show banner
+  useEffect(() => {
+    if (sync.endReason && !sessionEnded) {
+      setSessionEnded(sync.endReason);
+    }
+  }, [sync.endReason, sessionEnded]);
 
   // ────────────────────────────────────────────────────────────
   // Page hiệu lực cho viewer (sync hay độc lập)
@@ -229,6 +254,46 @@ export default function TaiLieuTabPage() {
         </div>
       )}
 
+      {/* FE_P5: Onboarding tooltips (chỉ hiện lần đầu, dismissable). */}
+      {syncEnabled && sync.isHost && !sync.state.isActive && (
+        <OnboardingHint
+          storageKey="host_present_v1"
+          title="Bắt đầu trình chiếu"
+          message="Bấm nút Trình chiếu trên một file PDF trong danh sách bên dưới để toàn bộ đại biểu đồng bộ trang theo bạn."
+        />
+      )}
+      {syncEnabled && !sync.isHost && sync.state.isActive && (
+        <OnboardingHint
+          storageKey="dele_independent_v1"
+          title="Bạn có thể xem độc lập"
+          message="Mặc định bạn xem theo trang chủ tọa. Bấm Xem độc lập để tự lật trang xem trước/sau mà không ảnh hưởng người khác."
+        />
+      )}
+
+      {/* FE_P5: Banner khi cuộc họp kết thúc/hủy giữa session */}
+      {sessionEnded && (
+        <div
+          className={`p-3 rounded text-sm border flex items-start gap-2 ${
+            sessionEnded === 'cancelled'
+              ? 'bg-red-50 border-red-300 text-red-800'
+              : 'bg-blue-50 border-blue-300 text-blue-800'
+          }`}
+        >
+          <span className="font-medium">
+            {sessionEnded === 'cancelled' ? 'Cuộc họp đã hủy.' : 'Cuộc họp đã kết thúc.'}
+          </span>
+          <span>
+            Trình chiếu đã đóng tự động. Vui lòng tải lại trang để xem trạng thái mới.
+          </span>
+          <button
+            onClick={() => window.location.reload()}
+            className="ml-auto px-2 py-0.5 bg-white border border-current rounded text-xs"
+          >
+            Tải lại
+          </button>
+        </div>
+      )}
+
       {/* FE_P4: Banner khi host đang ở tab phụ */}
       {syncEnabled && sync.isHost && !isLeader && (
         <div className="p-3 bg-amber-50 border border-amber-300 rounded text-amber-800 text-sm flex items-center gap-2">
@@ -275,6 +340,13 @@ export default function TaiLieuTabPage() {
           ) : pdfUrlLoading ? (
             <div className="h-64 flex items-center justify-center text-gray-500">
               <Loader2 className="w-5 h-5 animate-spin mr-2" /> Đang tải tài liệu...
+            </div>
+          ) : pdfNotFound ? (
+            <div className="h-64 flex flex-col items-center justify-center text-amber-800 bg-amber-50 border border-amber-300 rounded gap-2">
+              <p className="text-sm font-medium">Tài liệu này đã bị xóa</p>
+              <p className="text-xs text-amber-700">
+                Chủ tọa vui lòng chọn tài liệu khác để tiếp tục trình chiếu.
+              </p>
             </div>
           ) : (
             <div className="h-64 flex items-center justify-center text-gray-500">

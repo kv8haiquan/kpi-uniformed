@@ -113,6 +113,14 @@ export const cuocHopApi = {
   huy: (id: string, ly_do: string) =>
     unwrap<ICuocHop>(hkgApi.post(`/cuoc-hop/${id}/huy`, { ly_do })),
 
+  /** Phase 4.1 — Bắt đầu cuộc họp: DA_THONG_BAO → DANG_DIEN_RA. */
+  batDau: (id: string) =>
+    unwrap<ICuocHop>(hkgApi.post(`/cuoc-hop/${id}/bat-dau`)),
+
+  /** Phase 4.1 — Kết thúc cuộc họp: DANG_DIEN_RA → HOAN_THANH. */
+  ketThuc: (id: string) =>
+    unwrap<ICuocHop>(hkgApi.post(`/cuoc-hop/${id}/ket-thuc`)),
+
   guiGiayMoi: (id: string) =>
     unwrap<{ so_giay_moi_da_gui: number }>(hkgApi.post(`/cuoc-hop/${id}/gui-giay-moi`)),
 

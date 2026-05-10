@@ -17,6 +17,7 @@ from portal_service.models.chuyen_muc import ChuyenMuc
 from portal_service.models.thu_muc import ThuMuc
 from portal_service.models.bai_viet import BaiViet
 from portal_service.models.tai_lieu import TaiLieu
+from portal_service.models.vinh_danh_thang import VinhDanhThang
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "ThuMuc",
     "BaiViet",
     "TaiLieu",
+    "VinhDanhThang",
 ]

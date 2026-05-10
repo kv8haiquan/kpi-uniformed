@@ -6,12 +6,21 @@ Chạy: uvicorn portal_service.main:app --reload --port 8004
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
-from portal_service.api.endpoints import bai_viet, chuyen_muc, dashboard, tai_lieu, thu_muc
+from portal_service.api.endpoints import (
+    bai_viet,
+    chuyen_muc,
+    dashboard,
+    tai_lieu,
+    thu_muc,
+    vinh_danh,
+)
 from portal_service.config import settings
 
 
@@ -84,3 +93,12 @@ app.include_router(bai_viet.router, prefix=API_PREFIX)
 app.include_router(thu_muc.router, prefix=API_PREFIX)
 app.include_router(tai_lieu.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
+app.include_router(vinh_danh.router, prefix=API_PREFIX)
+
+
+# ---------------------------------------------------------------------------
+# Static files (anh chan dung vinh danh, anh dai dien bai viet)
+# ---------------------------------------------------------------------------
+upload_dir = Path("uploads/portal")
+upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads/portal", StaticFiles(directory="uploads/portal"), name="portal_uploads")

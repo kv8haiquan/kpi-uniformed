@@ -27,6 +27,7 @@ import {
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
 import WidgetPhanCongPhuTrach from '@/components/dashboard/WidgetPhanCongPhuTrach';
+import VinhDanhWidget from '@/components/dashboard/VinhDanhWidget';
 
 // =============================================================================
 // TYPES
@@ -552,6 +553,7 @@ export default function DashboardPage() {
               <QuickActionCard icon="📋" title="Danh mục công việc" description="Quản lý danh sách công việc" href="/admin/danh-muc-cv" color="purple" size="large" />
               <QuickActionCard icon="🔄" title="Điều chuyển nhân sự" description="Chuyển đơn vị, đổi vai trò" href="/admin/users" color="orange" size="large" />
               <QuickActionCard icon="🔑" title="Reset mật khẩu" description="Đặt lại mật khẩu người dùng" href="/admin/users" color="red" size="large" />
+              <QuickActionCard icon="🏆" title="Vinh danh tháng" description="Quản lý công chức tiêu biểu hàng tháng" href="/admin/vinh-danh" color="indigo" size="large" />
             </div>
           </div>
 
@@ -633,6 +635,9 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* WIDGET: Vinh danh công chức tiêu biểu (tự ẩn nếu chưa có vinh danh tháng hiện tại) */}
+        <VinhDanhWidget />
 
         {/* SECTION 1: CÔNG VIỆC CỦA TÔI */}
         <div className="mb-8">

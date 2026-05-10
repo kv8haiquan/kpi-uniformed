@@ -23,6 +23,11 @@ import type {
   IThuMucUpdate,
   IUploadPhienBanMoiRequest,
 } from '@/types/tai-lieu';
+import type {
+  IVinhDanhThangCreate,
+  IVinhDanhThangUpdate,
+  IVinhDanhListParams,
+} from '@/types/vinh-danh';
 
 // =============================================================================
 // AXIOS INSTANCE
@@ -166,6 +171,39 @@ export const portalDashboardApi = {
 };
 
 // =============================================================================
+// VINH DANH (cong chuc tieu bieu thang)
+// =============================================================================
+
+export const vinhDanhApi = {
+  /** Danh sach vinh danh — GET /vinh-danh */
+  danhSach: (params?: IVinhDanhListParams) =>
+    portalAxios.get('/vinh-danh', { params }),
+  /** Vinh danh PUBLISHED cua thang hien tai (widget) — GET /vinh-danh/current */
+  current: () => portalAxios.get('/vinh-danh/current'),
+  /** Chi tiet — GET /vinh-danh/{id} */
+  chiTiet: (id: string) => portalAxios.get(`/vinh-danh/${id}`),
+  /** Tao moi (DRAFT) — POST /vinh-danh (admin) */
+  taoMoi: (data: IVinhDanhThangCreate) => portalAxios.post('/vinh-danh', data),
+  /** Cap nhat — PUT /vinh-danh/{id} */
+  capNhat: (id: string, data: IVinhDanhThangUpdate) =>
+    portalAxios.put(`/vinh-danh/${id}`, data),
+  /** Cong bo (DRAFT -> PUBLISHED) — POST /vinh-danh/{id}/cong-bo */
+  congBo: (id: string) => portalAxios.post(`/vinh-danh/${id}/cong-bo`),
+  /** Go cong bo — POST /vinh-danh/{id}/go-cong-bo */
+  goCongBo: (id: string) => portalAxios.post(`/vinh-danh/${id}/go-cong-bo`),
+  /** Xoa (chi DRAFT) — DELETE /vinh-danh/{id} */
+  xoa: (id: string) => portalAxios.delete(`/vinh-danh/${id}`),
+  /** Upload anh chan dung — POST /vinh-danh/upload-anh */
+  uploadAnh: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return portalAxios.post('/vinh-danh/upload-anh', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
+// =============================================================================
 // DEFAULT EXPORT (backward compat)
 // =============================================================================
 
@@ -175,6 +213,7 @@ const portalService = {
   thuMucApi,
   taiLieuApi,
   portalDashboardApi,
+  vinhDanhApi,
 };
 
 export default portalService;

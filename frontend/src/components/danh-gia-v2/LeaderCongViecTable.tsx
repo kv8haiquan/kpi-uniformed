@@ -14,6 +14,7 @@ import { kpiLanhDaoV2Service } from '@/services/kpiLanhDaoV2.service';
 import { ICongViecLanhDaoV2 } from '@/types/kpiLanhDaoV2';
 import DieuChinhKqcvModal from './DieuChinhKqcvModal';
 
+import { formatScore } from '@/lib/format';
 interface Props {
   thang: number;
   nam: number;
@@ -92,7 +93,7 @@ export default function LeaderCongViecTable({ thang, nam, tamTinh }: Props) {
     return t;
   }, [displayItems]);
 
-  const fmt = (n: number) => n.toFixed(6).replace(/\.?0+$/, '');
+  const fmt = (n: number) => formatScore(n);
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

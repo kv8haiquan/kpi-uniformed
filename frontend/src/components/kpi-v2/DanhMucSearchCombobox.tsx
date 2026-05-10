@@ -19,6 +19,7 @@ import { kpiV2Service } from '@/services/kpi-v2.service';
 import { IDanhMucPL3 } from '@/types/kpi-v2';
 import { ILinhVucNhomValue } from './LinhVucNhomFilter';
 
+import { formatScore } from '@/lib/format';
 interface Props {
   filters: ILinhVucNhomValue;
   selectedId?: string;
@@ -181,7 +182,7 @@ export function DanhMucSearchCombobox({
                     <span>
                       <span className="text-gray-500">Hệ số:</span>{' '}
                       <strong className="text-blue-700">
-                        {item.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}
+                        {formatScore(item.he_so_quy_doi)}
                       </strong>
                     </span>
                     <span>

@@ -21,7 +21,7 @@ Phiên bản: 1.1 (30/01/2026) - Thêm so_ngay_lam_viec, so_ngay_nghi vào respo
 """
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Optional, List, Tuple, NamedTuple
 from uuid import UUID
 
@@ -166,6 +166,15 @@ class KetQuaTinhDiem(NamedTuple):
     xep_loai: str
     so_ngay_lam_viec: Decimal
     so_ngay_nghi: Decimal
+
+
+def _truncate_2dp(value: Optional[Decimal]) -> Optional[Decimal]:
+    # Cắt bỏ về 2 thập phân (ROUND_DOWN). Match formatScore() ở FE và tránh
+    # 89.997 bị Numeric(5,2) round-half-up thành 90.00 → /xep-loai hiện 90.0
+    # còn /danh-gia (live) hiện 89.9.
+    if value is None:
+        return None
+    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
 
 async def tinh_diem_cong_chuc(
@@ -613,9 +622,9 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
         if cc.id in existing_map:
             ct = existing_map[cc.id]
             ct.is_lanh_dao = is_lanh_dao  # v1.4: đảm bảo is_lanh_dao luôn đúng
-            ct.diem_tieu_chi_chung = ket_qua.diem_tieu_chi_chung
-            ct.diem_kpi = ket_qua.diem_kpi
-            ct.diem_tong = ket_qua.diem_tong
+            ct.diem_tieu_chi_chung = _truncate_2dp(ket_qua.diem_tieu_chi_chung)
+            ct.diem_kpi = _truncate_2dp(ket_qua.diem_kpi)
+            ct.diem_tong = _truncate_2dp(ket_qua.diem_tong)
             # Lưu xep_loai_he_thong cũ để so sánh
             old_xep_loai_he_thong = ct.xep_loai_he_thong
             ct.xep_loai_he_thong = ket_qua.xep_loai
@@ -632,9 +641,9 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
                 bao_cao_id=bao_cao.id,
                 cong_chuc_id=cc.id,
                 is_lanh_dao=is_lanh_dao,  # v1.4
-                diem_tieu_chi_chung=ket_qua.diem_tieu_chi_chung,
-                diem_kpi=ket_qua.diem_kpi,
-                diem_tong=ket_qua.diem_tong,
+                diem_tieu_chi_chung=_truncate_2dp(ket_qua.diem_tieu_chi_chung),
+                diem_kpi=_truncate_2dp(ket_qua.diem_kpi),
+                diem_tong=_truncate_2dp(ket_qua.diem_tong),
                 xep_loai_he_thong=ket_qua.xep_loai,
                 xep_loai_de_xuat=ket_qua.xep_loai,
                 so_ngay_lam_viec=ket_qua.so_ngay_lam_viec,  # v1.1
@@ -763,9 +772,9 @@ async def tao_bao_cao_xep_loai(
             bao_cao_id=bao_cao.id,
             cong_chuc_id=cc.id,
             is_lanh_dao=is_lanh_dao,
-            diem_tieu_chi_chung=ket_qua.diem_tieu_chi_chung,
-            diem_kpi=ket_qua.diem_kpi,
-            diem_tong=ket_qua.diem_tong,
+            diem_tieu_chi_chung=_truncate_2dp(ket_qua.diem_tieu_chi_chung),
+            diem_kpi=_truncate_2dp(ket_qua.diem_kpi),
+            diem_tong=_truncate_2dp(ket_qua.diem_tong),
             xep_loai_he_thong=ket_qua.xep_loai,
             xep_loai_de_xuat=ket_qua.xep_loai,
             so_ngay_lam_viec=ket_qua.so_ngay_lam_viec,  # v1.1

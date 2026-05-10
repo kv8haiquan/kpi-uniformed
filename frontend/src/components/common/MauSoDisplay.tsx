@@ -13,6 +13,7 @@
 
 import { Info } from 'lucide-react';
 
+import { formatScore } from '@/lib/format';
 type KpiVersion = 'V1' | 'V2_PL3' | undefined | null;
 
 interface Props {
@@ -46,7 +47,7 @@ export function MauSoDisplay({
         {showLabel && (
           <span className="text-xs text-gray-500">Tổng điểm kê khai:</span>
         )}{' '}
-        <strong className="text-blue-700">{tong.toFixed(6).replace(/\.?0+$/, '')}</strong>
+        <strong className="text-blue-700">{formatScore(tong)}</strong>
         <span className="ml-1 text-xs text-gray-500">điểm</span>
       </div>
     );

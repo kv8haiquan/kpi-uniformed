@@ -27,6 +27,7 @@ import { IDanhMucPL3, IFavoriteItem, IRecentItem } from '@/types/kpi-v2';
 import { DanhMucSearchCombobox } from './DanhMucSearchCombobox';
 import { LinhVucNhomFilter, ILinhVucNhomValue } from './LinhVucNhomFilter';
 
+import { formatScore } from '@/lib/format';
 export type PickerTabKey = 'favorites' | 'recent' | 'all';
 
 interface Props {
@@ -368,7 +369,7 @@ function SimpleList({
                   <span>
                     <span className="text-gray-500">Hệ số:</span>{' '}
                     <strong className="text-blue-700">
-                      {dm.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}
+                      {formatScore(dm.he_so_quy_doi)}
                     </strong>
                   </span>
                   <span>

@@ -21,6 +21,7 @@ import {
   LoadingSpinner,
 } from '../shared';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -585,10 +586,10 @@ export default function TabTamTinh({ thang, nam, capBac, onPendingCountChange }:
                         </>
                       ) : (
                         <>
-                          <td className="px-2 py-3 text-center text-gray-900 border-r" title={`d=${((thucTe.d_ket_qua ?? 1) * 100).toFixed(6).replace(/\.?0+$/, '')}% đ=${((thucTe.dd_to_chuc ?? 1) * 100).toFixed(6).replace(/\.?0+$/, '')}% e=${((thucTe.e_doan_ket ?? 1) * 100).toFixed(6).replace(/\.?0+$/, '')}%`}>
+                          <td className="px-2 py-3 text-center text-gray-900 border-r" title={`d=${formatScore(((thucTe.d_ket_qua ?? 1) * 100))}% đ=${formatScore(((thucTe.dd_to_chuc ?? 1) * 100))}% e=${formatScore(((thucTe.e_doan_ket ?? 1) * 100))}%`}>
                             d/đ/e
                           </td>
-                          <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium" title={`d=${((tamTinh.d_ket_qua ?? 1) * 100).toFixed(6).replace(/\.?0+$/, '')}% đ=${((tamTinh.dd_to_chuc ?? 1) * 100).toFixed(6).replace(/\.?0+$/, '')}% e=${((tamTinh.e_doan_ket ?? 1) * 100).toFixed(6).replace(/\.?0+$/, '')}%`}>
+                          <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium" title={`d=${formatScore(((tamTinh.d_ket_qua ?? 1) * 100))}% đ=${formatScore(((tamTinh.dd_to_chuc ?? 1) * 100))}% e=${formatScore(((tamTinh.e_doan_ket ?? 1) * 100))}%`}>
                             d/đ/e
                           </td>
                         </>
@@ -608,12 +609,12 @@ export default function TabTamTinh({ thang, nam, capBac, onPendingCountChange }:
                       <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{Math.round(tamTinh.sp_tien_do)}</td>
                     </>
                   )}
-                  <td className="px-2 py-3 text-center text-gray-900 border-r">{thucTe.diem_30.toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{tamTinh.diem_30.toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-2 py-3 text-center text-gray-900 border-r">{thucTe.diem_70.toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{tamTinh.diem_70.toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-2 py-3 text-center text-gray-900 border-r font-semibold">{thucTe.diem_tong.toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-2 py-3 text-center text-amber-700 bg-amber-50 font-bold">{tamTinh.diem_tong.toFixed(6).replace(/\.?0+$/, '')}</td>
+                  <td className="px-2 py-3 text-center text-gray-900 border-r">{formatScore(thucTe.diem_30)}</td>
+                  <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{formatScore(tamTinh.diem_30)}</td>
+                  <td className="px-2 py-3 text-center text-gray-900 border-r">{formatScore(thucTe.diem_70)}</td>
+                  <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{formatScore(tamTinh.diem_70)}</td>
+                  <td className="px-2 py-3 text-center text-gray-900 border-r font-semibold">{formatScore(thucTe.diem_tong)}</td>
+                  <td className="px-2 py-3 text-center text-amber-700 bg-amber-50 font-bold">{formatScore(tamTinh.diem_tong)}</td>
                   <td className="px-2 py-3 text-center border-r">
                     <span className={`inline-block px-2 py-1 text-xs font-semibold rounded ${getXepLoaiColor(thucTe.xep_loai)}`}>
                       {thucTe.xep_loai}

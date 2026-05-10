@@ -47,6 +47,7 @@ import {
 import KpiTargetModal from '@/components/kpi/KpiTargetModal';
 import KpiMultiDayModal from '@/components/kpi/KpiMultiDayModal';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // COMPONENT
 // =============================================================================
@@ -756,7 +757,7 @@ export default function KeKhaiPage() {
                           <td className="text-center">
                             {item.so_sp_goc_quy_doi !== null ? (
                               <span className="font-medium text-green-600">
-                                {item.so_sp_goc_quy_doi.toFixed(6).replace(/\.?0+$/, '')}
+                                {formatScore(item.so_sp_goc_quy_doi)}
                               </span>
                             ) : (
                               <span className="text-gray-400">-</span>

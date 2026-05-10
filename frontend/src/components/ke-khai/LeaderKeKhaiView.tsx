@@ -26,6 +26,7 @@ import {
 import LeaderDeclarationForm from './LeaderDeclarationForm';
 import LeaderAssessmentDDE from './LeaderAssessmentDDE';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -99,9 +100,9 @@ function pctSafe(v: number, _digits = 6): string {
   const value = v * 100;
   if (v < 1 && value >= 100) {
     const truncated = Math.floor(value * 1e6) / 1e6;
-    return truncated.toFixed(6).replace(/\.?0+$/, '');
+    return formatScore(truncated);
   }
-  return value.toFixed(6).replace(/\.?0+$/, '');
+  return formatScore(value);
 }
 
 function SummaryCard({ thongKe, dde }: { thongKe: IThongKeKeKhaiLanhDao | null; dde: IDanhGiaDDEResponse | null }) {
@@ -158,7 +159,7 @@ function SummaryCard({ thongKe, dde }: { thongKe: IThongKeKeKhaiLanhDao | null; 
           <p className="text-sm text-gray-600">Công thức: (a + b + c + d + đ + e) / 6 × 70</p>
           <div className="text-right">
             <p className="text-sm text-gray-500">Điểm KPI:</p>
-            <p className="text-3xl font-bold text-indigo-700">{diemKPI.diem_kpi_quy_doi.toFixed(6).replace(/\.?0+$/, '')}<span className="text-sm text-gray-500">/70</span></p>
+            <p className="text-3xl font-bold text-indigo-700">{formatScore(diemKPI.diem_kpi_quy_doi)}<span className="text-sm text-gray-500">/70</span></p>
           </div>
         </div>
       </div>

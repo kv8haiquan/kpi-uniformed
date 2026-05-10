@@ -9,6 +9,7 @@ import Link from 'next/link';
 import DashboardWidget from './DashboardWidget';
 import type { IKPIDashboardSummary } from '@/types/portal';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // HELPER: màu xếp loại
 // =============================================================================
@@ -61,7 +62,7 @@ export default function WidgetKPI({ data, loading }: WidgetKPIProps) {
           {data.diem_thang_nay !== undefined && (
             <div className="text-center py-2">
               <div className="text-4xl font-bold text-blue-700">
-                {data.diem_thang_nay.toFixed(6).replace(/\.?0+$/, '')}
+                {formatScore(data.diem_thang_nay)}
               </div>
               <div className="text-xs text-gray-400 mt-1">điểm tháng này</div>
             </div>

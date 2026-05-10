@@ -23,6 +23,7 @@ import { INguoiPheDuyet } from '@/services/kpi.service';
 
 import { DanhMucPickerTabs } from './DanhMucPickerTabs';
 
+import { formatScore } from '@/lib/format';
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -237,7 +238,7 @@ export function KpiMultiDayModalV2({ open, onClose, onSuccess, thang, nam }: Pro
               <div className="text-xs text-gray-700 space-x-4 mt-1">
                 <span>Lĩnh vực: {selectedDM.linh_vuc}</span>
                 <span>Nhóm: {selectedDM.nhom_pl3}</span>
-                <span>Hệ số: <strong>{selectedDM.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}</strong></span>
+                <span>Hệ số: <strong>{formatScore(selectedDM.he_so_quy_doi)}</strong></span>
               </div>
             </section>
           )}
@@ -428,23 +429,23 @@ export function KpiMultiDayModalV2({ open, onClose, onSuccess, thang, nam }: Pro
               <p className="text-green-900">
                 Sẽ tạo <strong>{days.length}</strong> bản kê khai. Mỗi bản:{' '}
                 <strong>{Number(soLuong) || 0}</strong> ×{' '}
-                <strong>{selectedDM.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}</strong> ={' '}
-                <strong>{tongSpQuyDoi.toFixed(6).replace(/\.?0+$/, '')}</strong> điểm.
+                <strong>{formatScore(selectedDM.he_so_quy_doi)}</strong> ={' '}
+                <strong>{formatScore(tongSpQuyDoi)}</strong> điểm.
               </p>
               <p className="text-xs text-green-800">
                 <strong>Điểm đạt CL/bản:</strong>{' '}
-                <span className="font-mono">{spDatCL.toFixed(6).replace(/\.?0+$/, '')}</span> điểm
+                <span className="font-mono">{formatScore(spDatCL)}</span> điểm
                 {' • '}
                 <strong>Điểm đạt TĐ/bản:</strong>{' '}
-                <span className="font-mono">{spDatTD.toFixed(6).replace(/\.?0+$/, '')}</span> điểm
+                <span className="font-mono">{formatScore(spDatTD)}</span> điểm
               </p>
               <p className="text-green-900 mt-1">
                 Tổng điểm toàn batch:{' '}
                 <strong className="text-base">
-                  {(tongSpQuyDoi * days.length).toFixed(6).replace(/\.?0+$/, '')}
+                  {formatScore((tongSpQuyDoi * days.length))}
                 </strong>{' '}
-                điểm • CL: {(spDatCL * days.length).toFixed(6).replace(/\.?0+$/, '')} • TĐ:{' '}
-                {(spDatTD * days.length).toFixed(6).replace(/\.?0+$/, '')}
+                điểm • CL: {formatScore((spDatCL * days.length))} • TĐ:{' '}
+                {formatScore((spDatTD * days.length))}
               </p>
             </section>
           )}

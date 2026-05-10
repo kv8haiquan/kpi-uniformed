@@ -28,6 +28,7 @@ import {
   ErrorMessage,
 } from '../shared';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // CONSTANTS
 // =============================================================================
@@ -175,19 +176,19 @@ function ChiTietModal({
           <div className="bg-blue-50 p-3 rounded-lg">
             <div className="text-xs text-gray-600 mb-1">Điểm KPI quý</div>
             <div className="text-lg font-bold text-blue-600">
-              {Number(chiTiet.diem_kpi).toFixed(6).replace(/\.?0+$/, '')}
+              {formatScore(Number(chiTiet.diem_kpi))}
             </div>
           </div>
           <div className="bg-green-50 p-3 rounded-lg">
             <div className="text-xs text-gray-600 mb-1">Điểm TC quý</div>
             <div className="text-lg font-bold text-green-600">
-              {Number(chiTiet.diem_tieu_chi_chung).toFixed(6).replace(/\.?0+$/, '')}
+              {formatScore(Number(chiTiet.diem_tieu_chi_chung))}
             </div>
           </div>
           <div className="bg-purple-50 p-3 rounded-lg">
             <div className="text-xs text-gray-600 mb-1">Điểm tổng quý</div>
             <div className="text-lg font-bold text-purple-600">
-              {Number(chiTiet.diem_tong).toFixed(6).replace(/\.?0+$/, '')}
+              {formatScore(Number(chiTiet.diem_tong))}
             </div>
           </div>
           <div className="bg-yellow-50 p-3 rounded-lg">
@@ -222,14 +223,14 @@ function ChiTietModal({
                       <td className="border border-gray-200 px-3 py-2 text-center font-medium">Tháng {t.thang}</td>
                       <td className="border border-gray-200 px-3 py-2 text-right">
                         <span className={t.co_du_lieu ? 'font-medium' : 'text-red-600'}>
-                          {t.diem_kpi?.toFixed(6).replace(/\.?0+$/, '') ?? '0'}
+                          {formatScore(t.diem_kpi) ?? '0'}
                         </span>
                       </td>
                       <td className="border border-gray-200 px-3 py-2 text-right">
-                        {t.diem_tc !== null ? t.diem_tc.toFixed(6).replace(/\.?0+$/, '') : '-'}
+                        {t.diem_tc !== null ? formatScore(t.diem_tc) : '-'}
                       </td>
                       <td className="border border-gray-200 px-3 py-2 text-right font-semibold">
-                        {t.diem_tong !== null ? t.diem_tong.toFixed(6).replace(/\.?0+$/, '') : '-'}
+                        {t.diem_tong !== null ? formatScore(t.diem_tong) : '-'}
                       </td>
                       <td className="border border-gray-200 px-3 py-2 text-center">
                         {t.xep_loai_thang ? (
@@ -449,9 +450,9 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
                     {ct.cong_chuc?.ho_ten}
                     {ct.is_lanh_dao && <span className="ml-1 text-xs text-blue-600 font-semibold">(LĐ)</span>}
                   </td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_tieu_chi_chung).toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_kpi).toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{Number(ct.diem_tong).toFixed(6).replace(/\.?0+$/, '')}</td>
+                  <td className="px-3 py-2 text-right font-medium">{formatScore(Number(ct.diem_tieu_chi_chung))}</td>
+                  <td className="px-3 py-2 text-right font-medium">{formatScore(Number(ct.diem_kpi))}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{formatScore(Number(ct.diem_tong))}</td>
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center">
                     {isEditing ? (
@@ -673,9 +674,9 @@ function WorkflowViewCCT({ quy, nam, canApprove }: WorkflowViewCCTProps) {
                     {ct.cong_chuc?.ho_ten}
                     {ct.is_lanh_dao && <span className="ml-1 text-xs text-blue-600 font-semibold">(LĐ)</span>}
                   </td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_tieu_chi_chung).toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-3 py-2 text-right font-medium">{Number(ct.diem_kpi).toFixed(6).replace(/\.?0+$/, '')}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{Number(ct.diem_tong).toFixed(6).replace(/\.?0+$/, '')}</td>
+                  <td className="px-3 py-2 text-right font-medium">{formatScore(Number(ct.diem_tieu_chi_chung))}</td>
+                  <td className="px-3 py-2 text-right font-medium">{formatScore(Number(ct.diem_kpi))}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-gray-900">{formatScore(Number(ct.diem_tong))}</td>
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_de_xuat || ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center">

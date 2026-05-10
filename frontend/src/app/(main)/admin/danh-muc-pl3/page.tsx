@@ -37,6 +37,7 @@ import { ILinhVuc } from '@/types/kpi-v2';
 
 import { ImportPL3Modal } from '@/components/admin/ImportPL3Modal';
 
+import { formatScore } from '@/lib/format';
 const NHOM_KHUNG_MAP: Record<number, number> = {
   1: 100,
   2: 200,
@@ -310,7 +311,7 @@ export default function AdminDanhMucPL3Page() {
                   <td className="px-3 py-2 text-center">{item.nhom_pl3}</td>
                   <td className="px-3 py-2 text-right">{item.diem_cham}</td>
                   <td className="px-3 py-2 text-right font-mono text-blue-700">
-                    {item.he_so_quy_doi?.toFixed(6).replace(/\.?0+$/, '')}
+                    {formatScore(item.he_so_quy_doi)}
                   </td>
                   <td className="px-3 py-2 text-center">
                     {item.is_active ? (

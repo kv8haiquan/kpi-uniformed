@@ -31,6 +31,7 @@ import {
   IExcelImportResponse,
 } from '@/types/admin-pl3';
 
+import { formatScore } from '@/lib/format';
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -385,7 +386,7 @@ function PreviewStep({
                   <td className="px-2 py-1 text-center">{r.nhom_pl3}</td>
                   <td className="px-2 py-1 text-right">{r.diem_cham}</td>
                   <td className="px-2 py-1 text-right font-mono">
-                    {r.he_so_quy_doi.toFixed(6).replace(/\.?0+$/, '')}
+                    {formatScore(r.he_so_quy_doi)}
                   </td>
                   <td className="px-2 py-1 text-center">
                     <span

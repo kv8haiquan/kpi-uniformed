@@ -29,6 +29,7 @@ import {
 } from '@/types/kpi';
 import MultiDayCalendar from './MultiDayCalendar';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -470,7 +471,7 @@ export default function KpiMultiDayModal({
 
                                 return (
                                   <p className="text-green-700 text-xs">
-                                    <strong>Hệ số ×{hesoCapDo}</strong> → {phut} phút (= {sp1.toFixed(6).replace(/\.?0+$/, '')} điểm)
+                                    <strong>Hệ số ×{hesoCapDo}</strong> → {phut} phút (= {formatScore(sp1)} điểm)
                                   </p>
                                 );
                               })()}
@@ -573,7 +574,7 @@ export default function KpiMultiDayModal({
                         return (
                           <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded text-sm">
                             <p className="text-purple-700 text-xs">
-                              <strong>Tổng điểm quy đổi:</strong> {tongSp1.toFixed(6).replace(/\.?0+$/, '')} điểm
+                              <strong>Tổng điểm quy đổi:</strong> {formatScore(tongSp1)} điểm
                             </p>
                           </div>
                         );

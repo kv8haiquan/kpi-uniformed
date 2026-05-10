@@ -30,6 +30,7 @@ import {
   TrangThaiTieuChiChung,
 } from '@/types/tieu-chi-chung';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // HELPERS
 // =============================================================================
@@ -59,7 +60,7 @@ function getXepLoaiColor(xl: XepLoai) {
 
 function fmt(n: number, _digits = 6) {
   if (!Number.isFinite(n)) return '0';
-  return n.toFixed(6).replace(/\.?0+$/, '');
+  return formatScore(n);
 }
 function pct(v: number, _digits = 6) {
   // Hiển thị tối đa 6 chữ số thập phân (strip trailing zeros). Tránh nhảy lên
@@ -67,9 +68,9 @@ function pct(v: number, _digits = 6) {
   const value = v * 100;
   if (v < 1 && value >= 100) {
     const truncated = Math.floor(value * 1e6) / 1e6;
-    return truncated.toFixed(6).replace(/\.?0+$/, '') + '%';
+    return formatScore(truncated) + '%';
   }
-  return value.toFixed(6).replace(/\.?0+$/, '') + '%';
+  return formatScore(value) + '%';
 }
 
 const TRANG_THAI_LABEL: Record<string, string> = {
@@ -175,7 +176,7 @@ function LeaderAbcCard({
     amber: { bg: 'bg-amber-600', text: 'text-amber-700', soft: 'bg-amber-50' },
   };
   const c = colorMap[color];
-  const fmtPct = (p: number) => `${p.toFixed(6).replace(/\.?0+$/, '')}%`;
+  const fmtPct = (p: number) => `${formatScore(p)}%`;
   return (
     <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
       <div className="text-sm font-semibold text-gray-800 mb-3">{label}</div>
@@ -263,7 +264,7 @@ function ScoreCard({
           <p className="text-xs text-gray-500">{subtitle}</p>
         </div>
         <div className="text-right">
-          <p className={`text-3xl font-bold ${c.text}`}>{value.toFixed(6).replace(/\.?0+$/, '')}</p>
+          <p className={`text-3xl font-bold ${c.text}`}>{formatScore(value)}</p>
           <p className="text-xs text-gray-500">/ {maxValue} điểm</p>
         </div>
       </div>
@@ -723,7 +724,7 @@ export default function DanhGiaV2Page() {
                       />
                       <StatBox
                         label="Điểm KPI"
-                        value={`${diemKPI.toFixed(6).replace(/\.?0+$/, '')}/70`}
+                        value={`${formatScore(diemKPI)}/70`}
                         bgColor="bg-purple-50"
                         textColor="text-purple-600"
                       />
@@ -828,7 +829,7 @@ export default function DanhGiaV2Page() {
                             ({pct(a, 2)} + {pct(b, 2)} + {pct(c, 2)} +{' '}
                             {pct(d, 2)} + {pct(dd, 2)} + {pct(e, 2)}) / 6 × 70 ={' '}
                             <strong className="text-indigo-700">
-                              {diemKPI.toFixed(6).replace(/\.?0+$/, '')} điểm
+                              {formatScore(diemKPI)} điểm
                             </strong>
                           </p>
                           <p className="text-xs text-gray-500 text-center mt-2">
@@ -855,7 +856,7 @@ export default function DanhGiaV2Page() {
                             </span>{' '}
                             ={' '}
                             <strong className="text-indigo-700">
-                              {diemKPI.toFixed(6).replace(/\.?0+$/, '')} điểm
+                              {formatScore(diemKPI)} điểm
                             </strong>
                           </p>
                           <p className="text-xs text-gray-500 text-center mt-1">
@@ -945,16 +946,16 @@ export default function DanhGiaV2Page() {
                               </td>
                               <td className="px-4 py-2 text-right text-sm">{kk.so_luong}</td>
                               <td className="px-4 py-2 text-right text-sm font-mono text-blue-700">
-                                {kk.he_so_quy_doi_snapshot?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
+                                {formatScore(kk.he_so_quy_doi_snapshot) ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-right text-sm font-mono">
-                                {kk.so_sp_goc_quy_doi?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
+                                {formatScore(kk.so_sp_goc_quy_doi) ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-right text-sm font-mono text-emerald-700">
-                                {kk.so_sp_chat_luong?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
+                                {formatScore(kk.so_sp_chat_luong) ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-right text-sm font-mono text-amber-700">
-                                {kk.so_sp_tien_do?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
+                                {formatScore(kk.so_sp_tien_do) ?? '—'}
                               </td>
                               <td className="px-4 py-2 text-center">
                                 {hasErr ? (

@@ -21,6 +21,8 @@ Phiên bản: 1.0 (16/04/2026)
 
 from datetime import datetime, timezone
 from decimal import Decimal
+
+from app.api.v1.endpoints.bao_cao_xep_loai import _truncate_2dp
 from typing import Optional, List
 from uuid import UUID
 
@@ -154,9 +156,9 @@ async def _rebuild_chi_tiets_bao_cao_quy(
         if diem_data.get("co_chuyen_don_vi"):
             continue
 
-        diem_tc_quy = Decimal(str(diem_data.get("diem_tc_quy") or 0))
-        diem_kpi_quy = Decimal(str(diem_data.get("diem_kpi_quy") or 0))
-        diem_tong_quy = Decimal(str(diem_data.get("diem_tong_quy") or 0))
+        diem_tc_quy = _truncate_2dp(Decimal(str(diem_data.get("diem_tc_quy") or 0)))
+        diem_kpi_quy = _truncate_2dp(Decimal(str(diem_data.get("diem_kpi_quy") or 0)))
+        diem_tong_quy = _truncate_2dp(Decimal(str(diem_data.get("diem_tong_quy") or 0)))
         xep_loai_he_thong = diem_data.get("xep_loai_quy") or "D"
 
         kept_cc_ids.add(cc.id)
@@ -389,9 +391,9 @@ async def get_or_create_bao_cao_quy_don_vi(
             # Bỏ qua CC chuyển đơn vị giữa quý
             continue
 
-        diem_kpi_quy = Decimal(str(diem_data.get("diem_kpi_quy") or 0))
-        diem_tc_quy = Decimal(str(diem_data.get("diem_tc_quy") or 0))
-        diem_tong_quy = Decimal(str(diem_data.get("diem_tong_quy") or 0))
+        diem_kpi_quy = _truncate_2dp(Decimal(str(diem_data.get("diem_kpi_quy") or 0)))
+        diem_tc_quy = _truncate_2dp(Decimal(str(diem_data.get("diem_tc_quy") or 0)))
+        diem_tong_quy = _truncate_2dp(Decimal(str(diem_data.get("diem_tong_quy") or 0)))
         xep_loai_quy = diem_data.get("xep_loai_quy") or "D"
 
         chi_tiet = ChiTietXepLoaiQuy(

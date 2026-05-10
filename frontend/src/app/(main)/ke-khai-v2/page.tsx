@@ -41,6 +41,7 @@ import { KpiTargetModalV2 } from '@/components/kpi-v2/KpiTargetModalV2';
 import { KpiMultiDayModalV2 } from '@/components/kpi-v2/KpiMultiDayModalV2';
 import LeaderAssessmentDDE from '@/components/ke-khai/LeaderAssessmentDDE';
 
+import { formatScore } from '@/lib/format';
 const TRANG_THAI_LABEL: Record<string, string> = {
   NHAP: 'Nháp',
   CHO_PHE_DUYET: 'Chờ duyệt',
@@ -328,7 +329,7 @@ export default function KeKhaiV2Page() {
                 <div>
                   <span className="text-gray-600">Đã duyệt:</span>{' '}
                   <strong className="text-green-700 text-base">
-                    {thongKe.tong_sp_da_duyet.toFixed(6).replace(/\.?0+$/, '')} điểm
+                    {formatScore(thongKe.tong_sp_da_duyet)} điểm
                   </strong>
                   <p className="text-xs text-gray-500 mt-0.5">
                     Mẫu số chính thức tính KPI
@@ -337,13 +338,13 @@ export default function KeKhaiV2Page() {
                 <div>
                   <span className="text-gray-600">Chờ duyệt:</span>{' '}
                   <strong className="text-yellow-700 text-base">
-                    {thongKe.tong_sp_cho_duyet.toFixed(6).replace(/\.?0+$/, '')} điểm
+                    {formatScore(thongKe.tong_sp_cho_duyet)} điểm
                   </strong>
                 </div>
                 <div>
                   <span className="text-gray-600">Dự kiến:</span>{' '}
                   <strong className="text-blue-700 text-base">
-                    {thongKe.tong_sp_du_kien.toFixed(6).replace(/\.?0+$/, '')} điểm
+                    {formatScore(thongKe.tong_sp_du_kien)} điểm
                   </strong>
                 </div>
               </div>
@@ -717,11 +718,11 @@ export default function KeKhaiV2Page() {
                         {kk.nhom_pl3_snapshot ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-sm font-mono text-blue-700">
-                        {kk.he_so_quy_doi_snapshot?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
+                        {formatScore(kk.he_so_quy_doi_snapshot) ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-sm">{kk.so_luong}</td>
                       <td className="px-4 py-3 text-right text-sm font-mono">
-                        {kk.so_sp_goc_quy_doi?.toFixed(6).replace(/\.?0+$/, '') ?? '—'}
+                        {formatScore(kk.so_sp_goc_quy_doi) ?? '—'}
                       </td>
                       {/* Cột Lỗi CL/TĐ */}
                       <td className="px-4 py-3 text-center">

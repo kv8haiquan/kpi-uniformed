@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { dieuChinhKqcvService } from '@/services/dieuChinhKqcv.service';
 import { ICongViecLanhDaoV2 } from '@/types/kpiLanhDaoV2';
 
+import { formatScore } from '@/lib/format';
 interface Props {
   open: boolean;
   cv: ICongViecLanhDaoV2 | null;
@@ -107,7 +108,7 @@ export default function DieuChinhKqcvModal({ open, cv, onClose, onSuccess }: Pro
             <div className="font-medium text-gray-900">{cv.ten_cong_viec || cv.ma_danh_muc}</div>
             <div className="text-xs text-gray-600 mt-1">
               Người kê: <b>{cv.ho_ten}</b> ({cv.ma_cc}) · Ngày: {cv.ngay_thuc_hien?.split('-').reverse().join('/')} ·
-              SL: <b>{cv.so_luong}</b> · Điểm gốc: <b>{cv.so_sp_goc_quy_doi.toFixed(6).replace(/\.?0+$/, '')}</b>
+              SL: <b>{cv.so_luong}</b> · Điểm gốc: <b>{formatScore(cv.so_sp_goc_quy_doi)}</b>
             </div>
           </div>
 

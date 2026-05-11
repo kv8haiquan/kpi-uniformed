@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Send, X, CheckCircle, Loader2, Users } from 'lucide-react';
+import { Send, X, CheckCircle, Loader2, Users, BellRing } from 'lucide-react';
 import { cuocHopApi } from '@/services/hkg';
 import { errMsg } from '@/lib/hkg-error';
 import { useMeeting } from '@/components/hkg/MeetingContext';
@@ -28,7 +28,11 @@ export default function TongQuanPage() {
     try {
       if (action === 'gui-giay-moi') {
         const r = await cuocHopApi.guiGiayMoi(id);
-        setMsg({ type: 'ok', text: `Đã gửi ${r.so_giay_moi_da_gui} giấy mời` });
+        setMsg({
+          type: 'ok',
+          text: `Đã gửi thông báo tới ${r.so_giay_moi_da_gui} người tham dự`,
+        });
+        await refresh(); // cập nhật trang_thai → DA_THONG_BAO để đổi nhãn nút
       } else if (action === 'huy') {
         const ly_do = window.prompt('Lý do hủy?') || 'Không nhập';
         await cuocHopApi.huy(id, ly_do);
@@ -68,14 +72,26 @@ export default function TongQuanPage() {
           {/* Organizer-only buttons (G4-fix-7: ẨN cho CBCC) */}
           {canEdit && (
             <>
-              <button
-                onClick={() => handleAction('gui-giay-moi')}
-                disabled={busy !== null || isLocked}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-              >
-                {busy === 'gui-giay-moi' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                Gửi giấy mời
-              </button>
+              {ch?.trang_thai === 'DA_THONG_BAO' ? (
+                <button
+                  type="button"
+                  disabled
+                  title="Giấy mời đã được gửi tới toàn bộ thành phần"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-green-100 text-green-800 border border-green-300 rounded text-sm cursor-not-allowed"
+                >
+                  <BellRing className="w-4 h-4" />
+                  Đã gửi thông báo
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleAction('gui-giay-moi')}
+                  disabled={busy !== null || isLocked}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {busy === 'gui-giay-moi' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Gửi giấy mời
+                </button>
+              )}
               <button
                 onClick={() => setShowSuaThanhPhan(true)}
                 disabled={busy !== null || isLocked}

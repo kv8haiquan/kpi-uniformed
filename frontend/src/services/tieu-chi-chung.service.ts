@@ -303,7 +303,14 @@ export const tieuChiChungService = {
    */
   async pheDuyet(
     danhGiaThangId: string,
-    dieuChinh?: Array<{ ma_tieu_chi: string; is_achieved_ld: boolean; ly_do_dieu_chinh?: string }>,
+    dieuChinh?: Array<{
+      ma_tieu_chi: string;
+      /** v3.6 (08/05/2026): điểm LĐ chấm (bội 0.5, 0 → diem_toi_da). Ưu tiên field này. */
+      diem_phe_duyet?: number;
+      /** Legacy — backend tự suy từ diem_phe_duyet nếu không gửi. */
+      is_achieved_ld?: boolean;
+      ly_do_dieu_chinh?: string;
+    }>,
     ghiChu?: string
   ): Promise<unknown> {
     const payload = {

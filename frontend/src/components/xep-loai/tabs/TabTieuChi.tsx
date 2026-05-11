@@ -280,15 +280,16 @@ const tieuChiApi = {
 
   /**
    * POST /danh-gia/{danh_gia_thang_id}/phe-duyet-tieu-chi
-   * ✅ FIX v3.4: Payload đúng backend PheDuyetTieuChiRequest
+   * v3.6 (08/05/2026): dieu_chinh.diem_phe_duyet (số) thay cho is_achieved_ld (boolean).
    */
   async pheDuyet(
     danhGiaThangId: string,
     payload: {
       ghi_chu?: string;
-      dieu_chinh?: Array<{ 
+      dieu_chinh?: Array<{
         ma_tieu_chi: string;
-        is_achieved_ld: boolean;
+        diem_phe_duyet?: number;
+        is_achieved_ld?: boolean;
         ly_do_dieu_chinh?: string;
       }>;
     }
@@ -584,7 +585,8 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
   const [traLaiLyDo, setTraLaiLyDo] = useState('');
   const [isTraLai, setIsTraLai] = useState(false);
   // State cho điều chỉnh điểm khi phê duyệt
-  const [dieuChinhDiem, setDieuChinhDiem] = useState<Record<string, boolean>>({});
+  // v3.6 (08/05/2026): chuyển từ boolean → number (điểm thập phân, bội 0.5)
+  const [dieuChinhDiem, setDieuChinhDiem] = useState<Record<string, number>>({});
   // ✅ v3.4: Lý do điều chỉnh per tiêu chí
   const [lyDoDieuChinhPerTC, setLyDoDieuChinhPerTC] = useState<Record<string, string>>({});
 
@@ -716,13 +718,20 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
         if (metadata && Object.keys(metadata).length > 0) {
           setSelectedItem(prev => prev ? { ...prev, ...metadata } : prev);
         }
-        // Init dieuChinhDiem - ✅ FIX: Khi cấp 2 duyệt, init từ is_achieved_ld (kết quả cấp 1)
-        const initDiem: Record<string, boolean> = {};
+        // Init dieuChinhDiem (v3.6): số thập phân.
+        // - Nếu đã có diem_phe_duyet (cấp 1 đã duyệt), dùng giá trị đó
+        // - Nếu chưa, mặc định = diem_tu_cham của CC
+        const initDiem: Record<string, number> = {};
         chiTiet.forEach(tc => {
-          // Nếu đã có is_achieved_ld (cấp 1 đã duyệt), dùng giá trị đó
-          initDiem[tc.ma_tieu_chi] = tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined
-            ? tc.is_achieved_ld
-            : (tc.is_achieved_cc ?? tc.is_achieved ?? false);
+          if (tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined) {
+            initDiem[tc.ma_tieu_chi] = Number(tc.diem_phe_duyet);
+          } else if (tc.diem_tu_cham !== null && tc.diem_tu_cham !== undefined) {
+            initDiem[tc.ma_tieu_chi] = Number(tc.diem_tu_cham);
+          } else {
+            // Legacy fallback: boolean × diem_toi_da
+            const isOk = tc.is_achieved_ld ?? tc.is_achieved_cc ?? tc.is_achieved ?? false;
+            initDiem[tc.ma_tieu_chi] = isOk ? Number(tc.diem_toi_da) : 0;
+          }
         });
         setDieuChinhDiem(initDiem);
       } catch {
@@ -751,21 +760,21 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
     setIsProcessing(true);
     try {
       if (modalAction === 'approve') {
-        // ✅ v3.4: Build dieu_chinh đúng backend PheDuyetTieuChiRequest
-        // Chỉ gửi các tiêu chí mà LĐ thay đổi so với CC
+        // v3.6 (08/05/2026): Build dieu_chinh với điểm thập phân.
+        // Chỉ gửi các TC mà LĐ thay đổi so với điểm CC tự chấm.
         const dieuChinh = chiTietData
           .filter(tc => {
-            const originalValue = tc.is_achieved_cc ?? tc.is_achieved ?? false;
-            const newValue = dieuChinhDiem[tc.ma_tieu_chi] ?? originalValue;
-            return originalValue !== newValue;
+            const ccDiem = Number(tc.diem_tu_cham ?? 0);
+            const ldDiem = dieuChinhDiem[tc.ma_tieu_chi] ?? ccDiem;
+            return Math.abs(ldDiem - ccDiem) > 0.001;
           })
           .map(tc => ({
             ma_tieu_chi: tc.ma_tieu_chi,
-            is_achieved_ld: dieuChinhDiem[tc.ma_tieu_chi] ?? false,
+            diem_phe_duyet: dieuChinhDiem[tc.ma_tieu_chi] ?? 0,
             ly_do_dieu_chinh: lyDoDieuChinhPerTC[tc.ma_tieu_chi] || undefined,
           }));
 
-        // ✅ v3.4: Validate - mỗi TC thay đổi phải có lý do
+        // Validate: mỗi TC điều chỉnh phải có lý do
         const missingLyDo = dieuChinh.filter(dc => !dc.ly_do_dieu_chinh);
         if (missingLyDo.length > 0) {
           alert(`Vui lòng nhập lý do điều chỉnh cho: ${missingLyDo.map(d => d.ma_tieu_chi).join(', ')}`);
@@ -1163,13 +1172,15 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
               <div className="flex flex-wrap gap-3 mt-2 text-sm">
                 <span className="text-gray-500">Tháng {selectedItem.thang}/{selectedItem.nam}</span>
                 <span className="text-blue-600 font-medium">CC tự chấm: {selectedItem.diem_tu_cham}</span>
-                {/* ✅ FIX: Tính Phó duyệt từ chi tiết */}
+                {/* v3.6: Tính Phó duyệt từ diem_phe_duyet thật */}
                 {chiTietData.some(tc => tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined) && (
                   <span className="text-green-600 font-medium">Phó duyệt: {
                     chiTietData.reduce((s, tc) => {
                       if (tc.is_achieved_ld === null || tc.is_achieved_ld === undefined) return s;
-                      return s + (tc.is_achieved_ld ? tc.diem_toi_da : 0);
-                    }, 0)
+                      // Ưu tiên diem_phe_duyet thật, fallback legacy (boolean × max)
+                      const diem = tc.diem_phe_duyet ?? (tc.is_achieved_ld ? tc.diem_toi_da : 0);
+                      return s + Number(diem);
+                    }, 0).toFixed(1).replace(/\.0$/, '')
                   }</span>
                 )}
                 {selectedItem.diem_tc_cap2 != null && (
@@ -1193,15 +1204,19 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {chiTietData.map((tc) => {
-                    // ✅ v3.4: Điểm CC = diem_toi_da nếu is_achieved_cc, ngược lại 0
-                    const diemCC = (tc.is_achieved_cc ?? false) ? tc.diem_toi_da : 0;
+                    // v3.6: dùng số điểm thật từ backend
+                    const diemCC = Number(tc.diem_tu_cham ?? 0);
                     // Điểm Phó duyệt (cấp 1) - nếu đã duyệt
                     const diemPho = tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined
-                      ? (tc.is_achieved_ld ? tc.diem_toi_da : 0)
+                      ? Number(tc.diem_phe_duyet ?? (tc.is_achieved_ld ? tc.diem_toi_da : 0))
                       : null;
                     // Điểm Trưởng duyệt (cấp 2) = diem_phe_duyet (final)
-                    const diemTruong = tc.diem_phe_duyet;
-                    const hasChange = tc.has_difference || (tc.is_achieved_ld !== null && tc.is_achieved_cc !== tc.is_achieved_ld);
+                    const diemTruong = tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined
+                      ? Number(tc.diem_phe_duyet)
+                      : null;
+                    const hasChange = tc.has_difference
+                      || (tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined
+                          && Math.abs(Number(tc.diem_phe_duyet) - diemCC) > 0.001);
                     return (
                       <tr key={tc.id} className={`hover:bg-gray-50 ${hasChange ? 'bg-yellow-50' : ''}`}>
                         <td className="px-3 py-2 text-gray-500 font-mono text-xs">{tc.ma_tieu_chi}</td>
@@ -1239,22 +1254,23 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                   <tr>
                     <td colSpan={3} className="px-3 py-2 text-right text-gray-700">Tổng:</td>
                     <td className="px-3 py-2 text-center text-blue-600">
-                      {chiTietData.reduce((s, tc) => s + ((tc.is_achieved_cc ?? false) ? tc.diem_toi_da : 0), 0)}
+                      {chiTietData.reduce((s, tc) => s + Number(tc.diem_tu_cham ?? 0), 0).toFixed(1).replace(/\.0$/, '')}
                     </td>
                     <td className="px-3 py-2 text-center text-green-600">
-                      {/* ✅ FIX: Tính tổng Phó duyệt từ is_achieved_ld (không dùng diem_tc_cap1 có thể sai) */}
+                      {/* v3.6: Tổng Phó duyệt từ diem_phe_duyet thật */}
                       {chiTietData.some(tc => tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined)
                         ? chiTietData.reduce((s, tc) => {
                             if (tc.is_achieved_ld === null || tc.is_achieved_ld === undefined) return s;
-                            return s + (tc.is_achieved_ld ? tc.diem_toi_da : 0);
-                          }, 0)
+                            const diem = tc.diem_phe_duyet ?? (tc.is_achieved_ld ? tc.diem_toi_da : 0);
+                            return s + Number(diem);
+                          }, 0).toFixed(1).replace(/\.0$/, '')
                         : '-'
                       }
                     </td>
                     <td className="px-3 py-2 text-center text-green-600">
-                      {/* ✅ FIX: Tính tổng Trưởng duyệt từ diem_phe_duyet (khi đã duyệt cấp 2) */}
+                      {/* Tổng Trưởng duyệt từ diem_phe_duyet (khi đã duyệt cấp 2) */}
                       {chiTietData.some(tc => tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined && tc.trang_thai === 'DA_PHE_DUYET')
-                        ? chiTietData.reduce((s, tc) => s + (tc.diem_phe_duyet ?? 0), 0)
+                        ? chiTietData.reduce((s, tc) => s + Number(tc.diem_phe_duyet ?? 0), 0).toFixed(1).replace(/\.0$/, '')
                         : '-'
                       }
                     </td>
@@ -1292,8 +1308,9 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                   <span className="text-green-600 font-medium">Phó duyệt: {
                     chiTietData.reduce((s, tc) => {
                       if (tc.is_achieved_ld === null || tc.is_achieved_ld === undefined) return s;
-                      return s + (tc.is_achieved_ld ? tc.diem_toi_da : 0);
-                    }, 0)
+                      const diem = tc.diem_phe_duyet ?? (tc.is_achieved_ld ? tc.diem_toi_da : 0);
+                      return s + Number(diem);
+                    }, 0).toFixed(1).replace(/\.0$/, '')
                   }</span>
                 )}
               </div>
@@ -1305,7 +1322,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                 {chiTietData.length > 0 && (
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Điều chỉnh tiêu chí (bỏ tick = không đạt, tick = đạt)
+                      Điều chỉnh tiêu chí (nhập điểm 0 → tối đa, bội số 0.5)
                     </label>
                     <div className="border rounded-lg overflow-hidden">
                       <table className="w-full text-sm">
@@ -1329,10 +1346,9 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                               3: 'Nhóm III: Năng lực đổi mới, sáng tạo',
                             };
                             return chiTietData.map((tc) => {
-                              const isAchieved = dieuChinhDiem[tc.ma_tieu_chi] ?? tc.is_achieved_cc ?? false;
-                              const diemCC = (tc.is_achieved_cc ?? false) ? tc.diem_toi_da : 0;
-                              const diemLD = isAchieved ? tc.diem_toi_da : 0;
-                              const hasChange = (tc.is_achieved_cc ?? false) !== isAchieved;
+                              const diemCC = Number(tc.diem_tu_cham ?? 0);
+                              const diemLD = dieuChinhDiem[tc.ma_tieu_chi] ?? diemCC;
+                              const hasChange = Math.abs(diemLD - diemCC) > 0.001;
                               const showNhomHeader = tc.nhom_tieu_chi !== lastNhom;
                               lastNhom = tc.nhom_tieu_chi;
                               return (
@@ -1354,30 +1370,39 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                                       </span>
                                     </td>
                                     <td className="px-3 py-2 text-center">
-                                      <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                                        <input
-                                          type="checkbox"
-                                          checked={isAchieved}
-                                          onChange={(e) => {
-                                            setDieuChinhDiem(prev => ({
-                                              ...prev,
-                                              [tc.ma_tieu_chi]: e.target.checked
-                                            }));
-                                            // Nếu quay về giá trị CC thì xóa lý do
-                                            if (e.target.checked === (tc.is_achieved_cc ?? false)) {
-                                              setLyDoDieuChinhPerTC(prev => {
-                                                const next = { ...prev };
-                                                delete next[tc.ma_tieu_chi];
-                                                return next;
-                                              });
-                                            }
-                                          }}
-                                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                        />
-                                        <span className={`font-medium ${isAchieved ? 'text-green-600' : 'text-gray-400'}`}>
-                                          {diemLD}
-                                        </span>
-                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={tc.diem_toi_da}
+                                        step={0.5}
+                                        value={Number.isFinite(diemLD) ? diemLD : 0}
+                                        onChange={(e) => {
+                                          const raw = e.target.value;
+                                          let n = raw === '' ? 0 : Number(raw);
+                                          if (!Number.isFinite(n)) n = 0;
+                                          if (n < 0) n = 0;
+                                          if (n > tc.diem_toi_da) n = tc.diem_toi_da;
+                                          n = Math.round(n * 2) / 2;
+                                          setDieuChinhDiem(prev => ({ ...prev, [tc.ma_tieu_chi]: n }));
+                                          // Nếu quay về điểm CC thì xóa lý do
+                                          if (Math.abs(n - diemCC) < 0.001) {
+                                            setLyDoDieuChinhPerTC(prev => {
+                                              const next = { ...prev };
+                                              delete next[tc.ma_tieu_chi];
+                                              return next;
+                                            });
+                                          }
+                                        }}
+                                        className={`w-20 px-2 py-1 text-center font-semibold border-2 rounded text-sm ${
+                                          hasChange
+                                            ? 'border-yellow-400 bg-yellow-50 text-yellow-800'
+                                            : diemLD >= tc.diem_toi_da - 0.001
+                                              ? 'border-green-300 bg-green-50 text-green-700'
+                                              : diemLD > 0
+                                                ? 'border-gray-300 bg-white text-gray-900'
+                                                : 'border-red-300 bg-white text-red-700'
+                                        } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                                      />
                                     </td>
                                     <td className="px-3 py-2">
                                       {tc.ghi_chu_cc ? (
@@ -1414,13 +1439,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                           <tr>
                             <td colSpan={3} className="px-3 py-2 text-right font-medium text-gray-700">Tổng điểm:</td>
                             <td className="px-3 py-2 text-center font-bold text-blue-600">
-                              {chiTietData.reduce((sum, tc) => sum + ((tc.is_achieved_cc ?? false) ? tc.diem_toi_da : 0), 0)}
+                              {chiTietData.reduce((sum, tc) => sum + Number(tc.diem_tu_cham ?? 0), 0).toFixed(1).replace(/\.0$/, '')}
                             </td>
                             <td className="px-3 py-2 text-center font-bold text-green-600">
                               {chiTietData.reduce((sum, tc) => {
-                                const isAchieved = dieuChinhDiem[tc.ma_tieu_chi] ?? tc.is_achieved_cc ?? false;
-                                return sum + (isAchieved ? tc.diem_toi_da : 0);
-                              }, 0)}
+                                const diem = dieuChinhDiem[tc.ma_tieu_chi] ?? Number(tc.diem_tu_cham ?? 0);
+                                return sum + diem;
+                              }, 0).toFixed(1).replace(/\.0$/, '')}
                             </td>
                             <td></td>
                             <td></td>

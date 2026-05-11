@@ -34,6 +34,7 @@ import {
   convertFormToPayload,
 } from '@/types/tieu-chi-chung';
 
+import { formatScore } from '@/lib/format';
 export default function TuChamDiemPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
@@ -186,11 +187,21 @@ export default function TuChamDiemPage() {
     || trangThai === 'CHO_CAP2' as TrangThaiTieuChiChung;
   const isDisabled = isStatusLocked || isDeadlinePassed;
 
-  const handleCheckboxChange = (maTieuChi: string, checked: boolean) => {
+  const handleDiemChange = (maTieuChi: string, diem: number) => {
     setFormState((prev: ITieuChiFormState) => ({
       ...prev,
-      [maTieuChi]: checked,
+      [maTieuChi]: diem,
     }));
+  };
+
+  // Sanitize input → cap 0..max, làm tròn về bội số 0.5.
+  const sanitizeDiem = (raw: string, max: number): number => {
+    if (raw === '') return 0;
+    let n = Number(raw);
+    if (!Number.isFinite(n)) return 0;
+    if (n < 0) n = 0;
+    if (n > max) n = max;
+    return Math.round(n * 2) / 2;
   };
 
   const handleGhiChuChange = (maTieuChi: string, value: string) => {
@@ -241,11 +252,12 @@ export default function TuChamDiemPage() {
       return;
     }
     
-    // Validate Nhóm 3: cần có ghi chú nếu tick
+    // Validate Nhóm 3: cần có ghi chú nếu CC chấm điểm > 0
     const nhom3 = masterData.filter((tc: ITieuChiChungMaster) => tc.nhom_tieu_chi === 3);
     for (const tc of nhom3) {
-      if (formState[tc.ma_tieu_chi] === true && !ghiChu[tc.ma_tieu_chi]?.trim()) {
-        alert(`Tiêu chí ${tc.ma_tieu_chi} (${tc.ten_tieu_chi}) đã tích nhưng chưa có minh chứng!`);
+      const diem = formState[tc.ma_tieu_chi] ?? 0;
+      if (diem > 0 && !ghiChu[tc.ma_tieu_chi]?.trim()) {
+        alert(`Tiêu chí ${tc.ma_tieu_chi} (${tc.ten_tieu_chi}) đã chấm ${diem} điểm nhưng chưa có minh chứng!`);
         return;
       }
     }
@@ -358,7 +370,7 @@ export default function TuChamDiemPage() {
             </div>
             <div className="text-right">
               <span className="text-sm text-gray-500">Điểm:</span>
-              <span className="ml-2 text-2xl font-bold text-blue-600">{diemPreview.tong_diem.toFixed(6).replace(/\.?0+$/, '')}/30</span>
+              <span className="ml-2 text-2xl font-bold text-blue-600">{formatScore(diemPreview.tong_diem)}/30</span>
             </div>
           </div>
         </div>
@@ -393,15 +405,15 @@ export default function TuChamDiemPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-emerald-500">
           <div className="text-sm text-gray-500">Nhóm 1 - Phẩm chất chính trị</div>
-          <div className="text-xl font-bold text-emerald-600">{diemPreview.nhom_1_diem.toFixed(6).replace(/\.?0+$/, '')}/10</div>
+          <div className="text-xl font-bold text-emerald-600">{formatScore(diemPreview.nhom_1_diem)}/10</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-sky-500">
           <div className="text-sm text-gray-500">Nhóm 2 - Năng lực chuyên môn</div>
-          <div className="text-xl font-bold text-sky-600">{diemPreview.nhom_2_diem.toFixed(6).replace(/\.?0+$/, '')}/10</div>
+          <div className="text-xl font-bold text-sky-600">{formatScore(diemPreview.nhom_2_diem)}/10</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-amber-500">
           <div className="text-sm text-gray-500">Nhóm 3 - Năng lực đổi mới</div>
-          <div className="text-xl font-bold text-amber-600">{diemPreview.nhom_3_diem.toFixed(6).replace(/\.?0+$/, '')}/10</div>
+          <div className="text-xl font-bold text-amber-600">{formatScore(diemPreview.nhom_3_diem)}/10</div>
         </div>
       </div>
 
@@ -411,31 +423,40 @@ export default function TuChamDiemPage() {
           <div className="p-4 bg-emerald-50 border-b border-emerald-200 rounded-t-lg">
             <h3 className="font-semibold text-emerald-800">
               Nhóm I: Phẩm chất chính trị, đạo đức
-              <span className="ml-2 text-sm font-normal">(Mặc định đạt, bỏ tick nếu vi phạm)</span>
+              <span className="ml-2 text-sm font-normal">(Mặc định full điểm, giảm khi vi phạm — bội số 0.5)</span>
             </h3>
           </div>
           <div className="p-4 space-y-4">
-            {nhom1.map((tc: ITieuChiChungMaster) => (
-              <div key={tc.ma_tieu_chi} className="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  id={tc.ma_tieu_chi}
-                  checked={formState[tc.ma_tieu_chi] ?? tc.gia_tri_mac_dinh}
-                  onChange={(e) => handleCheckboxChange(tc.ma_tieu_chi, e.target.checked)}
-                  disabled={isDisabled}
-                  className="mt-1 h-5 w-5 text-emerald-600 rounded"
-                />
-                <label htmlFor={tc.ma_tieu_chi} className="flex-1 cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">TC {tc.ma_tieu_chi}</span>
-                    <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
-                      {tc.diem_toi_da} điểm
-                    </span>
+            {nhom1.map((tc: ITieuChiChungMaster) => {
+              const diem = formState[tc.ma_tieu_chi] ?? (tc.gia_tri_mac_dinh ? tc.diem_toi_da : 0);
+              return (
+                <div key={tc.ma_tieu_chi} className="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg">
+                  <div className="flex flex-col items-center pt-0.5">
+                    <input
+                      type="number"
+                      id={tc.ma_tieu_chi}
+                      min={0}
+                      max={tc.diem_toi_da}
+                      step={0.5}
+                      value={Number.isFinite(diem) ? diem : 0}
+                      onChange={(e) => handleDiemChange(tc.ma_tieu_chi, sanitizeDiem(e.target.value, tc.diem_toi_da))}
+                      disabled={isDisabled}
+                      className="w-20 px-2 py-1.5 text-center font-semibold border-2 border-emerald-300 rounded focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-gray-50"
+                    />
+                    <span className="text-[11px] text-gray-500 mt-0.5">/ {tc.diem_toi_da}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">{tc.ten_tieu_chi}</p>
-                </label>
-              </div>
-            ))}
+                  <label htmlFor={tc.ma_tieu_chi} className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">TC {tc.ma_tieu_chi}</span>
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded">
+                        Tối đa {tc.diem_toi_da} điểm
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">{tc.ten_tieu_chi}</p>
+                  </label>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -446,31 +467,40 @@ export default function TuChamDiemPage() {
           <div className="p-4 bg-sky-50 border-b border-sky-200 rounded-t-lg">
             <h3 className="font-semibold text-sky-800">
               Nhóm II: Năng lực chuyên môn, nghiệp vụ
-              <span className="ml-2 text-sm font-normal">(Mặc định đạt, bỏ tick nếu vi phạm)</span>
+              <span className="ml-2 text-sm font-normal">(Mặc định full điểm, giảm khi vi phạm — bội số 0.5)</span>
             </h3>
           </div>
           <div className="p-4 space-y-4">
-            {nhom2.map((tc: ITieuChiChungMaster) => (
-              <div key={tc.ma_tieu_chi} className="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg">
-                <input
-                  type="checkbox"
-                  id={tc.ma_tieu_chi}
-                  checked={formState[tc.ma_tieu_chi] ?? tc.gia_tri_mac_dinh}
-                  onChange={(e) => handleCheckboxChange(tc.ma_tieu_chi, e.target.checked)}
-                  disabled={isDisabled}
-                  className="mt-1 h-5 w-5 text-sky-600 rounded"
-                />
-                <label htmlFor={tc.ma_tieu_chi} className="flex-1 cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">TC {tc.ma_tieu_chi}</span>
-                    <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded">
-                      {tc.diem_toi_da} điểm
-                    </span>
+            {nhom2.map((tc: ITieuChiChungMaster) => {
+              const diem = formState[tc.ma_tieu_chi] ?? (tc.gia_tri_mac_dinh ? tc.diem_toi_da : 0);
+              return (
+                <div key={tc.ma_tieu_chi} className="flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg">
+                  <div className="flex flex-col items-center pt-0.5">
+                    <input
+                      type="number"
+                      id={tc.ma_tieu_chi}
+                      min={0}
+                      max={tc.diem_toi_da}
+                      step={0.5}
+                      value={Number.isFinite(diem) ? diem : 0}
+                      onChange={(e) => handleDiemChange(tc.ma_tieu_chi, sanitizeDiem(e.target.value, tc.diem_toi_da))}
+                      disabled={isDisabled}
+                      className="w-20 px-2 py-1.5 text-center font-semibold border-2 border-sky-300 rounded focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:bg-gray-50"
+                    />
+                    <span className="text-[11px] text-gray-500 mt-0.5">/ {tc.diem_toi_da}</span>
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">{tc.ten_tieu_chi}</p>
-                </label>
-              </div>
-            ))}
+                  <label htmlFor={tc.ma_tieu_chi} className="flex-1 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">TC {tc.ma_tieu_chi}</span>
+                      <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded">
+                        Tối đa {tc.diem_toi_da} điểm
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">{tc.ten_tieu_chi}</p>
+                  </label>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -481,61 +511,70 @@ export default function TuChamDiemPage() {
           <div className="p-4 bg-amber-50 border-b border-amber-200 rounded-t-lg">
             <h3 className="font-semibold text-amber-800">
               Nhóm III: Năng lực đổi mới, sáng tạo
-              <span className="ml-2 text-sm font-normal">(Tick nếu có thành tích, cần minh chứng)</span>
+              <span className="ml-2 text-sm font-normal">(Mặc định 0 — nhập điểm khi có thành tích, cần minh chứng)</span>
             </h3>
           </div>
           <div className="p-4 space-y-4">
-            {nhom3.map((tc: ITieuChiChungMaster) => (
-              <div key={tc.ma_tieu_chi} className="p-3 hover:bg-gray-50 rounded-lg">
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id={tc.ma_tieu_chi}
-                    checked={formState[tc.ma_tieu_chi] ?? tc.gia_tri_mac_dinh}
-                    onChange={(e) => handleCheckboxChange(tc.ma_tieu_chi, e.target.checked)}
-                    disabled={isDisabled}
-                    className="mt-1 h-5 w-5 text-amber-600 rounded"
-                  />
-                  <label htmlFor={tc.ma_tieu_chi} className="flex-1 cursor-pointer">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">TC {tc.ma_tieu_chi}</span>
-                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
-                        {tc.diem_toi_da} điểm
-                      </span>
+            {nhom3.map((tc: ITieuChiChungMaster) => {
+              const diem = formState[tc.ma_tieu_chi] ?? (tc.gia_tri_mac_dinh ? tc.diem_toi_da : 0);
+              return (
+                <div key={tc.ma_tieu_chi} className="p-3 hover:bg-gray-50 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col items-center pt-0.5">
+                      <input
+                        type="number"
+                        id={tc.ma_tieu_chi}
+                        min={0}
+                        max={tc.diem_toi_da}
+                        step={0.5}
+                        value={Number.isFinite(diem) ? diem : 0}
+                        onChange={(e) => handleDiemChange(tc.ma_tieu_chi, sanitizeDiem(e.target.value, tc.diem_toi_da))}
+                        disabled={isDisabled}
+                        className="w-20 px-2 py-1.5 text-center font-semibold border-2 border-amber-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:bg-gray-50"
+                      />
+                      <span className="text-[11px] text-gray-500 mt-0.5">/ {tc.diem_toi_da}</span>
                     </div>
-                    <p className="text-sm text-gray-600 mt-1">{tc.ten_tieu_chi}</p>
-                  </label>
-                </div>
-                {formState[tc.ma_tieu_chi] && (
-                  <div className="mt-3 ml-8">
-                    <textarea
-                      placeholder="Nhập minh chứng thành tích..."
-                      value={ghiChu[tc.ma_tieu_chi] || ''}
-                      onChange={(e) => {
-                        if (e.target.value.length <= 2000) {
-                          handleGhiChuChange(tc.ma_tieu_chi, e.target.value);
-                        }
-                      }}
-                      disabled={isDisabled}
-                      rows={2}
-                      maxLength={2000}
-                      className={`w-full border rounded-md px-3 py-2 text-sm focus:ring-amber-500 focus:border-amber-500 ${
-                        (ghiChu[tc.ma_tieu_chi]?.length || 0) > 1800 ? 'border-red-300' : 'border-amber-300'
-                      }`}
-                    />
-                    <div className="flex justify-end mt-1">
-                      <span className={`text-xs ${
-                        (ghiChu[tc.ma_tieu_chi]?.length || 0) > 1800 
-                          ? 'text-red-500 font-medium' 
-                          : 'text-gray-400'
-                      }`}>
-                        {ghiChu[tc.ma_tieu_chi]?.length || 0}/2000
-                      </span>
-                    </div>
+                    <label htmlFor={tc.ma_tieu_chi} className="flex-1 cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">TC {tc.ma_tieu_chi}</span>
+                        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                          Tối đa {tc.diem_toi_da} điểm
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">{tc.ten_tieu_chi}</p>
+                    </label>
                   </div>
-                )}
-              </div>
-            ))}
+                  {diem > 0 && (
+                    <div className="mt-3 ml-[5.25rem]">
+                      <textarea
+                        placeholder="Nhập minh chứng thành tích..."
+                        value={ghiChu[tc.ma_tieu_chi] || ''}
+                        onChange={(e) => {
+                          if (e.target.value.length <= 2000) {
+                            handleGhiChuChange(tc.ma_tieu_chi, e.target.value);
+                          }
+                        }}
+                        disabled={isDisabled}
+                        rows={2}
+                        maxLength={2000}
+                        className={`w-full border rounded-md px-3 py-2 text-sm focus:ring-amber-500 focus:border-amber-500 ${
+                          (ghiChu[tc.ma_tieu_chi]?.length || 0) > 1800 ? 'border-red-300' : 'border-amber-300'
+                        }`}
+                      />
+                      <div className="flex justify-end mt-1">
+                        <span className={`text-xs ${
+                          (ghiChu[tc.ma_tieu_chi]?.length || 0) > 1800
+                            ? 'text-red-500 font-medium'
+                            : 'text-gray-400'
+                        }`}>
+                          {ghiChu[tc.ma_tieu_chi]?.length || 0}/2000
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

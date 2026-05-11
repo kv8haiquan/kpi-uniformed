@@ -88,25 +88,56 @@ class MucXepLoaiEnum(str, Enum):
 class TieuChiItemInput(BaseModel):
     """
     Input cho MỘT tiêu chí khi CC tự đánh giá.
-    
-    ⚠️ QUAN TRỌNG (v2.5.0):
-    - Field đổi từ `is_achieved` → `is_achieved_cc` để khẳng định đây là bản tích của CC
-    - Field đổi từ `ghi_chu` → `ghi_chu_cc`
-    - Backend tự động tính điểm theo công thức nhị phân
+
+    v2.5.0: dùng `is_achieved_cc` (boolean) thay vì điểm.
+    v3.6.0 (08/05/2026): cho phép CC nhập điểm thập phân `diem_tu_cham`
+    (bội số 0.5, từ 0 đến điểm tối đa). `is_achieved_cc` trở thành optional —
+    nếu CC gửi `diem_tu_cham` thì backend tự suy `is_achieved_cc = (diem >= max)`.
     """
     ma_tieu_chi: str = Field(
         ...,
         description="Mã tiêu chí: 1.1, 1.2, 2.1, 2.2, ..., 3.4"
     )
-    is_achieved_cc: bool = Field(
-        ...,
-        description="Bản tích của CC: True = Đạt, False = Không đạt"
+    is_achieved_cc: Optional[bool] = Field(
+        default=None,
+        description="Bản tích nhị phân (legacy). Nếu None thì backend suy từ diem_tu_cham."
+    )
+    diem_tu_cham: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Điểm CC tự chấm (0 → diem_toi_da của tiêu chí, bội số 0.5). "
+            "Nếu được gửi, backend ưu tiên dùng giá trị này thay vì is_achieved_cc."
+        ),
     )
     ghi_chu_cc: Optional[str] = Field(
         default=None,
         max_length=2000,
         description="Ghi chú/minh chứng của CC khi tự đánh giá (tối đa 2000 ký tự)"
     )
+
+    @model_validator(mode="after")
+    def _validate_diem(self) -> "TieuChiItemInput":
+        """Kiểm tra diem_tu_cham hợp lệ + đảm bảo có ít nhất một trong 2 field."""
+        if self.diem_tu_cham is None and self.is_achieved_cc is None:
+            raise ValueError(
+                f"Tiêu chí {self.ma_tieu_chi}: phải gửi diem_tu_cham hoặc is_achieved_cc"
+            )
+        if self.diem_tu_cham is not None:
+            max_diem = TIEU_CHI_DIEM_TOI_DA.get(self.ma_tieu_chi)
+            if max_diem is None:
+                raise ValueError(f"Mã tiêu chí không hợp lệ: {self.ma_tieu_chi}")
+            if self.diem_tu_cham > max_diem + 1e-9:
+                raise ValueError(
+                    f"Tiêu chí {self.ma_tieu_chi}: điểm {self.diem_tu_cham} vượt mức tối đa {max_diem}"
+                )
+            # Bội số 0.5 (cho phép sai số float nhỏ)
+            doubled = round(self.diem_tu_cham * 2)
+            if abs(self.diem_tu_cham * 2 - doubled) > 1e-6:
+                raise ValueError(
+                    f"Tiêu chí {self.ma_tieu_chi}: điểm phải là bội số 0.5 (nhận {self.diem_tu_cham})"
+                )
+        return self
 
 
 class TuDanhGiaTieuChiRequest(BaseModel):
@@ -181,22 +212,57 @@ class TuDanhGiaTieuChiRequest(BaseModel):
 class DieuChinhTieuChiItem(BaseModel):
     """
     Input cho MỘT tiêu chí khi LĐ điều chỉnh.
-    
-    LĐ có thể thay đổi is_achieved khác với CC.
+
+    v3.6 (08/05/2026): LĐ chấm điểm thập phân (bội số 0.5, 0 → diem_toi_da)
+    qua `diem_phe_duyet`. Giữ `is_achieved_ld` (Optional) để tương thích
+    ngược với client cũ — backend tự suy `is_achieved_ld = (diem >= max)`.
     """
     ma_tieu_chi: str = Field(
         ...,
         description="Mã tiêu chí cần điều chỉnh"
     )
-    is_achieved_ld: bool = Field(
-        ...,
-        description="Giá trị LĐ điều chỉnh"
+    diem_phe_duyet: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Điểm LĐ chấm sau khi duyệt (0 → diem_toi_da, bội số 0.5). "
+            "Nếu gửi, backend ưu tiên giá trị này thay vì is_achieved_ld."
+        ),
+    )
+    is_achieved_ld: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Giá trị LĐ điều chỉnh (legacy). Nếu None thì backend suy từ "
+            "diem_phe_duyet; nếu cả hai None thì coi là không thay đổi."
+        ),
     )
     ly_do_dieu_chinh: Optional[str] = Field(
         default=None,
         max_length=500,
         description="Lý do điều chỉnh (bắt buộc nếu khác CC)"
     )
+
+    @model_validator(mode="after")
+    def _validate_diem(self) -> "DieuChinhTieuChiItem":
+        """Kiểm tra diem_phe_duyet hợp lệ + yêu cầu ít nhất 1 trong 2 field."""
+        if self.diem_phe_duyet is None and self.is_achieved_ld is None:
+            raise ValueError(
+                f"Tiêu chí {self.ma_tieu_chi}: phải gửi diem_phe_duyet hoặc is_achieved_ld"
+            )
+        if self.diem_phe_duyet is not None:
+            max_diem = TIEU_CHI_DIEM_TOI_DA.get(self.ma_tieu_chi)
+            if max_diem is None:
+                raise ValueError(f"Mã tiêu chí không hợp lệ: {self.ma_tieu_chi}")
+            if self.diem_phe_duyet > max_diem + 1e-9:
+                raise ValueError(
+                    f"Tiêu chí {self.ma_tieu_chi}: điểm {self.diem_phe_duyet} vượt mức tối đa {max_diem}"
+                )
+            doubled = round(self.diem_phe_duyet * 2)
+            if abs(self.diem_phe_duyet * 2 - doubled) > 1e-6:
+                raise ValueError(
+                    f"Tiêu chí {self.ma_tieu_chi}: điểm phải là bội số 0.5 (nhận {self.diem_phe_duyet})"
+                )
+        return self
 
 
 class PheDuyetTieuChiRequest(BaseModel):

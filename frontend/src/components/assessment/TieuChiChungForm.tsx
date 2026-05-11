@@ -1,17 +1,12 @@
 /**
  * src/components/assessment/TieuChiChungForm.tsx
  * ===============================================
- * Form checkbox Binary Scoring cho Tiêu chí chung (30 điểm).
+ * Form chấm điểm Tiêu chí chung (30 điểm).
  *
- * ĐỒNG BỘ VỚI BACKEND v2.5.4
- * 
- * ⚠️ QUAN TRỌNG:
- * - Backend chỉ trả về 10 tiêu chí LỚN (1.1, 1.2, 2.1-2.4, 3.1-3.4)
- * - Form state dùng `ma_tieu_chi` làm key (KHÔNG phải id)
- * - Nhóm 1 & 2: Mặc định đạt (gia_tri_mac_dinh = true)
- * - Nhóm 3: Mặc định không đạt, cần minh chứng nếu tick
- *
- * Version: 2.5.4 (27/01/2026)
+ * v3.6.0 (08/05/2026): chuyển từ checkbox binary sang nhập điểm thập phân
+ * (bội số 0.5, từ 0 đến diem_toi_da). Form state lưu số điểm cho từng
+ * ma_tieu_chi. Mặc định: Nhóm I & II = full điểm; Nhóm III = 0. Nhóm III
+ * vẫn cần minh chứng khi điểm > 0.
  */
 
 'use client';
@@ -27,6 +22,7 @@ import {
   hasLanhDaoAdjustment,
 } from '@/types/tieu-chi-chung';
 
+import { formatScore } from '@/lib/format';
 // =============================================================================
 // INTERFACES
 // =============================================================================
@@ -81,9 +77,9 @@ function getNhomLabel(nhom: number): string {
 
 function getNhomDescription(nhom: number): string {
   const descriptions: Record<number, string> = {
-    1: 'Mặc định đạt, bỏ tick nếu vi phạm',
-    2: 'Mặc định đạt, bỏ tick nếu vi phạm',
-    3: 'Tick nếu có thành tích (cần minh chứng)',
+    1: 'Mặc định full điểm, giảm khi vi phạm (bội số 0.5)',
+    2: 'Mặc định full điểm, giảm khi vi phạm (bội số 0.5)',
+    3: 'Mặc định 0 — nhập điểm khi có thành tích (cần minh chứng)',
   };
   return descriptions[nhom] || '';
 }
@@ -94,8 +90,8 @@ function getNhomDescription(nhom: number): string {
 
 interface TieuChiItemProps {
   tieuChi: ITieuChiChungMaster;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+  diem: number;
+  onChange: (diem: number) => void;
   disabled: boolean;
   responseItem?: ITieuChiChungResponse;
   showLanhDaoColumn: boolean;
@@ -106,7 +102,7 @@ interface TieuChiItemProps {
 
 function TieuChiItem({
   tieuChi,
-  checked,
+  diem,
   onChange,
   disabled,
   responseItem,
@@ -116,8 +112,27 @@ function TieuChiItem({
   color,
 }: TieuChiItemProps) {
   const isNhom3 = tieuChi.nhom_tieu_chi === 3;
-  const isViolation = !checked && !isNhom3; // Nhóm 1 & 2: Bỏ tick = vi phạm
+  const isFullDiem = diem >= tieuChi.diem_toi_da - 1e-9;
+  // Vi phạm = nhóm I/II không đạt full điểm (nhóm III mặc định 0 không phải vi phạm).
+  const isViolation = !isNhom3 && diem < tieuChi.diem_toi_da - 1e-9;
   const hasAdjustment = responseItem ? hasLanhDaoAdjustment(responseItem) : false;
+
+  // Sanitize input → cap 0..diem_toi_da, clamp to nearest 0.5 step.
+  const handleNumberChange = (raw: string) => {
+    if (raw === '') {
+      onChange(0);
+      return;
+    }
+    let n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    if (n < 0) n = 0;
+    if (n > tieuChi.diem_toi_da) n = tieuChi.diem_toi_da;
+    // Round to nearest 0.5 step
+    n = Math.round(n * 2) / 2;
+    onChange(n);
+  };
+
+  const inputId = `tc-${tieuChi.ma_tieu_chi}`;
 
   return (
     <div
@@ -128,28 +143,46 @@ function TieuChiItem({
       }`}
     >
       <div className="flex items-start gap-3 p-4">
-        <input
-          type="checkbox"
-          id={`tc-${tieuChi.ma_tieu_chi}`}
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          disabled={disabled}
-          className={`mt-1 w-5 h-5 ${color.checkbox} border-gray-300 rounded focus:ring-2 focus:ring-offset-0 disabled:opacity-50`}
-        />
-        <label htmlFor={`tc-${tieuChi.ma_tieu_chi}`} className="flex-1 cursor-pointer">
+        {/* Input số điểm */}
+        <div className="flex-shrink-0 flex flex-col items-center pt-0.5">
+          <input
+            id={inputId}
+            type="number"
+            min={0}
+            max={tieuChi.diem_toi_da}
+            step={0.5}
+            value={Number.isFinite(diem) ? diem : 0}
+            onChange={(e) => handleNumberChange(e.target.value)}
+            disabled={disabled}
+            className={`w-20 px-2 py-1.5 text-center font-semibold border-2 rounded ${
+              isFullDiem
+                ? 'border-green-300 bg-green-50 text-green-700'
+                : isViolation
+                  ? 'border-red-300 bg-white text-red-700'
+                  : 'border-gray-300 bg-white text-gray-900'
+            } focus:outline-none focus:ring-2 focus:ring-offset-0 ${color.checkbox.replace('text-', 'focus:ring-')} disabled:opacity-50 disabled:bg-gray-50`}
+          />
+          <span className="text-[11px] text-gray-500 mt-0.5">
+            / {tieuChi.diem_toi_da}
+          </span>
+        </div>
+
+        <label htmlFor={inputId} className="flex-1 cursor-pointer">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-semibold text-gray-900">TC {tieuChi.ma_tieu_chi}</span>
             <span className={`text-xs px-2 py-0.5 rounded ${
-              checked 
-                ? 'bg-green-100 text-green-700' 
-                : isNhom3 
-                  ? 'bg-gray-100 text-gray-600'
-                  : 'bg-red-100 text-red-700'
+              isFullDiem
+                ? 'bg-green-100 text-green-700'
+                : diem > 0
+                  ? 'bg-yellow-100 text-yellow-700'
+                  : isNhom3
+                    ? 'bg-gray-100 text-gray-600'
+                    : 'bg-red-100 text-red-700'
             }`}>
-              {tieuChi.diem_toi_da} điểm
+              Tối đa {tieuChi.diem_toi_da} điểm
             </span>
             {isViolation && (
-              <span className="text-xs text-red-600 font-medium">⚠️ Không đạt</span>
+              <span className="text-xs text-red-600 font-medium">⚠️ Không đạt full điểm</span>
             )}
           </div>
           <p className={`text-sm ${isViolation ? 'text-red-700' : 'text-gray-600'}`}>
@@ -175,10 +208,10 @@ function TieuChiItem({
         )}
       </div>
 
-      {/* Ghi chú (Nhóm 3 - hiện khi tick) */}
-      {isNhom3 && checked && (
+      {/* Ghi chú (Nhóm 3 - hiện khi điểm > 0) */}
+      {isNhom3 && diem > 0 && (
         <div className="px-4 pb-4 pt-0">
-          <div className="ml-8">
+          <div className="ml-[5.25rem]">
             <label className="text-xs text-gray-500 block mb-1">
               Minh chứng thành tích <span className="text-red-500">*</span>:
             </label>
@@ -243,8 +276,8 @@ function NhomTieuChiSection({
   const description = getNhomDescription(nhom);
   const maxDiem = 10;
 
-  const handleCheckboxChange = (maTieuChi: string, checked: boolean) => {
-    onFormChange({ ...formState, [maTieuChi]: checked });
+  const handleDiemChange = (maTieuChi: string, diem: number) => {
+    onFormChange({ ...formState, [maTieuChi]: diem });
   };
 
   const handleGhiChuItemChange = (maTieuChi: string, value: string) => {
@@ -282,7 +315,7 @@ function NhomTieuChiSection({
                 : 'bg-red-100 text-red-700'
             }`}
           >
-            {diemNhom.toFixed(6).replace(/\.?0+$/, '')} / {maxDiem} đ
+            {formatScore(diemNhom)} / {maxDiem} đ
           </div>
 
           <svg
@@ -314,8 +347,8 @@ function NhomTieuChiSection({
               <TieuChiItem
                 key={tc.ma_tieu_chi}
                 tieuChi={tc}
-                checked={formState[tc.ma_tieu_chi] ?? tc.gia_tri_mac_dinh}
-                onChange={(checked: boolean) => handleCheckboxChange(tc.ma_tieu_chi, checked)}
+                diem={formState[tc.ma_tieu_chi] ?? (tc.gia_tri_mac_dinh ? tc.diem_toi_da : 0)}
+                onChange={(diem: number) => handleDiemChange(tc.ma_tieu_chi, diem)}
                 disabled={disabled}
                 responseItem={responseItem}
                 showLanhDaoColumn={showLanhDaoColumn}

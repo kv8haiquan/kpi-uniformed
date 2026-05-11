@@ -76,6 +76,56 @@ router = APIRouter()
 # HELPER FUNCTIONS
 # =============================================================================
 
+def _diem_pd_tu_ld(tc) -> Decimal:
+    """
+    Tính điểm phê duyệt từ phán quyết LĐ (boolean).
+
+    v3.6 (08/05/2026): CC có thể tự chấm điểm thập phân (bội số 0.5). Khi LĐ
+    tick "Đạt" → giữ nguyên điểm CC tự chấm thay vì ép full điểm tối đa. Khi
+    "Không đạt" → 0.
+    """
+    if tc.is_achieved_ld:
+        return tc.diem_tu_cham if tc.diem_tu_cham is not None else Decimal("0")
+    return Decimal("0")
+
+
+def _apply_dieu_chinh_ld(tc, dc, *, fallback: str = "cc") -> None:
+    """
+    Áp dụng điều chỉnh LĐ lên 1 record TieuChiChungDanhGia.
+
+    v3.6 (08/05/2026): hỗ trợ 2 mode payload trong `dc`:
+    - `diem_phe_duyet` (số thập phân): LĐ chấm trực tiếp 0 → diem_toi_da.
+       Backend suy `is_achieved_ld = (diem >= diem_toi_da)`.
+    - `is_achieved_ld` (boolean, legacy): tick "Đạt" → giữ diem_tu_cham,
+       "Không đạt" → 0. Dùng helper `_diem_pd_tu_ld`.
+
+    Khi `dc is None`, hành vi phụ thuộc `fallback`:
+    - "cc"  : đồng ý với CC → is_achieved_ld = is_achieved_cc, diem = diem_tu_cham
+    - "keep": giữ nguyên is_achieved_ld đã có (vd: ĐT đồng ý quyết định Phó ĐT),
+              chỉ recompute diem_phe_duyet từ is_achieved_ld hiện tại.
+    """
+    if dc is None:
+        if fallback == "keep":
+            tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+        else:
+            tc.is_achieved_ld = tc.is_achieved_cc
+            tc.diem_phe_duyet = (
+                tc.diem_tu_cham if tc.diem_tu_cham is not None else Decimal("0")
+            )
+        return
+
+    if dc.diem_phe_duyet is not None:
+        diem_max = Decimal(str(tc.tieu_chi.diem_toi_da)) if tc.tieu_chi else None
+        diem = Decimal(str(dc.diem_phe_duyet))
+        tc.diem_phe_duyet = diem
+        tc.is_achieved_ld = (diem_max is not None and diem >= diem_max)
+    else:
+        tc.is_achieved_ld = bool(dc.is_achieved_ld)
+        tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+
+    if dc.ly_do_dieu_chinh:
+        tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
+
 # =============================================================================
 # NỚI HẠN TẠM THỜI (2026-04-21): Cho phép tự đánh giá + phê duyệt tiêu chí chung
 # cho mọi tháng từ 2026-01 trở đi, đến hết 2026-05-31 để CC bổ sung các tháng
@@ -540,13 +590,21 @@ async def tu_danh_gia_tieu_chi(
         master = master_map.get(tc_input.ma_tieu_chi)
         if not master:
             raise HTTPException(status_code=400, detail=error_response(code="VAL_001", message=f"Mã không hợp lệ: {tc_input.ma_tieu_chi}"))
-        
-        diem = tinh_diem_binary(tc_input.ma_tieu_chi, tc_input.is_achieved_cc)
-        
+
+        # v3.6: ưu tiên diem_tu_cham (CC nhập số trực tiếp).
+        # Fallback về is_achieved_cc (legacy) khi diem_tu_cham không được gửi.
+        if tc_input.diem_tu_cham is not None:
+            diem = float(tc_input.diem_tu_cham)
+            diem_max = float(master.diem_toi_da or 0)
+            is_achieved = diem >= diem_max - 1e-9
+        else:
+            is_achieved = bool(tc_input.is_achieved_cc)
+            diem = tinh_diem_binary(tc_input.ma_tieu_chi, is_achieved)
+
         tc_dg = TieuChiChungDanhGia(
             danh_gia_thang_id=danh_gia.id,
             tieu_chi_id=master.id,
-            is_achieved_cc=tc_input.is_achieved_cc,
+            is_achieved_cc=is_achieved,
             is_achieved_ld=None,
             diem_tu_cham=Decimal(str(diem)),
             trang_thai=TrangThaiTieuChi.CHO_PHE_DUYET if payload.gui_phe_duyet else TrangThaiTieuChi.NHAP,
@@ -955,14 +1013,7 @@ async def phe_duyet_tieu_chi_chung(
         
         for tc in danh_gia.tieu_chi_chungs:
             ma_tc = tc.tieu_chi.ma_tieu_chi
-            if ma_tc in dieu_chinh_map:
-                dc = dieu_chinh_map[ma_tc]
-                tc.is_achieved_ld = dc.is_achieved_ld
-                tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
-            else:
-                tc.is_achieved_ld = tc.is_achieved_cc
-            
-            tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(ma_tc, tc.is_achieved_ld)))
+            _apply_dieu_chinh_ld(tc, dieu_chinh_map.get(ma_tc))
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
             tc.ghi_chu_ld = payload.ghi_chu
@@ -990,14 +1041,7 @@ async def phe_duyet_tieu_chi_chung(
         
         for tc in danh_gia.tieu_chi_chungs:
             ma_tc = tc.tieu_chi.ma_tieu_chi
-            if ma_tc in dieu_chinh_map:
-                dc = dieu_chinh_map[ma_tc]
-                tc.is_achieved_ld = dc.is_achieved_ld
-                tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
-            else:
-                tc.is_achieved_ld = tc.is_achieved_cc
-            
-            tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(ma_tc, tc.is_achieved_ld)))
+            _apply_dieu_chinh_ld(tc, dieu_chinh_map.get(ma_tc))
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
             tc.ghi_chu_ld = payload.ghi_chu
@@ -1028,14 +1072,7 @@ async def phe_duyet_tieu_chi_chung(
         
         for tc in danh_gia.tieu_chi_chungs:
             ma_tc = tc.tieu_chi.ma_tieu_chi
-            if ma_tc in dieu_chinh_map:
-                dc = dieu_chinh_map[ma_tc]
-                tc.is_achieved_ld = dc.is_achieved_ld
-                tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
-            else:
-                tc.is_achieved_ld = tc.is_achieved_cc
-            
-            tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(ma_tc, tc.is_achieved_ld)))
+            _apply_dieu_chinh_ld(tc, dieu_chinh_map.get(ma_tc))
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
             tc.ghi_chu_ld = payload.ghi_chu
@@ -1082,15 +1119,10 @@ async def phe_duyet_tieu_chi_chung(
         so_dieu_chinh = 0
         for tc in danh_gia.tieu_chi_chungs:
             ma_tc = tc.tieu_chi.ma_tieu_chi
-            if ma_tc in dieu_chinh_map:
-                dc = dieu_chinh_map[ma_tc]
-                tc.is_achieved_ld = dc.is_achieved_ld
-                tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
+            dc = dieu_chinh_map.get(ma_tc)
+            _apply_dieu_chinh_ld(tc, dc)
+            if dc is not None:
                 so_dieu_chinh += 1
-            else:
-                tc.is_achieved_ld = tc.is_achieved_cc
-            
-            tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(ma_tc, tc.is_achieved_ld)))
             tc.ghi_chu_ld = payload.ghi_chu
         
         tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
@@ -1138,15 +1170,19 @@ async def phe_duyet_tieu_chi_chung(
         so_dieu_chinh = 0
         for tc in danh_gia.tieu_chi_chungs:
             ma_tc = tc.tieu_chi.ma_tieu_chi
-            if ma_tc in dieu_chinh_map:
-                dc = dieu_chinh_map[ma_tc]
-                tc.is_achieved_ld = dc.is_achieved_ld
+            dc = dieu_chinh_map.get(ma_tc)
+            if dc is None:
+                # ĐT đồng ý quyết định Phó ĐT → giữ is_achieved_ld, recompute điểm
+                _apply_dieu_chinh_ld(tc, None, fallback="keep")
+            else:
+                # ĐT điều chỉnh — nối lý do với phần Phó ĐT đã có (prefix "ĐT:")
                 if dc.ly_do_dieu_chinh:
                     tc.ly_do_dieu_chinh = (tc.ly_do_dieu_chinh or "") + f" | ĐT: {dc.ly_do_dieu_chinh}"
+                    dc_no_ly_do = dc.model_copy(update={"ly_do_dieu_chinh": None})
+                    _apply_dieu_chinh_ld(tc, dc_no_ly_do, fallback="keep")
+                else:
+                    _apply_dieu_chinh_ld(tc, dc, fallback="keep")
                 so_dieu_chinh += 1
-            # Else: Giữ nguyên điều chỉnh của Phó ĐT
-            
-            tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(ma_tc, tc.is_achieved_ld)))
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
         
@@ -1179,15 +1215,10 @@ async def phe_duyet_tieu_chi_chung(
         so_dieu_chinh = 0
         for tc in danh_gia.tieu_chi_chungs:
             ma_tc = tc.tieu_chi.ma_tieu_chi
-            if ma_tc in dieu_chinh_map:
-                dc = dieu_chinh_map[ma_tc]
-                tc.is_achieved_ld = dc.is_achieved_ld
-                tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
+            dc = dieu_chinh_map.get(ma_tc)
+            _apply_dieu_chinh_ld(tc, dc)
+            if dc is not None:
                 so_dieu_chinh += 1
-            else:
-                tc.is_achieved_ld = tc.is_achieved_cc
-            
-            tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(ma_tc, tc.is_achieved_ld)))
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
             tc.ghi_chu_ld = payload.ghi_chu
@@ -1234,15 +1265,10 @@ async def phe_duyet_tieu_chi_chung(
     so_dieu_chinh = 0
     for tc in danh_gia.tieu_chi_chungs:
         ma_tc = tc.tieu_chi.ma_tieu_chi
-        if ma_tc in dieu_chinh_map:
-            dc = dieu_chinh_map[ma_tc]
-            tc.is_achieved_ld = dc.is_achieved_ld
-            tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
+        dc = dieu_chinh_map.get(ma_tc)
+        _apply_dieu_chinh_ld(tc, dc)
+        if dc is not None:
             so_dieu_chinh += 1
-        else:
-            tc.is_achieved_ld = tc.is_achieved_cc
-        
-        tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(ma_tc, tc.is_achieved_ld)))
         tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
         tc.ngay_phe_duyet = now
         tc.ghi_chu_ld = payload.ghi_chu
@@ -1645,7 +1671,7 @@ async def phe_duyet_tieu_chi_bulk(
         if is_duyet_thang:
             for tc in danh_gia.tieu_chi_chungs:
                 tc.is_achieved_ld = tc.is_achieved_cc
-                tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(tc.tieu_chi.ma_tieu_chi, tc.is_achieved_ld)))
+                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
                 tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
                 tc.ngay_phe_duyet = now
                 tc.ghi_chu_ld = payload.ghi_chu
@@ -1668,7 +1694,7 @@ async def phe_duyet_tieu_chi_bulk(
         if is_approver_cap1 and not danh_gia.ngay_phe_duyet_tc_cap1:
             for tc in danh_gia.tieu_chi_chungs:
                 tc.is_achieved_ld = tc.is_achieved_cc
-                tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(tc.tieu_chi.ma_tieu_chi, tc.is_achieved_ld)))
+                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
                 tc.ghi_chu_ld = payload.ghi_chu
             
             tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
@@ -1695,7 +1721,7 @@ async def phe_duyet_tieu_chi_bulk(
         # Cấp 2
         if is_approver_cap2 and danh_gia.ngay_phe_duyet_tc_cap1 and not danh_gia.ngay_phe_duyet_tc_cap2:
             for tc in danh_gia.tieu_chi_chungs:
-                tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(tc.tieu_chi.ma_tieu_chi, tc.is_achieved_ld)))
+                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
                 tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
                 tc.ngay_phe_duyet = now
             
@@ -1715,7 +1741,7 @@ async def phe_duyet_tieu_chi_bulk(
         
         for tc in danh_gia.tieu_chi_chungs:
             tc.is_achieved_ld = tc.is_achieved_cc
-            tc.diem_phe_duyet = Decimal(str(tinh_diem_binary(tc.tieu_chi.ma_tieu_chi, tc.is_achieved_ld)))
+            tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
             tc.ghi_chu_ld = payload.ghi_chu

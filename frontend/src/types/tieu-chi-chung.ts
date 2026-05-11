@@ -175,7 +175,12 @@ export interface IKetQuaTieuChiChungResponse {
 /** Input một tiêu chí khi tự đánh giá - DÙNG ma_tieu_chi */
 export interface ITieuChiChungInput {
   ma_tieu_chi: string;           // ⚠️ Backend dùng ma_tieu_chi, KHÔNG phải tieu_chi_id
-  is_achieved_cc: boolean;
+  /**
+   * v3.6 (08/05/2026): điểm CC tự chấm (bội số 0.5, từ 0 đến diem_toi_da).
+   * Backend ưu tiên giá trị này. is_achieved_cc dưới đây chỉ giữ cho legacy.
+   */
+  diem_tu_cham?: number;
+  is_achieved_cc?: boolean;
   ghi_chu_cc?: string | null;
 }
 
@@ -192,8 +197,11 @@ export interface ITuDanhGiaRequest {
 // FORM STATE TYPES
 // =============================================================================
 
-/** Form state: key = ma_tieu_chi, value = boolean */
-export type ITieuChiFormState = Record<string, boolean>;
+/**
+ * Form state: key = ma_tieu_chi, value = điểm số CC tự chấm (bội số 0.5, từ
+ * 0 đến diem_toi_da). v3.6 (08/05/2026) — đổi từ boolean sang number.
+ */
+export type ITieuChiFormState = Record<string, number>;
 
 /** Ghi chú: key = ma_tieu_chi, value = string */
 export type ITieuChiGhiChu = Record<string, string>;
@@ -238,26 +246,29 @@ export function getTrangThaiCapLabel(trangThai: TrangThaiPheDuyetCap | null | un
 }
 
 /**
- * Tính điểm preview từ form state.
- * Nhóm 1 & 2: mặc định đạt = full điểm
- * Nhóm 3: mặc định không đạt = 0 điểm
+ * Mặc định điểm khi CC chưa nhập. v3.6: Nhóm I & II = full điểm, Nhóm III = 0.
+ */
+function defaultDiem(tc: ITieuChiChungMaster): number {
+  return tc.gia_tri_mac_dinh ? tc.diem_toi_da : 0;
+}
+
+/**
+ * Tính điểm preview từ form state (số điểm CC tự chấm cho từng tiêu chí).
  */
 export function tinhDiemTuFormState(
   masterData: ITieuChiChungMaster[],
   formState: ITieuChiFormState
 ): ITieuChiChungTongHop {
   let nhom1 = 0, nhom2 = 0, nhom3 = 0;
-  
+
   for (const tc of masterData) {
-    // Sử dụng ma_tieu_chi làm key
-    const isAchieved = formState[tc.ma_tieu_chi] ?? tc.gia_tri_mac_dinh;
-    const diem = isAchieved ? tc.diem_toi_da : 0;
-    
+    const diem = formState[tc.ma_tieu_chi] ?? defaultDiem(tc);
+
     if (tc.nhom_tieu_chi === 1) nhom1 += diem;
     else if (tc.nhom_tieu_chi === 2) nhom2 += diem;
     else if (tc.nhom_tieu_chi === 3) nhom3 += diem;
   }
-  
+
   return {
     nhom_1_diem: nhom1,
     nhom_2_diem: nhom2,
@@ -268,26 +279,32 @@ export function tinhDiemTuFormState(
 
 /**
  * Init form state từ response (nếu có) hoặc default.
- * Key = ma_tieu_chi
+ * Lấy `diem_tu_cham` từ response. Nếu chưa có response, dùng mặc định nhóm.
  */
 export function initFormStateFromResponse(
   response: IKetQuaTieuChiChungResponse | null,
   masterData: ITieuChiChungMaster[]
 ): ITieuChiFormState {
   const state: ITieuChiFormState = {};
-  
+
   if (response && response.tieu_chi && response.tieu_chi.length > 0) {
-    // Từ response
+    // Từ response — ưu tiên diem_tu_cham, fallback boolean cho dữ liệu cũ.
     for (const tc of response.tieu_chi) {
-      state[tc.ma_tieu_chi] = tc.is_achieved_cc;
+      if (tc.diem_tu_cham != null) {
+        state[tc.ma_tieu_chi] = Number(tc.diem_tu_cham);
+      } else {
+        const masterTc = masterData.find((m) => m.ma_tieu_chi === tc.ma_tieu_chi);
+        const max = masterTc?.diem_toi_da ?? 0;
+        state[tc.ma_tieu_chi] = tc.is_achieved_cc ? max : 0;
+      }
     }
   } else {
     // Default từ master data
     for (const tc of masterData) {
-      state[tc.ma_tieu_chi] = tc.gia_tri_mac_dinh;
+      state[tc.ma_tieu_chi] = defaultDiem(tc);
     }
   }
-  
+
   return state;
 }
 
@@ -313,18 +330,22 @@ export function initGhiChuFromResponse(
 
 /**
  * Convert form state sang payload để gửi API.
- * ⚠️ Backend dùng ma_tieu_chi, KHÔNG phải tieu_chi_id
+ * v3.6 (08/05/2026): gửi `diem_tu_cham` (số) thay vì `is_achieved_cc` (boolean).
+ * Backend tự suy is_achieved_cc = (diem >= diem_toi_da).
  */
 export function convertFormToPayload(
   masterData: ITieuChiChungMaster[],
   formState: ITieuChiFormState,
   ghiChu: ITieuChiGhiChu
 ): ITieuChiChungInput[] {
-  return masterData.map((tc: ITieuChiChungMaster): ITieuChiChungInput => ({
-    ma_tieu_chi: tc.ma_tieu_chi,
-    is_achieved_cc: formState[tc.ma_tieu_chi] ?? tc.gia_tri_mac_dinh,
-    ghi_chu_cc: ghiChu[tc.ma_tieu_chi] || null,
-  }));
+  return masterData.map((tc: ITieuChiChungMaster): ITieuChiChungInput => {
+    const diem = formState[tc.ma_tieu_chi] ?? defaultDiem(tc);
+    return {
+      ma_tieu_chi: tc.ma_tieu_chi,
+      diem_tu_cham: diem,
+      ghi_chu_cc: ghiChu[tc.ma_tieu_chi] || null,
+    };
+  });
 }
 
 /**

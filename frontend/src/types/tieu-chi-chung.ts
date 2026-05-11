@@ -156,6 +156,11 @@ export interface IKetQuaTieuChiChungResponse {
   trang_thai_tc_cap2?: TrangThaiPheDuyetCap | null;
   ngay_phe_duyet_tc_cap2?: string | null;
   ly_do_tu_choi_tc_cap2?: string | null;
+
+  // === LÝ DO TỪ CHỐI / TRẢ LẠI (v3.5+, dùng chung cho cả 2 cấp) ===
+  ly_do_tu_choi_tc?: string | null;
+  nguoi_tu_choi_tc_id?: string | null;
+  ngay_tu_choi_tc?: string | null;
   
   // === LEGACY (backward compatible) ===
   nguoi_phe_duyet_id?: string | null;

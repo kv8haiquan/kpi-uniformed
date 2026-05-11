@@ -20,6 +20,7 @@ Phiên bản: 3.5.0 (02/02/2026)
 """
 
 import calendar
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional, List
@@ -32,6 +33,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.core.kpi_version import resolve_kpi_version
+from app.core.thong_bao_helper import gui_thong_bao
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChung,
@@ -89,6 +91,40 @@ def _diem_pd_tu_ld(tc) -> Decimal:
     return Decimal("0")
 
 
+# v3.6 (12/05/2026): Snapshot điểm Phó ĐT chấm per-TC qua prefix [PDV:N]
+# trong tc.ly_do_dieu_chinh — tránh phải migration thêm cột.
+_PDV_SNAPSHOT_REGEX = re.compile(r"^\[PDV:([\d.]+)\]\s*")
+
+
+def _strip_pdv_snapshot(text: Optional[str]) -> str:
+    """Bỏ prefix [PDV:N] khỏi ly_do_dieu_chinh để lấy lý do gốc."""
+    if not text:
+        return ""
+    return _PDV_SNAPSHOT_REGEX.sub("", text).strip()
+
+
+def _parse_pdv_diem(text: Optional[str]) -> Optional[float]:
+    """Parse điểm PDV chấm từ prefix [PDV:N]. None nếu không có snapshot."""
+    if not text:
+        return None
+    m = _PDV_SNAPSHOT_REGEX.match(text)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except (ValueError, TypeError):
+        return None
+
+
+def _save_pdv_snapshot(tc, pdv_diem: float) -> None:
+    """Ghi snapshot [PDV:N] vào tc.ly_do_dieu_chinh (preserve lý do hiện có)."""
+    cur = _strip_pdv_snapshot(tc.ly_do_dieu_chinh)
+    # Format điểm: nguyên thì không hiển thị .0, lẻ giữ 1 chữ số
+    diem_str = f"{pdv_diem:g}"
+    prefix = f"[PDV:{diem_str}]"
+    tc.ly_do_dieu_chinh = f"{prefix} {cur}".strip() if cur else prefix
+
+
 def _apply_dieu_chinh_ld(tc, dc, *, fallback: str = "cc") -> None:
     """
     Áp dụng điều chỉnh LĐ lên 1 record TieuChiChungDanhGia.
@@ -101,12 +137,21 @@ def _apply_dieu_chinh_ld(tc, dc, *, fallback: str = "cc") -> None:
 
     Khi `dc is None`, hành vi phụ thuộc `fallback`:
     - "cc"  : đồng ý với CC → is_achieved_ld = is_achieved_cc, diem = diem_tu_cham
-    - "keep": giữ nguyên is_achieved_ld đã có (vd: ĐT đồng ý quyết định Phó ĐT),
-              chỉ recompute diem_phe_duyet từ is_achieved_ld hiện tại.
+    - "keep": ĐT đồng ý quyết định Phó ĐT → GIỮ NGUYÊN diem_phe_duyet & is_achieved_ld
+              đã có. v3.6 BUG FIX (12/05/2026): KHÔNG recompute từ is_achieved_ld
+              vì điểm có thể thập phân (CC chấm 2.0 < max 2.5 → is_achieved_ld=False
+              nhưng diem_phe_duyet=2.0 vẫn hợp lệ). Recompute sẽ mất điểm.
     """
     if dc is None:
         if fallback == "keep":
-            tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+            # Giữ nguyên diem_phe_duyet đã có. Chỉ fallback về diem_tu_cham
+            # khi chưa có gì (edge case: TDV duyệt thẳng mà PDV chưa duyệt).
+            if tc.diem_phe_duyet is None:
+                tc.diem_phe_duyet = (
+                    tc.diem_tu_cham if tc.diem_tu_cham is not None else Decimal("0")
+                )
+                if tc.is_achieved_ld is None:
+                    tc.is_achieved_ld = tc.is_achieved_cc
         else:
             tc.is_achieved_ld = tc.is_achieved_cc
             tc.diem_phe_duyet = (
@@ -248,7 +293,11 @@ def build_tieu_chi_response(tc_dg: TieuChiChungDanhGia, dgt_id: Optional[UUID] =
     tc = tc_dg.tieu_chi
     is_achieved = tc_dg.is_achieved_ld if tc_dg.is_achieved_ld is not None else tc_dg.is_achieved_cc
     diem = float(tc_dg.diem_phe_duyet) if tc_dg.diem_phe_duyet is not None else float(tc_dg.diem_tu_cham)
-    
+
+    # v3.6 (12/05/2026): parse snapshot điểm PDV từ prefix [PDV:N] trong ly_do_dieu_chinh.
+    diem_pdv = _parse_pdv_diem(tc_dg.ly_do_dieu_chinh)
+    ly_do_clean = _strip_pdv_snapshot(tc_dg.ly_do_dieu_chinh) or None
+
     return TieuChiItemResponse(
         id=tc_dg.id,
         danh_gia_thang_id=dgt_id or tc_dg.danh_gia_thang_id,
@@ -263,11 +312,12 @@ def build_tieu_chi_response(tc_dg: TieuChiChungDanhGia, dgt_id: Optional[UUID] =
         is_achieved=is_achieved,
         diem_tu_cham=float(tc_dg.diem_tu_cham),
         diem_phe_duyet=float(tc_dg.diem_phe_duyet) if tc_dg.diem_phe_duyet is not None else None,
+        diem_pdv=diem_pdv,
         diem=diem,
         trang_thai=TrangThaiTieuChiEnum(tc_dg.trang_thai.value),
         ghi_chu_cc=tc_dg.ghi_chu_cc,
         ghi_chu_ld=tc_dg.ghi_chu_ld,
-        ly_do_dieu_chinh=tc_dg.ly_do_dieu_chinh,
+        ly_do_dieu_chinh=ly_do_clean,
         ngay_gui=tc_dg.ngay_gui,
         ngay_phe_duyet=tc_dg.ngay_phe_duyet,
     )
@@ -287,6 +337,9 @@ def build_danh_gia_thang_response(danh_gia: DanhGiaThang) -> dict:
             "ma_cc": npd1.ma_cc,
             "ho_ten": npd1.ho_ten,
             "chuc_vu": npd1.chuc_vu,
+            # v3.6 (12/05/2026): FE cần cap_bac để phân biệt 2-cấp vs duyệt thẳng
+            "cap_bac": npd1.vai_tro.cap_bac.value if npd1.vai_tro and npd1.vai_tro.cap_bac else None,
+            "ma_vai_tro": npd1.vai_tro.ma_vai_tro if npd1.vai_tro else None,
         }
     
     # Thông tin người phê duyệt tiêu chí cấp 2
@@ -298,6 +351,9 @@ def build_danh_gia_thang_response(danh_gia: DanhGiaThang) -> dict:
             "ma_cc": npd2.ma_cc,
             "ho_ten": npd2.ho_ten,
             "chuc_vu": npd2.chuc_vu,
+            # v3.6 (12/05/2026): cap_bac cho consistency với cap1
+            "cap_bac": npd2.vai_tro.cap_bac.value if npd2.vai_tro and npd2.vai_tro.cap_bac else None,
+            "ma_vai_tro": npd2.vai_tro.ma_vai_tro if npd2.vai_tro else None,
         }
     
     return {
@@ -464,8 +520,8 @@ async def get_tu_danh_gia_tieu_chi(
     stmt = select(DanhGiaThang).options(
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.nguoi_phe_duyet),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2).selectinload(CongChuc.vai_tro),
     ).where(
         DanhGiaThang.cong_chuc_id == current_user.id,
         DanhGiaThang.thang == thang, DanhGiaThang.nam == nam,
@@ -694,6 +750,7 @@ async def get_danh_sach_cho_phe_duyet(
         stmt = select(DanhGiaThang).options(
             selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
             selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+            selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
         ).join(CongChuc).where(
             DanhGiaThang.is_deleted == False,
             CongChuc.don_vi_id == current_user.don_vi_id,
@@ -708,6 +765,7 @@ async def get_danh_sach_cho_phe_duyet(
         stmt = select(DanhGiaThang).options(
             selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
             selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+            selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
         ).where(
             DanhGiaThang.is_deleted == False,
             or_(
@@ -748,6 +806,7 @@ async def get_danh_sach_cho_phe_duyet(
         stmt_fallback = select(DanhGiaThang).options(
             selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
             selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+            selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
         ).join(TieuChiChungDanhGia).where(
             TieuChiChungDanhGia.trang_thai == TrangThaiTieuChi.CHO_PHE_DUYET,
             TieuChiChungDanhGia.nguoi_phe_duyet_id == current_user.id,
@@ -796,6 +855,14 @@ async def get_danh_sach_cho_phe_duyet(
             ngay_gui=tc_list[0].ngay_gui if tc_list and tc_list[0].ngay_gui else datetime.now(),
             nguoi_phe_duyet_tc_cap1_id=dg.nguoi_phe_duyet_tc_cap1_id,
             ngay_phe_duyet_tc_cap1=dg.ngay_phe_duyet_tc_cap1,
+            # v3.6 (12/05/2026): FE dùng cap_bac này để phân biệt 2-cấp vs duyệt thẳng
+            nguoi_phe_duyet_tc_cap1_cap_bac=(
+                dg.nguoi_phe_duyet_tc_cap1.vai_tro.cap_bac.value
+                if dg.nguoi_phe_duyet_tc_cap1
+                and dg.nguoi_phe_duyet_tc_cap1.vai_tro
+                and dg.nguoi_phe_duyet_tc_cap1.vai_tro.cap_bac
+                else None
+            ),
             nguoi_phe_duyet_tc_cap2_id=dg.nguoi_phe_duyet_tc_cap2_id,
             ngay_phe_duyet_tc_cap2=dg.ngay_phe_duyet_tc_cap2,
             trang_thai_tieu_chi=dg.trang_thai_tc.value if dg.trang_thai_tc else None,
@@ -891,6 +958,9 @@ async def get_lich_su_tieu_chi(
         # v3.5: Thêm thông tin từ chối
         item["ly_do_tu_choi_tc"] = dg.ly_do_tu_choi_tc
         item["ngay_tu_choi_tc"] = dg.ngay_tu_choi_tc.isoformat() if getattr(dg, 'ngay_tu_choi_tc', None) else None
+        # v3.6 (12/05/2026): trả về điểm CC tự chấm gốc để FE không fallback nhầm sang
+        # diem_tieu_chi_chung (vốn là điểm sau LĐ chỉnh) khi hiển thị cột "CC tự chấm".
+        item["diem_tu_cham"] = float(sum((tc.diem_tu_cham or 0) for tc in dg.tieu_chi_chungs))
         data.append(item)
     
     return success_response(
@@ -914,8 +984,8 @@ async def get_chi_tiet_phe_duyet(
     stmt = select(DanhGiaThang).options(
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2).selectinload(CongChuc.vai_tro),
     ).where(DanhGiaThang.id == danh_gia_thang_id, DanhGiaThang.is_deleted == False)
     
     danh_gia = (await db.execute(stmt)).scalar_one_or_none()
@@ -979,8 +1049,8 @@ async def phe_duyet_tieu_chi_chung(
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.vai_tro),
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2).selectinload(CongChuc.vai_tro),
     ).where(DanhGiaThang.id == danh_gia_thang_id, DanhGiaThang.is_deleted == False)
     
     danh_gia = (await db.execute(stmt)).scalar_one_or_none()
@@ -1124,6 +1194,10 @@ async def phe_duyet_tieu_chi_chung(
             if dc is not None:
                 so_dieu_chinh += 1
             tc.ghi_chu_ld = payload.ghi_chu
+            # v3.6 (12/05/2026): snapshot điểm PDV chấm per-TC qua prefix
+            # [PDV:N] trong ly_do_dieu_chinh — tránh migration thêm cột.
+            pdv_diem = float(tc.diem_phe_duyet) if tc.diem_phe_duyet is not None else 0.0
+            _save_pdv_snapshot(tc, pdv_diem)
         
         tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
         
@@ -1416,7 +1490,7 @@ async def tu_choi_tieu_chi_chung(
     danh_gia.ngay_tu_choi_tc = now
     
     await db.flush()
-    
+
     # Label người từ chối
     cap_labels = {
         CapBacVaiTro.PHO_DON_VI: "Phó ĐT",
@@ -1425,7 +1499,17 @@ async def tu_choi_tieu_chi_chung(
     }
     cap_label = cap_labels.get(cap_bac_current, "Lãnh đạo")
     ho_ten_cc = danh_gia.cong_chuc.ho_ten if danh_gia.cong_chuc else "N/A"
-    
+
+    if danh_gia.cong_chuc_id:
+        await gui_thong_bao(
+            nguoi_nhan_id=danh_gia.cong_chuc_id,
+            tieu_de="Tiêu chí chung bị từ chối",
+            noi_dung=f"Lý do: {payload.ly_do_tu_choi}",
+            link_url="/danh-gia/tu-cham-diem",
+            doi_tuong_type="DANH_GIA_THANG",
+            doi_tuong_id=danh_gia.id,
+        )
+
     return success_response(
         data={
             "danh_gia_thang_id": str(danh_gia.id),
@@ -1478,8 +1562,8 @@ async def tra_lai_tieu_chi_da_duyet(
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
         selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.vai_tro),
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2).selectinload(CongChuc.vai_tro),
     ).where(DanhGiaThang.id == danh_gia_thang_id, DanhGiaThang.is_deleted == False)
     
     danh_gia = (await db.execute(stmt)).scalar_one_or_none()
@@ -1581,7 +1665,17 @@ async def tra_lai_tieu_chi_da_duyet(
     }
     cap_label = cap_labels.get(cap_bac_current, "Lãnh đạo")
     ho_ten_cc = danh_gia.cong_chuc.ho_ten if danh_gia.cong_chuc else "N/A"
-    
+
+    if danh_gia.cong_chuc_id:
+        await gui_thong_bao(
+            nguoi_nhan_id=danh_gia.cong_chuc_id,
+            tieu_de="Tiêu chí chung bị trả lại",
+            noi_dung=f"Lý do: {payload.ly_do}",
+            link_url="/danh-gia/tu-cham-diem",
+            doi_tuong_type="DANH_GIA_THANG",
+            doi_tuong_id=danh_gia.id,
+        )
+
     return success_response(
         data={
             "danh_gia_thang_id": str(danh_gia.id),
@@ -1854,8 +1948,8 @@ async def get_tieu_chi_cong_chuc(
     stmt = select(DanhGiaThang).options(
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.nguoi_phe_duyet),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1),
-        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
+        selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2).selectinload(CongChuc.vai_tro),
     ).where(
         DanhGiaThang.cong_chuc_id == cong_chuc_id,
         DanhGiaThang.thang == thang, DanhGiaThang.nam == nam,

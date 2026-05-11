@@ -399,6 +399,41 @@ export default function TuChamDiemPage() {
             </p>
           </div>
         )}
+
+        {/* Banner LĐ TỪ CHỐI / TRẢ LẠI — hiển thị rõ lý do để CC biết phải sửa gì */}
+        {ketQua?.ly_do_tu_choi_tc && (() => {
+          const raw = ketQua.ly_do_tu_choi_tc;
+          const isTraLai = raw.startsWith('[TRẢ LẠI]');
+          const noiDung = raw.replace(/^\[TRẢ LẠI\]\s*/, '');
+          return (
+            <div className={`mt-4 rounded-lg border-l-4 p-4 ${
+              isTraLai
+                ? 'bg-orange-50 border-orange-500'
+                : 'bg-red-50 border-red-500'
+            }`}>
+              <div className="flex items-start gap-3">
+                <span className={`text-2xl leading-none ${isTraLai ? 'text-orange-600' : 'text-red-600'}`}>
+                  {isTraLai ? '↩' : '✕'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className={`font-semibold mb-1 ${isTraLai ? 'text-orange-800' : 'text-red-800'}`}>
+                    {isTraLai
+                      ? 'Lãnh đạo đã trả lại bản tự chấm điểm — vui lòng chỉnh sửa và gửi duyệt lại'
+                      : 'Lãnh đạo đã từ chối bản tự chấm điểm — vui lòng kê khai lại'}
+                  </p>
+                  <p className={`text-sm whitespace-pre-wrap ${isTraLai ? 'text-orange-700' : 'text-red-700'}`}>
+                    <strong>Lý do:</strong> {noiDung}
+                  </p>
+                  {ketQua.ngay_tu_choi_tc && (
+                    <p className={`text-xs mt-1 ${isTraLai ? 'text-orange-600' : 'text-red-600'}`}>
+                      Ngày: {new Date(ketQua.ngay_tu_choi_tc).toLocaleString('vi-VN')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Score Preview */}

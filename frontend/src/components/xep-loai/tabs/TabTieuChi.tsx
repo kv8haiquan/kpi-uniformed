@@ -47,11 +47,13 @@ interface ITieuChiItem {
   trang_thai: string;
   ngay_gui?: string;
   nguoi_phe_duyet_tc_cap1_id?: string;
-  nguoi_phe_duyet_tc_cap1?: { ho_ten: string } | null;
+  nguoi_phe_duyet_tc_cap1?: { ho_ten: string; cap_bac?: string; ma_vai_tro?: string } | null;
   ngay_phe_duyet_tc_cap1?: string | null;
   diem_tc_cap1?: number | null;  // ✅ v3.4: Điểm Phó duyệt
+  // v3.6 (12/05/2026): cap_bac của người được gán cấp 1 — backend fill từ /cho-phe-duyet
+  nguoi_phe_duyet_tc_cap1_cap_bac?: string | null;
   nguoi_phe_duyet_tc_cap2_id?: string;
-  nguoi_phe_duyet_tc_cap2?: { ho_ten: string } | null;
+  nguoi_phe_duyet_tc_cap2?: { ho_ten: string; cap_bac?: string; ma_vai_tro?: string } | null;
   ngay_phe_duyet_tc_cap2?: string | null;
   diem_tc_cap2?: number | null;  // ✅ v3.4: Điểm Trưởng duyệt
   diem_tieu_chi_chung?: number | null;  // ✅ v3.4: Điểm final
@@ -90,6 +92,8 @@ interface ITieuChiChiTiet {
   ngay_gui?: string | null;
   ngay_phe_duyet?: string | null;
   has_difference?: boolean;
+  // v3.6 (12/05/2026): snapshot điểm PDV chấm — backend parse từ prefix [PDV:N]
+  diem_pdv?: number | null;
 }
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -219,7 +223,9 @@ const tieuChiApi = {
         ma_cc: item.ma_cc || item.cong_chuc?.ma_cc || '',
         don_vi_ten: item.don_vi_ten || item.cong_chuc?.don_vi_ten || '',
         trang_thai: item.trang_thai || item.trang_thai_tc || '',
-        diem_tu_cham: item.diem_tu_cham || item.diem_tieu_chi_chung || 0,
+        // ⚠️ KHÔNG fallback sang diem_tieu_chi_chung — đó là điểm CUỐI sau LĐ chỉnh,
+        // không phải CC tự chấm gốc. Backend /lich-su đã trả diem_tu_cham (v3.6).
+        diem_tu_cham: item.diem_tu_cham ?? 0,
       }));
     } catch (error) {
       console.warn('[TabTieuChi] /danh-gia/tieu-chi/lich-su error:', error);
@@ -378,8 +384,16 @@ function TieuChiRow({ item, isSelected, onSelect, onApprove, onReject, onTraLai,
   
   const canShowApproveButtons = canApprove && isPending && (canApproveCap1 || canApproveCap2);
 
-  // ⭐ v3.6: Detect "gửi thẳng ĐT" = cap1 chưa duyệt + không có cap2
-  const isDirectApproval = isPending && !item.ngay_phe_duyet_tc_cap1 && !item.nguoi_phe_duyet_tc_cap2_id;
+  // ⭐ v3.6 (12/05/2026): "Duyệt thẳng" = CC gửi trực tiếp cho TDV/CCT/PCCT,
+  // KHÔNG phải PDV. Phân biệt qua cap_bac của người được gán cấp 1.
+  // Nếu cap1 là PHO_DON_VI → quy trình 2 cấp; ngược lại → duyệt thẳng.
+  const cap1CapBac = item.nguoi_phe_duyet_tc_cap1_cap_bac
+    || item.nguoi_phe_duyet_tc_cap1?.cap_bac
+    || null;
+  const isDirectApproval = isPending
+    && !item.ngay_phe_duyet_tc_cap1
+    && cap1CapBac !== null
+    && cap1CapBac !== 'PHO_DON_VI';
 
   // Status badge
   const getStatusBadge = () => {
@@ -1172,17 +1186,11 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
               <div className="flex flex-wrap gap-3 mt-2 text-sm">
                 <span className="text-gray-500">Tháng {selectedItem.thang}/{selectedItem.nam}</span>
                 <span className="text-blue-600 font-medium">CC tự chấm: {selectedItem.diem_tu_cham}</span>
-                {/* v3.6: Tính Phó duyệt từ diem_phe_duyet thật */}
-                {chiTietData.some(tc => tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined) && (
-                  <span className="text-green-600 font-medium">Phó duyệt: {
-                    chiTietData.reduce((s, tc) => {
-                      if (tc.is_achieved_ld === null || tc.is_achieved_ld === undefined) return s;
-                      // Ưu tiên diem_phe_duyet thật, fallback legacy (boolean × max)
-                      const diem = tc.diem_phe_duyet ?? (tc.is_achieved_ld ? tc.diem_toi_da : 0);
-                      return s + Number(diem);
-                    }, 0).toFixed(1).replace(/\.0$/, '')
-                  }</span>
+                {/* Snapshot tổng tại thời điểm PDV duyệt — lấy từ danh_gia_thang.diem_tc_cap1 */}
+                {selectedItem.diem_tc_cap1 != null && (
+                  <span className="text-green-600 font-medium">Phó duyệt: {selectedItem.diem_tc_cap1}</span>
                 )}
+                {/* Snapshot tổng tại thời điểm TDV duyệt — lấy từ danh_gia_thang.diem_tc_cap2 */}
                 {selectedItem.diem_tc_cap2 != null && (
                   <span className="text-green-700 font-medium">Trưởng duyệt: {selectedItem.diem_tc_cap2}</span>
                 )}
@@ -1197,26 +1205,27 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                     <th className="px-3 py-2 text-left font-medium text-gray-700">Tiêu chí</th>
                     <th className="px-3 py-2 text-center font-medium text-gray-700 w-16">Tối đa</th>
                     <th className="px-3 py-2 text-center font-medium text-gray-700 w-20">CC tự chấm</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-700 w-20">Phó duyệt</th>
+                    <th className="px-3 py-2 text-center font-medium text-gray-700 w-20" title="Snapshot điểm Phó ĐT chấm tại thời điểm duyệt cấp 1">
+                      Phó duyệt
+                    </th>
                     <th className="px-3 py-2 text-center font-medium text-gray-700 w-24">Trưởng duyệt</th>
                     <th className="px-3 py-2 text-left font-medium text-gray-700 min-w-[200px]">Ghi chú CC</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {chiTietData.map((tc) => {
-                    // v3.6: dùng số điểm thật từ backend
                     const diemCC = Number(tc.diem_tu_cham ?? 0);
-                    // Điểm Phó duyệt (cấp 1) - nếu đã duyệt
-                    const diemPho = tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined
-                      ? Number(tc.diem_phe_duyet ?? (tc.is_achieved_ld ? tc.diem_toi_da : 0))
+                    // v3.6: điểm Phó duyệt = snapshot diem_pdv (parse từ ly_do_dieu_chinh)
+                    const diemPho = tc.diem_pdv !== null && tc.diem_pdv !== undefined
+                      ? Number(tc.diem_pdv)
                       : null;
-                    // Điểm Trưởng duyệt (cấp 2) = diem_phe_duyet (final)
+                    // Điểm Trưởng duyệt = diem_phe_duyet hiện tại (sau cấp 2)
                     const diemTruong = tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined
                       ? Number(tc.diem_phe_duyet)
                       : null;
-                    const hasChange = tc.has_difference
-                      || (tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined
-                          && Math.abs(Number(tc.diem_phe_duyet) - diemCC) > 0.001);
+                    // Đánh dấu yellow nếu Trưởng chỉnh khác Phó (hoặc khác CC nếu duyệt thẳng)
+                    const refDiem = diemPho ?? diemCC;
+                    const hasChange = diemTruong !== null && Math.abs(diemTruong - refDiem) > 0.001;
                     return (
                       <tr key={tc.id} className={`hover:bg-gray-50 ${hasChange ? 'bg-yellow-50' : ''}`}>
                         <td className="px-3 py-2 text-gray-500 font-mono text-xs">{tc.ma_tieu_chi}</td>
@@ -1229,12 +1238,19 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                           {diemPho !== null ? (
                             <span className={`font-medium ${diemPho > 0 ? 'text-green-600' : 'text-red-500'}`}>{diemPho}</span>
                           ) : (
-                            <span className="text-gray-300">-</span>
+                            <span className="text-gray-300" title="Đơn duyệt thẳng (không qua cấp 1)">-</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-center">
-                          {diemTruong !== null && diemTruong !== undefined ? (
-                            <span className={`font-medium ${diemTruong > 0 ? 'text-green-600' : 'text-red-500'}`}>{diemTruong}</span>
+                          {diemTruong !== null ? (
+                            <span className={`font-medium ${diemTruong > 0 ? 'text-green-700' : 'text-red-500'}`}>
+                              {diemTruong}
+                              {hasChange && (
+                                <span className="ml-1 text-xs text-yellow-700">
+                                  ({(diemTruong - refDiem > 0 ? '+' : '')}{(diemTruong - refDiem).toFixed(1).replace(/\.0$/, '')})
+                                </span>
+                              )}
+                            </span>
                           ) : (
                             <span className="text-gray-300">-</span>
                           )}
@@ -1257,19 +1273,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                       {chiTietData.reduce((s, tc) => s + Number(tc.diem_tu_cham ?? 0), 0).toFixed(1).replace(/\.0$/, '')}
                     </td>
                     <td className="px-3 py-2 text-center text-green-600">
-                      {/* v3.6: Tổng Phó duyệt từ diem_phe_duyet thật */}
-                      {chiTietData.some(tc => tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined)
-                        ? chiTietData.reduce((s, tc) => {
-                            if (tc.is_achieved_ld === null || tc.is_achieved_ld === undefined) return s;
-                            const diem = tc.diem_phe_duyet ?? (tc.is_achieved_ld ? tc.diem_toi_da : 0);
-                            return s + Number(diem);
-                          }, 0).toFixed(1).replace(/\.0$/, '')
+                      {chiTietData.some(tc => tc.diem_pdv !== null && tc.diem_pdv !== undefined)
+                        ? chiTietData.reduce((s, tc) => s + Number(tc.diem_pdv ?? 0), 0).toFixed(1).replace(/\.0$/, '')
                         : '-'
                       }
                     </td>
-                    <td className="px-3 py-2 text-center text-green-600">
-                      {/* Tổng Trưởng duyệt từ diem_phe_duyet (khi đã duyệt cấp 2) */}
-                      {chiTietData.some(tc => tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined && tc.trang_thai === 'DA_PHE_DUYET')
+                    <td className="px-3 py-2 text-center text-green-700">
+                      {chiTietData.some(tc => tc.diem_phe_duyet !== null && tc.diem_phe_duyet !== undefined)
                         ? chiTietData.reduce((s, tc) => s + Number(tc.diem_phe_duyet ?? 0), 0).toFixed(1).replace(/\.0$/, '')
                         : '-'
                       }

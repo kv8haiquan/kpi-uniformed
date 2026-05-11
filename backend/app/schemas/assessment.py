@@ -407,6 +407,12 @@ class TieuChiItemResponse(BaseModel):
         default=None,
         description="Điểm LĐ = diem_toi_da if is_achieved_ld else 0"
     )
+    diem_pdv: Optional[float] = Field(
+        default=None,
+        description="v3.6: Snapshot điểm Phó ĐT chấm tại thời điểm duyệt cấp 1 "
+                    "(parse từ prefix [PDV:N] trong ly_do_dieu_chinh). "
+                    "None nếu đơn duyệt thẳng (không qua cấp 1)."
+    )
     diem: float = Field(
         ...,
         description="ĐIỂM CUỐI CÙNG: = diem_phe_duyet nếu đã duyệt, else diem_tu_cham"
@@ -602,6 +608,12 @@ class DanhSachChoPheDuyetItem(BaseModel):
     ngay_phe_duyet_tc_cap1: Optional[datetime] = Field(
         default=None,
         description="Ngày phê duyệt cấp 1"
+    )
+    # v3.6 (12/05/2026): cap_bac người duyệt cấp 1 để FE phân biệt 2-cấp vs duyệt thẳng
+    nguoi_phe_duyet_tc_cap1_cap_bac: Optional[str] = Field(
+        default=None,
+        description="Cấp bậc người được gán duyệt cấp 1 (PHO_DON_VI/TRUONG_DON_VI/...). "
+                    "Nếu = PHO_DON_VI → đơn theo flow 2 cấp. Khác → duyệt thẳng."
     )
     
     # Cấp 2 - Đội trưởng  

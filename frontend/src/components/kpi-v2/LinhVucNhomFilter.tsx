@@ -169,7 +169,7 @@ export function LinhVucNhomFilter({ value, onChange, className }: Props) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Gõ để tìm trong tên / chi tiết / sản phẩm…"
+            placeholder="Gõ để tìm trong tên / chi tiết / đầu ra…"
             className="w-full rounded-md border border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
             value={value.search ?? ''}
             onChange={(e) =>

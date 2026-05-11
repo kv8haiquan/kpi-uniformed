@@ -207,7 +207,7 @@ export default function LeaderDeclarationForm({
           {editItem ? '✏️ Sửa kê khai công việc' : '➕ Thêm công việc mới'}
         </h3>
         <p className="text-indigo-100 text-sm mt-1">
-          Tháng {thang}/{nam} • Mỗi đầu công việc = 1 SP
+          Tháng {thang}/{nam} • Mỗi đầu công việc = 1 điểm
         </p>
       </div>
 
@@ -282,7 +282,7 @@ export default function LeaderDeclarationForm({
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">Mặc định = 1 (mỗi công việc = 1 SP)</p>
+            <p className="text-xs text-gray-500 mt-1">Mặc định = 1 (mỗi công việc = 1 điểm)</p>
           </div>
         </div>
 

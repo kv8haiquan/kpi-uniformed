@@ -79,10 +79,10 @@ export const TABS_CONFIG: ITabConfig[] = [
   },
   {
     id: 'bao-cao',
-    label: 'Duyệt xếp loại tháng',
-    shortLabel: 'Xếp loại',
+    label: 'Duyệt đánh giá tháng',
+    shortLabel: 'Đánh giá',
     icon: '📈',
-    description: 'Tổng hợp báo cáo xếp loại tháng',
+    description: 'Tổng hợp báo cáo đánh giá, xếp loại tháng',
     allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG],
     approverRoles: [CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG], // Chỉ ĐT và CCT duyệt
   },
@@ -97,10 +97,10 @@ export const TABS_CONFIG: ITabConfig[] = [
   },
   {
     id: 'quy',
-    label: 'Xếp loại quý',
+    label: 'Đánh giá Quý',
     shortLabel: 'Quý',
     icon: '📊',
-    description: 'Tổng hợp xếp loại quý (đọc từ báo cáo tháng đã duyệt)',
+    description: 'Tổng hợp đánh giá quý (đọc từ báo cáo tháng đã duyệt)',
     allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG],
     approverRoles: [], // Không có quyền phê duyệt, chỉ xem
   },

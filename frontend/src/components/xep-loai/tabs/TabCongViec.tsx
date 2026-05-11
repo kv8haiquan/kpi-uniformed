@@ -1533,7 +1533,7 @@ export default function TabCongViec({ thang, nam, canApprove, onPendingCountChan
             <div className="px-6 py-4 space-y-4">
               <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-800">
                 ⚠️ Kê khai <strong>{traLaiItem.ho_ten}</strong> sẽ được chuyển về trạng thái <strong>Nháp</strong>.
-                Các giá trị phê duyệt (số lỗi, SP) sẽ bị xóa.
+                Các giá trị phê duyệt (số lỗi, điểm) sẽ bị xóa.
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

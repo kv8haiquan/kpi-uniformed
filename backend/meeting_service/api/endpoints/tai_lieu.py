@@ -6,6 +6,7 @@ Module 3 — Tài liệu họp. 5 endpoints chính + 1 endpoint serve file (gate
 Spec: §5 HKG_API_SPECS.md (đã cập nhật MVP filesystem + JWT short-lived).
 """
 
+import os
 from typing import Optional
 from uuid import UUID
 
@@ -44,8 +45,11 @@ router_cuoc_hop = APIRouter(prefix="/cuoc-hop", tags=["Tài liệu họp"])
 
 
 # ─── 1. UPLOAD ────────────────────────────────────────────────────────
+# Rate-limit: 60/5minutes per user (~12/phút) — cuộc họp công vụ thường có
+# 10-30 tài liệu, limit cũ 10/5min đã từng false-positive (sự cố 11/05/2026).
+# Override qua env HKG_UPLOAD_RATE_LIMIT khi cần (vd "30/minute").
 @router.post("/upload", status_code=201, summary="Upload tài liệu họp")
-@limiter.limit("10/5minutes")
+@limiter.limit(os.getenv("HKG_UPLOAD_RATE_LIMIT", "60/5minutes"))
 async def upload_tai_lieu(
     request: Request,
     db: DatabaseDep,

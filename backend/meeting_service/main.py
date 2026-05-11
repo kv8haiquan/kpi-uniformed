@@ -12,10 +12,13 @@ import os
 import sys
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+
+from shared.auth import decode_jwt
 
 # Cho phép import shared.* trước khi import nội bộ
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -83,6 +86,30 @@ app = FastAPI(
 # Rate limit (Phase 4.1 P0)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Middleware decode JWT → set request.state.user_id để rate_limit
+# (_key_func) phân biệt per-user thay vì gom toàn cơ quan vào 1 IP NAT.
+# Silent-fail nếu token sai/thiếu — auth thật vẫn do CurrentUserDep.
+# Phase 4.1 hotfix sau sự cố 429 ngày 11/05/2026: 1 IP công cộng share
+# quota dẫn đến chủ tọa upload 10+ tài liệu bị block.
+# ──────────────────────────────────────────────────────────────────
+class JWTUserIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            token = auth[7:].strip()
+            try:
+                payload = decode_jwt(token, settings.secret_key, settings.algorithm)
+                if payload and payload.type == "access":
+                    request.state.user_id = payload.sub
+            except Exception:
+                pass  # silent — CurrentUserDep sẽ trả 401 đúng nghĩa
+        return await call_next(request)
+
+
+app.add_middleware(JWTUserIdMiddleware)
 
 # CORS
 app.add_middleware(

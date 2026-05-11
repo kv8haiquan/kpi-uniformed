@@ -13,14 +13,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def tinh_xep_loai(diem: Decimal) -> str:
-    """Tinh xep loai tu diem tong ket."""
+    """Xep loai tu diem tong ket (thang 100, da chuan hoa ve %)."""
     if diem >= 90:
         return "XUAT_SAC"
-    elif diem >= 80:
+    if diem >= 80:
         return "GIOI"
-    elif diem >= 65:
+    if diem >= 65:
         return "KHA"
-    elif diem >= 50:
+    if diem >= 50:
         return "DAT"
     return "KHONG_DAT"
 

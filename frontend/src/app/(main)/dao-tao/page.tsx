@@ -171,13 +171,6 @@ export default function DaoTaoPage() {
               <div className="text-sm text-purple-100">Đánh giá năng lực</div>
             </div>
           </Link>
-          <Link href="/dao-tao/chung-chi" className="bg-white border border-gray-200 hover:border-green-300 hover:bg-green-50 rounded-xl p-4 flex items-center gap-3 transition-colors">
-            <span className="text-2xl">🎓</span>
-            <div>
-              <div className="font-medium text-gray-900">Chứng chỉ của tôi</div>
-              <div className="text-sm text-gray-500">Xem và tải chứng chỉ</div>
-            </div>
-          </Link>
           <Link href="/dao-tao/khoa-hoc" className="bg-white border border-gray-200 hover:border-orange-300 hover:bg-orange-50 rounded-xl p-4 flex items-center gap-3 transition-colors">
             <span className="text-2xl">📊</span>
             <div>

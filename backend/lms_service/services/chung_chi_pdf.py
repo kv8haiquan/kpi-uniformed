@@ -39,7 +39,7 @@ def _register_fonts():
 
 
 def xep_loai_label(diem: Decimal) -> tuple[str, str]:
-    """Tra ve (label, mau_hex) theo diem."""
+    """Tra ve (label, mau_hex) theo diem (thang 100, da chuan hoa ve %)."""
     d = float(diem) if diem is not None else 0
     if d >= 90:
         return ("XUẤT SẮC", "#DC2626")  # red

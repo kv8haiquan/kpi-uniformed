@@ -9,7 +9,7 @@ import uuid
 from typing import Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.models.base import CongChucRef, DonViRef
@@ -316,6 +316,8 @@ class DangKyService:
         page_size: int = 20,
         trang_thai: Optional[str] = None,
         don_vi_id: Optional[uuid.UUID] = None,
+        loai_dang_ky: Optional[str] = None,
+        q: Optional[str] = None,
     ) -> dict:
         """Danh sach hoc vien cua khoa hoc."""
         # Auth check: GIANG_VIEN chi xem khoa minh
@@ -345,6 +347,11 @@ class DangKyService:
             base_where.append(DangKyKhoaHoc.trang_thai == trang_thai)
         if don_vi_id:
             base_where.append(cc.c.don_vi_id == don_vi_id)
+        if loai_dang_ky:
+            base_where.append(DangKyKhoaHoc.loai_dang_ky == loai_dang_ky)
+        if q:
+            keyword = f"%{q.strip()}%"
+            base_where.append(or_(cc.c.ho_ten.ilike(keyword), cc.c.ma_cc.ilike(keyword)))
 
         # Count
         count_stmt = (

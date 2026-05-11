@@ -110,13 +110,15 @@ async def danh_sach_hoc_vien(
     page_size: int = Query(20, ge=1, le=100),
     trang_thai: Optional[str] = Query(None),
     don_vi_id: Optional[UUID] = Query(None),
+    loai_dang_ky: Optional[str] = Query(None, description="GIAO_BAI | TU_NGUYEN"),
+    q: Optional[str] = Query(None, max_length=100, description="Tìm theo họ tên hoặc mã CC"),
     db: AsyncSession = Depends(get_db),
     user: TokenPayload = Depends(require_platform_role("GIANG_VIEN", "QT_DAO_TAO")),
 ):
     """Danh sách học viên của khóa học."""
     service = DangKyService(db)
     result = await service.danh_sach_hoc_vien(
-        khoa_hoc_id, user, page, page_size, trang_thai, don_vi_id
+        khoa_hoc_id, user, page, page_size, trang_thai, don_vi_id, loai_dang_ky, q
     )
 
     return {

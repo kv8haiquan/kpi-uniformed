@@ -10,9 +10,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { khoaHocApi, baiHocApi, baiKiemTraApi, dangKyApi } from '@/services/lms';
-import type { IKhoaHoc, IBaiHoc, IBaiKiemTra, ILichSuThi } from '@/types/lms';
+import { khoaHocApi, baiHocApi, baiKiemTraApi, dangKyApi, chungChiApi } from '@/services/lms';
+import type { IKhoaHoc, IBaiHoc, IBaiKiemTra, ILichSuThi, IChungChi } from '@/types/lms';
 import KhaoSatForm from '@/components/lms/KhaoSatForm';
+import KetQuaKhoaHocPanel from '@/components/lms/KetQuaKhoaHocPanel';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 const TIEN_DO_ICON: Record<string, string> = {
@@ -31,7 +32,7 @@ const DK_TT_CONFIG: Record<string, { label: string; cls: string }> = {
   BI_LOAI:       { label: 'Đã bị loại',    cls: 'bg-gray-100 text-gray-700' },
 };
 
-type DetailTab = 'noi-dung' | 'kiem-tra' | 'thong-tin' | 'khao-sat' | 'hoc-vien';
+type DetailTab = 'noi-dung' | 'kiem-tra' | 'thong-tin' | 'khao-sat' | 'hoc-vien' | 'chung-chi' | 'ket-qua';
 
 const VALID_TABS: ReadonlyArray<DetailTab> = [
   'noi-dung',
@@ -39,7 +40,17 @@ const VALID_TABS: ReadonlyArray<DetailTab> = [
   'thong-tin',
   'khao-sat',
   'hoc-vien',
+  'chung-chi',
+  'ket-qua',
 ];
+
+const XEP_LOAI_CC_CONFIG: Record<string, { label: string; bg: string; icon: string }> = {
+  XUAT_SAC:  { label: 'Xuất sắc',  bg: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: '🏆' },
+  GIOI:      { label: 'Giỏi',      bg: 'bg-blue-100 text-blue-800 border-blue-300',       icon: '🥇' },
+  KHA:       { label: 'Khá',       bg: 'bg-green-100 text-green-800 border-green-300',    icon: '🥈' },
+  DAT:       { label: 'Đạt',       bg: 'bg-gray-100 text-gray-800 border-gray-300',       icon: '✅' },
+  KHONG_DAT: { label: 'Không đạt', bg: 'bg-red-100 text-red-800 border-red-300',          icon: '❌' },
+};
 
 export default function KhoaHocDetailPage() {
   const params = useParams();
@@ -68,7 +79,25 @@ export default function KhoaHocDetailPage() {
   const [baiHocs, setBaiHocs] = useState<IBaiHoc[]>([]);
   const [baiKiemTras, setBaiKiemTras] = useState<IBaiKiemTra[]>([]);
   const [hocViens, setHocViens] = useState<any[]>([]);
-  const [hocViensLoaded, setHocViensLoaded] = useState(false);
+  const [hocVienPage, setHocVienPage] = useState(1);
+  const HOC_VIEN_PAGE_SIZE = 20;
+  const [hocVienPagination, setHocVienPagination] = useState<{
+    page: number;
+    page_size: number;
+    total_items: number;
+    total_pages: number;
+  } | null>(null);
+  const [hocViensLoading, setHocViensLoading] = useState(false);
+  // Filter cho tab Học viên
+  const [filterTrangThai, setFilterTrangThai] = useState<string>('');
+  const [filterLoaiDangKy, setFilterLoaiDangKy] = useState<string>('');
+  const [filterQ, setFilterQ] = useState<string>('');
+  const [debouncedQ, setDebouncedQ] = useState<string>('');
+  // Tab Chứng chỉ
+  const [chungChi, setChungChi] = useState<IChungChi | null>(null);
+  const [chungChiLoading, setChungChiLoading] = useState(false);
+  const [chungChiLoaded, setChungChiLoaded] = useState(false);
+  const [chungChiTaiLoading, setChungChiTaiLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dangKyLoading, setDangKyLoading] = useState(false);
@@ -102,30 +131,94 @@ export default function KhoaHocDetailPage() {
     if (id) load();
   }, [id]);
 
-  const loadHocViens = async () => {
-    if (hocViensLoaded) return;
+  const loadHocViens = async (page: number = hocVienPage) => {
+    setHocViensLoading(true);
     try {
-      const r = await dangKyApi.hocVien(id, { page_size: 100 });
+      const params: Record<string, unknown> = { page, page_size: HOC_VIEN_PAGE_SIZE };
+      if (filterTrangThai) params.trang_thai = filterTrangThai;
+      if (filterLoaiDangKy) params.loai_dang_ky = filterLoaiDangKy;
+      if (debouncedQ) params.q = debouncedQ;
+      const r = await dangKyApi.hocVien(id, params);
       setHocViens(r.data.data || []);
-      setHocViensLoaded(true);
+      setHocVienPagination(r.data.pagination ?? null);
+      setHocVienPage(page);
     } catch {
       setHocViens([]);
-      setHocViensLoaded(true);
+      setHocVienPagination(null);
+    } finally {
+      setHocViensLoading(false);
     }
   };
 
-  // Auto-load danh sách học viên khi user vào trang với ?tab=hoc-vien
-  // (vd: từ thông báo phê duyệt LMS) — chờ khoaHoc + quyền sẵn sàng.
+  // Debounce ô search 400ms
   useEffect(() => {
-    if (tab === 'hoc-vien' && canManage && !hocViensLoaded) {
-      loadHocViens();
+    const t = setTimeout(() => setDebouncedQ(filterQ.trim()), 400);
+    return () => clearTimeout(t);
+  }, [filterQ]);
+
+  // Auto-load danh sách học viên — fire khi mở tab, đổi quyền, hoặc đổi filter.
+  // Mỗi lần đổi filter sẽ về page 1.
+  useEffect(() => {
+    if (tab === 'hoc-vien' && canManage) {
+      loadHocViens(1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, canManage, hocViensLoaded]);
+  }, [tab, canManage, filterTrangThai, filterLoaiDangKy, debouncedQ]);
 
   const handleTabChange = (t: DetailTab) => {
     setTab(t);
-    if (t === 'hoc-vien') loadHocViens();
+  };
+
+  const resetFilters = () => {
+    setFilterTrangThai('');
+    setFilterLoaiDangKy('');
+    setFilterQ('');
+  };
+  const hasActiveFilter = !!(filterTrangThai || filterLoaiDangKy || debouncedQ);
+
+  const loadChungChi = async () => {
+    if (chungChiLoaded) return;
+    setChungChiLoading(true);
+    try {
+      // Backend /chung-chi/cua-toi không filter theo khóa → lọc client-side
+      const r = await chungChiApi.cuaToi({ page_size: 100 });
+      const list: IChungChi[] = r.data.data || [];
+      const found = list.find((c) => c.khoa_hoc_id === id) || null;
+      setChungChi(found);
+      setChungChiLoaded(true);
+    } catch {
+      setChungChi(null);
+      setChungChiLoaded(true);
+    } finally {
+      setChungChiLoading(false);
+    }
+  };
+
+  // Tự load cert khi mở tab chứng chỉ
+  useEffect(() => {
+    if (tab === 'chung-chi' && !chungChiLoaded && !chungChiLoading) {
+      loadChungChi();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  const handleTaiChungChi = async () => {
+    if (!chungChi) return;
+    setChungChiTaiLoading(true);
+    try {
+      const res = await chungChiApi.tai(chungChi.id);
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chung-chi-${chungChi.ma_chung_chi}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Không thể tải chứng chỉ');
+    } finally {
+      setChungChiTaiLoading(false);
+    }
   };
 
   const handleDangKy = async () => {
@@ -154,10 +247,7 @@ export default function KhoaHocDetailPage() {
     try {
       await dangKyApi.pheDuyet(dangKyId, { phe_duyet: approve, ly_do_tu_choi });
       alert(approve ? 'Đã phê duyệt thành công' : 'Đã từ chối đăng ký');
-      // Reload học viên list
-      await loadHocViens();
-      setHocViensLoaded(false);
-      await loadHocViens();
+      await loadHocViens(hocVienPage);
     } catch (err: any) {
       alert(err?.response?.data?.detail?.error?.message || 'Có lỗi xảy ra');
     }
@@ -170,9 +260,9 @@ export default function KhoaHocDetailPage() {
     try {
       await dangKyApi.loaiHocVien(dangKyId, ly_do || undefined);
       alert('Đã loại học viên khỏi khóa học');
-      // Reload học viên list
-      setHocViensLoaded(false);
-      await loadHocViens();
+      // Nếu trang hiện tại chỉ còn 1 học viên (item vừa xóa), lùi về trang trước
+      const targetPage = hocViens.length === 1 && hocVienPage > 1 ? hocVienPage - 1 : hocVienPage;
+      await loadHocViens(targetPage);
     } catch (err: any) {
       alert(err?.response?.data?.detail?.error?.message || 'Có lỗi xảy ra');
     }
@@ -216,12 +306,15 @@ export default function KhoaHocDetailPage() {
 
   const kh = khoaHoc;
 
+  const daHoanThanh = kh.dang_ky?.trang_thai === 'HOAN_THANH';
   const tabs: { key: DetailTab; label: string; count: number | null }[] = [
     { key: 'noi-dung',  label: '📚 Nội dung',  count: baiHocs.length },
     { key: 'kiem-tra',  label: '📝 Kiểm tra',  count: baiKiemTras.length },
     { key: 'thong-tin', label: 'ℹ️ Thông tin', count: null },
     ...(kh.dang_ky   ? [{ key: 'khao-sat' as DetailTab, label: '⭐ Khảo sát', count: null }] : []),
+    ...(daHoanThanh  ? [{ key: 'chung-chi' as DetailTab, label: '🎓 Chứng chỉ', count: null }] : []),
     ...(canManage    ? [{ key: 'hoc-vien' as DetailTab, label: '👥 Học viên', count: kh.so_hoc_vien }] : []),
+    ...(canManage    ? [{ key: 'ket-qua' as DetailTab, label: '📊 Kết quả',   count: null }] : []),
   ];
 
   return (
@@ -744,8 +837,79 @@ export default function KhoaHocDetailPage() {
           {/* ── Học viên (GV/QT only) ─────────────────────── */}
           {tab === 'hoc-vien' && canManage && (
             <div className="p-5">
-              {hocViens.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">Chưa có học viên nào</div>
+              {/* Filter bar */}
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <div className="relative flex-1 min-w-[180px]">
+                  <input
+                    type="text"
+                    value={filterQ}
+                    onChange={(e) => setFilterQ(e.target.value)}
+                    placeholder="🔍 Tìm theo họ tên hoặc mã CC..."
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                  {filterQ && (
+                    <button
+                      onClick={() => setFilterQ('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-sm"
+                      title="Xóa từ khóa"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={filterTrangThai}
+                  onChange={(e) => setFilterTrangThai(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="CHO_PHE_DUYET">⏳ Chờ phê duyệt</option>
+                  <option value="CHUA_BAT_DAU">⚪ Chưa bắt đầu</option>
+                  <option value="DANG_HOC">📖 Đang học</option>
+                  <option value="HOAN_THANH">✅ Hoàn thành</option>
+                  <option value="QUA_HAN">⚠️ Quá hạn</option>
+                  <option value="TU_CHOI">❌ Bị từ chối</option>
+                </select>
+                <select
+                  value={filterLoaiDangKy}
+                  onChange={(e) => setFilterLoaiDangKy(e.target.value)}
+                  className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Tất cả loại đăng ký</option>
+                  <option value="GIAO_BAI">Giao bài</option>
+                  <option value="TU_NGUYEN">Tự nguyện</option>
+                </select>
+                {hasActiveFilter && (
+                  <button
+                    onClick={resetFilters}
+                    className="px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    title="Xóa tất cả filter"
+                  >
+                    ↺ Xóa lọc
+                  </button>
+                )}
+                {/* Shortcut: lọc nhanh chờ phê duyệt */}
+                {filterTrangThai !== 'CHO_PHE_DUYET' && (
+                  <button
+                    onClick={() => setFilterTrangThai('CHO_PHE_DUYET')}
+                    className="px-3 py-2 text-sm bg-yellow-50 text-yellow-800 border border-yellow-200 rounded-lg hover:bg-yellow-100 transition-colors"
+                    title="Chỉ hiển thị đăng ký chờ phê duyệt"
+                  >
+                    ⏳ Chỉ chờ duyệt
+                  </button>
+                )}
+              </div>
+
+              {hocViensLoading && hocViens.length === 0 ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+                </div>
+              ) : hocViens.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  {hasActiveFilter
+                    ? 'Không tìm thấy học viên phù hợp với bộ lọc'
+                    : 'Chưa có học viên nào'}
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -841,6 +1005,171 @@ export default function KhoaHocDetailPage() {
                   </table>
                 </div>
               )}
+
+              {/* Phân trang học viên */}
+              {hocVienPagination && hocVienPagination.total_items > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4 pt-3 border-t border-gray-100">
+                  <div className="text-xs text-gray-500">
+                    Hiển thị{' '}
+                    <span className="font-medium text-gray-700">
+                      {(hocVienPagination.page - 1) * hocVienPagination.page_size + 1}
+                      –
+                      {Math.min(
+                        hocVienPagination.page * hocVienPagination.page_size,
+                        hocVienPagination.total_items
+                      )}
+                    </span>{' '}
+                    / <span className="font-medium text-gray-700">{hocVienPagination.total_items}</span> học viên
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => loadHocViens(1)}
+                      disabled={hocViensLoading || hocVienPagination.page <= 1}
+                      className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Trang đầu"
+                    >
+                      «
+                    </button>
+                    <button
+                      onClick={() => loadHocViens(hocVienPagination.page - 1)}
+                      disabled={hocViensLoading || hocVienPagination.page <= 1}
+                      className="px-3 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      ‹ Trước
+                    </button>
+                    {/* Số trang gần kề (tối đa 5 nút) */}
+                    {(() => {
+                      const total = hocVienPagination.total_pages;
+                      const cur = hocVienPagination.page;
+                      const start = Math.max(1, Math.min(cur - 2, total - 4));
+                      const end = Math.min(total, start + 4);
+                      const pages: number[] = [];
+                      for (let p = start; p <= end; p++) pages.push(p);
+                      return pages.map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => loadHocViens(p)}
+                          disabled={hocViensLoading || p === cur}
+                          className={`px-3 py-1 text-xs border rounded transition-colors ${
+                            p === cur
+                              ? 'bg-blue-600 text-white border-blue-600 cursor-default'
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      ));
+                    })()}
+                    <button
+                      onClick={() => loadHocViens(hocVienPagination.page + 1)}
+                      disabled={hocViensLoading || hocVienPagination.page >= hocVienPagination.total_pages}
+                      className="px-3 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Sau ›
+                    </button>
+                    <button
+                      onClick={() => loadHocViens(hocVienPagination.total_pages)}
+                      disabled={hocViensLoading || hocVienPagination.page >= hocVienPagination.total_pages}
+                      className="px-2 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Trang cuối"
+                    >
+                      »
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Chứng chỉ (chỉ học viên đã hoàn thành) ─────────── */}
+          {tab === 'chung-chi' && daHoanThanh && (
+            <div className="p-5">
+              {chungChiLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+                </div>
+              ) : !chungChi ? (
+                <div className="text-center py-10">
+                  <span className="text-5xl block mb-3">⏳</span>
+                  <p className="text-gray-700 font-medium">Đang xử lý cấp chứng chỉ...</p>
+                  <p className="text-gray-500 text-sm mt-1">
+                    Hệ thống sẽ tự động cấp chứng chỉ trong ít phút sau khi bạn hoàn thành khóa.
+                  </p>
+                </div>
+              ) : (
+                <div className="max-w-xl mx-auto bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="h-3 bg-gradient-to-r from-yellow-400 via-green-400 to-blue-500" />
+                  <div className="p-6">
+                    {(() => {
+                      const xl = XEP_LOAI_CC_CONFIG[chungChi.xep_loai || 'DAT'] || XEP_LOAI_CC_CONFIG.DAT;
+                      return (
+                        <>
+                          <div className="flex items-start justify-between mb-4">
+                            <div>
+                              <span className="text-3xl">{xl.icon}</span>
+                              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold border ${xl.bg}`}>
+                                {xl.label}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-3xl font-bold text-gray-900">
+                                {chungChi.diem_dat != null ? Number(chungChi.diem_dat).toFixed(2) : '—'}
+                              </div>
+                              <div className="text-xs text-gray-500">điểm / 100</div>
+                            </div>
+                          </div>
+                          <h3 className="font-medium text-gray-900 mb-3">
+                            {chungChi.khoa_hoc_ten || kh.ten_khoa_hoc}
+                          </h3>
+                          <div className="text-sm text-gray-600 space-y-1 mb-5">
+                            <div>
+                              Mã chứng chỉ: <span className="font-mono font-semibold text-gray-900">{chungChi.ma_chung_chi}</span>
+                            </div>
+                            <div>
+                              Cấp ngày:{' '}
+                              <span className="font-medium">
+                                {chungChi.ngay_cap ? new Date(chungChi.ngay_cap).toLocaleDateString('vi-VN') : '—'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleTaiChungChi}
+                              disabled={chungChiTaiLoading}
+                              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {chungChiTaiLoading ? 'Đang tải...' : '⬇ Tải PDF'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(chungChi.ma_chung_chi);
+                                alert('Đã sao chép mã chứng chỉ');
+                              }}
+                              className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+                              title="Sao chép mã để xác minh"
+                            >
+                              📋 Sao chép mã
+                            </button>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-3 text-center">
+                            Có thể xác minh chứng chỉ tại{' '}
+                            <Link href="/dao-tao/chung-chi" className="text-blue-600 hover:underline">
+                              trang xác minh
+                            </Link>
+                          </p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Kết quả (GV/QT/Admin chấm bài) ─────────────────── */}
+          {tab === 'ket-qua' && canManage && (
+            <div className="p-5">
+              <KetQuaKhoaHocPanel khoaHocId={id} />
             </div>
           )}
 

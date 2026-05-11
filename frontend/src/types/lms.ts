@@ -338,6 +338,7 @@ export interface IKetQuaChamItem {
 export interface IChungChi {
   id: string;
   ma_chung_chi: string;
+  khoa_hoc_id: string;
   khoa_hoc_ten: string | null;
   khoa_hoc_ma: string | null;
   diem_dat: number;

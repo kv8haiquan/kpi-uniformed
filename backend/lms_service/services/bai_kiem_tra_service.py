@@ -730,8 +730,10 @@ class BaiKiemTraService:
         phan_tram = (tong_diem / tong_diem_max * 100) if tong_diem_max > 0 else Decimal("0")
         dat = phan_tram >= (bkt.diem_dat or Decimal("70"))
 
-        # Cap nhat ket qua
-        kq.diem = tong_diem
+        # Cap nhat ket qua — LUU % (thang 100), KHONG luu diem tho.
+        # Ly do: bkt.diem_dat la % (default 70 = 70%), nen kq.diem cung phai cung scale.
+        # Cert (chung_chi.diem_dat) lay max(kq.diem) → can la % de hien thi/xep loai dung.
+        kq.diem = phan_tram
         kq.so_cau_dung = so_dung
         kq.so_cau_sai = so_sai
         kq.thoi_gian_lam_giay = thoi_gian_lam

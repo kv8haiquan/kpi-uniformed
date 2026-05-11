@@ -46,12 +46,21 @@ interface IDDEItem {
   };
   thang: number;
   nam: number;
+  // Giá trị CC tự chấm
   d_ket_qua_don_vi: number;
   d_ghi_chu?: string;
   dd_to_chuc_trien_khai: number;
   dd_ghi_chu?: string;
   e_doan_ket_noi_bo: number;
   e_ghi_chu?: string;
+  // Giá trị LĐ điều chỉnh khi phê duyệt (null nếu LĐ không sửa)
+  d_phe_duyet?: number | null;
+  dd_phe_duyet?: number | null;
+  e_phe_duyet?: number | null;
+  // Giá trị cuối cùng (backend computed: *_phe_duyet ?? *_ket_qua_don_vi)
+  d_final?: number;
+  dd_final?: number;
+  e_final?: number;
   trang_thai: string;
   nguoi_phe_duyet_id?: string;
   nguoi_phe_duyet?: { ho_ten: string } | null;
@@ -117,14 +126,35 @@ const ddeApi = {
 // SUB COMPONENTS
 // =============================================================================
 
-function DDEIndicator({ label, value, ghiChu }: { label: string; value: number; ghiChu?: string }) {
-  const isGood = value === 100;
+function DDEIndicator({
+  label,
+  valueCC,
+  valueLD,
+  ghiChu,
+}: {
+  label: string;
+  valueCC: number;
+  valueLD?: number | null;
+  ghiChu?: string;
+}) {
+  // Giá trị hiển thị chính = LĐ phê duyệt nếu có, fallback CC tự chấm
+  const finalValue = valueLD ?? valueCC;
+  const hasAdjustment = valueLD != null && valueLD !== valueCC;
+  const isGood = finalValue === 100;
   return (
     <div className={`p-3 rounded-lg ${isGood ? 'bg-green-50' : 'bg-amber-50'}`}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm font-medium text-gray-700">{label}</span>
-        <span className={`text-lg font-bold ${isGood ? 'text-green-600' : 'text-amber-600'}`}>{value}%</span>
+        <div className="flex items-center gap-2">
+          {hasAdjustment && (
+            <span className="text-xs text-gray-400 line-through">{valueCC}%</span>
+          )}
+          <span className={`text-lg font-bold ${isGood ? 'text-green-600' : 'text-amber-600'}`}>{finalValue}%</span>
+        </div>
       </div>
+      {hasAdjustment && (
+        <p className="text-[11px] text-orange-600 mb-1">LĐ đã điều chỉnh ({valueCC}% → {valueLD}%)</p>
+      )}
       {ghiChu && <p className="text-xs text-gray-500 mt-1">{ghiChu}</p>}
     </div>
   );
@@ -141,7 +171,11 @@ interface DDECardProps {
 function DDECard({ item, onApprove, onReject, onTraLai, canApprove }: DDECardProps) {
   const isPending = item.trang_thai === 'CHO_PHE_DUYET';
   const isApproved = item.trang_thai === 'DA_PHE_DUYET';
-  const tongDiem = Math.round((item.d_ket_qua_don_vi + item.dd_to_chuc_trien_khai + item.e_doan_ket_noi_bo) / 3);
+  // Giá trị final = LĐ duyệt nếu có, fallback CC tự chấm. Ưu tiên *_final do backend computed.
+  const dFinal = item.d_final ?? item.d_phe_duyet ?? item.d_ket_qua_don_vi;
+  const ddFinal = item.dd_final ?? item.dd_phe_duyet ?? item.dd_to_chuc_trien_khai;
+  const eFinal = item.e_final ?? item.e_phe_duyet ?? item.e_doan_ket_noi_bo;
+  const tongDiem = Math.round((dFinal + ddFinal + eFinal) / 3);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-all">
@@ -157,9 +191,24 @@ function DDECard({ item, onApprove, onReject, onTraLai, canApprove }: DDECardPro
       </div>
 
       <div className="space-y-2 mb-3">
-        <DDEIndicator label="d) Kết quả đơn vị" value={item.d_ket_qua_don_vi} ghiChu={item.d_ghi_chu} />
-        <DDEIndicator label="đ) Tổ chức triển khai" value={item.dd_to_chuc_trien_khai} ghiChu={item.dd_ghi_chu} />
-        <DDEIndicator label="e) Đoàn kết nội bộ" value={item.e_doan_ket_noi_bo} ghiChu={item.e_ghi_chu} />
+        <DDEIndicator
+          label="d) Kết quả đơn vị"
+          valueCC={item.d_ket_qua_don_vi}
+          valueLD={item.d_phe_duyet}
+          ghiChu={item.d_ghi_chu}
+        />
+        <DDEIndicator
+          label="đ) Tổ chức triển khai"
+          valueCC={item.dd_to_chuc_trien_khai}
+          valueLD={item.dd_phe_duyet}
+          ghiChu={item.dd_ghi_chu}
+        />
+        <DDEIndicator
+          label="e) Đoàn kết nội bộ"
+          valueCC={item.e_doan_ket_noi_bo}
+          valueLD={item.e_phe_duyet}
+          ghiChu={item.e_ghi_chu}
+        />
       </div>
 
       <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg mb-3">
@@ -280,9 +329,10 @@ export default function TabDanhGiaLD({ thang, nam, canApprove, onPendingCountCha
       setSelectedItem(item);
       setModalAction('approve');
       setYKien('');
-      setDPheDuyet(item.d_ket_qua_don_vi);
-      setDDPheDuyet(item.dd_to_chuc_trien_khai);
-      setEPheDuyet(item.e_doan_ket_noi_bo);
+      // Init từ giá trị LĐ đã duyệt trước đó (nếu có), fallback giá trị CC tự chấm
+      setDPheDuyet(item.d_phe_duyet ?? item.d_ket_qua_don_vi);
+      setDDPheDuyet(item.dd_phe_duyet ?? item.dd_to_chuc_trien_khai);
+      setEPheDuyet(item.e_phe_duyet ?? item.e_doan_ket_noi_bo);
     }
   };
 

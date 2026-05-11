@@ -38,6 +38,11 @@ class TuChoiRequest(BaseModel):
     y_kien: str = Field(..., min_length=1, max_length=2000)
 
 
+class TraLaiRequest(BaseModel):
+    """Trả lại bản đã DA_PHE_DUYET về NHAP (giống tra-lai-tieu-chi/cong-viec)."""
+    ly_do: str = Field(..., min_length=1, max_length=2000)
+
+
 # =============================================================================
 # RESPONSE
 # =============================================================================

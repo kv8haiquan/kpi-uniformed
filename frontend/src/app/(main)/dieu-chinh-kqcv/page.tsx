@@ -9,7 +9,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { dieuChinhKqcvService } from '@/services/dieuChinhKqcv.service';
@@ -47,9 +47,13 @@ export default function DieuChinhKqcvPage() {
   const [authChecked, setAuthChecked] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Modal phê duyệt / từ chối
+  // Filter cho tab "Phê duyệt"
+  const [filterTrangThai, setFilterTrangThai] = useState<string>('CHO_PHE_DUYET');
+  const [filterNguoiDC, setFilterNguoiDC] = useState<string>('');
+
+  // Modal phê duyệt / từ chối / trả lại
   const [actionTarget, setActionTarget] = useState<IDieuChinhKqcv | null>(null);
-  const [actionType, setActionType] = useState<'phe_duyet' | 'tu_choi' | null>(null);
+  const [actionType, setActionType] = useState<'phe_duyet' | 'tu_choi' | 'tra_lai' | null>(null);
   const [yKien, setYKien] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -68,21 +72,46 @@ export default function DieuChinhKqcvPage() {
     setAuthChecked(true);
   }, [isAuthenticated, isLoading, user, router]);
 
-  // Load list
+  // Load list — tab "Phê duyệt" gọi với trang_thai=ALL rồi filter phía FE
   useEffect(() => {
     if (!authChecked) return;
     setLoading(true);
     setError(null);
     const promise = tab === 'me'
       ? dieuChinhKqcvService.listMe()
-      : dieuChinhKqcvService.listChoToiDuyet();
+      : dieuChinhKqcvService.listChoToiDuyet({ trang_thai: 'ALL' });
     promise
       .then(setItems)
       .catch((e) => setError(getApiErrorMessage(e, 'Không tải được danh sách')))
       .finally(() => setLoading(false));
   }, [authChecked, tab, reloadKey]);
 
-  const openAction = (dc: IDieuChinhKqcv, type: 'phe_duyet' | 'tu_choi') => {
+  // Danh sách người đề xuất distinct (cho dropdown filter)
+  const dsNguoiDeXuat = useMemo(() => {
+    if (tab !== 'cho_duyet') return [];
+    const seen = new Set<string>();
+    const list: { id: string; label: string }[] = [];
+    for (const it of items) {
+      const nd = it.nguoi_dieu_chinh;
+      if (!nd || seen.has(nd.id)) continue;
+      seen.add(nd.id);
+      list.push({ id: nd.id, label: `${nd.ho_ten} (${nd.ma_cc})` });
+    }
+    list.sort((a, b) => a.label.localeCompare(b.label, 'vi'));
+    return list;
+  }, [items, tab]);
+
+  // Filtered items khi tab = "Phê duyệt"
+  const displayedItems = useMemo(() => {
+    if (tab !== 'cho_duyet') return items;
+    return items.filter((it) => {
+      if (filterTrangThai !== 'ALL' && it.trang_thai !== filterTrangThai) return false;
+      if (filterNguoiDC && it.nguoi_dieu_chinh_id !== filterNguoiDC) return false;
+      return true;
+    });
+  }, [items, tab, filterTrangThai, filterNguoiDC]);
+
+  const openAction = (dc: IDieuChinhKqcv, type: 'phe_duyet' | 'tu_choi' | 'tra_lai') => {
     setActionTarget(dc);
     setActionType(type);
     setYKien('');
@@ -90,16 +119,18 @@ export default function DieuChinhKqcvPage() {
 
   const handleSubmit = async () => {
     if (!actionTarget || !actionType) return;
-    if (actionType === 'tu_choi' && !yKien.trim()) {
-      alert('Phải nhập lý do từ chối');
+    if ((actionType === 'tu_choi' || actionType === 'tra_lai') && !yKien.trim()) {
+      alert(actionType === 'tu_choi' ? 'Phải nhập lý do từ chối' : 'Phải nhập lý do trả lại');
       return;
     }
     setSubmitting(true);
     try {
       if (actionType === 'phe_duyet') {
         await dieuChinhKqcvService.pheDuyet(actionTarget.id, yKien || undefined);
-      } else {
+      } else if (actionType === 'tu_choi') {
         await dieuChinhKqcvService.tuChoi(actionTarget.id, yKien.trim());
+      } else {
+        await dieuChinhKqcvService.traLai(actionTarget.id, yKien.trim());
       }
       setActionTarget(null);
       setActionType(null);
@@ -167,9 +198,53 @@ export default function DieuChinhKqcvPage() {
               : 'text-gray-500 border-2 border-transparent hover:bg-gray-50'
           }`}
         >
-          Chờ tôi duyệt
+          Phê duyệt
         </button>
       </div>
+
+      {/* Filter bar (chỉ hiện ở tab Phê duyệt) */}
+      {tab === 'cho_duyet' && (
+        <div className="mb-4 bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap gap-3 items-end">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Trạng thái</label>
+            <select
+              value={filterTrangThai}
+              onChange={(e) => setFilterTrangThai(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1.5 text-sm min-w-[160px]"
+            >
+              <option value="ALL">Tất cả</option>
+              <option value="NHAP">Nháp</option>
+              <option value="CHO_PHE_DUYET">Chờ duyệt</option>
+              <option value="DA_PHE_DUYET">Đã duyệt</option>
+              <option value="TU_CHOI">Từ chối</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Người đề xuất</label>
+            <select
+              value={filterNguoiDC}
+              onChange={(e) => setFilterNguoiDC(e.target.value)}
+              className="border border-gray-300 rounded px-2 py-1.5 text-sm min-w-[220px]"
+            >
+              <option value="">Tất cả</option>
+              {dsNguoiDeXuat.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          {(filterTrangThai !== 'CHO_PHE_DUYET' || filterNguoiDC) && (
+            <button
+              onClick={() => { setFilterTrangThai('CHO_PHE_DUYET'); setFilterNguoiDC(''); }}
+              className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded border border-gray-200"
+            >
+              ↻ Reset
+            </button>
+          )}
+          <div className="ml-auto text-xs text-gray-500 self-center">
+            Hiển thị {displayedItems.length}/{items.length}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
@@ -193,14 +268,18 @@ export default function DieuChinhKqcvPage() {
             {loading && (
               <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-500">Đang tải...</td></tr>
             )}
-            {!loading && items.length === 0 && (
+            {!loading && displayedItems.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                  {tab === 'me' ? 'Bạn chưa đề xuất điều chỉnh nào' : 'Không có bản điều chỉnh nào chờ bạn duyệt'}
+                  {tab === 'me'
+                    ? 'Bạn chưa đề xuất điều chỉnh nào'
+                    : items.length === 0
+                      ? 'Không có bản điều chỉnh nào cần bạn duyệt'
+                      : 'Không có bản điều chỉnh nào khớp filter'}
                 </td>
               </tr>
             )}
-            {!loading && items.map((dc) => {
+            {!loading && displayedItems.map((dc) => {
               const old = dc.gia_tri_cu;
               const neu = dc.gia_tri_moi;
               const change: string[] = [];
@@ -274,10 +353,21 @@ export default function DieuChinhKqcvPage() {
                         </button>
                       </>
                     )}
-                    {(tab === 'me' && dc.trang_thai !== 'NHAP') ||
-                     (tab === 'cho_duyet' && dc.trang_thai !== 'CHO_PHE_DUYET') ? (
+                    {tab === 'cho_duyet' && dc.trang_thai === 'DA_PHE_DUYET' && (
+                      <button
+                        onClick={() => openAction(dc, 'tra_lai')}
+                        className="text-orange-600 hover:text-orange-800 font-medium"
+                        title="Trả lại bản đã duyệt nhầm về Nháp để LĐ đề xuất sửa lại"
+                      >
+                        ↩ Trả lại
+                      </button>
+                    )}
+                    {((tab === 'me' && dc.trang_thai !== 'NHAP') ||
+                      (tab === 'cho_duyet' &&
+                        dc.trang_thai !== 'CHO_PHE_DUYET' &&
+                        dc.trang_thai !== 'DA_PHE_DUYET')) && (
                       <span className="text-gray-300">—</span>
-                    ) : null}
+                    )}
                   </td>
                 </tr>
               );
@@ -286,30 +376,48 @@ export default function DieuChinhKqcvPage() {
         </table>
       </div>
 
-      {/* Modal phê duyệt / từ chối */}
+      {/* Modal phê duyệt / từ chối / trả lại */}
       {actionTarget && actionType && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
             <div className="px-5 py-3 border-b border-gray-200">
               <h3 className="font-semibold text-lg">
-                {actionType === 'phe_duyet' ? '✓ Phê duyệt điều chỉnh' : '✕ Từ chối điều chỉnh'}
+                {actionType === 'phe_duyet' && '✓ Phê duyệt điều chỉnh'}
+                {actionType === 'tu_choi' && '✕ Từ chối điều chỉnh'}
+                {actionType === 'tra_lai' && '↩ Trả lại bản đã duyệt'}
               </h3>
             </div>
             <div className="p-5 space-y-3">
               <div className="text-sm">
                 <p>Người đề xuất: <b>{actionTarget.nguoi_dieu_chinh?.ho_ten}</b></p>
                 <p className="text-xs text-gray-600 mt-1">Lý do: <em>{actionTarget.ly_do}</em></p>
+                {actionType === 'tra_lai' && (
+                  <p className="text-xs text-orange-700 mt-2 bg-orange-50 border border-orange-200 rounded p-2">
+                    ⚠️ Bản điều chỉnh sẽ chuyển về <b>Nháp</b> để LĐ đề xuất chỉnh sửa và gửi duyệt lại.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ý kiến {actionType === 'tu_choi' ? <span className="text-red-500">*</span> : <span className="text-gray-400">(tùy chọn)</span>}
+                  {actionType === 'tra_lai' ? 'Lý do trả lại' : 'Ý kiến'}
+                  {(actionType === 'tu_choi' || actionType === 'tra_lai') ? (
+                    <span className="text-red-500"> *</span>
+                  ) : (
+                    <span className="text-gray-400"> (tùy chọn)</span>
+                  )}
                 </label>
                 <textarea
                   value={yKien}
                   onChange={(e) => setYKien(e.target.value)}
                   rows={3}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-                  placeholder={actionType === 'tu_choi' ? 'Vui lòng nhập lý do từ chối...' : ''}
+                  placeholder={
+                    actionType === 'tu_choi'
+                      ? 'Vui lòng nhập lý do từ chối...'
+                      : actionType === 'tra_lai'
+                        ? 'Vui lòng nhập lý do trả lại...'
+                        : ''
+                  }
                 />
               </div>
             </div>
@@ -325,10 +433,20 @@ export default function DieuChinhKqcvPage() {
                 onClick={handleSubmit}
                 disabled={submitting}
                 className={`px-4 py-2 text-sm text-white rounded disabled:opacity-50 ${
-                  actionType === 'phe_duyet' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
+                  actionType === 'phe_duyet'
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : actionType === 'tu_choi'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-orange-600 hover:bg-orange-700'
                 }`}
               >
-                {submitting ? 'Đang xử lý...' : actionType === 'phe_duyet' ? 'Phê duyệt + Áp dụng' : 'Từ chối'}
+                {submitting
+                  ? 'Đang xử lý...'
+                  : actionType === 'phe_duyet'
+                    ? 'Phê duyệt + Áp dụng'
+                    : actionType === 'tu_choi'
+                      ? 'Từ chối'
+                      : 'Trả lại'}
               </button>
             </div>
           </div>

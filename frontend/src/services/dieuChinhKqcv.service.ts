@@ -43,6 +43,13 @@ export const dieuChinhKqcvService = {
     return r.data.data;
   },
 
+  async traLai(id: string, lyDo: string): Promise<IDieuChinhKqcv> {
+    const r = await apiClient.post<IBackendResponse<IDieuChinhKqcv>>(`${BASE}/${id}/tra-lai`, {
+      ly_do: lyDo,
+    });
+    return r.data.data;
+  },
+
   async remove(id: string): Promise<void> {
     await apiClient.delete(`${BASE}/${id}`);
   },
@@ -54,8 +61,13 @@ export const dieuChinhKqcvService = {
     return r.data.data;
   },
 
-  async listChoToiDuyet(): Promise<IDieuChinhKqcv[]> {
-    const r = await apiClient.get<IBackendResponse<IDieuChinhKqcv[]>>(`${BASE}/cho-toi-duyet`);
+  async listChoToiDuyet(params?: {
+    trang_thai?: string;
+    nguoi_dieu_chinh_id?: string;
+  }): Promise<IDieuChinhKqcv[]> {
+    const r = await apiClient.get<IBackendResponse<IDieuChinhKqcv[]>>(`${BASE}/cho-toi-duyet`, {
+      params,
+    });
     return r.data.data;
   },
 

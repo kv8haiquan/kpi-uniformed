@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
+from app.core.thong_bao_helper import gui_thong_bao
 from app.models.leave import DangKyNghi, LoaiNghi, TrangThaiNghi
 from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro, DonVi
 from app.schemas.common import (
@@ -1446,10 +1447,20 @@ async def tu_choi_nghi_phep(
     nghi_phep.trang_thai = TrangThaiNghi.TU_CHOI
     nghi_phep.ly_do_tu_choi = payload.ly_do_tu_choi
     nghi_phep.ngay_phe_duyet = datetime.now()
-    
+
     await db.flush()
     await db.refresh(nghi_phep)
-    
+
+    if nghi_phep.cong_chuc_id:
+        await gui_thong_bao(
+            nguoi_nhan_id=nghi_phep.cong_chuc_id,
+            tieu_de="Đơn nghỉ phép bị từ chối",
+            noi_dung=f"Lý do: {payload.ly_do_tu_choi}",
+            link_url="/nghi-phep",
+            doi_tuong_type="DANG_KY_NGHI",
+            doi_tuong_id=nghi_phep.id,
+        )
+
     return success_response(
         data=build_nghi_phep_response(nghi_phep),
         message="Đã từ chối đơn nghỉ phép"
@@ -1564,10 +1575,20 @@ async def tra_lai_nghi_phep(
     nghi_phep.trang_thai = TrangThaiNghi.CHO_PHE_DUYET
     nghi_phep.ngay_phe_duyet = None
     nghi_phep.ghi_chu_phe_duyet = f"[TRẢ LẠI] {payload.ly_do}"
-    
+
     await db.flush()
     await db.refresh(nghi_phep)
-    
+
+    if nghi_phep.cong_chuc_id:
+        await gui_thong_bao(
+            nguoi_nhan_id=nghi_phep.cong_chuc_id,
+            tieu_de="Đơn nghỉ phép bị trả lại",
+            noi_dung=f"Lý do: {payload.ly_do}",
+            link_url="/nghi-phep",
+            doi_tuong_type="DANG_KY_NGHI",
+            doi_tuong_id=nghi_phep.id,
+        )
+
     return success_response(
         data=build_nghi_phep_response(nghi_phep),
         message="Đã trả lại đơn nghỉ phép về trạng thái chờ phê duyệt"

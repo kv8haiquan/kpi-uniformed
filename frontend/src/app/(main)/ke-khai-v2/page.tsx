@@ -801,6 +801,36 @@ export default function KeKhaiV2Page() {
                         )}
                       </td>
                     </tr>
+                    {/* Banner LUÔN hiển thị khi bị TỪ CHỐI hoặc TRẢ LẠI (CC cần thấy ngay lý do) */}
+                    {kk.y_kien_lanh_dao && (kk.trang_thai === 'TU_CHOI' || (kk.trang_thai === 'NHAP' && kk.y_kien_lanh_dao.startsWith('[TRẢ LẠI]'))) && (
+                      <tr>
+                        <td colSpan={14} className="px-4 pb-3 pt-0">
+                          <div
+                            className={`rounded-lg border-l-4 px-3 py-2 text-sm ${
+                              kk.trang_thai === 'TU_CHOI'
+                                ? 'bg-red-50 border-red-500 text-red-800'
+                                : 'bg-orange-50 border-orange-500 text-orange-800'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <span className="text-base leading-none">
+                                {kk.trang_thai === 'TU_CHOI' ? '✕' : '↩'}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold mb-0.5">
+                                  {kk.trang_thai === 'TU_CHOI'
+                                    ? 'Lãnh đạo đã từ chối kê khai này'
+                                    : 'Lãnh đạo đã trả lại kê khai này về Nháp — vui lòng sửa và gửi lại'}
+                                </p>
+                                <p className="whitespace-pre-wrap break-words">
+                                  Lý do: {kk.y_kien_lanh_dao.replace(/^\[TRẢ LẠI\]\s*/, '')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {/* Expandable detail row — chi tiết mô tả lỗi */}
                     {isExpanded && hasAnyError && (
                       <tr className="bg-gray-50">

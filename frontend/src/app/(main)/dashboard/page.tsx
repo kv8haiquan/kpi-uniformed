@@ -21,6 +21,7 @@ import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
 import { baoCaoXepLoaiService } from '@/services/bao-cao-xep-loai.service';
 import { adminService } from '@/services/admin.service';
 import { thongBaoApi } from '@/services/common';
+import { dieuChinhKqcvService } from '@/services/dieuChinhKqcv.service';
 import {
   IKetQuaTieuChiChungResponse,
   TrangThaiTieuChiChung,
@@ -367,6 +368,7 @@ export default function DashboardPage() {
   const [isLoadingTC, setIsLoadingTC] = useState(true);
   const [pendingTCCount, setPendingTCCount] = useState(0);
   const [pendingXepLoaiCount, setPendingXepLoaiCount] = useState(0);
+  const [pendingDCKqcvCount, setPendingDCKqcvCount] = useState(0);
   const [isLoadingPending, setIsLoadingPending] = useState(true);
   
   // Thong bao
@@ -423,10 +425,12 @@ export default function DashboardPage() {
         kpiService.getPendingStats().catch(() => null),
         tieuChiChungService.getChoPheyet(1, 1).catch(() => ({ total: 0 })),
         canApproveXepLoai ? baoCaoXepLoaiService.getChoPeDuyet().catch(() => []) : Promise.resolve([]),
-      ]).then(([stats, tcResult, xepLoaiList]) => {
+        dieuChinhKqcvService.listChoToiDuyet().catch(() => []),
+      ]).then(([stats, tcResult, xepLoaiList, dcList]) => {
         setPendingStats(stats);
         setPendingTCCount(tcResult?.total || 0);
         setPendingXepLoaiCount(Array.isArray(xepLoaiList) ? xepLoaiList.length : 0);
+        setPendingDCKqcvCount(Array.isArray(dcList) ? dcList.length : 0);
       }).finally(() => {
         setIsLoadingPending(false);
       });
@@ -667,6 +671,7 @@ export default function DashboardPage() {
               <QuickActionCard icon="📦" title="Phê duyệt Công việc" description={pendingSanPham > 0 ? `${pendingSanPham} kê khai chờ duyệt` : 'Duyệt kê khai công việc'} href="/xep-loai?tab=cong-viec" color="yellow" badge={pendingSanPham} size="large" />
               <QuickActionCard icon="🏅" title="Phê duyệt Tiêu chí" description={pendingTCCount > 0 ? `${pendingTCCount} đơn chờ duyệt` : 'Duyệt 30 điểm TC chung'} href="/xep-loai?tab=tieu-chi" color="orange" badge={pendingTCCount} size="large" />
               <QuickActionCard icon="🏖️" title="Phê duyệt Nghỉ phép" description="Duyệt đơn nghỉ phép" href="/xep-loai?tab=nghi-phep" color="cyan" size="large" />
+              <QuickActionCard icon="✏️" title="Điều chỉnh KQCV" description={pendingDCKqcvCount > 0 ? `${pendingDCKqcvCount} bản chờ duyệt` : 'Duyệt điều chỉnh KQCV cấp dưới'} href="/dieu-chinh-kqcv" color="indigo" badge={pendingDCKqcvCount} size="large" />
               {canApproveXepLoai && <QuickActionCard icon="📋" title="Phê duyệt Xếp loại" description={pendingXepLoaiCount > 0 ? `${pendingXepLoaiCount} báo cáo chờ duyệt` : 'Duyệt báo cáo xếp loại'} href="/xep-loai?tab=bao-cao" color="pink" badge={pendingXepLoaiCount} size="large" />}
             </div>
           </div>

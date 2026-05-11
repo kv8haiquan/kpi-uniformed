@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
+from app.core.thong_bao_helper import gui_thong_bao
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.task_catalog import DanhMucSpCongViec, CapDoPhucTap
 from app.models.user_org import CongChuc, DonVi
@@ -578,8 +579,9 @@ async def xu_ly_phe_duyet(
     
     # Validate: Kiểm tra quyền phê duyệt từng bài
     processed_ids = []
+    rejected_for_notify: list[tuple[UUID, UUID, str]] = []  # (kk_id, cong_chuc_id, ly_do)
     errors = []
-    
+
     for kk in ke_khai_list:
         # PL3 V2 (02/05/2026): bỏ qua bản V1 với lỗi rõ ràng
         if getattr(kk, "version_kekhai", "V1") == "V1":
@@ -653,10 +655,15 @@ async def xu_ly_phe_duyet(
             # REJECT: Từ chối / Yêu cầu sửa
             # =====================================================================
             kk.trang_thai = TrangThaiKeKhai.TU_CHOI
-            
+
             # Lưu lý do từ chối
             kk.y_kien_lanh_dao = payload.noi_dung_trao_doi
-        
+
+            if kk.cong_chuc_id:
+                rejected_for_notify.append(
+                    (kk.id, kk.cong_chuc_id, payload.noi_dung_trao_doi or "")
+                )
+
         processed_ids.append(kk.id)
     
     # Nếu có lỗi và không xử lý được bài nào
@@ -689,6 +696,17 @@ async def xu_ly_phe_duyet(
             }
         )
     
+    # Notification: gửi cho từng CC bị từ chối
+    for kk_id, cc_id, ly_do in rejected_for_notify:
+        await gui_thong_bao(
+            nguoi_nhan_id=cc_id,
+            tieu_de="Kê khai công việc bị từ chối",
+            noi_dung=ly_do or "Lãnh đạo đã từ chối kê khai của bạn.",
+            link_url="/ke-khai-v2",
+            doi_tuong_type="KE_KHAI_CONG_VIEC",
+            doi_tuong_id=kk_id,
+        )
+
     # Tạo response
     trang_thai_moi = "DA_PHE_DUYET" if payload.action == PheDuyetAction.APPROVE else "TU_CHOI"
     action_text = "phê duyệt" if payload.action == PheDuyetAction.APPROVE else "từ chối"
@@ -860,7 +878,7 @@ async def xu_ly_phe_duyet_don_le(
         ke_khai.trang_thai = TrangThaiKeKhai.TU_CHOI
         ke_khai.y_kien_lanh_dao = payload.noi_dung_trao_doi
         action_text = "từ chối"
-    
+
     try:
         await db.commit()
     except Exception as e:
@@ -875,7 +893,18 @@ async def xu_ly_phe_duyet_don_le(
                 }
             }
         )
-    
+
+    # Notification: TỪ CHỐI → gửi thông báo cho CC chủ kê khai
+    if payload.action != PheDuyetAction.APPROVE and ke_khai.cong_chuc_id:
+        await gui_thong_bao(
+            nguoi_nhan_id=ke_khai.cong_chuc_id,
+            tieu_de="Kê khai công việc bị từ chối",
+            noi_dung=(payload.noi_dung_trao_doi or "Lãnh đạo đã từ chối kê khai của bạn."),
+            link_url="/ke-khai-v2",
+            doi_tuong_type="KE_KHAI_CONG_VIEC",
+            doi_tuong_id=ke_khai.id,
+        )
+
     return success_response(
         data={
             "ke_khai_id": ke_khai_id,
@@ -1020,7 +1049,17 @@ async def tra_lai_ke_khai(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"success": False, "error": {"code": "DB_ERROR", "message": f"Lỗi: {str(e)}"}}
         )
-    
+
+    if ke_khai.cong_chuc_id:
+        await gui_thong_bao(
+            nguoi_nhan_id=ke_khai.cong_chuc_id,
+            tieu_de="Kê khai công việc bị trả lại",
+            noi_dung=f"Lý do: {payload.ly_do}",
+            link_url="/ke-khai-v2",
+            doi_tuong_type="KE_KHAI_CONG_VIEC",
+            doi_tuong_id=ke_khai.id,
+        )
+
     return success_response(
         data={
             "ke_khai_id": str(ke_khai_id),
@@ -1063,6 +1102,7 @@ async def tra_lai_ke_khai_bulk(
     ke_khai_list = result.scalars().all()
 
     processed_ids = []
+    returned_for_notify: list[tuple[UUID, UUID]] = []  # (kk_id, cong_chuc_id)
     errors = []
 
     for kk in ke_khai_list:
@@ -1087,7 +1127,7 @@ async def tra_lai_ke_khai_bulk(
                 # Lãnh đạo thường: chỉ được trả lại kê khai mình đã phê duyệt
                 errors.append(f"KK {kk.id}: không phải người phê duyệt")
                 continue
-        
+
         kk.trang_thai = TrangThaiKeKhai.NHAP
         kk.y_kien_lanh_dao = f"[TRẢ LẠI] {payload.ly_do}"
         kk.so_loi_chat_luong = 0
@@ -1095,6 +1135,8 @@ async def tra_lai_ke_khai_bulk(
         kk.so_sp_chat_luong = None
         kk.so_sp_tien_do = None
         processed_ids.append(kk.id)
+        if kk.cong_chuc_id:
+            returned_for_notify.append((kk.id, kk.cong_chuc_id))
     
     if not processed_ids:
         raise HTTPException(
@@ -1111,6 +1153,16 @@ async def tra_lai_ke_khai_bulk(
             detail={"success": False, "error": {"code": "DB_ERROR", "message": str(e)}}
         )
     
+    for kk_id, cc_id in returned_for_notify:
+        await gui_thong_bao(
+            nguoi_nhan_id=cc_id,
+            tieu_de="Kê khai công việc bị trả lại",
+            noi_dung=f"Lý do: {payload.ly_do}",
+            link_url="/ke-khai-v2",
+            doi_tuong_type="KE_KHAI_CONG_VIEC",
+            doi_tuong_id=kk_id,
+        )
+
     response_data = {
         "processed_count": len(processed_ids),
         "ke_khai_ids": processed_ids,
@@ -1118,7 +1170,7 @@ async def tra_lai_ke_khai_bulk(
     }
     if errors:
         response_data["warnings"] = errors
-    
+
     return success_response(data=response_data, message=f"Đã trả lại {len(processed_ids)} kê khai")
 
 

@@ -32,6 +32,7 @@ from app.core.kpi_lanh_dao_v2 import (
     get_don_vi_phu_trach,
     is_kpi_lanh_dao_v2_active,
 )
+from app.core.thong_bao_helper import gui_thong_bao
 from app.models.dieu_chinh_kqcv import DieuChinhKqcv
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.phan_cong_phu_trach import PhanCongPhuTrach
@@ -43,6 +44,7 @@ from app.schemas.dieu_chinh_kqcv import (
     DieuChinhUpdateRequest,
     GiaTriKQCV,
     PheDuyetRequest,
+    TraLaiRequest,
     TuChoiRequest,
 )
 
@@ -398,6 +400,60 @@ async def phe_duyet(
 
 
 # =============================================================================
+# TRẢ LẠI (bản đã DA_PHE_DUYET → NHAP)
+# =============================================================================
+
+@router.post("/{dc_id}/tra-lai", summary="Trả lại bản điều chỉnh đã duyệt nhầm về NHAP")
+async def tra_lai(
+    dc_id: UUID,
+    payload: TraLaiRequest,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+):
+    """
+    Cấp trên trả lại bản điều chỉnh đã DA_PHE_DUYET → NHAP để LĐ đề xuất sửa lại
+    và gửi duyệt lại (giống tra-lai-tieu-chi và tra-lai kê khai CV).
+    """
+    _ensure_lanh_dao(current_user)
+    dc = await _load_dc(db, dc_id)
+    if dc.nguoi_phe_duyet_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "success": False,
+                "error": {"code": "DCKQCV_403_NPD", "message": "Chỉ người đã duyệt mới được trả lại"},
+            },
+        )
+    if dc.trang_thai != TT_DA:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "DCKQCV_400_STATE",
+                    "message": f"Chỉ trả lại được khi đang DA_PHE_DUYET (hiện tại: {dc.trang_thai})",
+                },
+            },
+        )
+    dc.trang_thai = TT_NHAP
+    dc.ngay_phe_duyet = None
+    dc.y_kien_phe_duyet = f"[TRẢ LẠI] {payload.ly_do}"
+    data = await _flush_and_response(db, dc)
+    await gui_thong_bao(
+        nguoi_nhan_id=dc.nguoi_dieu_chinh_id,
+        tieu_de="Đề xuất điều chỉnh KQCV bị trả lại",
+        noi_dung=f"Lý do: {payload.ly_do}",
+        link_url="/dieu-chinh-kqcv",
+        doi_tuong_type="DIEU_CHINH_KQCV",
+        doi_tuong_id=dc.id,
+    )
+    return success_response(
+        data=data,
+        message="Đã trả lại — LĐ đề xuất có thể chỉnh sửa và gửi duyệt lại",
+    )
+
+
+# =============================================================================
 # TỪ CHỐI
 # =============================================================================
 
@@ -418,6 +474,14 @@ async def tu_choi(
     dc.y_kien_phe_duyet = payload.y_kien
     dc.ngay_phe_duyet = datetime.now(tz=timezone.utc)
     data = await _flush_and_response(db, dc)
+    await gui_thong_bao(
+        nguoi_nhan_id=dc.nguoi_dieu_chinh_id,
+        tieu_de="Đề xuất điều chỉnh KQCV bị từ chối",
+        noi_dung=f"Lý do: {payload.y_kien}",
+        link_url="/dieu-chinh-kqcv",
+        doi_tuong_type="DIEU_CHINH_KQCV",
+        doi_tuong_id=dc.id,
+    )
     return success_response(data=data, message="Đã từ chối")
 
 
@@ -450,8 +514,22 @@ async def list_me(
     return success_response(data=[_to_response(r) for r in rows])
 
 
-@router.get("/cho-toi-duyet", summary="List bản điều chỉnh chờ tôi duyệt")
-async def list_cho_toi_duyet(db: DatabaseDep, current_user: ActiveUserDep):
+@router.get("/cho-toi-duyet", summary="List bản điều chỉnh tôi là người duyệt")
+async def list_cho_toi_duyet(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    trang_thai: Optional[str] = Query(
+        default=TT_CHO,
+        description="NHAP/CHO_PHE_DUYET/DA_PHE_DUYET/TU_CHOI. Truyền 'ALL' để lấy mọi trạng thái.",
+    ),
+    nguoi_dieu_chinh_id: Optional[UUID] = Query(
+        default=None, description="Filter theo người đề xuất (LĐ điều chỉnh)"
+    ),
+):
+    """
+    Mặc định trả về CHO_PHE_DUYET (giữ behavior cũ cho dashboard count).
+    Page /dieu-chinh-kqcv truyền trang_thai=ALL để filter phía FE.
+    """
     _ensure_lanh_dao(current_user)
     stmt = (
         select(DieuChinhKqcv)
@@ -461,11 +539,14 @@ async def list_cho_toi_duyet(db: DatabaseDep, current_user: ActiveUserDep):
         )
         .where(
             DieuChinhKqcv.nguoi_phe_duyet_id == current_user.id,
-            DieuChinhKqcv.trang_thai == TT_CHO,
             DieuChinhKqcv.is_deleted == False,  # noqa: E712
         )
         .order_by(DieuChinhKqcv.created_at.desc())
     )
+    if trang_thai and trang_thai != "ALL":
+        stmt = stmt.where(DieuChinhKqcv.trang_thai == trang_thai)
+    if nguoi_dieu_chinh_id is not None:
+        stmt = stmt.where(DieuChinhKqcv.nguoi_dieu_chinh_id == nguoi_dieu_chinh_id)
     rows = (await db.execute(stmt)).scalars().unique().all()
     return success_response(data=[_to_response(r) for r in rows])
 

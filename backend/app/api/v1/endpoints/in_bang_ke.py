@@ -1053,7 +1053,7 @@ async def export_bang_ke_cong_viec(
                 new_row.cells[2].text = ""
                 set_cell_font_times_new_roman(new_row.cells[2])
 
-                # (4) Công việc chi tiết (mô tả)
+                # (4) Sản phẩm đầu ra — lấy từ KeKhaiLanhDao.mo_ta
                 new_row.cells[3].text = cv.mo_ta or ""
                 set_cell_font_times_new_roman(new_row.cells[3])
 
@@ -1113,30 +1113,9 @@ async def export_bang_ke_cong_viec(
                 new_row.cells[2].text = ""
                 set_cell_font_times_new_roman(new_row.cells[2])
 
-                # (4) Công việc chi tiết - FORMAT MỚI: {tên CV} (tổng {SL} {đơn vị}, mức độ {cấp độ})
-                chi_tiet_cv = ""
-                if cv.danh_muc_sp:
-                    chi_tiet_cv = cv.danh_muc_sp.ten_cong_viec
-
-                    # Build suffix: (tổng X đơn vị, mức độ Y)
-                    parts = []
-
-                    # Phần số lượng + đơn vị
-                    if cv.so_luong and cv.danh_muc_sp.sp_chuan:
-                        # Xác định đơn vị tính dựa vào loại SP
-                        ma_sp = cv.danh_muc_sp.sp_chuan.ma_sp
-                        don_vi = "TK" if ma_sp == "SP1" else "VB" if ma_sp == "SP2" else "Giờ"
-                        parts.append(f"tổng {cv.so_luong} {don_vi}")
-
-                    # Phần cấp độ
-                    if cv.cap_do:
-                        parts.append(f"mức độ {cv.cap_do.ma_cap_do}")
-
-                    # Ghép lại
-                    if parts:
-                        chi_tiet_cv += f" ({', '.join(parts)})"
-
-                new_row.cells[3].text = chi_tiet_cv or ""
+                # (4) Sản phẩm đầu ra — lấy từ mo_ta_cong_viec CC tự nhập
+                # (rỗng nếu CC bỏ trống — theo policy 2026-05-12).
+                new_row.cells[3].text = cv.mo_ta_cong_viec or ""
                 set_cell_font_times_new_roman(new_row.cells[3])
 
                 # (5) + (6) Ngày hoàn thành: Dùng ngay_thuc_hien (CC không điền ngay_hoan_thanh)
@@ -1826,23 +1805,9 @@ async def export_bang_ke_cong_viec_quy(
                 new_row.cells[2].text = ""
                 set_cell_font_times_new_roman(new_row.cells[2])
 
-                chi_tiet_cv = ""
-                if cv.danh_muc_sp:
-                    chi_tiet_cv = cv.danh_muc_sp.ten_cong_viec
-
-                    parts = []
-                    if cv.so_luong and cv.danh_muc_sp.sp_chuan:
-                        ma_sp = cv.danh_muc_sp.sp_chuan.ma_sp
-                        don_vi = "TK" if ma_sp == "SP1" else "VB" if ma_sp == "SP2" else "Giờ"
-                        parts.append(f"tổng {cv.so_luong} {don_vi}")
-
-                    if cv.cap_do:
-                        parts.append(f"mức độ {cv.cap_do.ma_cap_do}")
-
-                    if parts:
-                        chi_tiet_cv += f" ({', '.join(parts)})"
-
-                new_row.cells[3].text = chi_tiet_cv or ""
+                # (4) Sản phẩm đầu ra — lấy từ mo_ta_cong_viec CC tự nhập
+                # (rỗng nếu CC bỏ trống — theo policy 2026-05-12).
+                new_row.cells[3].text = cv.mo_ta_cong_viec or ""
                 set_cell_font_times_new_roman(new_row.cells[3])
 
                 ngay_ht_str = cv.ngay_thuc_hien.strftime("%d/%m/%Y") if cv.ngay_thuc_hien else ""

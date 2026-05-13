@@ -317,10 +317,13 @@ export function tinhDiemKPILanhDao(
   const b = target > 0 ? Math.min(thongKe.tong_dat_chat_luong / target, 1) : 0;
   const c = target > 0 ? Math.min(thongKe.tong_dung_tien_do / target, 1) : 0;
   
-  // Lấy d, đ, e (mặc định 100 nếu chưa đánh giá)
-  const d = dde?.d_ket_qua_don_vi ?? 100;
-  const dd = dde?.dd_to_chuc_trien_khai ?? 100;
-  const e = dde?.e_doan_ket_noi_bo ?? 100;
+  // Lấy d, đ, e — ưu tiên giá trị cuối (final = COALESCE phê duyệt > tự đánh giá).
+  // 2026-05-14: trước đây chỉ đọc *_ket_qua_don_vi → khi LĐ cấp trên duyệt
+  // và hạ điểm, UI vẫn hiển thị 100% (giá trị tự đánh giá). Bây giờ đọc
+  // *_final đồng nhất với backend build_dde_response.
+  const d = dde?.d_final ?? dde?.d_phe_duyet ?? dde?.d_ket_qua_don_vi ?? 100;
+  const dd = dde?.dd_final ?? dde?.dd_phe_duyet ?? dde?.dd_to_chuc_trien_khai ?? 100;
+  const e = dde?.e_final ?? dde?.e_phe_duyet ?? dde?.e_doan_ket_noi_bo ?? 100;
   
   // Tính điểm KPI = (a + b + c + d/100 + đ/100 + e/100) / 6
   const diemKPI = (a + b + c + d/100 + dd/100 + e/100) / 6;

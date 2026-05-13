@@ -1692,9 +1692,12 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
 
     ws2['A1'] = f"DANH SÁCH CÔNG CHỨC DƯỚI 20 ĐIỂM - THÁNG {thang}/{nam}"
     ws2['A1'].font = title_font
-    ws2.merge_cells('A1:G1')
+    ws2.merge_cells('A1:H1')
 
-    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng điểm", "Điểm trừ", "Lý do trừ điểm"]
+    ws2['A2'] = "Bao gồm cả CC ở trạng thái CHỜ_DUYỆT — xem cột 'Trạng thái' để biết bản nào LĐ đã chấm chính thức."
+    ws2['A2'].font = Font(italic=True, color="666666")
+
+    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng điểm", "Điểm trừ", "Trạng thái", "Lý do trừ điểm"]
     for col, h in enumerate(headers2, 1):
         cell = ws2.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -1713,9 +1716,24 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
         diem_tru = sum(ly["diem_tru"] for ly in cc["ly_do_tru_diem"])
         ws2.cell(row=r, column=6, value=diem_tru).border = border
 
+        # Trạng thái
+        tt_raw = cc.get("dgt_trang_thai", "")
+        tt_display = {
+            "DA_PHE_DUYET": "Đã duyệt",
+            "CHO_PHE_DUYET": "Chờ duyệt",
+        }.get(tt_raw, tt_raw or "—")
+        tt_cell = ws2.cell(row=r, column=7, value=tt_display)
+        tt_cell.border = border
+        tt_cell.alignment = center_alignment
+        if tt_raw == "CHO_PHE_DUYET":
+            tt_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+            tt_cell.font = Font(bold=True, color="9C5700")
+        elif tt_raw == "DA_PHE_DUYET":
+            tt_cell.fill = PatternFill("solid", fgColor="C6EFCE")
+
         ly_do_text = "; ".join([f"{ly['ma']}: {ly['ly_do']}" for ly in cc["ly_do_tru_diem"]])
-        ws2.cell(row=r, column=7, value=ly_do_text).border = border
-        ws2.cell(row=r, column=7).alignment = wrap_alignment
+        ws2.cell(row=r, column=8, value=ly_do_text).border = border
+        ws2.cell(row=r, column=8).alignment = wrap_alignment
         ws2.row_dimensions[r].height = 40
 
     ws2.column_dimensions['A'].width = 5
@@ -1724,7 +1742,8 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
     ws2.column_dimensions['D'].width = 30
     ws2.column_dimensions['E'].width = 10
     ws2.column_dimensions['F'].width = 10
-    ws2.column_dimensions['G'].width = 80
+    ws2.column_dimensions['G'].width = 12
+    ws2.column_dimensions['H'].width = 70
 
     # SHEET 3: TRÊN 20 ĐIỂM
     ws3 = wb.create_sheet("Trên 20 điểm")
@@ -1818,9 +1837,10 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
 
     ws5['A1'] = f"DANH SÁCH CÔNG CHỨC BỊ TRỪ TIÊU CHÍ CHUNG - THÁNG {thang}/{nam}"
     ws5['A1'].font = title_font
-    ws5.merge_cells('A1:I1')
+    ws5.merge_cells('A1:J1')
 
-    ws5['A2'] = "Bao gồm mọi CC có ≥1 tiêu chí bị trừ (kể cả CC tổng điểm ≥20)."
+    ws5['A2'] = ("Bao gồm mọi CC có ≥1 tiêu chí bị trừ (kể cả CC tổng điểm ≥20, kể cả bản CHỜ_DUYỆT). "
+                 "Cột 'Trạng thái' cho biết bản LĐ đã chấm chính thức hay CC mới tự chấm chờ duyệt.")
     ws5['A2'].font = Font(italic=True, color="666666")
 
     bi_tru_all = [cc for cc in data if cc["ly_do_tru_diem"]]
@@ -1830,7 +1850,7 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
         reverse=True,
     )
 
-    headers5 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng điểm", "Số TC bị trừ", "Tổng điểm trừ", "Mã TC bị trừ", "Lý do / Ghi chú"]
+    headers5 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng điểm", "Số TC bị trừ", "Tổng điểm trừ", "Mã TC bị trừ", "Trạng thái", "Lý do / Ghi chú"]
     for col, h in enumerate(headers5, 1):
         cell = ws5.cell(row=4, column=col, value=h)
         cell.font = header_font_white
@@ -1866,16 +1886,31 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
         ws5.cell(row=r, column=8, value=ma_list).border = border
         ws5.cell(row=r, column=8).alignment = center_alignment
 
-        ws5.cell(row=r, column=9, value=ly_do_text).border = border
-        ws5.cell(row=r, column=9).alignment = wrap_alignment
+        # Cột 9: Trạng thái
+        tt_raw = cc.get("dgt_trang_thai", "")
+        tt_display = {
+            "DA_PHE_DUYET": "Đã duyệt",
+            "CHO_PHE_DUYET": "Chờ duyệt",
+        }.get(tt_raw, tt_raw or "—")
+        tt_cell5 = ws5.cell(row=r, column=9, value=tt_display)
+        tt_cell5.border = border
+        tt_cell5.alignment = center_alignment
+        if tt_raw == "CHO_PHE_DUYET":
+            tt_cell5.fill = PatternFill("solid", fgColor="FFEB9C")
+            tt_cell5.font = Font(bold=True, color="9C5700")
+        elif tt_raw == "DA_PHE_DUYET":
+            tt_cell5.fill = PatternFill("solid", fgColor="C6EFCE")
+
+        ws5.cell(row=r, column=10, value=ly_do_text).border = border
+        ws5.cell(row=r, column=10).alignment = wrap_alignment
         ws5.row_dimensions[r].height = 40
 
-    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 30), ('E', 10), ('F', 12), ('G', 14), ('H', 18), ('I', 70)]:
+    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 30), ('E', 10), ('F', 12), ('G', 14), ('H', 18), ('I', 12), ('J', 60)]:
         ws5.column_dimensions[c].width = w
 
     # Bật autofilter để CCT/PCCT lọc nhanh
     if bi_tru_all_sorted:
-        ws5.auto_filter.ref = f"A4:I{4 + len(bi_tru_all_sorted)}"
+        ws5.auto_filter.ref = f"A4:J{4 + len(bi_tru_all_sorted)}"
 
     # Save to BytesIO
     output = io.BytesIO()
@@ -1894,14 +1929,25 @@ async def _get_data_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) ->
     result_tc = await db.execute(stmt_tc)
     all_tieu_chi = result_tc.scalars().all()
 
-    # Lấy đánh giá tháng
+    # Lấy đánh giá tháng — chỉ CHO_PHE_DUYET + DA_PHE_DUYET (loại NHAP/TU_CHOI).
+    # 2026-05-14: bao gồm cả CHO_PHE_DUYET để CCT/PCCT thấy được dữ liệu CC
+    # đã gửi nhưng LĐ chưa duyệt; cột "Trạng thái" trong sheet phân biệt.
+    from app.models.kpi_assessment import TrangThaiDanhGia
     stmt = (
         select(DanhGiaThang)
         .options(
             selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
             selectinload(DanhGiaThang.tieu_chi_chungs),
         )
-        .where(DanhGiaThang.thang == thang, DanhGiaThang.nam == nam)
+        .where(
+            DanhGiaThang.thang == thang,
+            DanhGiaThang.nam == nam,
+            DanhGiaThang.is_deleted == False,
+            DanhGiaThang.trang_thai.in_((
+                TrangThaiDanhGia.CHO_PHE_DUYET,
+                TrangThaiDanhGia.DA_PHE_DUYET,
+            )),
+        )
     )
     result = await db.execute(stmt)
     danh_gias = result.scalars().all()
@@ -1966,6 +2012,11 @@ async def _get_data_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) ->
                     "nhom": tc.nhom_tieu_chi,
                 })
 
+        # Trạng thái phiếu đánh giá (enum value hoặc str — chuẩn hoá str)
+        tt_raw = dg.trang_thai
+        if hasattr(tt_raw, "value"):
+            tt_raw = tt_raw.value
+
         cong_chuc_list.append({
             "cong_chuc_id": str(dg.cong_chuc.id),
             "ho_ten": dg.cong_chuc.ho_ten,
@@ -1979,6 +2030,7 @@ async def _get_data_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) ->
             "has_ghi_chu_nhom3": has_ghi_chu_nhom3,
             "minh_chung_nhom3": "\n".join(ghi_chu_nhom3_list) if ghi_chu_nhom3_list else "",
             "ly_do_tru_diem": ly_do_tru_diem,
+            "dgt_trang_thai": tt_raw or "",
         })
 
     return cong_chuc_list
@@ -2025,11 +2077,8 @@ async def _generate_report_02_diem_kpi(db: AsyncSession, thang: int, nam: int) -
     dat_kpi_70 = [cc for cc in cc_list if cc["diem_kpi_70"] is not None and cc["diem_kpi_70"] >= 70]
     chua_dat_kpi_70 = [cc for cc in cc_list if cc["diem_kpi_70"] is not None and cc["diem_kpi_70"] < 70]
 
-    # Vượt KPI bất thường (vượt > 50%)
-    vuot_kpi_bat_thuong = [cc for cc in dat_kpi_70 if cc["ty_le_vuot"] > 50]
-
-    # Phân loại lý do chưa đạt
-    chua_dat_do_so_luong = [cc for cc in chua_dat_kpi_70 if cc["sp_hoan_thanh"] < cc["sp_duoc_giao"]]
+    # Phân loại lý do chưa đạt — 2026-05-14: bỏ "Do SP chưa đạt" + "Vượt KPI
+    # bất thường" vì V2_PL3 không còn target SP cố định (ngày × 96).
     chua_dat_do_chat_luong = [cc for cc in chua_dat_kpi_70 if cc["loi_cl"] > 0]
     chua_dat_do_tien_do = [cc for cc in chua_dat_kpi_70 if cc["loi_td"] > 0]
 
@@ -2058,9 +2107,7 @@ async def _generate_report_02_diem_kpi(db: AsyncSession, thang: int, nam: int) -
 
     rows_data = [
         ("I. Đạt KPI 70 điểm", len(dat_kpi_70), pct(len(dat_kpi_70)), ""),
-        ("   - Vượt KPI bất thường (>50%)", len(vuot_kpi_bat_thuong), pct(len(vuot_kpi_bat_thuong)), "Cần xem xét cấp độ phức tạp"),
         ("II. Chưa đạt KPI 70 điểm", len(chua_dat_kpi_70), pct(len(chua_dat_kpi_70)), ""),
-        ("   - Do SP chưa đạt", len(chua_dat_do_so_luong), pct(len(chua_dat_do_so_luong)), "SP hoàn thành < SP được giao"),
         ("   - Do CL bị trừ", len(chua_dat_do_chat_luong), pct(len(chua_dat_do_chat_luong)), "Có lỗi chất lượng"),
         ("   - Do TĐ bị trừ", len(chua_dat_do_tien_do), pct(len(chua_dat_do_tien_do)), "Có lỗi tiến độ"),
     ]
@@ -2074,7 +2121,7 @@ async def _generate_report_02_diem_kpi(db: AsyncSession, thang: int, nam: int) -
         ws1.cell(row=r, column=3).alignment = center_alignment
         ws1.cell(row=r, column=3).font = percent_font
         ws1.cell(row=r, column=4, value=gc).border = border
-        if i in [0, 2]:
+        if i in [0, 1]:
             ws1.cell(row=r, column=1).font = Font(bold=True)
 
     ws1.column_dimensions['A'].width = 35
@@ -2082,58 +2129,19 @@ async def _generate_report_02_diem_kpi(db: AsyncSession, thang: int, nam: int) -
     ws1.column_dimensions['C'].width = 10
     ws1.column_dimensions['D'].width = 40
 
-    # SHEET 2: VƯỢT KPI BẤT THƯỜNG
-    ws2 = wb.create_sheet("Vượt KPI bất thường")
-
-    ws2['A1'] = f"DANH SÁCH VƯỢT KPI BẤT THƯỜNG (>50%) - THÁNG {thang}/{nam}"
-    ws2['A1'].font = title_font
-    ws2.merge_cells('A1:I1')
-
-    ws2['A2'] = "Ghi chú: Cần xem xét việc kê khai cấp độ phức tạp chưa chính xác."
-    ws2['A2'].font = Font(italic=True, color="C00000")
-
-    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "SP giao", "SP hoàn thành", "Tỷ lệ vượt", "Điểm KPI", "Ghi chú"]
-    for col, h in enumerate(headers2, 1):
-        cell = ws2.cell(row=4, column=col, value=h)
-        cell.font = header_font_white
-        cell.fill = header_fill
-        cell.border = border
-        cell.alignment = center_alignment
-
-    vuot_sorted = sorted(vuot_kpi_bat_thuong, key=lambda x: x["ty_le_vuot"], reverse=True)
-
-    for i, cc in enumerate(vuot_sorted, 1):
-        r = 4 + i
-        ws2.cell(row=r, column=1, value=i).border = border
-        ws2.cell(row=r, column=2, value=cc["ho_ten"]).border = border
-        ws2.cell(row=r, column=3, value=cc["ma_cc"]).border = border
-        ws2.cell(row=r, column=4, value=cc["don_vi"]).border = border
-        ws2.cell(row=r, column=5, value=f"{cc['sp_duoc_giao']:,.0f}").border = border
-        ws2.cell(row=r, column=6, value=f"{cc['sp_hoan_thanh']:,.0f}").border = border
-
-        ty_le_cell = ws2.cell(row=r, column=7, value=f"{cc['ty_le_vuot']:.1f}%")
-        ty_le_cell.border = border
-        ty_le_cell.alignment = center_alignment
-        if cc["ty_le_vuot"] > 100:
-            ty_le_cell.fill = alert_fill
-            ty_le_cell.font = Font(bold=True, color="9C0006")
-        elif cc["ty_le_vuot"] > 50:
-            ty_le_cell.fill = warn_fill
-
-        ws2.cell(row=r, column=8, value=cc["diem_kpi_70"]).border = border
-        ws2.cell(row=r, column=9, value="Cần xác minh cấp độ").border = border
-
-    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 12), ('F', 15), ('G', 12), ('H', 10), ('I', 25)]:
-        ws2.column_dimensions[c].width = w
-
-    # SHEET 3: CHƯA ĐẠT KPI
+    # SHEET 2: CHƯA ĐẠT KPI (đổi sheet name từ "Chưa đạt KPI" giữ nguyên).
+    # Đã bỏ sheet "Vượt KPI bất thường" — V2_PL3 không có concept SP được giao
+    # cố định nên "vượt" không có ý nghĩa.
     ws3 = wb.create_sheet("Chưa đạt KPI")
 
     ws3['A1'] = f"DANH SÁCH CHƯA ĐẠT KPI 70 ĐIỂM - THÁNG {thang}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:K1')
+    ws3.merge_cells('A1:J1')
 
-    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "SP giao", "SP HT", "Lỗi CL", "Lỗi TĐ", "Điểm KPI", "Lý do chính"]
+    ws3['A2'] = "Tổng SP kê khai = Σ(so_sp_goc_quy_doi) bản DA_PHE_DUYET. KPI < 70 do lỗi CL/TĐ."
+    ws3['A2'].font = Font(italic=True, color="666666")
+
+    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Tổng SP kê khai", "Lỗi CL", "Lỗi TĐ", "Điểm KPI", "Lý do chính"]
     for col, h in enumerate(headers3, 1):
         cell = ws3.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -2149,32 +2157,30 @@ async def _generate_report_02_diem_kpi(db: AsyncSession, thang: int, nam: int) -
         ws3.cell(row=r, column=2, value=cc["ho_ten"]).border = border
         ws3.cell(row=r, column=3, value=cc["ma_cc"]).border = border
         ws3.cell(row=r, column=4, value=cc["don_vi"]).border = border
-        ws3.cell(row=r, column=5, value=f"{cc['sp_duoc_giao']:,.0f}").border = border
-        ws3.cell(row=r, column=6, value=f"{cc['sp_hoan_thanh']:,.0f}").border = border
+        # Cột 5: Tổng SP kê khai = SUM so_sp_goc_quy_doi (sp_hoan_thanh)
+        ws3.cell(row=r, column=5, value=f"{cc['sp_hoan_thanh']:,.0f}").border = border
 
-        loi_cl_cell = ws3.cell(row=r, column=7, value=cc["loi_cl"])
+        loi_cl_cell = ws3.cell(row=r, column=6, value=cc["loi_cl"])
         loi_cl_cell.border = border
         if cc["loi_cl"] > 0:
             loi_cl_cell.fill = alert_fill
 
-        loi_td_cell = ws3.cell(row=r, column=8, value=cc["loi_td"])
+        loi_td_cell = ws3.cell(row=r, column=7, value=cc["loi_td"])
         loi_td_cell.border = border
         if cc["loi_td"] > 0:
             loi_td_cell.fill = warn_fill
 
-        ws3.cell(row=r, column=9, value=cc["diem_kpi_70"]).border = border
+        ws3.cell(row=r, column=8, value=cc["diem_kpi_70"]).border = border
 
-        # Xác định lý do chính
+        # Lý do chính — bỏ "SP chưa đạt" vì V2_PL3 không có target SP cố định
         ly_do = []
-        if cc["sp_hoan_thanh"] < cc["sp_duoc_giao"]:
-            ly_do.append("SP chưa đạt")
         if cc["loi_cl"] > 0:
             ly_do.append(f"CL -{cc['loi_cl']} lỗi")
         if cc["loi_td"] > 0:
             ly_do.append(f"TĐ -{cc['loi_td']} lỗi")
-        ws3.cell(row=r, column=10, value=", ".join(ly_do) if ly_do else "Khác").border = border
+        ws3.cell(row=r, column=9, value=", ".join(ly_do) if ly_do else "Khác").border = border
 
-    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 10), ('F', 10), ('G', 8), ('H', 8), ('I', 10), ('J', 25)]:
+    for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 16), ('F', 8), ('G', 8), ('H', 10), ('I', 25)]:
         ws3.column_dimensions[c].width = w
 
     # Save to BytesIO

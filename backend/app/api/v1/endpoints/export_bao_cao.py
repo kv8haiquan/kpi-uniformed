@@ -3914,11 +3914,13 @@ async def _get_data_07_sp_theo_linh_vuc(db: AsyncSession, thang: int, nam: int) 
     from sqlalchemy import text
     from collections import defaultdict
 
-    # Sub-query chung — chỉ lấy bản V2 (linh_vuc_snapshot không NULL)
+    # Sub-query chung — chỉ lấy bản V2 (linh_vuc_snapshot không NULL).
+    # JOIN phải đứng TRƯỚC WHERE: gộp tất cả JOIN vào base_sql.
     base_sql = """
         FROM ke_khai_cong_viec kk
         JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
         LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        LEFT JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
         WHERE kk.thang = :thang AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
               AND kk.linh_vuc_snapshot IS NOT NULL
@@ -3933,7 +3935,6 @@ async def _get_data_07_sp_theo_linh_vuc(db: AsyncSession, thang: int, nam: int) 
                COALESCE(SUM(kk.so_luong), 0) as tong_so_luong,
                COALESCE(SUM(kk.so_luong * COALESCE(kk.he_so_quy_doi_snapshot, 0)), 0) as tong_diem_sp
         {base_sql}
-        LEFT JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
         GROUP BY kk.linh_vuc_snapshot
         ORDER BY kk.linh_vuc_snapshot
     """), {"thang": thang, "nam": nam})
@@ -3972,7 +3973,6 @@ async def _get_data_07_sp_theo_linh_vuc(db: AsyncSession, thang: int, nam: int) 
                COALESCE(SUM(kk.so_luong), 0) as tong_so_luong,
                COALESCE(SUM(kk.so_luong * COALESCE(kk.he_so_quy_doi_snapshot, 0)), 0) as tong_diem_sp
         {base_sql}
-        LEFT JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
         GROUP BY kk.linh_vuc_snapshot, dm.id
         ORDER BY kk.linh_vuc_snapshot, so_lan_khai DESC
     """), {"thang": thang, "nam": nam})

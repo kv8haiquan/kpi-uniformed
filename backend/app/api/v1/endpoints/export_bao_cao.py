@@ -2298,6 +2298,7 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
     percent_font = Font(bold=True, color="0070C0")
     alert_fill = PatternFill("solid", fgColor="FFC7CE")
     good_fill = PatternFill("solid", fgColor="C6EFCE")
+    warn_fill = PatternFill("solid", fgColor="FFEB9C")
     border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
@@ -2369,12 +2370,14 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
 
     ws2['A1'] = f"DANH SÁCH LÃNH ĐẠO BỊ TRỪ ĐIỂM d, đ, e - THÁNG {thang}/{nam}"
     ws2['A1'].font = title_font
-    ws2.merge_cells('A1:L1')
+    ws2.merge_cells('A1:M1')
 
-    ws2['A2'] = "Bao gồm cả bản CHỜ_PHÊ_DUYỆT — xem cột 'Trạng thái' để phân biệt bản chính thức vs tạm tính."
+    ws2['A2'] = ("Cột 'Điểm tổng' = engine chính thức (chỉ DA_PHE_DUYET). "
+                 "Cột 'Điểm tổng (tạm tính)' = nếu cả bản CHỜ_DUYỆT được duyệt y nguyên giá trị tự đánh giá.")
     ws2['A2'].font = Font(italic=True, color="666666")
 
-    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Tổng trừ", "Lý do", "Trạng thái", "Điểm tổng"]
+    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e",
+                "Tổng trừ", "Lý do", "Trạng thái", "Điểm tổng", "Điểm tổng (tạm tính)"]
     for col, h in enumerate(headers2, 1):
         cell = ws2.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -2456,11 +2459,23 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
 
         ws2.cell(row=r, column=12, value=ld["diem_tong"]).border = border
 
+        # Điểm tổng (tạm tính) — broadened CHO+DA
+        tt_val = ld.get("diem_tong_tam_tinh")
+        tt_cell_dt = ws2.cell(row=r, column=13,
+                              value=round(tt_val, 2) if tt_val is not None else "—")
+        tt_cell_dt.border = border
+        tt_cell_dt.alignment = center_alignment
+        if tt_val is not None and ld.get("diem_tong") is not None:
+            if tt_val < float(ld["diem_tong"]) - 0.01:
+                # Tạm tính thấp hơn chính thức (có CHO_PHE_DUYET làm giảm điểm)
+                tt_cell_dt.fill = warn_fill
+                tt_cell_dt.font = Font(bold=True, color="9C5700")
+
         ws2.row_dimensions[r].height = 30
 
     for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 15),
                  ('F', 6), ('G', 6), ('H', 6), ('I', 10), ('J', 50),
-                 ('K', 12), ('L', 10)]:
+                 ('K', 12), ('L', 10), ('M', 16)]:
         ws2.column_dimensions[c].width = w
 
     # SHEET 3: TẤT CẢ LÃNH ĐẠO
@@ -2468,9 +2483,14 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
 
     ws3['A1'] = f"DANH SÁCH TẤT CẢ LÃNH ĐẠO - THÁNG {thang}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:K1')
+    ws3.merge_cells('A1:M1')
 
-    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Trạng thái", "Điểm KPI", "Điểm tổng"]
+    ws3['A2'] = ("Điểm chính thức = engine production (DA_PHE_DUYET). "
+                 "Điểm tạm tính = nếu bản CHỜ_DUYỆT cũng vào điểm (mức 2: a/b/c + d/đ/e CHO+DA).")
+    ws3['A2'].font = Font(italic=True, color="666666")
+
+    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e",
+                "Trạng thái", "Điểm KPI", "Điểm tổng", "Điểm KPI (tạm tính)", "Điểm tổng (tạm tính)"]
     for col, h in enumerate(headers3, 1):
         cell = ws3.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -2512,8 +2532,27 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
         ws3.cell(row=r, column=10, value=ld["diem_kpi"]).border = border
         ws3.cell(row=r, column=11, value=ld["diem_tong"]).border = border
 
+        # Cột 12-13: Điểm KPI (tạm tính) + Điểm tổng (tạm tính)
+        kpi_tt = ld.get("diem_kpi_tam_tinh")
+        tong_tt = ld.get("diem_tong_tam_tinh")
+        kpi_cell = ws3.cell(row=r, column=12,
+                            value=round(kpi_tt, 2) if kpi_tt is not None else "—")
+        kpi_cell.border = border
+        kpi_cell.alignment = center_alignment
+        tong_cell_tt = ws3.cell(row=r, column=13,
+                                value=round(tong_tt, 2) if tong_tt is not None else "—")
+        tong_cell_tt.border = border
+        tong_cell_tt.alignment = center_alignment
+        # Highlight nếu tạm tính < chính thức (có bản CHO_PHE_DUYET làm giảm điểm)
+        if kpi_tt is not None and ld.get("diem_kpi") is not None and kpi_tt < float(ld["diem_kpi"]) - 0.01:
+            kpi_cell.fill = warn_fill
+            kpi_cell.font = Font(bold=True, color="9C5700")
+            tong_cell_tt.fill = warn_fill
+            tong_cell_tt.font = Font(bold=True, color="9C5700")
+
     for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 15),
-                 ('F', 6), ('G', 6), ('H', 6), ('I', 12), ('J', 10), ('K', 10)]:
+                 ('F', 6), ('G', 6), ('H', 6), ('I', 12), ('J', 10), ('K', 10),
+                 ('L', 14), ('M', 16)]:
         ws3.column_dimensions[c].width = w
 
     # Save to BytesIO
@@ -2521,6 +2560,81 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
     wb.save(output)
     output.seek(0)
     return output
+
+
+async def _calc_diem_kpi_ld_tam_tinh(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    thang: int,
+    nam: int,
+    dde_map: dict,
+) -> Optional[float]:
+    """Tính Điểm KPI 70đ "tạm tính" cho LĐ — broadened CHO_PHE_DUYET + DA_PHE_DUYET.
+
+    CHỈ DÙNG TRONG BÁO CÁO. Không ghi DB. Engine production chính thức vẫn
+    là DA_PHE_DUYET only.
+
+    Cách tính (theo lựa chọn user 2026-05-14 — Mức 2):
+    - a/b/c: gọi engine sẵn có với tam_tinh=True (LĐ V2 dùng calc_kpi_lanh_dao_v2
+      với scope mở rộng; LĐ V1/HĐ 111 dùng KeKhaiLanhDao filter CHO+DA).
+      Lưu ý: engine tam_tinh=True của V2 cũng gồm NHAP — chấp nhận tradeoff
+      vì NHAP rất hiếm trên production (CC kê khai xong thường submit ngay).
+    - d/đ/e: lấy từ dde_map (đã broadened CHO+DA, do _load_dde_finals trả về).
+    - KPI = (a+b+c+d+đ+e) / 6 × 70, cap 70.
+
+    Returns:
+        float diem_kpi_70 hoặc None nếu lỗi tính toán.
+    """
+    from app.core.kpi_lanh_dao_v2 import calc_kpi_lanh_dao_v2, is_kpi_lanh_dao_v2_active
+
+    a = b = c = 0.0
+    try:
+        if is_kpi_lanh_dao_v2_active(thang, nam):
+            v2 = await calc_kpi_lanh_dao_v2(db, cong_chuc_id, thang, nam, tam_tinh=True)
+            a, b, c = float(v2["a"]), float(v2["b"]), float(v2["c"])
+        else:
+            # V1 LĐ / HĐ 111 — tính từ KeKhaiLanhDao với CHO+DA (đúng Mức 2)
+            from sqlalchemy import select as _select
+            stmt = (
+                _select(
+                    KeKhaiLanhDao.trang_thai_hoan_thanh,
+                    KeKhaiLanhDao.so_loi_chat_luong,
+                    KeKhaiLanhDao.so_loi_tien_do,
+                )
+                .where(KeKhaiLanhDao.cong_chuc_id == cong_chuc_id)
+                .where(KeKhaiLanhDao.thang == thang)
+                .where(KeKhaiLanhDao.nam == nam)
+                .where(KeKhaiLanhDao.is_deleted == False)
+                .where(KeKhaiLanhDao.trang_thai.in_((
+                    TrangThaiKeKhaiLD.CHO_PHE_DUYET.value,
+                    TrangThaiKeKhaiLD.DA_PHE_DUYET.value,
+                )))
+            )
+            rows = (await db.execute(stmt)).all()
+            tong_cv = len(rows)
+            if tong_cv > 0:
+                tong_ht = sum(
+                    1 for r in rows if r[0] == TrangThaiHoanThanh.DA_HOAN_THANH
+                )
+                tong_diem_cl = sum(max(0.0, 1.0 - (r[1] or 0) * 0.25) for r in rows)
+                tong_diem_td = sum(max(0.0, 1.0 - (r[2] or 0) * 0.25) for r in rows)
+                a = min(tong_ht / tong_cv, 1.0)
+                b = min(tong_diem_td / tong_cv, 1.0)
+                c = min(tong_diem_cl / tong_cv, 1.0)
+    except Exception as e:
+        logger.warning(
+            f"_calc_diem_kpi_ld_tam_tinh failed cho cc={cong_chuc_id} {thang}/{nam}: {e}"
+        )
+        return None
+
+    # d/đ/e — broadened từ dde_map (mặc định 100 nếu LĐ chưa có bản nào)
+    dde = dde_map.get(str(cong_chuc_id), {})
+    d = dde.get("d_final", 100) / 100.0
+    dd = dde.get("dd_final", 100) / 100.0
+    e = dde.get("e_final", 100) / 100.0
+
+    kpi_ratio = (a + b + c + d + dd + e) / 6
+    return min(70.0, kpi_ratio * 70)
 
 
 async def _load_dde_finals(db: AsyncSession, thang: int, nam: int) -> dict:
@@ -2579,10 +2693,12 @@ async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> l
     """
     from sqlalchemy import text
 
-    # Lấy danh sách lãnh đạo từ chi_tiet_xep_loai
+    # Lấy danh sách lãnh đạo từ chi_tiet_xep_loai (có thêm diem_tieu_chi_chung
+    # để tính Điểm tổng tạm tính).
     ld_result = await db.execute(text("""
         SELECT ct.cong_chuc_id::text, cc.ho_ten, cc.ma_cc, dv.ten_don_vi,
-               vt.ten_vai_tro, ct.diem_kpi, ct.diem_tong, ct.xep_loai_he_thong
+               vt.ten_vai_tro, ct.diem_kpi, ct.diem_tong, ct.xep_loai_he_thong,
+               ct.diem_tieu_chi_chung
         FROM chi_tiet_xep_loai ct
         JOIN bao_cao_xep_loai bc ON bc.id = ct.bao_cao_id
         JOIN cong_chuc cc ON cc.id = ct.cong_chuc_id
@@ -2604,6 +2720,7 @@ async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> l
             "diem_kpi": float(row[5]) if row[5] is not None else None,
             "diem_tong": float(row[6]) if row[6] is not None else None,
             "xep_loai": row[7],
+            "diem_tcc": float(row[8]) if row[8] is not None else 0.0,
         })
 
     dde_by_cc = await _load_dde_finals(db, thang, nam)
@@ -2626,6 +2743,21 @@ async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> l
         ld["bi_tru_dd"] = (ld["dd_final"] == 50)
         ld["bi_tru_e"] = (ld["e_final"] == 50)
         ld["tong_bi_tru"] = sum([ld["bi_tru_d"], ld["bi_tru_dd"], ld["bi_tru_e"]])
+
+        # Điểm KPI / Điểm tổng "tạm tính" — broadened CHO+DA (CHỈ trong báo cáo).
+        # Đặt cùng UUID type vì _calc_diem_kpi_ld_tam_tinh expect UUID.
+        from uuid import UUID as _UUID
+        try:
+            _cc_uuid = _UUID(cc_id)
+        except Exception:
+            _cc_uuid = cc_id
+        diem_kpi_tt = await _calc_diem_kpi_ld_tam_tinh(
+            db, _cc_uuid, thang, nam, dde_by_cc
+        )
+        ld["diem_kpi_tam_tinh"] = diem_kpi_tt
+        ld["diem_tong_tam_tinh"] = (
+            (ld["diem_tcc"] + diem_kpi_tt) if diem_kpi_tt is not None else None
+        )
 
     return lanh_dao_list
 
@@ -3476,14 +3608,16 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
 
     ws3['A1'] = f"LÃNH ĐẠO — CHỈ SỐ a, b, c + d, đ, e - THÁNG {thang}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:O1')
+    ws3.merge_cells('A1:Q1')
 
-    ws3['A2'] = "d/đ/e đọc từ danh_gia_dde (CHỜ_DUYỆT + ĐÃ_DUYỆT, COALESCE phê duyệt > tự đánh giá). Cột Trạng thái cho biết bản chính thức hay tạm tính."
+    ws3['A2'] = ("Điểm KPI chính thức = engine production (DA_PHE_DUYET). "
+                 "Điểm KPI tạm tính = nếu bản CHỜ_DUYỆT cũng vào điểm (mức 2: a/b/c + d/đ/e CHO+DA).")
     ws3['A2'].font = Font(italic=True, color="666666")
 
     headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ",
                 "a (%)", "Lỗi CL", "Lỗi TĐ", "d", "đ", "e", "Hệ số LĐ",
-                "Trạng thái d/đ/e", "Số CS bị trừ", "Ghi chú d/đ/e"]
+                "Trạng thái d/đ/e", "Số CS bị trừ", "Ghi chú d/đ/e",
+                "Điểm KPI (chính thức)", "Điểm KPI (tạm tính)"]
     for col, h in enumerate(headers3, 1):
         cell = ws3.cell(row=4, column=col, value=h)
         cell.font = header_font_white
@@ -3583,15 +3717,32 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
         ws3.cell(row=r, column=15, value="; ".join(ghi_chu)).border = border
         ws3.cell(row=r, column=15).alignment = wrap_alignment
 
+        # Cột 16-17: Điểm KPI (chính thức) + Điểm KPI (tạm tính)
+        kpi_ct = ld.get("diem_kpi_chinh_thuc")
+        kpi_tt = ld.get("diem_kpi_tam_tinh")
+        ct_cell = ws3.cell(row=r, column=16,
+                           value=round(kpi_ct, 2) if kpi_ct is not None else "—")
+        ct_cell.border = border
+        ct_cell.alignment = center_alignment
+        tt_cell_kpi = ws3.cell(row=r, column=17,
+                               value=round(kpi_tt, 2) if kpi_tt is not None else "—")
+        tt_cell_kpi.border = border
+        tt_cell_kpi.alignment = center_alignment
+        if (kpi_tt is not None and kpi_ct is not None
+                and kpi_tt < kpi_ct - 0.01):
+            tt_cell_kpi.fill = warn_fill
+            tt_cell_kpi.font = Font(bold=True, color="9C5700")
+
         ws3.row_dimensions[r].height = 28
 
     for c, w in [('A', 5), ('B', 24), ('C', 12), ('D', 22), ('E', 16),
                  ('F', 9), ('G', 8), ('H', 8), ('I', 6), ('J', 6), ('K', 6),
-                 ('L', 11), ('M', 13), ('N', 13), ('O', 45)]:
+                 ('L', 11), ('M', 13), ('N', 13), ('O', 45),
+                 ('P', 14), ('Q', 14)]:
         ws3.column_dimensions[c].width = w
 
     if ld_sorted:
-        ws3.auto_filter.ref = f"A4:O{4 + len(ld_sorted)}"
+        ws3.auto_filter.ref = f"A4:Q{4 + len(ld_sorted)}"
 
     output = io.BytesIO()
     wb.save(output)
@@ -3700,6 +3851,20 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
             cc_map[cc_id]["e_ghi_chu"] = dde["e_ghi_chu"]
             cc_map[cc_id]["dde_trang_thai"] = dde["trang_thai"]
 
+    # 5b. Điểm KPI chính thức từ chi_tiet_xep_loai (engine production)
+    kpi_result = await db.execute(text("""
+        SELECT ct.cong_chuc_id::text, ct.diem_kpi
+        FROM chi_tiet_xep_loai ct
+        JOIN bao_cao_xep_loai bc ON bc.id = ct.bao_cao_id
+        WHERE bc.thang = :thang AND bc.nam = :nam
+              AND bc.is_deleted = false
+    """), {"thang": thang, "nam": nam})
+    for row in kpi_result:
+        if row[0] in cc_map:
+            cc_map[row[0]]["diem_kpi_chinh_thuc"] = (
+                float(row[1]) if row[1] is not None else None
+            )
+
     # 6. Tính derived fields
     for cc in cc_map.values():
         nghi = nghi_by_cc.get(cc["cong_chuc_id"], 0)
@@ -3719,6 +3884,21 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
         cc["bi_tru_d"] = (cc["d_final"] == 50)
         cc["bi_tru_dd"] = (cc["dd_final"] == 50)
         cc["bi_tru_e"] = (cc["e_final"] == 50)
+
+    # 7. Điểm KPI tạm tính cho LĐ (broadened CHO+DA). CC thường không cần
+    #    vì không có d/đ/e ảnh hưởng.
+    from uuid import UUID as _UUID
+    for cc in cc_map.values():
+        cc["diem_kpi_chinh_thuc"] = cc.get("diem_kpi_chinh_thuc")
+        cc["diem_kpi_tam_tinh"] = None
+        if cc["is_lanh_dao"]:
+            try:
+                _cc_uuid = _UUID(cc["cong_chuc_id"])
+            except Exception:
+                _cc_uuid = cc["cong_chuc_id"]
+            cc["diem_kpi_tam_tinh"] = await _calc_diem_kpi_ld_tam_tinh(
+                db, _cc_uuid, thang, nam, dde_by_cc
+            )
 
     return list(cc_map.values())
 

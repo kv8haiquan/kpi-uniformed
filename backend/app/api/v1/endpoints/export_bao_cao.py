@@ -2490,8 +2490,53 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
     return output
 
 
+async def _load_dde_finals(db: AsyncSession, thang: int, nam: int) -> dict:
+    """Helper dùng chung — load d/đ/e final cho mọi LĐ trong tháng.
+
+    Schema thực tế (xác minh 2026-05-13):
+      d_ket_qua_don_vi / dd_to_chuc_trien_khai / e_doan_ket_noi_bo: INT 50|100 (tự đánh giá)
+      d_phe_duyet / dd_phe_duyet / e_phe_duyet: INT 50|100|NULL (sau phê duyệt)
+    Giá trị final = COALESCE(*_phe_duyet, *_ket_qua_don_vi/_to_chuc/_doan_ket).
+    Bị trừ ⟺ final == 50.
+
+    Filter trang_thai = 'DA_PHE_DUYET' đồng nhất với engine kpi_lanh_dao_v2._get_dde.
+    LĐ chưa có bản ghi DA_PHE_DUYET → mặc định 100 (không bị trừ).
+
+    Returns:
+        dict {cong_chuc_id_str → {d_final, dd_final, e_final, d_ghi_chu, dd_ghi_chu, e_ghi_chu}}
+    """
+    from sqlalchemy import text
+
+    result = await db.execute(text("""
+        SELECT cong_chuc_id::text,
+               COALESCE(d_phe_duyet, d_ket_qua_don_vi)        AS d_final,
+               COALESCE(dd_phe_duyet, dd_to_chuc_trien_khai)  AS dd_final,
+               COALESCE(e_phe_duyet, e_doan_ket_noi_bo)       AS e_final,
+               d_ghi_chu, dd_ghi_chu, e_ghi_chu
+        FROM danh_gia_dde
+        WHERE thang = :thang AND nam = :nam
+              AND trang_thai = 'DA_PHE_DUYET'
+    """), {"thang": thang, "nam": nam})
+
+    dde_by_cc = {}
+    for row in result:
+        dde_by_cc[row[0]] = {
+            "d_final": int(row[1]),    # 50 hoặc 100
+            "dd_final": int(row[2]),
+            "e_final": int(row[3]),
+            "d_ghi_chu": row[4] or "",
+            "dd_ghi_chu": row[5] or "",
+            "e_ghi_chu": row[6] or "",
+        }
+    return dde_by_cc
+
+
 async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> list:
-    """Get data for report 03 - Lãnh đạo bị trừ d,đ,e."""
+    """Get data for report 03 - Lãnh đạo bị trừ d,đ,e.
+
+    Fix 2026-05-13: dùng helper _load_dde_finals. Trước đó so sánh
+    int 50/100 với False → không bao giờ phát hiện bị trừ.
+    """
     from sqlalchemy import text
 
     # Lấy danh sách lãnh đạo từ chi_tiet_xep_loai
@@ -2521,47 +2566,23 @@ async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> l
             "xep_loai": row[7],
         })
 
-    # Lấy đánh giá d, đ, e
-    dde_result = await db.execute(text("""
-        SELECT cong_chuc_id::text,
-               d_ket_qua_don_vi, d_ghi_chu, d_phe_duyet,
-               dd_to_chuc_trien_khai, dd_ghi_chu, dd_phe_duyet,
-               e_doan_ket_noi_bo, e_ghi_chu, e_phe_duyet,
-               trang_thai
-        FROM danh_gia_dde
-        WHERE thang = :thang AND nam = :nam
-    """), {"thang": thang, "nam": nam})
+    dde_by_cc = await _load_dde_finals(db, thang, nam)
 
-    dde_by_cc = {}
-    for row in dde_result:
-        dde_by_cc[row[0]] = {
-            "d_dat": row[1],  # True = Đạt, False = Không đạt
-            "d_ghi_chu": row[2] or "",
-            "d_phe_duyet": row[3],
-            "dd_dat": row[4],
-            "dd_ghi_chu": row[5] or "",
-            "dd_phe_duyet": row[6],
-            "e_dat": row[7],
-            "e_ghi_chu": row[8] or "",
-            "e_phe_duyet": row[9],
-            "trang_thai": row[10],
-        }
-
-    # Gộp dữ liệu
+    # Gộp dữ liệu — LĐ không có bản ghi DA_PHE_DUYET → mặc định 100 (không bị trừ)
     for ld in lanh_dao_list:
         cc_id = ld["cong_chuc_id"]
         dde = dde_by_cc.get(cc_id, {})
-        ld["d_dat"] = dde.get("d_dat", True)
+        ld["d_final"] = dde.get("d_final", 100)
         ld["d_ghi_chu"] = dde.get("d_ghi_chu", "")
-        ld["dd_dat"] = dde.get("dd_dat", True)
+        ld["dd_final"] = dde.get("dd_final", 100)
         ld["dd_ghi_chu"] = dde.get("dd_ghi_chu", "")
-        ld["e_dat"] = dde.get("e_dat", True)
+        ld["e_final"] = dde.get("e_final", 100)
         ld["e_ghi_chu"] = dde.get("e_ghi_chu", "")
 
-        # Tính số tiêu chí bị trừ
-        ld["bi_tru_d"] = ld["d_dat"] == False
-        ld["bi_tru_dd"] = ld["dd_dat"] == False
-        ld["bi_tru_e"] = ld["e_dat"] == False
+        # Bị trừ ⟺ final == 50 (giá trị int trong DanhGiaDDE, không phải boolean)
+        ld["bi_tru_d"] = (ld["d_final"] == 50)
+        ld["bi_tru_dd"] = (ld["dd_final"] == 50)
+        ld["bi_tru_e"] = (ld["e_final"] == 50)
         ld["tong_bi_tru"] = sum([ld["bi_tru_d"], ld["bi_tru_dd"], ld["bi_tru_e"]])
 
     return lanh_dao_list
@@ -3227,12 +3248,12 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
 # Bổ sung 2026-05-13 theo yêu cầu CCT:
 #   - Thống kê CC bị trừ ở 3 chỉ số a (số lượng), b (chất lượng), c (tiến độ).
 #   - Lãnh đạo: gộp thêm d (kết quả đv), đ (tổ chức triển khai), e (đoàn kết).
-#   - d/đ/e đọc từ danh_gia_dde (boolean Đạt/Không) → 1.0 / 0.5.
+#   - d/đ/e đọc từ danh_gia_dde (INT 50|100, DA_PHE_DUYET) → hiển thị 50% / 100%.
 # Tiêu chí "bị trừ" — đơn giản và đồng nhất với cách CCT/PCCT thường nhìn:
 #   - a bị trừ ⟺ sp_hoan_thanh < sp_duoc_giao  (làm chưa đủ target)
 #   - b bị trừ ⟺ so_loi_chat_luong > 0
 #   - c bị trừ ⟺ so_loi_tien_do > 0
-#   - d/đ/e bị trừ ⟺ danh_gia_dde.*_dat = false
+#   - d/đ/e bị trừ ⟺ COALESCE(*_phe_duyet, *_ket_qua/_to_chuc/_doan_ket) == 50
 # =============================================================================
 
 async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) -> io.BytesIO:
@@ -3415,7 +3436,7 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
     ws3['A1'].font = title_font
     ws3.merge_cells('A1:N1')
 
-    ws3['A2'] = "Chỉ số d, đ, e đọc từ danh_gia_dde: Không đạt → 0.5, Đạt → 1.0. Hệ số LĐ = d × đ × e."
+    ws3['A2'] = "Chỉ số d, đ, e đọc từ danh_gia_dde (DA_PHE_DUYET, COALESCE phê duyệt > tự đánh giá). Hệ số LĐ = d × đ × e."
     ws3['A2'].font = Font(italic=True, color="666666")
 
     headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ",
@@ -3470,7 +3491,7 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
             [("d", ld["bi_tru_d"]), ("dd", ld["bi_tru_dd"]), ("e", ld["bi_tru_e"])],
             start=9,
         ):
-            val = "0.5" if bi_tru else "1.0"
+            val = "50%" if bi_tru else "100%"
             cell = ws3.cell(row=r, column=col_idx, value=val)
             cell.border = border
             cell.alignment = center_alignment
@@ -3481,7 +3502,7 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
                 cell.fill = good_fill
 
         he_so = (0.5 if ld["bi_tru_d"] else 1.0) * (0.5 if ld["bi_tru_dd"] else 1.0) * (0.5 if ld["bi_tru_e"] else 1.0)
-        hs_cell = ws3.cell(row=r, column=12, value=f"{he_so:.4f}")
+        hs_cell = ws3.cell(row=r, column=12, value=f"{he_so*100:.1f}%")
         hs_cell.border = border
         hs_cell.alignment = center_alignment
         hs_cell.font = Font(bold=True)
@@ -3552,7 +3573,8 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
             "sp_hoan_thanh": 0.0,
             "loi_cl": 0,
             "loi_td": 0,
-            "d_dat": True, "dd_dat": True, "e_dat": True,
+            # Mặc định 100 (không bị trừ) nếu LĐ chưa có bản DA_PHE_DUYET
+            "d_final": 100, "dd_final": 100, "e_final": 100,
             "d_ghi_chu": "", "dd_ghi_chu": "", "e_ghi_chu": "",
         }
 
@@ -3606,24 +3628,17 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
                 cc_map[cc_id]["loi_cl"] = int(row[2] or 0)
                 cc_map[cc_id]["loi_td"] = int(row[3] or 0)
 
-    # 5. d/đ/e từ danh_gia_dde (chỉ LĐ)
-    dde_result = await db.execute(text("""
-        SELECT cong_chuc_id::text,
-               d_ket_qua_don_vi, d_ghi_chu,
-               dd_to_chuc_trien_khai, dd_ghi_chu,
-               e_doan_ket_noi_bo, e_ghi_chu
-        FROM danh_gia_dde
-        WHERE thang = :thang AND nam = :nam
-    """), {"thang": thang, "nam": nam})
-    for row in dde_result:
-        cc_id = row[0]
+    # 5. d/đ/e final từ danh_gia_dde — dùng helper chung (đã filter DA_PHE_DUYET,
+    #    COALESCE phe_duyet → ket_qua tự đánh giá).
+    dde_by_cc = await _load_dde_finals(db, thang, nam)
+    for cc_id, dde in dde_by_cc.items():
         if cc_id in cc_map:
-            cc_map[cc_id]["d_dat"] = row[1] if row[1] is not None else True
-            cc_map[cc_id]["d_ghi_chu"] = row[2] or ""
-            cc_map[cc_id]["dd_dat"] = row[3] if row[3] is not None else True
-            cc_map[cc_id]["dd_ghi_chu"] = row[4] or ""
-            cc_map[cc_id]["e_dat"] = row[5] if row[5] is not None else True
-            cc_map[cc_id]["e_ghi_chu"] = row[6] or ""
+            cc_map[cc_id]["d_final"] = dde["d_final"]
+            cc_map[cc_id]["d_ghi_chu"] = dde["d_ghi_chu"]
+            cc_map[cc_id]["dd_final"] = dde["dd_final"]
+            cc_map[cc_id]["dd_ghi_chu"] = dde["dd_ghi_chu"]
+            cc_map[cc_id]["e_final"] = dde["e_final"]
+            cc_map[cc_id]["e_ghi_chu"] = dde["e_ghi_chu"]
 
     # 6. Tính derived fields
     for cc in cc_map.values():
@@ -3640,9 +3655,10 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
         cc["bi_tru_a"] = (sp_duoc_giao > 0 and cc["sp_hoan_thanh"] < sp_duoc_giao)
         cc["bi_tru_b"] = cc["loi_cl"] > 0
         cc["bi_tru_c"] = cc["loi_td"] > 0
-        cc["bi_tru_d"] = (cc["d_dat"] == False)
-        cc["bi_tru_dd"] = (cc["dd_dat"] == False)
-        cc["bi_tru_e"] = (cc["e_dat"] == False)
+        # Bị trừ ⟺ final == 50 (DanhGiaDDE.*_final là int 50|100)
+        cc["bi_tru_d"] = (cc["d_final"] == 50)
+        cc["bi_tru_dd"] = (cc["dd_final"] == 50)
+        cc["bi_tru_e"] = (cc["e_final"] == 50)
 
     return list(cc_map.values())
 
@@ -4337,14 +4353,16 @@ async def _get_data_03_quy(db: AsyncSession, quy: int, nam: int) -> list:
             "vai_tro": row[4] or "",
         })
 
-    # 2. Lấy đánh giá d/đ/e của 3 tháng
+    # 2. Lấy đánh giá d/đ/e của 3 tháng — final = COALESCE(phe_duyet, ket_qua_don_vi).
+    # Bị trừ tháng X ⟺ final_X == 50. Filter DA_PHE_DUYET nhất quán với engine.
     dde_stmt = sa_text("""
         SELECT cong_chuc_id::text, thang,
-               d_ket_qua_don_vi, d_ghi_chu,
-               dd_to_chuc_trien_khai, dd_ghi_chu,
-               e_doan_ket_noi_bo, e_ghi_chu
+               COALESCE(d_phe_duyet, d_ket_qua_don_vi)        AS d_final, d_ghi_chu,
+               COALESCE(dd_phe_duyet, dd_to_chuc_trien_khai)  AS dd_final, dd_ghi_chu,
+               COALESCE(e_phe_duyet, e_doan_ket_noi_bo)       AS e_final, e_ghi_chu
         FROM danh_gia_dde
         WHERE thang IN :thang_list AND nam = :nam
+              AND trang_thai = 'DA_PHE_DUYET'
     """).bindparams(bindparam('thang_list', expanding=True))
 
     dde_result = await db.execute(dde_stmt, {"thang_list": thang_list, "nam": nam})
@@ -4355,16 +4373,16 @@ async def _get_data_03_quy(db: AsyncSession, quy: int, nam: int) -> list:
     })
     for row in dde_result:
         cc_id, thang_dde = row[0], int(row[1])
-        d_dat, dd_dat, e_dat = row[2], row[4], row[6]
-        if d_dat is False:
+        d_final, dd_final, e_final = row[2], row[4], row[6]
+        if d_final == 50:
             dde_by_cc[cc_id]["d_thang_tru"].append(thang_dde)
             if row[3]:
                 dde_by_cc[cc_id]["d_ghi_chu"].append(f"T{thang_dde}: {row[3]}")
-        if dd_dat is False:
+        if dd_final == 50:
             dde_by_cc[cc_id]["dd_thang_tru"].append(thang_dde)
             if row[5]:
                 dde_by_cc[cc_id]["dd_ghi_chu"].append(f"T{thang_dde}: {row[5]}")
-        if e_dat is False:
+        if e_final == 50:
             dde_by_cc[cc_id]["e_thang_tru"].append(thang_dde)
             if row[7]:
                 dde_by_cc[cc_id]["e_ghi_chu"].append(f"T{thang_dde}: {row[7]}")

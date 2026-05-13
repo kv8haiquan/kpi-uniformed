@@ -391,6 +391,9 @@ async def tinh_diem_kpi_70_lanh_dao(
             pass  # fallback nhánh cũ
 
     # Xác định trạng thái được tính
+    # 2026-05-14 (C-strict CCT): d/đ/e ở chế độ chính thức (tam_tinh=False)
+    # cũng lấy CHO_PHE_DUYET — đồng nhất với engine kpi_lanh_dao_v2._get_dde.
+    # a/b/c (ke_khai_lanh_dao) giữ nguyên: chỉ DA_PHE_DUYET khi chính thức.
     if tam_tinh:
         allowed_statuses = [
             TrangThaiKeKhaiLD.NHAP.value,
@@ -400,7 +403,7 @@ async def tinh_diem_kpi_70_lanh_dao(
         dde_statuses = [TrangThaiDDE.NHAP.value, TrangThaiDDE.CHO_PHE_DUYET.value, TrangThaiDDE.DA_PHE_DUYET.value]
     else:
         allowed_statuses = [TrangThaiKeKhaiLD.DA_PHE_DUYET.value]
-        dde_statuses = [TrangThaiDDE.DA_PHE_DUYET.value]
+        dde_statuses = [TrangThaiDDE.CHO_PHE_DUYET.value, TrangThaiDDE.DA_PHE_DUYET.value]
 
     # Query kê khai lãnh đạo
     stmt_kkld = (

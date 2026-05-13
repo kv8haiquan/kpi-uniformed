@@ -23,7 +23,7 @@ CÔNG THỨC ĐIỂM (giống CC V2 + thêm d/đ/e):
 - a = tổng SP đã hoàn thành / mẫu số (tỷ lệ số lượng — DA_PHE_DUYET = hoàn thành).
 - b = tổng SP đạt tiến độ (sum so_sp_tien_do) / mẫu số.
 - c = tổng SP đạt chất lượng (sum so_sp_chat_luong) / mẫu số.
-- d, đ, e từ danh_gia_dde (final / 100), thiếu → 1.0.
+- d, đ, e từ danh_gia_dde (CHO_PHE_DUYET + DA_PHE_DUYET, final / 100), thiếu → 1.0.
 - KPI = (a + b + c + d + đ + e) / 6  (∈ [0, 1])
 
 PHIÊN BẢN: 2.0 (05/05/2026) — đổi sang SP quy đổi để khớp UI CC V2.
@@ -321,12 +321,22 @@ async def _sp_trong_don_vi(
 async def _get_dde(
     db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
 ) -> tuple[float, float, float]:
-    """Lấy d, đ, e từ danh_gia_dde đã DA_PHE_DUYET. Mặc định 1.0 nếu thiếu."""
+    """Lấy d, đ, e từ danh_gia_dde (CHO_PHE_DUYET + DA_PHE_DUYET).
+
+    Đổi 2026-05-14 (Phương án C-strict theo CCT): KPI chính thức cũng phản
+    ánh ngay khi LĐ gửi đánh giá, không đợi cấp trên duyệt xong. Khi bản
+    còn CHO_PHE_DUYET, *_phe_duyet còn NULL → property d_final/dd_final/
+    e_final COALESCE rơi xuống giá trị LĐ tự đánh giá. Khi cấp trên duyệt
+    và điều chỉnh, *_phe_duyet được set → giá trị tự động đổi theo.
+
+    Bản NHAP (LĐ chưa gửi phê duyệt) KHÔNG được tính — coi như chưa kê.
+    LĐ không có bản nào → mặc định 1.0/1.0/1.0.
+    """
     stmt = select(DanhGiaDDE).where(
         DanhGiaDDE.cong_chuc_id == cong_chuc_id,
         DanhGiaDDE.thang == thang,
         DanhGiaDDE.nam == nam,
-        DanhGiaDDE.trang_thai == "DA_PHE_DUYET",
+        DanhGiaDDE.trang_thai.in_(("CHO_PHE_DUYET", "DA_PHE_DUYET")),
     )
     dde = (await db.execute(stmt)).scalar_one_or_none()
     if not dde:

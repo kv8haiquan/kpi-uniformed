@@ -483,12 +483,19 @@ async def tinh_diem_lanh_dao(
         # HĐ 111: KPI = (a + b + c) / 3 — bỏ qua d/đ/e
         kpi_ratio = (a + b + c) / Decimal("3")
     else:
-        # Lãnh đạo: lấy d/đ/e từ danh_gia_dde (đã phê duyệt)
+        # Lãnh đạo: lấy d/đ/e từ danh_gia_dde.
+        # 2026-05-14 (C-strict CCT): bao gồm cả CHO_PHE_DUYET — bản LĐ đã gửi
+        # đánh giá nhưng cấp trên chưa duyệt cũng tính vào điểm. Khi CHO_PHE_DUYET,
+        # *_phe_duyet còn NULL → d_final/dd_final/e_final fallback giá trị tự đánh
+        # giá. Cấp trên duyệt và điều chỉnh sau → điểm tự động đổi.
         dde_stmt = select(DanhGiaDDE).where(
             DanhGiaDDE.cong_chuc_id == cong_chuc_id,
             DanhGiaDDE.thang == thang,
             DanhGiaDDE.nam == nam,
-            DanhGiaDDE.trang_thai == TrangThaiDDE.DA_PHE_DUYET.value,
+            DanhGiaDDE.trang_thai.in_((
+                TrangThaiDDE.CHO_PHE_DUYET.value,
+                TrangThaiDDE.DA_PHE_DUYET.value,
+            )),
         )
         dde_result = await db.execute(dde_stmt)
         dde = dde_result.scalar_one_or_none()

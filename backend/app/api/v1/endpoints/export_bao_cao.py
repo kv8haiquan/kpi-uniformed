@@ -2371,7 +2371,7 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
     ws2['A1'].font = title_font
     ws2.merge_cells('A1:L1')
 
-    ws2['A2'] = "Bao gồm cả bản CHỜ_PHÊ_DUYỆT — xem cột 'Trạng thái' để phân biệt bản chính thức vs tạm tính."
+    ws2['A2'] = "Bao gồm cả bản CHỜ_PHÊ_DUYỆT (đã tính vào điểm KPI theo C-strict 2026-05-14). Cột 'Trạng thái' để biết bản nào cấp trên đã duyệt."
     ws2['A2'].font = Font(italic=True, color="666666")
 
     headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Tổng trừ", "Lý do", "Trạng thái", "Điểm tổng"]
@@ -3478,7 +3478,7 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
     ws3['A1'].font = title_font
     ws3.merge_cells('A1:O1')
 
-    ws3['A2'] = "d/đ/e đọc từ danh_gia_dde (CHỜ_DUYỆT + ĐÃ_DUYỆT, COALESCE phê duyệt > tự đánh giá). Cột Trạng thái cho biết bản chính thức hay tạm tính."
+    ws3['A2'] = "d/đ/e từ danh_gia_dde (CHỜ_DUYỆT + ĐÃ_DUYỆT, COALESCE phê duyệt > tự đánh giá). Cả 2 trạng thái đều đã tính vào Điểm KPI."
     ws3['A2'].font = Font(italic=True, color="666666")
 
     headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ",

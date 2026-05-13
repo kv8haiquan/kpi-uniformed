@@ -2369,9 +2369,12 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
 
     ws2['A1'] = f"DANH SÁCH LÃNH ĐẠO BỊ TRỪ ĐIỂM d, đ, e - THÁNG {thang}/{nam}"
     ws2['A1'].font = title_font
-    ws2.merge_cells('A1:K1')
+    ws2.merge_cells('A1:L1')
 
-    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Tổng trừ", "Lý do", "Điểm tổng"]
+    ws2['A2'] = "Bao gồm cả bản CHỜ_PHÊ_DUYỆT — xem cột 'Trạng thái' để phân biệt bản chính thức vs tạm tính."
+    ws2['A2'].font = Font(italic=True, color="666666")
+
+    headers2 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Tổng trừ", "Lý do", "Trạng thái", "Điểm tổng"]
     for col, h in enumerate(headers2, 1):
         cell = ws2.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -2436,12 +2439,28 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
         ws2.cell(row=r, column=10, value="; ".join(ly_do)).border = border
         ws2.cell(row=r, column=10).alignment = wrap_alignment
 
-        ws2.cell(row=r, column=11, value=ld["diem_tong"]).border = border
+        # Trạng thái d/đ/e: DA_PHE_DUYET (xanh) | CHO_PHE_DUYET (vàng)
+        tt_raw = ld.get("dde_trang_thai", "")
+        tt_display = {
+            "DA_PHE_DUYET": "Đã duyệt",
+            "CHO_PHE_DUYET": "Chờ duyệt",
+        }.get(tt_raw, tt_raw or "—")
+        tt_cell = ws2.cell(row=r, column=11, value=tt_display)
+        tt_cell.border = border
+        tt_cell.alignment = center_alignment
+        if tt_raw == "CHO_PHE_DUYET":
+            tt_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+            tt_cell.font = Font(bold=True, color="9C5700")
+        elif tt_raw == "DA_PHE_DUYET":
+            tt_cell.fill = good_fill
+
+        ws2.cell(row=r, column=12, value=ld["diem_tong"]).border = border
 
         ws2.row_dimensions[r].height = 30
 
     for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 15),
-                 ('F', 6), ('G', 6), ('H', 6), ('I', 10), ('J', 50), ('K', 10)]:
+                 ('F', 6), ('G', 6), ('H', 6), ('I', 10), ('J', 50),
+                 ('K', 12), ('L', 10)]:
         ws2.column_dimensions[c].width = w
 
     # SHEET 3: TẤT CẢ LÃNH ĐẠO
@@ -2449,9 +2468,9 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
 
     ws3['A1'] = f"DANH SÁCH TẤT CẢ LÃNH ĐẠO - THÁNG {thang}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:J1')
+    ws3.merge_cells('A1:K1')
 
-    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Điểm KPI", "Điểm tổng"]
+    headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ", "d", "đ", "e", "Trạng thái", "Điểm KPI", "Điểm tổng"]
     for col, h in enumerate(headers3, 1):
         cell = ws3.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -2476,11 +2495,25 @@ async def _generate_report_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: in
             else:
                 cell.fill = good_fill
 
-        ws3.cell(row=r, column=9, value=ld["diem_kpi"]).border = border
-        ws3.cell(row=r, column=10, value=ld["diem_tong"]).border = border
+        tt_raw = ld.get("dde_trang_thai", "")
+        tt_display = {
+            "DA_PHE_DUYET": "Đã duyệt",
+            "CHO_PHE_DUYET": "Chờ duyệt",
+        }.get(tt_raw, tt_raw or "—")
+        tt_cell = ws3.cell(row=r, column=9, value=tt_display)
+        tt_cell.border = border
+        tt_cell.alignment = center_alignment
+        if tt_raw == "CHO_PHE_DUYET":
+            tt_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+            tt_cell.font = Font(bold=True, color="9C5700")
+        elif tt_raw == "DA_PHE_DUYET":
+            tt_cell.fill = good_fill
+
+        ws3.cell(row=r, column=10, value=ld["diem_kpi"]).border = border
+        ws3.cell(row=r, column=11, value=ld["diem_tong"]).border = border
 
     for c, w in [('A', 5), ('B', 25), ('C', 12), ('D', 25), ('E', 15),
-                 ('F', 6), ('G', 6), ('H', 6), ('I', 10), ('J', 10)]:
+                 ('F', 6), ('G', 6), ('H', 6), ('I', 12), ('J', 10), ('K', 10)]:
         ws3.column_dimensions[c].width = w
 
     # Save to BytesIO
@@ -2499,11 +2532,16 @@ async def _load_dde_finals(db: AsyncSession, thang: int, nam: int) -> dict:
     Giá trị final = COALESCE(*_phe_duyet, *_ket_qua_don_vi/_to_chuc/_doan_ket).
     Bị trừ ⟺ final == 50.
 
-    Filter trang_thai = 'DA_PHE_DUYET' đồng nhất với engine kpi_lanh_dao_v2._get_dde.
-    LĐ chưa có bản ghi DA_PHE_DUYET → mặc định 100 (không bị trừ).
+    Filter trang_thai IN ('CHO_PHE_DUYET', 'DA_PHE_DUYET') — bao gồm cả bản
+    đang chờ phê duyệt (theo yêu cầu CCT 2026-05-13). Bản CHO_PHE_DUYET dùng
+    giá trị tự đánh giá (d_phe_duyet còn NULL). Báo cáo gắn cờ trang_thai để
+    user phân biệt bản chính thức vs tạm tính.
+    LĐ không có bản ghi → mặc định 100 (không bị trừ).
 
     Returns:
-        dict {cong_chuc_id_str → {d_final, dd_final, e_final, d_ghi_chu, dd_ghi_chu, e_ghi_chu}}
+        dict {cong_chuc_id_str → {d_final, dd_final, e_final,
+                                  d_ghi_chu, dd_ghi_chu, e_ghi_chu,
+                                  trang_thai}}
     """
     from sqlalchemy import text
 
@@ -2512,10 +2550,11 @@ async def _load_dde_finals(db: AsyncSession, thang: int, nam: int) -> dict:
                COALESCE(d_phe_duyet, d_ket_qua_don_vi)        AS d_final,
                COALESCE(dd_phe_duyet, dd_to_chuc_trien_khai)  AS dd_final,
                COALESCE(e_phe_duyet, e_doan_ket_noi_bo)       AS e_final,
-               d_ghi_chu, dd_ghi_chu, e_ghi_chu
+               d_ghi_chu, dd_ghi_chu, e_ghi_chu,
+               trang_thai
         FROM danh_gia_dde
         WHERE thang = :thang AND nam = :nam
-              AND trang_thai = 'DA_PHE_DUYET'
+              AND trang_thai IN ('CHO_PHE_DUYET', 'DA_PHE_DUYET')
     """), {"thang": thang, "nam": nam})
 
     dde_by_cc = {}
@@ -2527,6 +2566,7 @@ async def _load_dde_finals(db: AsyncSession, thang: int, nam: int) -> dict:
             "d_ghi_chu": row[4] or "",
             "dd_ghi_chu": row[5] or "",
             "e_ghi_chu": row[6] or "",
+            "trang_thai": row[7],
         }
     return dde_by_cc
 
@@ -2568,7 +2608,8 @@ async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> l
 
     dde_by_cc = await _load_dde_finals(db, thang, nam)
 
-    # Gộp dữ liệu — LĐ không có bản ghi DA_PHE_DUYET → mặc định 100 (không bị trừ)
+    # Gộp dữ liệu — LĐ không có bản ghi (CHO_PHE_DUYET hoặc DA_PHE_DUYET) →
+    # mặc định 100 (không bị trừ), trạng thái rỗng.
     for ld in lanh_dao_list:
         cc_id = ld["cong_chuc_id"]
         dde = dde_by_cc.get(cc_id, {})
@@ -2578,6 +2619,7 @@ async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> l
         ld["dd_ghi_chu"] = dde.get("dd_ghi_chu", "")
         ld["e_final"] = dde.get("e_final", 100)
         ld["e_ghi_chu"] = dde.get("e_ghi_chu", "")
+        ld["dde_trang_thai"] = dde.get("trang_thai", "")
 
         # Bị trừ ⟺ final == 50 (giá trị int trong DanhGiaDDE, không phải boolean)
         ld["bi_tru_d"] = (ld["d_final"] == 50)
@@ -3434,13 +3476,14 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
 
     ws3['A1'] = f"LÃNH ĐẠO — CHỈ SỐ a, b, c + d, đ, e - THÁNG {thang}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:N1')
+    ws3.merge_cells('A1:O1')
 
-    ws3['A2'] = "Chỉ số d, đ, e đọc từ danh_gia_dde (DA_PHE_DUYET, COALESCE phê duyệt > tự đánh giá). Hệ số LĐ = d × đ × e."
+    ws3['A2'] = "d/đ/e đọc từ danh_gia_dde (CHỜ_DUYỆT + ĐÃ_DUYỆT, COALESCE phê duyệt > tự đánh giá). Cột Trạng thái cho biết bản chính thức hay tạm tính."
     ws3['A2'].font = Font(italic=True, color="666666")
 
     headers3 = ["STT", "Họ và tên", "Mã CC", "Đơn vị", "Chức vụ",
-                "a (%)", "Lỗi CL", "Lỗi TĐ", "d", "đ", "e", "Hệ số LĐ", "Số CS bị trừ", "Ghi chú d/đ/e"]
+                "a (%)", "Lỗi CL", "Lỗi TĐ", "d", "đ", "e", "Hệ số LĐ",
+                "Trạng thái d/đ/e", "Số CS bị trừ", "Ghi chú d/đ/e"]
     for col, h in enumerate(headers3, 1):
         cell = ws3.cell(row=4, column=col, value=h)
         cell.font = header_font_white
@@ -3509,8 +3552,23 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
         if he_so < 1.0:
             hs_cell.fill = warn_fill
 
+        # Trạng thái d/đ/e (CHO_PHE_DUYET → vàng, DA_PHE_DUYET → xanh, không có → "—")
+        tt_raw = ld.get("dde_trang_thai", "")
+        tt_display = {
+            "DA_PHE_DUYET": "Đã duyệt",
+            "CHO_PHE_DUYET": "Chờ duyệt",
+        }.get(tt_raw, tt_raw or "—")
+        tt_cell = ws3.cell(row=r, column=13, value=tt_display)
+        tt_cell.border = border
+        tt_cell.alignment = center_alignment
+        if tt_raw == "CHO_PHE_DUYET":
+            tt_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+            tt_cell.font = Font(bold=True, color="9C5700")
+        elif tt_raw == "DA_PHE_DUYET":
+            tt_cell.fill = good_fill
+
         tong_bi_tru = sum([ld["bi_tru_a"], ld["bi_tru_b"], ld["bi_tru_c"], ld["bi_tru_d"], ld["bi_tru_dd"], ld["bi_tru_e"]])
-        tong_cell = ws3.cell(row=r, column=13, value=tong_bi_tru)
+        tong_cell = ws3.cell(row=r, column=14, value=tong_bi_tru)
         tong_cell.border = border
         tong_cell.alignment = center_alignment
         tong_cell.font = Font(bold=True)
@@ -3522,18 +3580,18 @@ async def _generate_report_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: 
             ghi_chu.append(f"đ: {ld['dd_ghi_chu']}")
         if ld["bi_tru_e"] and ld.get("e_ghi_chu"):
             ghi_chu.append(f"e: {ld['e_ghi_chu']}")
-        ws3.cell(row=r, column=14, value="; ".join(ghi_chu)).border = border
-        ws3.cell(row=r, column=14).alignment = wrap_alignment
+        ws3.cell(row=r, column=15, value="; ".join(ghi_chu)).border = border
+        ws3.cell(row=r, column=15).alignment = wrap_alignment
 
         ws3.row_dimensions[r].height = 28
 
     for c, w in [('A', 5), ('B', 24), ('C', 12), ('D', 22), ('E', 16),
                  ('F', 9), ('G', 8), ('H', 8), ('I', 6), ('J', 6), ('K', 6),
-                 ('L', 11), ('M', 13), ('N', 45)]:
+                 ('L', 11), ('M', 13), ('N', 13), ('O', 45)]:
         ws3.column_dimensions[c].width = w
 
     if ld_sorted:
-        ws3.auto_filter.ref = f"A4:N{4 + len(ld_sorted)}"
+        ws3.auto_filter.ref = f"A4:O{4 + len(ld_sorted)}"
 
     output = io.BytesIO()
     wb.save(output)
@@ -3573,9 +3631,10 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
             "sp_hoan_thanh": 0.0,
             "loi_cl": 0,
             "loi_td": 0,
-            # Mặc định 100 (không bị trừ) nếu LĐ chưa có bản DA_PHE_DUYET
+            # Mặc định 100 (không bị trừ) nếu LĐ chưa có bản CHO_PHE_DUYET / DA_PHE_DUYET
             "d_final": 100, "dd_final": 100, "e_final": 100,
             "d_ghi_chu": "", "dd_ghi_chu": "", "e_ghi_chu": "",
+            "dde_trang_thai": "",
         }
 
     # 2. Số ngày nghỉ (để tính sp_duoc_giao = (ngày tháng - nghỉ) × 96)
@@ -3628,8 +3687,8 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
                 cc_map[cc_id]["loi_cl"] = int(row[2] or 0)
                 cc_map[cc_id]["loi_td"] = int(row[3] or 0)
 
-    # 5. d/đ/e final từ danh_gia_dde — dùng helper chung (đã filter DA_PHE_DUYET,
-    #    COALESCE phe_duyet → ket_qua tự đánh giá).
+    # 5. d/đ/e final từ danh_gia_dde — dùng helper chung (filter
+    #    IN ('CHO_PHE_DUYET','DA_PHE_DUYET'), COALESCE phe_duyet → ket_qua tự đánh giá).
     dde_by_cc = await _load_dde_finals(db, thang, nam)
     for cc_id, dde in dde_by_cc.items():
         if cc_id in cc_map:
@@ -3639,6 +3698,7 @@ async def _get_data_06_chi_so_abc_dde(db: AsyncSession, thang: int, nam: int) ->
             cc_map[cc_id]["dd_ghi_chu"] = dde["dd_ghi_chu"]
             cc_map[cc_id]["e_final"] = dde["e_final"]
             cc_map[cc_id]["e_ghi_chu"] = dde["e_ghi_chu"]
+            cc_map[cc_id]["dde_trang_thai"] = dde["trang_thai"]
 
     # 6. Tính derived fields
     for cc in cc_map.values():
@@ -4354,7 +4414,9 @@ async def _get_data_03_quy(db: AsyncSession, quy: int, nam: int) -> list:
         })
 
     # 2. Lấy đánh giá d/đ/e của 3 tháng — final = COALESCE(phe_duyet, ket_qua_don_vi).
-    # Bị trừ tháng X ⟺ final_X == 50. Filter DA_PHE_DUYET nhất quán với engine.
+    # Bị trừ tháng X ⟺ final_X == 50.
+    # Filter mở rộng (2026-05-13): bao gồm cả CHO_PHE_DUYET để báo cáo phản ánh
+    # cả các bản LĐ tự đánh giá nhưng cấp trên chưa duyệt.
     dde_stmt = sa_text("""
         SELECT cong_chuc_id::text, thang,
                COALESCE(d_phe_duyet, d_ket_qua_don_vi)        AS d_final, d_ghi_chu,
@@ -4362,7 +4424,7 @@ async def _get_data_03_quy(db: AsyncSession, quy: int, nam: int) -> list:
                COALESCE(e_phe_duyet, e_doan_ket_noi_bo)       AS e_final, e_ghi_chu
         FROM danh_gia_dde
         WHERE thang IN :thang_list AND nam = :nam
-              AND trang_thai = 'DA_PHE_DUYET'
+              AND trang_thai IN ('CHO_PHE_DUYET', 'DA_PHE_DUYET')
     """).bindparams(bindparam('thang_list', expanding=True))
 
     dde_result = await db.execute(dde_stmt, {"thang_list": thang_list, "nam": nam})

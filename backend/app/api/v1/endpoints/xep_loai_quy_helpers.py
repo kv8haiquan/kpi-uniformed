@@ -346,21 +346,13 @@ async def _lay_dde_thang(
     thang: int,
     nam: int,
 ) -> Optional[dict]:
-    """Lấy d/đ/e của 1 tháng (scale 0-1). Trả None nếu không có.
-
-    2026-05-14 (C-strict CCT): broadening sang CHO_PHE_DUYET + DA_PHE_DUYET
-    đồng nhất với engine kpi_lanh_dao_v2._get_dde. Bản còn chờ duyệt cũng
-    được tính vào điểm KPI quý.
-    """
+    """Lấy d/đ/e đã duyệt của 1 tháng (scale 0-1). Trả None nếu không có."""
     stmt = (
         select(DanhGiaDDE)
         .where(DanhGiaDDE.cong_chuc_id == cong_chuc_id)
         .where(DanhGiaDDE.thang == thang)
         .where(DanhGiaDDE.nam == nam)
-        .where(DanhGiaDDE.trang_thai.in_((
-            TrangThaiDDE.CHO_PHE_DUYET.value,
-            TrangThaiDDE.DA_PHE_DUYET.value,
-        )))
+        .where(DanhGiaDDE.trang_thai == TrangThaiDDE.DA_PHE_DUYET.value)
     )
     dde = (await db.execute(stmt)).scalar_one_or_none()
     if dde is None:

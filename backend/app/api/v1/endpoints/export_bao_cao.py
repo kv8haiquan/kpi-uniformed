@@ -2800,13 +2800,16 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
     )
     center_alignment = Alignment(horizontal='center', vertical='center')
 
-    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill}
+    # V2_PL3 fill — gam tím, phân biệt với SP1-4 cũ
+    v2_fill = PatternFill("solid", fgColor="E4DFEC")
+    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill, "V2_PL3": v2_fill}
 
     SP_NAMES = {
         "SP1": "Tờ khai HQ (kiểm tra chi tiết hồ sơ)",
         "SP2": "Văn bản hành chính",
         "SP3": "Giờ trực làm việc",
         "SP4": "Giờ tuần tra kiểm soát",
+        "V2_PL3": "V2_PL3 (theo lĩnh vực — xem Báo cáo 07)",
     }
 
     CAP_DO_NAMES = {
@@ -2815,6 +2818,7 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
         "C3": "Khó - Nâng cao",
         "C4": "Rất khó - Phức tạp",
         "C5": "Đặc biệt khó - Đặc thù",
+        "V2_PL3": "V2_PL3 (theo nhóm PL3 — xem Báo cáo 07)",
     }
 
     def pct(val):
@@ -2828,7 +2832,8 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
     ws1['A1'].font = title_font
     ws1.merge_cells('A1:E1')
 
-    ws1['A2'] = f"Chi cục Hải quan Khu vực VIII | Tổng SP: {tong_sp_all:,.0f}"
+    ws1['A2'] = (f"Chi cục Hải quan Khu vực VIII | Tổng SP: {tong_sp_all:,.0f}. "
+                 "Dòng V2_PL3 = kê khai mới (lĩnh vực + nhóm PL3) — xem chi tiết Báo cáo 07.")
     ws1['A2'].font = Font(bold=True)
 
     # 4.1. Khối lượng công việc
@@ -2895,6 +2900,7 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
         "C3": PatternFill("solid", fgColor="FFEB9C"),
         "C4": PatternFill("solid", fgColor="FFC7CE"),
         "C5": PatternFill("solid", fgColor="E6B8AF"),
+        "V2_PL3": v2_fill,
     }
 
     for cd in cap_do_data:
@@ -2937,14 +2943,15 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
 
     ws2['A1'] = f"CHI TIẾT KHỐI LƯỢNG CÔNG VIỆC THEO ĐƠN VỊ - THÁNG {thang}/{nam}"
     ws2['A1'].font = title_font
-    ws2.merge_cells('A1:G1')
+    ws2.merge_cells('A1:H1')
 
-    # Pivot: đơn vị -> ma_sp -> tổng SP
+    # Pivot: đơn vị -> ma_sp -> tổng SP. V2 gom vào cột "V2_PL3".
     pivot_dv_sp = defaultdict(lambda: defaultdict(float))
     for item in don_vi_data:
         pivot_dv_sp[item["don_vi"]][item["ma_sp"]] += item["tong_sp"]
 
-    headers2 = ["STT", "Đơn vị", "SP1", "SP2", "SP3", "SP4", "Tổng"]
+    SP_COLS = ["SP1", "SP2", "SP3", "SP4", "V2_PL3"]
+    headers2 = ["STT", "Đơn vị"] + SP_COLS + ["Tổng"]
     for col, h in enumerate(headers2, 1):
         cell = ws2.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -2959,7 +2966,7 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
         ws2.cell(row=row, column=2, value=dv).border = border
 
         tong_dv = 0
-        for col_idx, ma_sp in enumerate(["SP1", "SP2", "SP3", "SP4"], 3):
+        for col_idx, ma_sp in enumerate(SP_COLS, 3):
             val = sp_map.get(ma_sp, 0)
             tong_dv += val
             cell = ws2.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
@@ -2968,9 +2975,9 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
             if val > 0:
                 cell.fill = SP_FILLS.get(ma_sp, sp1_fill)
 
-        ws2.cell(row=row, column=7, value=f"{tong_dv:,.0f}").border = border
-        ws2.cell(row=row, column=7).font = Font(bold=True)
-        ws2.cell(row=row, column=7).alignment = center_alignment
+        ws2.cell(row=row, column=3 + len(SP_COLS), value=f"{tong_dv:,.0f}").border = border
+        ws2.cell(row=row, column=3 + len(SP_COLS)).font = Font(bold=True)
+        ws2.cell(row=row, column=3 + len(SP_COLS)).alignment = center_alignment
 
     # Tổng hàng
     row += 1
@@ -2978,18 +2985,18 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
     ws2.cell(row=row, column=2, value="TỔNG").border = border
     ws2.cell(row=row, column=2).font = Font(bold=True)
 
-    for col_idx, ma_sp in enumerate(["SP1", "SP2", "SP3", "SP4"], 3):
+    for col_idx, ma_sp in enumerate(SP_COLS, 3):
         tong = sum(sp_map.get(ma_sp, 0) for sp_map in pivot_dv_sp.values())
         cell = ws2.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
         cell.border = border
         cell.font = Font(bold=True)
         cell.alignment = center_alignment
 
-    ws2.cell(row=row, column=7, value=f"{tong_sp_all:,.0f}").border = border
-    ws2.cell(row=row, column=7).font = Font(bold=True)
-    ws2.cell(row=row, column=7).alignment = center_alignment
+    ws2.cell(row=row, column=3 + len(SP_COLS), value=f"{tong_sp_all:,.0f}").border = border
+    ws2.cell(row=row, column=3 + len(SP_COLS)).font = Font(bold=True)
+    ws2.cell(row=row, column=3 + len(SP_COLS)).alignment = center_alignment
 
-    for c, w in [('A', 5), ('B', 35), ('C', 12), ('D', 12), ('E', 12), ('F', 12), ('G', 12)]:
+    for c, w in [('A', 5), ('B', 35), ('C', 12), ('D', 12), ('E', 12), ('F', 12), ('G', 12), ('H', 12)]:
         ws2.column_dimensions[c].width = w
 
     # SHEET 3: CHI TIẾT THEO ĐƠN VỊ - CẤP ĐỘ
@@ -2997,14 +3004,15 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
 
     ws3['A1'] = f"CHI TIẾT MỨC ĐỘ PHỨC TẠP THEO ĐƠN VỊ - THÁNG {thang}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:H1')
+    ws3.merge_cells('A1:I1')
 
-    # Pivot: đơn vị -> ma_cap_do -> tổng SP
+    # Pivot: đơn vị -> ma_cap_do -> tổng SP. V2 → cột "V2_PL3".
     pivot_dv_cd = defaultdict(lambda: defaultdict(float))
     for item in don_vi_data:
         pivot_dv_cd[item["don_vi"]][item["ma_cap_do"]] += item["tong_sp"]
 
-    headers3 = ["STT", "Đơn vị", "C1", "C2", "C3", "C4", "C5", "Tổng"]
+    CD_COLS = ["C1", "C2", "C3", "C4", "C5", "V2_PL3"]
+    headers3 = ["STT", "Đơn vị"] + CD_COLS + ["Tổng"]
     for col, h in enumerate(headers3, 1):
         cell = ws3.cell(row=3, column=col, value=h)
         cell.font = header_font_white
@@ -3019,7 +3027,7 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
         ws3.cell(row=row, column=2, value=dv).border = border
 
         tong_dv = 0
-        for col_idx, ma_cd in enumerate(["C1", "C2", "C3", "C4", "C5"], 3):
+        for col_idx, ma_cd in enumerate(CD_COLS, 3):
             val = cd_map.get(ma_cd, 0)
             tong_dv += val
             cell = ws3.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
@@ -3028,9 +3036,9 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
             if val > 0:
                 cell.fill = cap_do_fills.get(ma_cd)
 
-        ws3.cell(row=row, column=8, value=f"{tong_dv:,.0f}").border = border
-        ws3.cell(row=row, column=8).font = Font(bold=True)
-        ws3.cell(row=row, column=8).alignment = center_alignment
+        ws3.cell(row=row, column=3 + len(CD_COLS), value=f"{tong_dv:,.0f}").border = border
+        ws3.cell(row=row, column=3 + len(CD_COLS)).font = Font(bold=True)
+        ws3.cell(row=row, column=3 + len(CD_COLS)).alignment = center_alignment
 
     # Tổng hàng
     row += 1
@@ -3038,18 +3046,18 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
     ws3.cell(row=row, column=2, value="TỔNG").border = border
     ws3.cell(row=row, column=2).font = Font(bold=True)
 
-    for col_idx, ma_cd in enumerate(["C1", "C2", "C3", "C4", "C5"], 3):
+    for col_idx, ma_cd in enumerate(CD_COLS, 3):
         tong = sum(cd_map.get(ma_cd, 0) for cd_map in pivot_dv_cd.values())
         cell = ws3.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
         cell.border = border
         cell.font = Font(bold=True)
         cell.alignment = center_alignment
 
-    ws3.cell(row=row, column=8, value=f"{tong_sp_all:,.0f}").border = border
-    ws3.cell(row=row, column=8).font = Font(bold=True)
-    ws3.cell(row=row, column=8).alignment = center_alignment
+    ws3.cell(row=row, column=3 + len(CD_COLS), value=f"{tong_sp_all:,.0f}").border = border
+    ws3.cell(row=row, column=3 + len(CD_COLS)).font = Font(bold=True)
+    ws3.cell(row=row, column=3 + len(CD_COLS)).alignment = center_alignment
 
-    for c, w in [('A', 5), ('B', 35), ('C', 10), ('D', 10), ('E', 10), ('F', 10), ('G', 10), ('H', 12)]:
+    for c, w in [('A', 5), ('B', 35), ('C', 10), ('D', 10), ('E', 10), ('F', 10), ('G', 10), ('H', 12), ('I', 12)]:
         ws3.column_dimensions[c].width = w
 
     # Save to BytesIO
@@ -3060,23 +3068,31 @@ async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: i
 
 
 async def _get_data_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> tuple:
-    """Get data for report 04 - Khối lượng công việc."""
+    """Get data for report 04 - Khối lượng công việc.
+
+    2026-05-14: hỗ trợ V2_PL3 bằng LEFT JOIN + COALESCE 'V2_PL3' cho
+    sp_chuan/cap_do NULL. V2 gom thành 1 dòng/cột "V2_PL3" thay vì phân
+    tán theo SP1-4 / C1-5 (V2 không có concept SP chuẩn + cấp độ phức tạp).
+    """
     from sqlalchemy import text
 
     so_ngay_trong_thang = calendar.monthrange(nam, thang)[1]
 
-    # Thống kê theo loại SP (SP1, SP2, SP3, SP4)
+    # Thống kê theo loại SP — LEFT JOIN để V2 (sp_chuan_id NULL) không bị lọc.
+    # V2 → gom dòng "V2_PL3".
     sp_result = await db.execute(text("""
-        SELECT sp.ma_sp, sp.ten_sp,
-               COUNT(*) as so_khai,
-               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+        SELECT
+            COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
+            COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)') AS ten_sp,
+            COUNT(*) as so_khai,
+            COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
         WHERE kk.thang = :thang AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY sp.ma_sp, sp.ten_sp
-        ORDER BY sp.ma_sp
+        GROUP BY COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)')
+        ORDER BY ma_sp
     """), {"thang": thang, "nam": nam})
 
     sp_data = []
@@ -3088,17 +3104,19 @@ async def _get_data_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> 
             "tong_sp": float(row[3]),
         })
 
-    # Thống kê theo cấp độ phức tạp (C1-C5)
+    # Thống kê theo cấp độ phức tạp — LEFT JOIN, V2 (cap_do_id NULL) → "V2_PL3".
     cap_do_result = await db.execute(text("""
-        SELECT cd.ma_cap_do, cd.ten_cap_do,
-               COUNT(*) as so_khai,
-               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+        SELECT
+            COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
+            COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)') AS ten_cap_do,
+            COUNT(*) as so_khai,
+            COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
         FROM ke_khai_cong_viec kk
-        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         WHERE kk.thang = :thang AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY cd.ma_cap_do, cd.ten_cap_do
-        ORDER BY cd.ma_cap_do
+        GROUP BY COALESCE(cd.ma_cap_do, 'V2_PL3'), COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)')
+        ORDER BY ma_cap_do
     """), {"thang": thang, "nam": nam})
 
     cap_do_data = []
@@ -3110,21 +3128,23 @@ async def _get_data_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> 
             "tong_sp": float(row[3]),
         })
 
-    # Chi tiết theo đơn vị
+    # Chi tiết theo đơn vị — LEFT JOIN cả sp_chuan và cap_do.
     don_vi_result = await db.execute(text("""
-        SELECT dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do,
+        SELECT dv.ten_don_vi,
+               COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
+               COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
                COUNT(*) as so_khai,
                COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
-        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
         JOIN don_vi dv ON dv.id = cc.don_vi_id
         WHERE kk.thang = :thang AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do
-        ORDER BY dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do
+        GROUP BY dv.ten_don_vi, COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(cd.ma_cap_do, 'V2_PL3')
+        ORDER BY dv.ten_don_vi, ma_sp, ma_cap_do
     """), {"thang": thang, "nam": nam})
 
     don_vi_data = []
@@ -3176,20 +3196,24 @@ async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int
     center_alignment = Alignment(horizontal='center', vertical='center')
     wrap_alignment = Alignment(wrap_text=True, vertical='top')
 
+    v2_fill_05 = PatternFill("solid", fgColor="E4DFEC")
     SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill}
 
-    # SHEET 1: TỔNG HỢP DANH MỤC
+    # SHEET 1: TỔNG HỢP DANH MỤC — thêm cột "Version" + "Lĩnh vực"
     ws1 = wb.active
     ws1.title = "Tổng hợp"
 
     ws1['A1'] = f"5. THỐNG KÊ DANH MỤC CÔNG VIỆC - THÁNG {thang}/{nam}"
     ws1['A1'].font = title_font
-    ws1.merge_cells('A1:H1')
+    ws1.merge_cells('A1:J1')
 
-    ws1['A2'] = f"Tổng số đầu mục công việc: {len(data)}"
+    ws1['A2'] = (f"Tổng số đầu mục công việc: {len(data)}. "
+                 "Version V1 dùng SP1-4 + C1-5; V2_PL3 dùng Lĩnh vực + Nhóm PL3 + Điểm chấm.")
     ws1['A2'].font = Font(bold=True)
 
-    headers = ["STT", "Loại SP", "Tên công việc", "Số user kê khai", "Số lần kê khai", "Tổng SP quy đổi", "Cấp độ phổ biến", "Số cấp độ"]
+    headers = ["STT", "Version", "Loại SP / Lĩnh vực", "Tên công việc",
+               "Số user kê khai", "Số lần kê khai", "Tổng SP quy đổi",
+               "Cấp độ phổ biến / Điểm chấm", "Số cấp độ / Nhóm PL3", "Khung điểm"]
     for col, h in enumerate(headers, 1):
         cell = ws1.cell(row=4, column=col, value=h)
         cell.font = header_font_white
@@ -3200,49 +3224,87 @@ async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int
     row = 4
     for i, dm in enumerate(data, 1):
         row += 1
+        is_v2 = dm.get("nguon_du_lieu") == "PL3"
+
         ws1.cell(row=row, column=1, value=i).border = border
         ws1.cell(row=row, column=1).alignment = center_alignment
 
-        ma_sp_cell = ws1.cell(row=row, column=2, value=dm["ma_sp"])
-        ma_sp_cell.border = border
-        ma_sp_cell.alignment = center_alignment
-        ma_sp_cell.fill = SP_FILLS.get(dm["ma_sp"], sp1_fill)
-        ma_sp_cell.font = Font(bold=True)
+        # Cột 2: Version
+        ver_cell = ws1.cell(row=row, column=2, value="V2_PL3" if is_v2 else "V1")
+        ver_cell.border = border
+        ver_cell.alignment = center_alignment
+        ver_cell.font = Font(bold=True)
+        if is_v2:
+            ver_cell.fill = v2_fill_05
+        else:
+            ver_cell.fill = SP_FILLS.get(dm["ma_sp"], sp1_fill)
 
-        ws1.cell(row=row, column=3, value=dm["ten_cong_viec"]).border = border
+        # Cột 3: Loại SP (V1) hoặc Lĩnh vực (V2)
+        if is_v2:
+            lv_text = f"{dm['linh_vuc'] or ''}{' — ' + dm['ten_linh_vuc'] if dm['ten_linh_vuc'] else ''}".strip(" —")
+            sp_lv_cell = ws1.cell(row=row, column=3, value=lv_text or "—")
+        else:
+            sp_lv_cell = ws1.cell(row=row, column=3, value=dm["ma_sp"] or "—")
+        sp_lv_cell.border = border
+        sp_lv_cell.alignment = center_alignment
 
-        ws1.cell(row=row, column=4, value=dm["so_user"]).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
+        ws1.cell(row=row, column=4, value=dm["ten_cong_viec"]).border = border
 
-        ws1.cell(row=row, column=5, value=dm["tong_lan_khai"]).border = border
+        ws1.cell(row=row, column=5, value=dm["so_user"]).border = border
         ws1.cell(row=row, column=5).alignment = center_alignment
 
-        ws1.cell(row=row, column=6, value=f"{dm['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=6, value=dm["tong_lan_khai"]).border = border
         ws1.cell(row=row, column=6).alignment = center_alignment
 
-        # Cấp độ phổ biến nhất
-        cap_do_pho_bien = max(dm["cap_do_stats"], key=dm["cap_do_stats"].get) if dm["cap_do_stats"] else "-"
-        ws1.cell(row=row, column=7, value=cap_do_pho_bien).border = border
+        ws1.cell(row=row, column=7, value=f"{dm['tong_sp']:,.0f}").border = border
         ws1.cell(row=row, column=7).alignment = center_alignment
 
-        so_cap_do = len(dm["cap_do_stats"])
-        cap_do_cell = ws1.cell(row=row, column=8, value=so_cap_do)
+        # Cột 8: Cấp độ phổ biến (V1) hoặc Điểm chấm (V2)
+        if is_v2:
+            # V2: hiển thị diem_cham (1 giá trị cố định)
+            val = f"diem_cham={dm['diem_cham']}" if dm.get("diem_cham") else "—"
+            cd_cell = ws1.cell(row=row, column=8, value=val)
+        else:
+            cap_do_pho_bien = max(dm["cap_do_stats"], key=dm["cap_do_stats"].get) if dm["cap_do_stats"] else "—"
+            cd_cell = ws1.cell(row=row, column=8, value=cap_do_pho_bien)
+        cd_cell.border = border
+        cd_cell.alignment = center_alignment
+
+        # Cột 9: Số cấp độ (V1) hoặc Nhóm PL3 (V2)
+        if is_v2:
+            so_cap_do = dm.get("nhom_pl3") or "—"
+        else:
+            so_cap_do = len(dm["cap_do_stats"])
+        cap_do_cell = ws1.cell(row=row, column=9, value=so_cap_do)
         cap_do_cell.border = border
         cap_do_cell.alignment = center_alignment
-        if so_cap_do >= 4:
-            cap_do_cell.fill = PatternFill("solid", fgColor="FFC7CE")
-            cap_do_cell.font = Font(bold=True, color="9C0006")
-        elif so_cap_do == 3:
-            cap_do_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+        if not is_v2 and isinstance(so_cap_do, int):
+            if so_cap_do >= 4:
+                cap_do_cell.fill = PatternFill("solid", fgColor="FFC7CE")
+                cap_do_cell.font = Font(bold=True, color="9C0006")
+            elif so_cap_do == 3:
+                cap_do_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+
+        # Cột 10: Khung điểm (V2)
+        khung_val = dm.get("khung_diem_toi_da") if is_v2 else "—"
+        kh_cell = ws1.cell(row=row, column=10, value=khung_val or "—")
+        kh_cell.border = border
+        kh_cell.alignment = center_alignment
 
     ws1.column_dimensions['A'].width = 5
     ws1.column_dimensions['B'].width = 10
-    ws1.column_dimensions['C'].width = 50
-    ws1.column_dimensions['D'].width = 15
-    ws1.column_dimensions['E'].width = 15
-    ws1.column_dimensions['F'].width = 18
-    ws1.column_dimensions['G'].width = 15
-    ws1.column_dimensions['H'].width = 12
+    ws1.column_dimensions['C'].width = 25
+    ws1.column_dimensions['D'].width = 45
+    ws1.column_dimensions['E'].width = 14
+    ws1.column_dimensions['F'].width = 14
+    ws1.column_dimensions['G'].width = 16
+    ws1.column_dimensions['H'].width = 20
+    ws1.column_dimensions['I'].width = 18
+    ws1.column_dimensions['J'].width = 12
+
+    # Autofilter để CCT/PCCT lọc theo Version
+    if data:
+        ws1.auto_filter.ref = f"A4:J{4 + len(data)}"
 
     # SHEET 2: CHI TIẾT TỪNG DANH MỤC VÀ USER
     ws2 = wb.create_sheet("Chi tiết theo công việc")
@@ -3253,9 +3315,14 @@ async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int
 
     row = 3
     for dm_idx, dm in enumerate(data, 1):
-        # Header cho mỗi danh mục
+        # Header cho mỗi danh mục — gắn cờ Version + nhãn theo loại
+        is_v2 = dm.get("nguon_du_lieu") == "PL3"
+        if is_v2:
+            label = f"[V2_PL3 / LV {dm.get('linh_vuc') or '—'}]"
+        else:
+            label = f"[V1 / {dm['ma_sp']}]"
         ws2.merge_cells(f'A{row}:H{row}')
-        header_text = f"{dm_idx}. [{dm['ma_sp']}] {dm['ten_cong_viec']} ({dm['so_user']} user | {dm['tong_lan_khai']} lần | {dm['tong_sp']:,.0f} SP)"
+        header_text = f"{dm_idx}. {label} {dm['ten_cong_viec']} ({dm['so_user']} user | {dm['tong_lan_khai']} lần | {dm['tong_sp']:,.0f} SP)"
         cell = ws2.cell(row=row, column=1, value=header_text)
         cell.font = Font(bold=True, size=11, color="FFFFFF")
         cell.fill = dm_header_fill
@@ -3312,39 +3379,51 @@ async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int
 
 
 async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> list:
-    """Get data for report 05 - Danh mục công việc."""
+    """Get data for report 05 - Danh mục công việc.
+
+    2026-05-14: hỗ trợ V2_PL3 bằng LEFT JOIN sp_chuan + cap_do. Thêm trường
+    nguon_du_lieu (V1/PL3), linh_vuc, nhom_pl3, diem_cham, khung_diem_toi_da
+    để render "Version" + "Cấp độ phổ biến / Điểm chấm" trong sheet.
+    """
     from sqlalchemy import text
     from collections import defaultdict
 
-    # Lấy tất cả kê khai công việc với thông tin chi tiết
     result = await db.execute(text("""
         SELECT
             dm.id as danh_muc_id,
             dm.ten_cong_viec,
-            sp.ma_sp,
-            sp.ten_sp,
+            COALESCE(sp.ma_sp, '') AS ma_sp,
+            COALESCE(sp.ten_sp, '') AS ten_sp,
             cc.id as cong_chuc_id,
             cc.ho_ten,
             cc.ma_cc,
             dv.ten_don_vi,
-            cd.ma_cap_do,
-            cd.ten_cap_do,
+            COALESCE(cd.ma_cap_do, '') AS ma_cap_do,
+            COALESCE(cd.ten_cap_do, '') AS ten_cap_do,
             COUNT(*) as so_lan_khai,
             COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi,
-            COALESCE(SUM(kk.so_luong), 0) as tong_so_luong
+            COALESCE(SUM(kk.so_luong), 0) as tong_so_luong,
+            COALESCE(dm.nguon_du_lieu, 'V1') AS nguon_du_lieu,
+            dm.linh_vuc,
+            dm.ten_linh_vuc,
+            dm.nhom_pl3,
+            dm.diem_cham,
+            dm.khung_diem_toi_da
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
         JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
         LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
-        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         WHERE kk.thang = :thang AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
         GROUP BY dm.id, dm.ten_cong_viec,
                  sp.ma_sp, sp.ten_sp,
                  cc.id, cc.ho_ten, cc.ma_cc, dv.ten_don_vi,
-                 cd.ma_cap_do, cd.ten_cap_do
-        ORDER BY sp.ma_sp, dm.ten_cong_viec, dv.ten_don_vi, cc.ho_ten
+                 cd.ma_cap_do, cd.ten_cap_do,
+                 dm.nguon_du_lieu, dm.linh_vuc, dm.ten_linh_vuc,
+                 dm.nhom_pl3, dm.diem_cham, dm.khung_diem_toi_da
+        ORDER BY dm.nguon_du_lieu, sp.ma_sp NULLS LAST, dm.linh_vuc, dm.ten_cong_viec
     """), {"thang": thang, "nam": nam})
 
     raw_data = []
@@ -3363,6 +3442,12 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
             "so_lan_khai": int(row[10]),
             "tong_sp_quy_doi": float(row[11]),
             "tong_so_luong": float(row[12]),
+            "nguon_du_lieu": row[13] or "V1",
+            "linh_vuc": row[14],
+            "ten_linh_vuc": row[15],
+            "nhom_pl3": row[16],
+            "diem_cham": row[17],
+            "khung_diem_toi_da": row[18],
         })
 
     # Tổng hợp theo danh mục công việc
@@ -3374,6 +3459,13 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
         "tong_sp": 0,
         "tong_lan_khai": 0,
         "cap_do_stats": defaultdict(int),
+        # V2 fields
+        "nguon_du_lieu": "V1",
+        "linh_vuc": None,
+        "ten_linh_vuc": None,
+        "nhom_pl3": None,
+        "diem_cham": None,
+        "khung_diem_toi_da": None,
     })
 
     for item in raw_data:
@@ -3384,7 +3476,15 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
         dm["ten_sp"] = item["ten_sp"]
         dm["tong_sp"] += item["tong_sp_quy_doi"]
         dm["tong_lan_khai"] += item["so_lan_khai"]
-        dm["cap_do_stats"][item["ma_cap_do"]] += item["so_lan_khai"]
+        # V2 không có cap_do → bỏ qua "" khỏi stats
+        if item["ma_cap_do"]:
+            dm["cap_do_stats"][item["ma_cap_do"]] += item["so_lan_khai"]
+        dm["nguon_du_lieu"] = item["nguon_du_lieu"]
+        dm["linh_vuc"] = item["linh_vuc"]
+        dm["ten_linh_vuc"] = item["ten_linh_vuc"]
+        dm["nhom_pl3"] = item["nhom_pl3"]
+        dm["diem_cham"] = item["diem_cham"]
+        dm["khung_diem_toi_da"] = item["khung_diem_toi_da"]
 
         # Tìm user đã có chưa
         user_found = False
@@ -3392,7 +3492,8 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
             if u["cong_chuc_id"] == item["cong_chuc_id"]:
                 u["so_lan_khai"] += item["so_lan_khai"]
                 u["tong_sp"] += item["tong_sp_quy_doi"]
-                u["cap_do_list"].add(item["ma_cap_do"])
+                if item["ma_cap_do"]:
+                    u["cap_do_list"].add(item["ma_cap_do"])
                 user_found = True
                 break
 
@@ -3404,20 +3505,21 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
                 "don_vi": item["don_vi"],
                 "so_lan_khai": item["so_lan_khai"],
                 "tong_sp": item["tong_sp_quy_doi"],
-                "cap_do_list": {item["ma_cap_do"]},
+                "cap_do_list": {item["ma_cap_do"]} if item["ma_cap_do"] else set(),
             })
 
-    # Convert to list và sort
+    # Convert to list và sort: V1 trước (ma_sp), V2 sau (linh_vuc)
     danh_muc_list = []
     for dm_id, dm in danh_muc_map.items():
         dm["danh_muc_id"] = dm_id
         dm["so_user"] = len(dm["users"])
-        # Sort users theo đơn vị, tên
         dm["users"] = sorted(dm["users"], key=lambda x: (x["don_vi"], x["ho_ten"]))
         danh_muc_list.append(dm)
 
-    # Sort theo ma_sp, tên công việc
-    danh_muc_list = sorted(danh_muc_list, key=lambda x: (x["ma_sp"], x["ten_cong_viec"]))
+    danh_muc_list = sorted(
+        danh_muc_list,
+        key=lambda x: (x["nguon_du_lieu"], x["ma_sp"] or "", x["linh_vuc"] or "", x["ten_cong_viec"]),
+    )
 
     return danh_muc_list
 
@@ -4681,18 +4783,19 @@ async def _get_data_04_quy(db: AsyncSession, quy: int, nam: int) -> tuple:
     thang_list = QUY_TO_THANG[quy]
     so_ngay_quy = sum(calendar.monthrange(nam, t)[1] for t in thang_list)
 
-    # Theo loại SP
+    # Theo loại SP — LEFT JOIN, V2 gom "V2_PL3" (2026-05-14)
     sp_stmt = sa_text("""
-        SELECT sp.ma_sp, sp.ten_sp,
+        SELECT COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
+               COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)') AS ten_sp,
                COUNT(*) as so_khai,
                COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
         WHERE kk.thang IN :thang_list AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY sp.ma_sp, sp.ten_sp
-        ORDER BY sp.ma_sp
+        GROUP BY COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)')
+        ORDER BY ma_sp
     """).bindparams(bindparam('thang_list', expanding=True))
 
     sp_result = await db.execute(sp_stmt, {"thang_list": thang_list, "nam": nam})
@@ -4701,17 +4804,18 @@ async def _get_data_04_quy(db: AsyncSession, quy: int, nam: int) -> tuple:
         "so_khai": int(row[2]), "tong_sp": float(row[3]),
     } for row in sp_result]
 
-    # Theo cấp độ phức tạp
+    # Theo cấp độ phức tạp — LEFT JOIN, V2 gom "V2_PL3"
     cap_do_stmt = sa_text("""
-        SELECT cd.ma_cap_do, cd.ten_cap_do,
+        SELECT COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
+               COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)') AS ten_cap_do,
                COUNT(*) as so_khai,
                COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
         FROM ke_khai_cong_viec kk
-        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         WHERE kk.thang IN :thang_list AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY cd.ma_cap_do, cd.ten_cap_do
-        ORDER BY cd.ma_cap_do
+        GROUP BY COALESCE(cd.ma_cap_do, 'V2_PL3'), COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)')
+        ORDER BY ma_cap_do
     """).bindparams(bindparam('thang_list', expanding=True))
 
     cap_do_result = await db.execute(cap_do_stmt, {"thang_list": thang_list, "nam": nam})
@@ -4720,21 +4824,23 @@ async def _get_data_04_quy(db: AsyncSession, quy: int, nam: int) -> tuple:
         "so_khai": int(row[2]), "tong_sp": float(row[3]),
     } for row in cap_do_result]
 
-    # Theo đơn vị x SP x cấp độ
+    # Theo đơn vị x SP x cấp độ — LEFT JOIN
     dv_stmt = sa_text("""
-        SELECT dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do,
+        SELECT dv.ten_don_vi,
+               COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
+               COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
                COUNT(*) as so_khai,
                COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
-        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
         JOIN don_vi dv ON dv.id = cc.don_vi_id
         WHERE kk.thang IN :thang_list AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do
-        ORDER BY dv.ten_don_vi, sp.ma_sp, cd.ma_cap_do
+        GROUP BY dv.ten_don_vi, COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(cd.ma_cap_do, 'V2_PL3')
+        ORDER BY dv.ten_don_vi, ma_sp, ma_cap_do
     """).bindparams(bindparam('thang_list', expanding=True))
 
     dv_result = await db.execute(dv_stmt, {"thang_list": thang_list, "nam": nam})
@@ -4759,34 +4865,41 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
 
     thang_list = QUY_TO_THANG[quy]
 
+    # 2026-05-14: LEFT JOIN sp_chuan + cap_do để V2 không bị lọc; thêm các
+    # field V2 (nguon_du_lieu, linh_vuc, nhom_pl3, diem_cham, khung_diem).
     stmt = sa_text("""
         SELECT
             dm.id as danh_muc_id,
             dm.ten_cong_viec,
-            sp.ma_sp,
-            sp.ten_sp,
+            COALESCE(sp.ma_sp, '') AS ma_sp,
+            COALESCE(sp.ten_sp, '') AS ten_sp,
             cc.id as cong_chuc_id,
             cc.ho_ten,
             cc.ma_cc,
             dv.ten_don_vi,
-            cd.ma_cap_do,
-            cd.ten_cap_do,
+            COALESCE(cd.ma_cap_do, '') AS ma_cap_do,
+            COALESCE(cd.ten_cap_do, '') AS ten_cap_do,
             COUNT(*) as so_lan_khai,
             COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi,
-            COALESCE(SUM(kk.so_luong), 0) as tong_so_luong
+            COALESCE(SUM(kk.so_luong), 0) as tong_so_luong,
+            COALESCE(dm.nguon_du_lieu, 'V1') AS nguon_du_lieu,
+            dm.linh_vuc, dm.ten_linh_vuc, dm.nhom_pl3,
+            dm.diem_cham, dm.khung_diem_toi_da
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
+        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
         JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
         LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
-        JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
+        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         WHERE kk.thang IN :thang_list AND kk.nam = :nam
               AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
         GROUP BY dm.id, dm.ten_cong_viec,
                  sp.ma_sp, sp.ten_sp,
                  cc.id, cc.ho_ten, cc.ma_cc, dv.ten_don_vi,
-                 cd.ma_cap_do, cd.ten_cap_do
-        ORDER BY sp.ma_sp, dm.ten_cong_viec, dv.ten_don_vi, cc.ho_ten
+                 cd.ma_cap_do, cd.ten_cap_do,
+                 dm.nguon_du_lieu, dm.linh_vuc, dm.ten_linh_vuc,
+                 dm.nhom_pl3, dm.diem_cham, dm.khung_diem_toi_da
+        ORDER BY dm.nguon_du_lieu, sp.ma_sp NULLS LAST, dm.linh_vuc, dm.ten_cong_viec
     """).bindparams(bindparam('thang_list', expanding=True))
 
     result = await db.execute(stmt, {"thang_list": thang_list, "nam": nam})
@@ -4799,12 +4912,18 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
         "so_lan_khai": int(row[10]),
         "tong_sp_quy_doi": float(row[11]),
         "tong_so_luong": float(row[12]),
+        "nguon_du_lieu": row[13] or "V1",
+        "linh_vuc": row[14], "ten_linh_vuc": row[15],
+        "nhom_pl3": row[16], "diem_cham": row[17],
+        "khung_diem_toi_da": row[18],
     } for row in result]
 
     danh_muc_map = defaultdict(lambda: {
         "ten_cong_viec": "", "ma_sp": "", "ten_sp": "",
         "users": [], "tong_sp": 0, "tong_lan_khai": 0,
         "cap_do_stats": defaultdict(int),
+        "nguon_du_lieu": "V1", "linh_vuc": None, "ten_linh_vuc": None,
+        "nhom_pl3": None, "diem_cham": None, "khung_diem_toi_da": None,
     })
 
     for item in raw_data:
@@ -4815,14 +4934,22 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
         dm["ten_sp"] = item["ten_sp"]
         dm["tong_sp"] += item["tong_sp_quy_doi"]
         dm["tong_lan_khai"] += item["so_lan_khai"]
-        dm["cap_do_stats"][item["ma_cap_do"]] += item["so_lan_khai"]
+        if item["ma_cap_do"]:
+            dm["cap_do_stats"][item["ma_cap_do"]] += item["so_lan_khai"]
+        dm["nguon_du_lieu"] = item["nguon_du_lieu"]
+        dm["linh_vuc"] = item["linh_vuc"]
+        dm["ten_linh_vuc"] = item["ten_linh_vuc"]
+        dm["nhom_pl3"] = item["nhom_pl3"]
+        dm["diem_cham"] = item["diem_cham"]
+        dm["khung_diem_toi_da"] = item["khung_diem_toi_da"]
 
         user_found = False
         for u in dm["users"]:
             if u["cong_chuc_id"] == item["cong_chuc_id"]:
                 u["so_lan_khai"] += item["so_lan_khai"]
                 u["tong_sp"] += item["tong_sp_quy_doi"]
-                u["cap_do_list"].add(item["ma_cap_do"])
+                if item["ma_cap_do"]:
+                    u["cap_do_list"].add(item["ma_cap_do"])
                 user_found = True
                 break
         if not user_found:
@@ -4833,7 +4960,7 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
                 "don_vi": item["don_vi"],
                 "so_lan_khai": item["so_lan_khai"],
                 "tong_sp": item["tong_sp_quy_doi"],
-                "cap_do_list": {item["ma_cap_do"]},
+                "cap_do_list": {item["ma_cap_do"]} if item["ma_cap_do"] else set(),
             })
 
     danh_muc_list = []
@@ -4843,7 +4970,10 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
         dm["users"] = sorted(dm["users"], key=lambda x: (x["don_vi"], x["ho_ten"]))
         danh_muc_list.append(dm)
 
-    danh_muc_list = sorted(danh_muc_list, key=lambda x: (x["ma_sp"], x["ten_cong_viec"]))
+    danh_muc_list = sorted(
+        danh_muc_list,
+        key=lambda x: (x["nguon_du_lieu"], x["ma_sp"] or "", x["linh_vuc"] or "", x["ten_cong_viec"]),
+    )
     return danh_muc_list
 
 
@@ -5520,12 +5650,14 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
     )
     center_alignment = Alignment(horizontal='center', vertical='center')
 
-    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill}
+    v2_fill = PatternFill("solid", fgColor="E4DFEC")
+    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill, "V2_PL3": v2_fill}
     SP_NAMES = {
         "SP1": "Tờ khai HQ (kiểm tra chi tiết hồ sơ)",
         "SP2": "Văn bản hành chính",
         "SP3": "Giờ trực làm việc",
         "SP4": "Giờ tuần tra kiểm soát",
+        "V2_PL3": "V2_PL3 (theo lĩnh vực — xem Báo cáo 07 quý)",
     }
     CAP_DO_NAMES = {
         "C1": "Dễ - Đơn giản",
@@ -5533,6 +5665,7 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
         "C3": "Khó - Nâng cao",
         "C4": "Rất khó - Phức tạp",
         "C5": "Đặc biệt khó - Đặc thù",
+        "V2_PL3": "V2_PL3 (theo nhóm PL3 — xem Báo cáo 07 quý)",
     }
 
     def pct(val):
@@ -5546,7 +5679,8 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
     ws1['A1'].font = title_font
     ws1.merge_cells('A1:E1')
 
-    ws1['A2'] = f"Chi cục Hải quan Khu vực VIII | Tổng SP quý: {tong_sp_all:,.0f} | Số ngày: {so_ngay_quy}"
+    ws1['A2'] = (f"Chi cục Hải quan Khu vực VIII | Tổng SP quý: {tong_sp_all:,.0f} | Số ngày: {so_ngay_quy}. "
+                 "Dòng V2_PL3 = kê khai mới (lĩnh vực + nhóm PL3) — xem Báo cáo 07 quý.")
     ws1['A2'].font = Font(bold=True)
 
     row = 4
@@ -5606,6 +5740,7 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
         "C3": PatternFill("solid", fgColor="FFEB9C"),
         "C4": PatternFill("solid", fgColor="FFC7CE"),
         "C5": PatternFill("solid", fgColor="E6B8AF"),
+        "V2_PL3": v2_fill,
     }
 
     for cd in cap_do_data:
@@ -5639,17 +5774,18 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
     ws1.column_dimensions['C'].width = 15
     ws1.column_dimensions['D'].width = 12
 
-    # SHEET 2: Theo đơn vị - Loại SP
+    # SHEET 2: Theo đơn vị - Loại SP (thêm cột V2_PL3)
     ws2 = wb.create_sheet("Theo đơn vị - Loại SP")
     ws2['A1'] = f"CHI TIẾT KHỐI LƯỢNG CV THEO ĐƠN VỊ (CỘNG DỒN 3 THÁNG) - QUÝ {quy}/{nam}"
     ws2['A1'].font = title_font
-    ws2.merge_cells('A1:G1')
+    ws2.merge_cells('A1:H1')
 
     pivot_dv_sp = defaultdict(lambda: defaultdict(float))
     for item in don_vi_data:
         pivot_dv_sp[item["don_vi"]][item["ma_sp"]] += item["tong_sp"]
 
-    for col, h in enumerate(["STT", "Đơn vị", "SP1", "SP2", "SP3", "SP4", "Tổng"], 1):
+    SP_COLS_Q = ["SP1", "SP2", "SP3", "SP4", "V2_PL3"]
+    for col, h in enumerate(["STT", "Đơn vị"] + SP_COLS_Q + ["Tổng"], 1):
         cell = ws2.cell(row=3, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
@@ -5662,7 +5798,7 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
         ws2.cell(row=row, column=1, value=i).border = border
         ws2.cell(row=row, column=2, value=dv).border = border
         tong_dv = 0
-        for col_idx, ma_sp in enumerate(["SP1", "SP2", "SP3", "SP4"], 3):
+        for col_idx, ma_sp in enumerate(SP_COLS_Q, 3):
             val = sp_map.get(ma_sp, 0)
             tong_dv += val
             cell = ws2.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
@@ -5670,38 +5806,39 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
             cell.alignment = center_alignment
             if val > 0:
                 cell.fill = SP_FILLS.get(ma_sp, sp1_fill)
-        ws2.cell(row=row, column=7, value=f"{tong_dv:,.0f}").border = border
-        ws2.cell(row=row, column=7).font = Font(bold=True)
-        ws2.cell(row=row, column=7).alignment = center_alignment
+        ws2.cell(row=row, column=3 + len(SP_COLS_Q), value=f"{tong_dv:,.0f}").border = border
+        ws2.cell(row=row, column=3 + len(SP_COLS_Q)).font = Font(bold=True)
+        ws2.cell(row=row, column=3 + len(SP_COLS_Q)).alignment = center_alignment
 
     row += 1
     ws2.cell(row=row, column=1).border = border
     ws2.cell(row=row, column=2, value="TỔNG").border = border
     ws2.cell(row=row, column=2).font = Font(bold=True)
-    for col_idx, ma_sp in enumerate(["SP1", "SP2", "SP3", "SP4"], 3):
+    for col_idx, ma_sp in enumerate(SP_COLS_Q, 3):
         tong = sum(sp_map.get(ma_sp, 0) for sp_map in pivot_dv_sp.values())
         cell = ws2.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
         cell.border = border
         cell.font = Font(bold=True)
         cell.alignment = center_alignment
-    ws2.cell(row=row, column=7, value=f"{tong_sp_all:,.0f}").border = border
-    ws2.cell(row=row, column=7).font = Font(bold=True)
-    ws2.cell(row=row, column=7).alignment = center_alignment
+    ws2.cell(row=row, column=3 + len(SP_COLS_Q), value=f"{tong_sp_all:,.0f}").border = border
+    ws2.cell(row=row, column=3 + len(SP_COLS_Q)).font = Font(bold=True)
+    ws2.cell(row=row, column=3 + len(SP_COLS_Q)).alignment = center_alignment
 
-    for c, w in [('A', 5), ('B', 35), ('C', 12), ('D', 12), ('E', 12), ('F', 12), ('G', 12)]:
+    for c, w in [('A', 5), ('B', 35), ('C', 12), ('D', 12), ('E', 12), ('F', 12), ('G', 12), ('H', 12)]:
         ws2.column_dimensions[c].width = w
 
-    # SHEET 3: Theo đơn vị - Cấp độ
+    # SHEET 3: Theo đơn vị - Cấp độ (thêm cột V2_PL3)
     ws3 = wb.create_sheet("Theo đơn vị - Cấp độ")
     ws3['A1'] = f"CHI TIẾT MỨC ĐỘ PHỨC TẠP THEO ĐƠN VỊ (QUÝ) - QUÝ {quy}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:H1')
+    ws3.merge_cells('A1:I1')
 
     pivot_dv_cd = defaultdict(lambda: defaultdict(float))
     for item in don_vi_data:
         pivot_dv_cd[item["don_vi"]][item["ma_cap_do"]] += item["tong_sp"]
 
-    for col, h in enumerate(["STT", "Đơn vị", "C1", "C2", "C3", "C4", "C5", "Tổng"], 1):
+    CD_COLS_Q = ["C1", "C2", "C3", "C4", "C5", "V2_PL3"]
+    for col, h in enumerate(["STT", "Đơn vị"] + CD_COLS_Q + ["Tổng"], 1):
         cell = ws3.cell(row=3, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
@@ -5714,7 +5851,7 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
         ws3.cell(row=row, column=1, value=i).border = border
         ws3.cell(row=row, column=2, value=dv).border = border
         tong_dv = 0
-        for col_idx, ma_cd in enumerate(["C1", "C2", "C3", "C4", "C5"], 3):
+        for col_idx, ma_cd in enumerate(CD_COLS_Q, 3):
             val = cd_map.get(ma_cd, 0)
             tong_dv += val
             cell = ws3.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
@@ -5722,25 +5859,25 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
             cell.alignment = center_alignment
             if val > 0:
                 cell.fill = cap_do_fills.get(ma_cd)
-        ws3.cell(row=row, column=8, value=f"{tong_dv:,.0f}").border = border
-        ws3.cell(row=row, column=8).font = Font(bold=True)
-        ws3.cell(row=row, column=8).alignment = center_alignment
+        ws3.cell(row=row, column=3 + len(CD_COLS_Q), value=f"{tong_dv:,.0f}").border = border
+        ws3.cell(row=row, column=3 + len(CD_COLS_Q)).font = Font(bold=True)
+        ws3.cell(row=row, column=3 + len(CD_COLS_Q)).alignment = center_alignment
 
     row += 1
     ws3.cell(row=row, column=1).border = border
     ws3.cell(row=row, column=2, value="TỔNG").border = border
     ws3.cell(row=row, column=2).font = Font(bold=True)
-    for col_idx, ma_cd in enumerate(["C1", "C2", "C3", "C4", "C5"], 3):
+    for col_idx, ma_cd in enumerate(CD_COLS_Q, 3):
         tong = sum(cd_map.get(ma_cd, 0) for cd_map in pivot_dv_cd.values())
         cell = ws3.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
         cell.border = border
         cell.font = Font(bold=True)
         cell.alignment = center_alignment
-    ws3.cell(row=row, column=8, value=f"{tong_sp_all:,.0f}").border = border
-    ws3.cell(row=row, column=8).font = Font(bold=True)
-    ws3.cell(row=row, column=8).alignment = center_alignment
+    ws3.cell(row=row, column=3 + len(CD_COLS_Q), value=f"{tong_sp_all:,.0f}").border = border
+    ws3.cell(row=row, column=3 + len(CD_COLS_Q)).font = Font(bold=True)
+    ws3.cell(row=row, column=3 + len(CD_COLS_Q)).alignment = center_alignment
 
-    for c, w in [('A', 5), ('B', 35), ('C', 10), ('D', 10), ('E', 10), ('F', 10), ('G', 10), ('H', 12)]:
+    for c, w in [('A', 5), ('B', 35), ('C', 10), ('D', 10), ('E', 10), ('F', 10), ('G', 10), ('H', 12), ('I', 12)]:
         ws3.column_dimensions[c].width = w
 
     output = io.BytesIO()
@@ -5777,21 +5914,25 @@ async def _generate_report_05_quy(db: AsyncSession, quy: int, nam: int) -> io.By
     )
     center_alignment = Alignment(horizontal='center', vertical='center')
 
+    v2_fill_05q = PatternFill("solid", fgColor="E4DFEC")
     SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill}
 
-    # SHEET 1: TỔNG HỢP
+    # SHEET 1: TỔNG HỢP — thêm Version + Lĩnh vực + diem_cham/Nhóm PL3
     ws1 = wb.active
     ws1.title = "Tổng hợp"
 
     ws1['A1'] = f"5. DANH MỤC CÔNG VIỆC (GỘP 3 THÁNG) - QUÝ {quy}/{nam}"
     ws1['A1'].font = title_font
-    ws1.merge_cells('A1:H1')
+    ws1.merge_cells('A1:J1')
 
-    ws1['A2'] = f"Tổng số đầu mục công việc: {len(data)}"
+    ws1['A2'] = (f"Tổng số đầu mục công việc: {len(data)}. "
+                 "Version V1 dùng SP1-4 + C1-5; V2_PL3 dùng Lĩnh vực + Nhóm PL3 + Điểm chấm.")
     ws1['A2'].font = Font(bold=True)
 
-    headers = ["STT", "Loại SP", "Tên công việc", "Số user kê khai", "Số lần kê khai (quý)",
-               "Tổng SP quy đổi (quý)", "Cấp độ phổ biến", "Số cấp độ"]
+    headers = ["STT", "Version", "Loại SP / Lĩnh vực", "Tên công việc",
+               "Số user kê khai", "Số lần kê khai (quý)",
+               "Tổng SP quy đổi (quý)", "Cấp độ phổ biến / Điểm chấm",
+               "Số cấp độ / Nhóm PL3", "Khung điểm"]
     for col, h in enumerate(headers, 1):
         cell = ws1.cell(row=4, column=col, value=h)
         cell.font = header_font_white
@@ -5802,47 +5943,76 @@ async def _generate_report_05_quy(db: AsyncSession, quy: int, nam: int) -> io.By
     row = 4
     for i, dm in enumerate(data, 1):
         row += 1
+        is_v2 = dm.get("nguon_du_lieu") == "PL3"
+
         ws1.cell(row=row, column=1, value=i).border = border
         ws1.cell(row=row, column=1).alignment = center_alignment
 
-        ma_sp_cell = ws1.cell(row=row, column=2, value=dm["ma_sp"])
-        ma_sp_cell.border = border
-        ma_sp_cell.alignment = center_alignment
-        ma_sp_cell.fill = SP_FILLS.get(dm["ma_sp"], sp1_fill)
-        ma_sp_cell.font = Font(bold=True)
+        ver_cell = ws1.cell(row=row, column=2, value="V2_PL3" if is_v2 else "V1")
+        ver_cell.border = border
+        ver_cell.alignment = center_alignment
+        ver_cell.font = Font(bold=True)
+        ver_cell.fill = v2_fill_05q if is_v2 else SP_FILLS.get(dm["ma_sp"], sp1_fill)
 
-        ws1.cell(row=row, column=3, value=dm["ten_cong_viec"]).border = border
-        ws1.cell(row=row, column=4, value=dm["so_user"]).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
-        ws1.cell(row=row, column=5, value=dm["tong_lan_khai"]).border = border
+        if is_v2:
+            lv_text = f"{dm['linh_vuc'] or ''}{' — ' + dm['ten_linh_vuc'] if dm['ten_linh_vuc'] else ''}".strip(" —")
+            sp_lv_cell = ws1.cell(row=row, column=3, value=lv_text or "—")
+        else:
+            sp_lv_cell = ws1.cell(row=row, column=3, value=dm["ma_sp"] or "—")
+        sp_lv_cell.border = border
+        sp_lv_cell.alignment = center_alignment
+
+        ws1.cell(row=row, column=4, value=dm["ten_cong_viec"]).border = border
+        ws1.cell(row=row, column=5, value=dm["so_user"]).border = border
         ws1.cell(row=row, column=5).alignment = center_alignment
-        ws1.cell(row=row, column=6, value=f"{dm['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=6, value=dm["tong_lan_khai"]).border = border
         ws1.cell(row=row, column=6).alignment = center_alignment
-
-        cap_do_pho_bien = max(dm["cap_do_stats"], key=dm["cap_do_stats"].get) if dm["cap_do_stats"] else "-"
-        ws1.cell(row=row, column=7, value=cap_do_pho_bien).border = border
+        ws1.cell(row=row, column=7, value=f"{dm['tong_sp']:,.0f}").border = border
         ws1.cell(row=row, column=7).alignment = center_alignment
 
-        so_cap_do = len(dm["cap_do_stats"])
-        cap_do_cell = ws1.cell(row=row, column=8, value=so_cap_do)
+        if is_v2:
+            val = f"diem_cham={dm['diem_cham']}" if dm.get("diem_cham") else "—"
+            cd_cell = ws1.cell(row=row, column=8, value=val)
+        else:
+            cap_do_pho_bien = max(dm["cap_do_stats"], key=dm["cap_do_stats"].get) if dm["cap_do_stats"] else "—"
+            cd_cell = ws1.cell(row=row, column=8, value=cap_do_pho_bien)
+        cd_cell.border = border
+        cd_cell.alignment = center_alignment
+
+        if is_v2:
+            so_cap_do = dm.get("nhom_pl3") or "—"
+        else:
+            so_cap_do = len(dm["cap_do_stats"])
+        cap_do_cell = ws1.cell(row=row, column=9, value=so_cap_do)
         cap_do_cell.border = border
         cap_do_cell.alignment = center_alignment
-        if so_cap_do >= 4:
-            cap_do_cell.fill = PatternFill("solid", fgColor="FFC7CE")
-            cap_do_cell.font = Font(bold=True, color="9C0006")
-        elif so_cap_do == 3:
-            cap_do_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+        if not is_v2 and isinstance(so_cap_do, int):
+            if so_cap_do >= 4:
+                cap_do_cell.fill = PatternFill("solid", fgColor="FFC7CE")
+                cap_do_cell.font = Font(bold=True, color="9C0006")
+            elif so_cap_do == 3:
+                cap_do_cell.fill = PatternFill("solid", fgColor="FFEB9C")
+
+        khung_val = dm.get("khung_diem_toi_da") if is_v2 else "—"
+        kh_cell = ws1.cell(row=row, column=10, value=khung_val or "—")
+        kh_cell.border = border
+        kh_cell.alignment = center_alignment
 
     ws1.column_dimensions['A'].width = 5
     ws1.column_dimensions['B'].width = 10
-    ws1.column_dimensions['C'].width = 50
-    ws1.column_dimensions['D'].width = 15
-    ws1.column_dimensions['E'].width = 18
-    ws1.column_dimensions['F'].width = 20
-    ws1.column_dimensions['G'].width = 15
-    ws1.column_dimensions['H'].width = 12
+    ws1.column_dimensions['C'].width = 25
+    ws1.column_dimensions['D'].width = 45
+    ws1.column_dimensions['E'].width = 14
+    ws1.column_dimensions['F'].width = 16
+    ws1.column_dimensions['G'].width = 18
+    ws1.column_dimensions['H'].width = 22
+    ws1.column_dimensions['I'].width = 18
+    ws1.column_dimensions['J'].width = 12
 
-    # SHEET 2: CHI TIẾT
+    if data:
+        ws1.auto_filter.ref = f"A4:J{4 + len(data)}"
+
+    # SHEET 2: CHI TIẾT — header có cờ Version + lĩnh vực/SP
     ws2 = wb.create_sheet("Chi tiết theo công việc")
     ws2['A1'] = f"CHI TIẾT DANH MỤC VÀ USER KÊ KHAI (3 THÁNG) - QUÝ {quy}/{nam}"
     ws2['A1'].font = title_font
@@ -5850,9 +6020,14 @@ async def _generate_report_05_quy(db: AsyncSession, quy: int, nam: int) -> io.By
 
     row = 3
     for dm_idx, dm in enumerate(data, 1):
+        is_v2 = dm.get("nguon_du_lieu") == "PL3"
+        if is_v2:
+            label = f"[V2_PL3 / LV {dm.get('linh_vuc') or '—'}]"
+        else:
+            label = f"[V1 / {dm['ma_sp']}]"
         ws2.merge_cells(f'A{row}:H{row}')
         header_text = (
-            f"{dm_idx}. [{dm['ma_sp']}] {dm['ten_cong_viec']} "
+            f"{dm_idx}. {label} {dm['ten_cong_viec']} "
             f"({dm['so_user']} user | {dm['tong_lan_khai']} lần | {dm['tong_sp']:,.0f} SP)"
         )
         cell = ws2.cell(row=row, column=1, value=header_text)

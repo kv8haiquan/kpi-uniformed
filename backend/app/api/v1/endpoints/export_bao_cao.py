@@ -2784,394 +2784,479 @@ async def _get_data_03_lanh_dao_dde(db: AsyncSession, thang: int, nam: int) -> l
 # =============================================================================
 
 async def _generate_report_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> io.BytesIO:
-    """Generate Excel report 04 - Khối lượng công việc."""
+    """Generate Excel report 04 - Khối lượng công việc (V2 native, 2026-05-14).
+
+    4 sheet:
+    1. Tổng hợp toàn Chi cục (chỉ tiêu chính)
+    2. Phân bố theo Nhóm PL3 (1-5)
+    3. Ranking đơn vị (sort theo tổng điểm)
+    4. Pivot đơn vị × Nhóm PL3
+    """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.utils import get_column_letter
-    from collections import defaultdict
 
-    # Get data
-    sp_data, cap_do_data, don_vi_data, tong_sp_all, so_ngay = await _get_data_04_khoi_luong_cv(db, thang, nam)
+    data = await _get_data_04_khoi_luong_cv(db, thang, nam)
+    tong_hop = data["tong_hop"]
+    nhom_pl3 = data["nhom_pl3"]
+    ranking_dv = data["ranking_dv"]
+    pivot_dv_nhom = data["pivot_dv_nhom"]
+    so_ngay = data["so_ngay"]
 
-    # Create Excel
     wb = Workbook()
 
     # Styles
     header_fill = PatternFill("solid", fgColor="4472C4")
     header_font_white = Font(bold=True, size=12, color="FFFFFF")
     title_font = Font(bold=True, size=14)
+    section_font = Font(bold=True, size=13, color="2F5496")
     percent_font = Font(bold=True, color="0070C0")
-    sp1_fill = PatternFill("solid", fgColor="DAEEF3")
-    sp2_fill = PatternFill("solid", fgColor="E2EFDA")
-    sp3_fill = PatternFill("solid", fgColor="FDE9D9")
-    sp4_fill = PatternFill("solid", fgColor="E4DFEC")
+    alert_fill = PatternFill("solid", fgColor="FFC7CE")
+    warn_fill = PatternFill("solid", fgColor="FFEB9C")
+    good_fill = PatternFill("solid", fgColor="C6EFCE")
+    gold_fill = PatternFill("solid", fgColor="FFD966")  # top 3
     border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
     )
-    center_alignment = Alignment(horizontal='center', vertical='center')
+    center = Alignment(horizontal='center', vertical='center')
+    wrap_top = Alignment(wrap_text=True, vertical='top')
 
-    # V2_PL3 fill — gam tím, phân biệt với SP1-4 cũ
-    v2_fill = PatternFill("solid", fgColor="E4DFEC")
-    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill, "V2_PL3": v2_fill}
-
-    SP_NAMES = {
-        "SP1": "Tờ khai HQ (kiểm tra chi tiết hồ sơ)",
-        "SP2": "Văn bản hành chính",
-        "SP3": "Giờ trực làm việc",
-        "SP4": "Giờ tuần tra kiểm soát",
-        "V2_PL3": "V2_PL3 (theo lĩnh vực — xem Báo cáo 07)",
+    NHOM_FILLS = {
+        1: PatternFill("solid", fgColor="C6EFCE"),  # đơn giản — xanh
+        2: PatternFill("solid", fgColor="D9EAD3"),
+        3: PatternFill("solid", fgColor="FFEB9C"),
+        4: PatternFill("solid", fgColor="FFC7CE"),
+        5: PatternFill("solid", fgColor="E6B8AF"),  # rất khó — đậm
     }
 
-    CAP_DO_NAMES = {
-        "C1": "Dễ - Đơn giản",
-        "C2": "Trung bình - Thông thường",
-        "C3": "Khó - Nâng cao",
-        "C4": "Rất khó - Phức tạp",
-        "C5": "Đặc biệt khó - Đặc thù",
-        "V2_PL3": "V2_PL3 (theo nhóm PL3 — xem Báo cáo 07)",
-    }
-
-    def pct(val):
-        return f"{val/tong_sp_all*100:.1f}%" if tong_sp_all > 0 else "0%"
-
-    # SHEET 1: TỔNG HỢP
+    # =========================================================================
+    # SHEET 1: TỔNG HỢP TOÀN CHI CỤC
+    # =========================================================================
     ws1 = wb.active
     ws1.title = "Tổng hợp"
 
-    ws1['A1'] = f"4. BÁO CÁO THỐNG KÊ TÌNH HÌNH THỰC HIỆN NHIỆM VỤ - THÁNG {thang}/{nam}"
+    ws1['A1'] = f"4. KHỐI LƯỢNG CÔNG VIỆC - THÁNG {thang}/{nam}"
     ws1['A1'].font = title_font
-    ws1.merge_cells('A1:E1')
+    ws1.merge_cells('A1:C1')
 
-    ws1['A2'] = (f"Chi cục Hải quan Khu vực VIII | Tổng SP: {tong_sp_all:,.0f}. "
-                 "Dòng V2_PL3 = kê khai mới (lĩnh vực + nhóm PL3) — xem chi tiết Báo cáo 07.")
-    ws1['A2'].font = Font(bold=True)
+    ws1['A2'] = (f"Chi cục Hải quan Khu vực VIII | Số ngày trong tháng: {so_ngay}. "
+                 "Dữ liệu V2_PL3 (kê khai chính thức từ 4/2026).")
+    ws1['A2'].font = Font(italic=True, color="666666")
 
-    # 4.1. Khối lượng công việc
+    rows_data = [
+        ("Tổng số CC kê khai", f"{tong_hop['so_cc_ke_khai']:,}",
+         f"{tong_hop['ty_le_ke_khai']:.1f}% trên {tong_hop['tong_bien_che']} biên chế"),
+        ("Tổng số lượt kê khai", f"{tong_hop['so_luot_khai']:,}", ""),
+        ("Tổng điểm SP toàn Chi cục", f"{tong_hop['tong_diem']:,.0f}", "đơn vị: điểm SP quy đổi"),
+        ("Trung bình điểm / CC", f"{tong_hop['tb_diem_per_cc']:,.1f}", "tổng điểm ÷ số CC kê khai"),
+        ("Số CC có lỗi chất lượng",
+         f"{tong_hop['so_cc_co_loi_cl']:,}",
+         f"{tong_hop['so_cc_co_loi_cl']/tong_hop['so_cc_ke_khai']*100:.1f}%" if tong_hop['so_cc_ke_khai'] > 0 else "0%"),
+        ("Số CC có lỗi tiến độ",
+         f"{tong_hop['so_cc_co_loi_td']:,}",
+         f"{tong_hop['so_cc_co_loi_td']/tong_hop['so_cc_ke_khai']*100:.1f}%" if tong_hop['so_cc_ke_khai'] > 0 else "0%"),
+    ]
+    if tong_hop["linh_vuc_top"]:
+        lv = tong_hop["linh_vuc_top"]
+        rows_data.append((
+            "Lĩnh vực nhiều SP nhất",
+            f"LV {lv['ma_lv']} — {lv['ten_lv'][:40]}",
+            f"{lv['tong_diem']:,.0f} điểm"
+        ))
+
     row = 4
-    ws1.cell(row=row, column=1, value="4.1. KHỐI LƯỢNG CÔNG VIỆC")
-    ws1.cell(row=row, column=1).font = Font(bold=True, size=13, color="2F5496")
-    ws1.merge_cells(f'A{row}:E{row}')
-
-    row += 1
-    headers = ["Loại SP", "Tên", "Số lượng SP", "Tỷ lệ"]
+    headers = ["Chỉ tiêu", "Giá trị", "Ghi chú"]
     for col, h in enumerate(headers, 1):
         cell = ws1.cell(row=row, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
         cell.border = border
-        cell.alignment = center_alignment
+        cell.alignment = center
 
-    for sp in sp_data:
-        row += 1
-        ws1.cell(row=row, column=1, value=sp["ma_sp"]).border = border
-        ws1.cell(row=row, column=1).fill = SP_FILLS.get(sp["ma_sp"], sp1_fill)
-        ws1.cell(row=row, column=1).font = Font(bold=True)
+    for i, (label, val, note) in enumerate(rows_data):
+        r = row + 1 + i
+        ws1.cell(row=r, column=1, value=label).border = border
+        ws1.cell(row=r, column=1).font = Font(bold=True)
+        val_cell = ws1.cell(row=r, column=2, value=val)
+        val_cell.border = border
+        val_cell.alignment = center
+        val_cell.font = Font(bold=True, color="0070C0")
+        ws1.cell(row=r, column=3, value=note).border = border
+        ws1.cell(row=r, column=3).alignment = wrap_top
 
-        ten_sp = SP_NAMES.get(sp["ma_sp"], sp["ten_sp"])
-        ws1.cell(row=row, column=2, value=ten_sp).border = border
+    ws1.column_dimensions['A'].width = 35
+    ws1.column_dimensions['B'].width = 30
+    ws1.column_dimensions['C'].width = 45
 
-        ws1.cell(row=row, column=3, value=f"{sp['tong_sp']:,.0f}").border = border
-        ws1.cell(row=row, column=3).alignment = center_alignment
+    # =========================================================================
+    # SHEET 2: PHÂN BỐ THEO NHÓM PL3
+    # =========================================================================
+    ws2 = wb.create_sheet("Theo Nhóm PL3")
 
-        ws1.cell(row=row, column=4, value=pct(sp["tong_sp"])).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
-        ws1.cell(row=row, column=4).font = percent_font
-
-    # Tổng
-    row += 1
-    ws1.cell(row=row, column=1, value="TỔNG").border = border
-    ws1.cell(row=row, column=1).font = Font(bold=True)
-    ws1.cell(row=row, column=2).border = border
-    ws1.cell(row=row, column=3, value=f"{tong_sp_all:,.0f}").border = border
-    ws1.cell(row=row, column=3).font = Font(bold=True)
-    ws1.cell(row=row, column=3).alignment = center_alignment
-    ws1.cell(row=row, column=4, value="100%").border = border
-    ws1.cell(row=row, column=4).font = Font(bold=True, color="0070C0")
-    ws1.cell(row=row, column=4).alignment = center_alignment
-
-    # 4.2. Mức độ phức tạp
-    row += 3
-    ws1.cell(row=row, column=1, value="4.2. MỨC ĐỘ PHỨC TẠP CỦA CÔNG VIỆC")
-    ws1.cell(row=row, column=1).font = Font(bold=True, size=13, color="2F5496")
-    ws1.merge_cells(f'A{row}:E{row}')
-
-    row += 1
-    headers2 = ["Cấp độ", "Tên", "Số lượng SP", "Tỷ lệ"]
-    for col, h in enumerate(headers2, 1):
-        cell = ws1.cell(row=row, column=col, value=h)
-        cell.font = header_font_white
-        cell.fill = header_fill
-        cell.border = border
-        cell.alignment = center_alignment
-
-    cap_do_fills = {
-        "C1": PatternFill("solid", fgColor="C6EFCE"),
-        "C2": PatternFill("solid", fgColor="D9EAD3"),
-        "C3": PatternFill("solid", fgColor="FFEB9C"),
-        "C4": PatternFill("solid", fgColor="FFC7CE"),
-        "C5": PatternFill("solid", fgColor="E6B8AF"),
-        "V2_PL3": v2_fill,
-    }
-
-    for cd in cap_do_data:
-        row += 1
-        ws1.cell(row=row, column=1, value=cd["ma_cap_do"]).border = border
-        ws1.cell(row=row, column=1).fill = cap_do_fills.get(cd["ma_cap_do"], sp1_fill)
-        ws1.cell(row=row, column=1).font = Font(bold=True)
-        ws1.cell(row=row, column=1).alignment = center_alignment
-
-        ten_cd = CAP_DO_NAMES.get(cd["ma_cap_do"], cd["ten_cap_do"])
-        ws1.cell(row=row, column=2, value=ten_cd).border = border
-
-        ws1.cell(row=row, column=3, value=f"{cd['tong_sp']:,.0f}").border = border
-        ws1.cell(row=row, column=3).alignment = center_alignment
-
-        ws1.cell(row=row, column=4, value=pct(cd["tong_sp"])).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
-        ws1.cell(row=row, column=4).font = percent_font
-
-    # Tổng
-    row += 1
-    tong_cap_do = sum(cd["tong_sp"] for cd in cap_do_data)
-    ws1.cell(row=row, column=1, value="TỔNG").border = border
-    ws1.cell(row=row, column=1).font = Font(bold=True)
-    ws1.cell(row=row, column=2).border = border
-    ws1.cell(row=row, column=3, value=f"{tong_cap_do:,.0f}").border = border
-    ws1.cell(row=row, column=3).font = Font(bold=True)
-    ws1.cell(row=row, column=3).alignment = center_alignment
-    ws1.cell(row=row, column=4, value="100%").border = border
-    ws1.cell(row=row, column=4).font = Font(bold=True, color="0070C0")
-    ws1.cell(row=row, column=4).alignment = center_alignment
-
-    ws1.column_dimensions['A'].width = 12
-    ws1.column_dimensions['B'].width = 40
-    ws1.column_dimensions['C'].width = 15
-    ws1.column_dimensions['D'].width = 12
-
-    # SHEET 2: CHI TIẾT THEO ĐƠN VỊ - LOẠI SP
-    ws2 = wb.create_sheet("Theo đơn vị - Loại SP")
-
-    ws2['A1'] = f"CHI TIẾT KHỐI LƯỢNG CÔNG VIỆC THEO ĐƠN VỊ - THÁNG {thang}/{nam}"
+    ws2['A1'] = f"PHÂN BỐ KHỐI LƯỢNG THEO NHÓM PL3 - THÁNG {thang}/{nam}"
     ws2['A1'].font = title_font
-    ws2.merge_cells('A1:H1')
+    ws2.merge_cells('A1:E1')
 
-    # Pivot: đơn vị -> ma_sp -> tổng SP. V2 gom vào cột "V2_PL3".
-    pivot_dv_sp = defaultdict(lambda: defaultdict(float))
-    for item in don_vi_data:
-        pivot_dv_sp[item["don_vi"]][item["ma_sp"]] += item["tong_sp"]
+    ws2['A2'] = "Nhóm PL3 phản ánh độ phức tạp công việc: 1 (đơn giản) → 5 (rất khó). Mỗi nhóm có khung điểm tối đa khác nhau."
+    ws2['A2'].font = Font(italic=True, color="666666")
 
-    SP_COLS = ["SP1", "SP2", "SP3", "SP4", "V2_PL3"]
-    headers2 = ["STT", "Đơn vị"] + SP_COLS + ["Tổng"]
+    headers2 = ["Nhóm", "Mô tả", "Khung điểm tối đa", "Số lượt khai", "Tổng điểm", "Tỷ lệ"]
     for col, h in enumerate(headers2, 1):
-        cell = ws2.cell(row=3, column=col, value=h)
+        cell = ws2.cell(row=4, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
         cell.border = border
-        cell.alignment = center_alignment
+        cell.alignment = center
 
-    row = 3
-    for i, (dv, sp_map) in enumerate(sorted(pivot_dv_sp.items()), 1):
-        row += 1
-        ws2.cell(row=row, column=1, value=i).border = border
-        ws2.cell(row=row, column=2, value=dv).border = border
+    tong_diem_nhom = sum(n["tong_diem"] for n in nhom_pl3)
+    tong_luot_nhom = sum(n["so_luot"] for n in nhom_pl3)
 
-        tong_dv = 0
-        for col_idx, ma_sp in enumerate(SP_COLS, 3):
-            val = sp_map.get(ma_sp, 0)
-            tong_dv += val
-            cell = ws2.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
-            cell.border = border
-            cell.alignment = center_alignment
-            if val > 0:
-                cell.fill = SP_FILLS.get(ma_sp, sp1_fill)
+    for i, n in enumerate(nhom_pl3):
+        r = 5 + i
+        nhom_cell = ws2.cell(row=r, column=1, value=n["nhom"])
+        nhom_cell.border = border
+        nhom_cell.alignment = center
+        nhom_cell.font = Font(bold=True)
+        nhom_cell.fill = NHOM_FILLS[n["nhom"]]
 
-        ws2.cell(row=row, column=3 + len(SP_COLS), value=f"{tong_dv:,.0f}").border = border
-        ws2.cell(row=row, column=3 + len(SP_COLS)).font = Font(bold=True)
-        ws2.cell(row=row, column=3 + len(SP_COLS)).alignment = center_alignment
+        ws2.cell(row=r, column=2, value=n["ten"]).border = border
+        ws2.cell(row=r, column=3, value=n["khung"]).border = border
+        ws2.cell(row=r, column=3).alignment = center
+        ws2.cell(row=r, column=4, value=n["so_luot"]).border = border
+        ws2.cell(row=r, column=4).alignment = center
+        ws2.cell(row=r, column=5, value=f"{n['tong_diem']:,.0f}").border = border
+        ws2.cell(row=r, column=5).alignment = center
+        ws2.cell(row=r, column=5).font = Font(bold=True)
 
-    # Tổng hàng
-    row += 1
-    ws2.cell(row=row, column=1).border = border
-    ws2.cell(row=row, column=2, value="TỔNG").border = border
-    ws2.cell(row=row, column=2).font = Font(bold=True)
+        pct_val = (n["tong_diem"] / tong_diem_nhom * 100) if tong_diem_nhom > 0 else 0
+        pct_cell = ws2.cell(row=r, column=6, value=f"{pct_val:.1f}%")
+        pct_cell.border = border
+        pct_cell.alignment = center
+        pct_cell.font = percent_font
 
-    for col_idx, ma_sp in enumerate(SP_COLS, 3):
-        tong = sum(sp_map.get(ma_sp, 0) for sp_map in pivot_dv_sp.values())
-        cell = ws2.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
-        cell.border = border
-        cell.font = Font(bold=True)
-        cell.alignment = center_alignment
+    # Dòng tổng
+    r = 5 + len(nhom_pl3)
+    ws2.cell(row=r, column=1, value="TỔNG").border = border
+    ws2.cell(row=r, column=1).font = Font(bold=True)
+    ws2.cell(row=r, column=2).border = border
+    ws2.cell(row=r, column=3).border = border
+    ws2.cell(row=r, column=4, value=tong_luot_nhom).border = border
+    ws2.cell(row=r, column=4).alignment = center
+    ws2.cell(row=r, column=4).font = Font(bold=True)
+    ws2.cell(row=r, column=5, value=f"{tong_diem_nhom:,.0f}").border = border
+    ws2.cell(row=r, column=5).alignment = center
+    ws2.cell(row=r, column=5).font = Font(bold=True)
+    ws2.cell(row=r, column=6, value="100%").border = border
+    ws2.cell(row=r, column=6).alignment = center
+    ws2.cell(row=r, column=6).font = Font(bold=True, color="0070C0")
 
-    ws2.cell(row=row, column=3 + len(SP_COLS), value=f"{tong_sp_all:,.0f}").border = border
-    ws2.cell(row=row, column=3 + len(SP_COLS)).font = Font(bold=True)
-    ws2.cell(row=row, column=3 + len(SP_COLS)).alignment = center_alignment
-
-    for c, w in [('A', 5), ('B', 35), ('C', 12), ('D', 12), ('E', 12), ('F', 12), ('G', 12), ('H', 12)]:
+    for c, w in [('A', 8), ('B', 18), ('C', 18), ('D', 14), ('E', 16), ('F', 10)]:
         ws2.column_dimensions[c].width = w
 
-    # SHEET 3: CHI TIẾT THEO ĐƠN VỊ - CẤP ĐỘ
-    ws3 = wb.create_sheet("Theo đơn vị - Cấp độ")
+    # =========================================================================
+    # SHEET 3: RANKING ĐƠN VỊ
+    # =========================================================================
+    ws3 = wb.create_sheet("Ranking đơn vị")
 
-    ws3['A1'] = f"CHI TIẾT MỨC ĐỘ PHỨC TẠP THEO ĐƠN VỊ - THÁNG {thang}/{nam}"
+    ws3['A1'] = f"XẾP HẠNG ĐƠN VỊ THEO TỔNG ĐIỂM - THÁNG {thang}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:I1')
+    ws3.merge_cells('A1:H1')
 
-    # Pivot: đơn vị -> ma_cap_do -> tổng SP. V2 → cột "V2_PL3".
-    pivot_dv_cd = defaultdict(lambda: defaultdict(float))
-    for item in don_vi_data:
-        pivot_dv_cd[item["don_vi"]][item["ma_cap_do"]] += item["tong_sp"]
+    ws3['A2'] = "Top 3 nền vàng (cao nhất), bottom 3 nền hồng (thấp nhất). TB điểm/CC = Tổng điểm ÷ số CC."
+    ws3['A2'].font = Font(italic=True, color="666666")
 
-    CD_COLS = ["C1", "C2", "C3", "C4", "C5", "V2_PL3"]
-    headers3 = ["STT", "Đơn vị"] + CD_COLS + ["Tổng"]
+    headers3 = ["Hạng", "Đơn vị", "Số CC", "Số lượt khai", "Tổng điểm", "TB điểm/CC", "Lỗi CL", "Lỗi TĐ"]
     for col, h in enumerate(headers3, 1):
-        cell = ws3.cell(row=3, column=col, value=h)
+        cell = ws3.cell(row=4, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
         cell.border = border
-        cell.alignment = center_alignment
+        cell.alignment = center
 
-    row = 3
-    for i, (dv, cd_map) in enumerate(sorted(pivot_dv_cd.items()), 1):
-        row += 1
-        ws3.cell(row=row, column=1, value=i).border = border
-        ws3.cell(row=row, column=2, value=dv).border = border
+    n_dv = len(ranking_dv)
+    for i, dv in enumerate(ranking_dv):
+        r = 5 + i
+        hang_cell = ws3.cell(row=r, column=1, value=i + 1)
+        hang_cell.border = border
+        hang_cell.alignment = center
+        hang_cell.font = Font(bold=True)
 
-        tong_dv = 0
-        for col_idx, ma_cd in enumerate(CD_COLS, 3):
-            val = cd_map.get(ma_cd, 0)
-            tong_dv += val
-            cell = ws3.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
-            cell.border = border
-            cell.alignment = center_alignment
-            if val > 0:
-                cell.fill = cap_do_fills.get(ma_cd)
+        is_top3 = i < 3
+        is_bottom3 = (n_dv > 6 and i >= n_dv - 3)
+        row_fill = gold_fill if is_top3 else (alert_fill if is_bottom3 else None)
+        if row_fill:
+            hang_cell.fill = row_fill
 
-        ws3.cell(row=row, column=3 + len(CD_COLS), value=f"{tong_dv:,.0f}").border = border
-        ws3.cell(row=row, column=3 + len(CD_COLS)).font = Font(bold=True)
-        ws3.cell(row=row, column=3 + len(CD_COLS)).alignment = center_alignment
+        ws3.cell(row=r, column=2, value=dv["don_vi"]).border = border
+        if row_fill:
+            ws3.cell(row=r, column=2).fill = row_fill
 
-    # Tổng hàng
-    row += 1
-    ws3.cell(row=row, column=1).border = border
-    ws3.cell(row=row, column=2, value="TỔNG").border = border
-    ws3.cell(row=row, column=2).font = Font(bold=True)
+        ws3.cell(row=r, column=3, value=dv["so_cc"]).border = border
+        ws3.cell(row=r, column=3).alignment = center
+        ws3.cell(row=r, column=4, value=dv["so_luot"]).border = border
+        ws3.cell(row=r, column=4).alignment = center
+        ws3.cell(row=r, column=5, value=f"{dv['tong_diem']:,.0f}").border = border
+        ws3.cell(row=r, column=5).alignment = center
+        ws3.cell(row=r, column=5).font = Font(bold=True)
+        ws3.cell(row=r, column=6, value=f"{dv['tb_per_cc']:,.1f}").border = border
+        ws3.cell(row=r, column=6).alignment = center
 
-    for col_idx, ma_cd in enumerate(CD_COLS, 3):
-        tong = sum(cd_map.get(ma_cd, 0) for cd_map in pivot_dv_cd.values())
-        cell = ws3.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
-        cell.border = border
-        cell.font = Font(bold=True)
-        cell.alignment = center_alignment
+        loi_cl = dv["loi_cl"]
+        cl_cell = ws3.cell(row=r, column=7, value=loi_cl)
+        cl_cell.border = border
+        cl_cell.alignment = center
+        if loi_cl > 0:
+            cl_cell.fill = alert_fill
+            cl_cell.font = Font(bold=True, color="9C0006")
 
-    ws3.cell(row=row, column=3 + len(CD_COLS), value=f"{tong_sp_all:,.0f}").border = border
-    ws3.cell(row=row, column=3 + len(CD_COLS)).font = Font(bold=True)
-    ws3.cell(row=row, column=3 + len(CD_COLS)).alignment = center_alignment
+        loi_td = dv["loi_td"]
+        td_cell = ws3.cell(row=r, column=8, value=loi_td)
+        td_cell.border = border
+        td_cell.alignment = center
+        if loi_td > 0:
+            td_cell.fill = warn_fill
+            td_cell.font = Font(bold=True, color="9C5700")
 
-    for c, w in [('A', 5), ('B', 35), ('C', 10), ('D', 10), ('E', 10), ('F', 10), ('G', 10), ('H', 12), ('I', 12)]:
+    for c, w in [('A', 6), ('B', 35), ('C', 8), ('D', 14), ('E', 14), ('F', 12), ('G', 9), ('H', 9)]:
         ws3.column_dimensions[c].width = w
 
-    # Save to BytesIO
+    if ranking_dv:
+        ws3.auto_filter.ref = f"A4:H{4 + n_dv}"
+
+    # =========================================================================
+    # SHEET 4: PIVOT ĐƠN VỊ × NHÓM PL3
+    # =========================================================================
+    ws4 = wb.create_sheet("Đơn vị × Nhóm PL3")
+
+    ws4['A1'] = f"PIVOT TỔNG ĐIỂM THEO ĐƠN VỊ × NHÓM PL3 - THÁNG {thang}/{nam}"
+    ws4['A1'].font = title_font
+    ws4.merge_cells('A1:I1')
+
+    ws4['A2'] = "Cho thấy mỗi đơn vị làm công việc ở mức độ phức tạp nào nhiều nhất."
+    ws4['A2'].font = Font(italic=True, color="666666")
+
+    headers4 = ["STT", "Đơn vị", "Nhóm 1\n(Đơn giản)", "Nhóm 2\n(TB)", "Nhóm 3\n(Khá)",
+                "Nhóm 4\n(Khó)", "Nhóm 5\n(Rất khó)", "Tổng điểm"]
+    for col, h in enumerate(headers4, 1):
+        cell = ws4.cell(row=4, column=col, value=h.replace("\n", "\n"))
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        if col >= 3 and col <= 7:
+            cell.fill = NHOM_FILLS[col - 2]
+
+    dv_sorted = sorted(pivot_dv_nhom.keys())
+    for i, dv in enumerate(dv_sorted):
+        r = 5 + i
+        ws4.cell(row=r, column=1, value=i + 1).border = border
+        ws4.cell(row=r, column=1).alignment = center
+        ws4.cell(row=r, column=2, value=dv).border = border
+
+        tong_dv = 0.0
+        for col_idx, n in enumerate((1, 2, 3, 4, 5), 3):
+            val = pivot_dv_nhom[dv].get(n, 0)
+            tong_dv += val
+            cell = ws4.cell(row=r, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
+            cell.border = border
+            cell.alignment = center
+            if val > 0:
+                cell.fill = NHOM_FILLS[n]
+
+        tong_cell = ws4.cell(row=r, column=8, value=f"{tong_dv:,.0f}")
+        tong_cell.border = border
+        tong_cell.alignment = center
+        tong_cell.font = Font(bold=True)
+
+    # Dòng tổng
+    r = 5 + len(dv_sorted)
+    ws4.cell(row=r, column=1).border = border
+    ws4.cell(row=r, column=2, value="TỔNG").border = border
+    ws4.cell(row=r, column=2).font = Font(bold=True)
+    total_all = 0.0
+    for col_idx, n in enumerate((1, 2, 3, 4, 5), 3):
+        tong = sum(dv_map.get(n, 0) for dv_map in pivot_dv_nhom.values())
+        total_all += tong
+        cell = ws4.cell(row=r, column=col_idx, value=f"{tong:,.0f}")
+        cell.border = border
+        cell.font = Font(bold=True)
+        cell.alignment = center
+    ws4.cell(row=r, column=8, value=f"{total_all:,.0f}").border = border
+    ws4.cell(row=r, column=8).font = Font(bold=True)
+    ws4.cell(row=r, column=8).alignment = center
+
+    ws4.row_dimensions[4].height = 32
+    for c, w in [('A', 5), ('B', 30), ('C', 12), ('D', 11), ('E', 11), ('F', 11), ('G', 13), ('H', 13)]:
+        ws4.column_dimensions[c].width = w
+
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
     return output
 
 
-async def _get_data_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> tuple:
-    """Get data for report 04 - Khối lượng công việc.
 
-    2026-05-14: hỗ trợ V2_PL3 bằng LEFT JOIN + COALESCE 'V2_PL3' cho
-    sp_chuan/cap_do NULL. V2 gom thành 1 dòng/cột "V2_PL3" thay vì phân
-    tán theo SP1-4 / C1-5 (V2 không có concept SP chuẩn + cấp độ phức tạp).
+async def _get_data_04_khoi_luong_cv(db: AsyncSession, thang: int, nam: int) -> dict:
+    """Get data for report 04 - Khối lượng công việc (V2 native).
+
+    2026-05-14 (redesign theo CCT): bỏ thống kê SP1-4 + C1-5 (V1 only).
+    Thay bằng 4 phần V2 native:
+      - tong_hop: chỉ tiêu toàn Chi cục (số CC, lượt, điểm, lỗi, top LV).
+      - nhom_pl3: phân bố 5 nhóm độ phức tạp.
+      - ranking_dv: xếp hạng đơn vị theo tổng điểm.
+      - pivot_dv_nhom: đơn vị × nhóm PL3.
+
+    Returns dict với 4 key trên + so_ngay (giữ cho callers cũ).
     """
     from sqlalchemy import text
+    from collections import defaultdict
 
     so_ngay_trong_thang = calendar.monthrange(nam, thang)[1]
 
-    # Thống kê theo loại SP — LEFT JOIN để V2 (sp_chuan_id NULL) không bị lọc.
-    # V2 → gom dòng "V2_PL3".
-    sp_result = await db.execute(text("""
+    base_where = """
+        WHERE kk.thang = :thang AND kk.nam = :nam
+              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
+    """
+    params = {"thang": thang, "nam": nam}
+
+    # 1. Tổng hợp toàn Chi cục
+    tong_hop_result = await db.execute(text(f"""
         SELECT
-            COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
-            COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)') AS ten_sp,
-            COUNT(*) as so_khai,
-            COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+            COUNT(DISTINCT kk.cong_chuc_id) as so_cc_ke_khai,
+            COUNT(*) as so_luot_khai,
+            COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem,
+            COUNT(DISTINCT kk.cong_chuc_id) FILTER (WHERE kk.so_loi_chat_luong > 0) as so_cc_co_loi_cl,
+            COUNT(DISTINCT kk.cong_chuc_id) FILTER (WHERE kk.so_loi_tien_do > 0) as so_cc_co_loi_td
+        FROM ke_khai_cong_viec kk
+        {base_where}
+    """), params)
+    th_row = tong_hop_result.first()
+    so_cc_ke_khai = int(th_row[0] or 0)
+    so_luot_khai = int(th_row[1] or 0)
+    tong_diem_all = float(th_row[2] or 0)
+    so_cc_co_loi_cl = int(th_row[3] or 0)
+    so_cc_co_loi_td = int(th_row[4] or 0)
+
+    # Tổng biên chế active để tính %
+    bien_che_result = await db.execute(text("""
+        SELECT COUNT(*) FROM cong_chuc WHERE is_active = true
+    """))
+    tong_bien_che = int(bien_che_result.scalar() or 0)
+
+    # Top lĩnh vực
+    top_lv_result = await db.execute(text(f"""
+        SELECT kk.linh_vuc_snapshot,
+               MAX(dm.ten_linh_vuc) as ten_lv,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
-        WHERE kk.thang = :thang AND kk.nam = :nam
-              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)')
-        ORDER BY ma_sp
-    """), {"thang": thang, "nam": nam})
+        {base_where} AND kk.linh_vuc_snapshot IS NOT NULL
+        GROUP BY kk.linh_vuc_snapshot
+        ORDER BY tong_diem DESC
+        LIMIT 1
+    """), params)
+    top_lv_row = top_lv_result.first()
+    linh_vuc_top = None
+    if top_lv_row:
+        linh_vuc_top = {
+            "ma_lv": top_lv_row[0],
+            "ten_lv": top_lv_row[1] or "",
+            "tong_diem": float(top_lv_row[2] or 0),
+        }
 
-    sp_data = []
-    for row in sp_result:
-        sp_data.append({
-            "ma_sp": row[0],
-            "ten_sp": row[1],
-            "so_khai": int(row[2]),
-            "tong_sp": float(row[3]),
-        })
+    tong_hop = {
+        "so_cc_ke_khai": so_cc_ke_khai,
+        "so_luot_khai": so_luot_khai,
+        "tong_diem": tong_diem_all,
+        "tb_diem_per_cc": (tong_diem_all / so_cc_ke_khai) if so_cc_ke_khai > 0 else 0.0,
+        "ty_le_ke_khai": (so_cc_ke_khai / tong_bien_che * 100) if tong_bien_che > 0 else 0.0,
+        "tong_bien_che": tong_bien_che,
+        "so_cc_co_loi_cl": so_cc_co_loi_cl,
+        "so_cc_co_loi_td": so_cc_co_loi_td,
+        "linh_vuc_top": linh_vuc_top,
+    }
 
-    # Thống kê theo cấp độ phức tạp — LEFT JOIN, V2 (cap_do_id NULL) → "V2_PL3".
-    cap_do_result = await db.execute(text("""
-        SELECT
-            COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
-            COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)') AS ten_cap_do,
-            COUNT(*) as so_khai,
-            COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+    # 2. Phân bố theo Nhóm PL3 (1-5)
+    nhom_result = await db.execute(text(f"""
+        SELECT kk.nhom_pl3_snapshot AS nhom,
+               COUNT(*) as so_luot,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem
         FROM ke_khai_cong_viec kk
-        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
-        WHERE kk.thang = :thang AND kk.nam = :nam
-              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY COALESCE(cd.ma_cap_do, 'V2_PL3'), COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)')
-        ORDER BY ma_cap_do
-    """), {"thang": thang, "nam": nam})
-
-    cap_do_data = []
-    for row in cap_do_result:
-        cap_do_data.append({
-            "ma_cap_do": row[0],
-            "ten_cap_do": row[1],
-            "so_khai": int(row[2]),
-            "tong_sp": float(row[3]),
+        {base_where} AND kk.nhom_pl3_snapshot IS NOT NULL
+        GROUP BY kk.nhom_pl3_snapshot
+        ORDER BY kk.nhom_pl3_snapshot
+    """), params)
+    nhom_map = {int(r[0]): {"so_luot": int(r[1]), "tong_diem": float(r[2])} for r in nhom_result}
+    NHOM_MO_TA = {
+        1: ("Đơn giản", 100),
+        2: ("Trung bình", 200),
+        3: ("Khá", 300),
+        4: ("Khó", 400),
+        5: ("Rất khó", 500),
+    }
+    nhom_pl3_data = []
+    for n in (1, 2, 3, 4, 5):
+        info = nhom_map.get(n, {"so_luot": 0, "tong_diem": 0.0})
+        ten, khung = NHOM_MO_TA[n]
+        nhom_pl3_data.append({
+            "nhom": n,
+            "ten": ten,
+            "khung": khung,
+            "so_luot": info["so_luot"],
+            "tong_diem": info["tong_diem"],
         })
 
-    # Chi tiết theo đơn vị — LEFT JOIN cả sp_chuan và cap_do.
-    don_vi_result = await db.execute(text("""
+    # 3. Ranking đơn vị
+    rank_result = await db.execute(text(f"""
         SELECT dv.ten_don_vi,
-               COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
-               COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
-               COUNT(*) as so_khai,
-               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp
+               COUNT(DISTINCT kk.cong_chuc_id) as so_cc,
+               COUNT(*) as so_luot,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem,
+               COALESCE(SUM(kk.so_loi_chat_luong), 0) as loi_cl,
+               COALESCE(SUM(kk.so_loi_tien_do), 0) as loi_td
         FROM ke_khai_cong_viec kk
-        JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
-        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
-        JOIN don_vi dv ON dv.id = cc.don_vi_id
-        WHERE kk.thang = :thang AND kk.nam = :nam
-              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY dv.ten_don_vi, COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(cd.ma_cap_do, 'V2_PL3')
-        ORDER BY dv.ten_don_vi, ma_sp, ma_cap_do
-    """), {"thang": thang, "nam": nam})
-
-    don_vi_data = []
-    for row in don_vi_result:
-        don_vi_data.append({
-            "don_vi": row[0],
-            "ma_sp": row[1],
-            "ma_cap_do": row[2],
-            "so_khai": int(row[3]),
-            "tong_sp": float(row[4]),
+        LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        {base_where}
+        GROUP BY dv.ten_don_vi
+        ORDER BY tong_diem DESC
+    """), params)
+    ranking_dv = []
+    for r in rank_result:
+        so_cc = int(r[1] or 0)
+        tong_d = float(r[3] or 0)
+        ranking_dv.append({
+            "don_vi": r[0] or "(không xác định)",
+            "so_cc": so_cc,
+            "so_luot": int(r[2] or 0),
+            "tong_diem": tong_d,
+            "tb_per_cc": (tong_d / so_cc) if so_cc > 0 else 0.0,
+            "loi_cl": int(r[4] or 0),
+            "loi_td": int(r[5] or 0),
         })
 
-    # Tổng SP
-    tong_sp_all = sum(item["tong_sp"] for item in sp_data)
+    # 4. Pivot Đơn vị × Nhóm PL3 (tổng điểm)
+    pivot_result = await db.execute(text(f"""
+        SELECT dv.ten_don_vi,
+               kk.nhom_pl3_snapshot AS nhom,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem
+        FROM ke_khai_cong_viec kk
+        JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
+        LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        {base_where} AND kk.nhom_pl3_snapshot IS NOT NULL
+        GROUP BY dv.ten_don_vi, kk.nhom_pl3_snapshot
+    """), params)
+    pivot_dv_nhom = defaultdict(lambda: defaultdict(float))
+    for r in pivot_result:
+        pivot_dv_nhom[r[0] or "(không xác định)"][int(r[1])] = float(r[2] or 0)
 
-    return sp_data, cap_do_data, don_vi_data, tong_sp_all, so_ngay_trong_thang
+    return {
+        "tong_hop": tong_hop,
+        "nhom_pl3": nhom_pl3_data,
+        "ranking_dv": ranking_dv,
+        "pivot_dv_nhom": dict(pivot_dv_nhom),
+        "so_ngay": so_ngay_trong_thang,
+    }
 
 
 # =============================================================================
@@ -4751,82 +4836,150 @@ async def _get_data_03_quy(db: AsyncSession, quy: int, nam: int) -> list:
 # GET DATA 04 QUÝ — KHỐI LƯỢNG CÔNG VIỆC (cộng dồn 3 tháng)
 # =============================================================================
 
-async def _get_data_04_quy(db: AsyncSession, quy: int, nam: int) -> tuple:
-    """Lấy data File 04 cho quý — cộng dồn 3 tháng SQL."""
+async def _get_data_04_quy(db: AsyncSession, quy: int, nam: int) -> dict:
+    """Get data File 04 cho QUÝ — V2 native, cộng dồn 3 tháng (2026-05-14).
+
+    Returns dict same shape as _get_data_04_khoi_luong_cv:
+      tong_hop, nhom_pl3, ranking_dv, pivot_dv_nhom, so_ngay.
+    """
     from app.api.v1.endpoints.xep_loai_quy_helpers import QUY_TO_THANG
     from sqlalchemy import text as sa_text, bindparam
+    from collections import defaultdict
 
     thang_list = QUY_TO_THANG[quy]
     so_ngay_quy = sum(calendar.monthrange(nam, t)[1] for t in thang_list)
+    params = {"thang_list": thang_list, "nam": nam}
 
-    # Theo loại SP — LEFT JOIN, V2 gom "V2_PL3" (2026-05-14)
-    sp_stmt = sa_text("""
-        SELECT COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
-               COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)') AS ten_sp,
-               COUNT(*) as so_khai,
-               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+    base_where = (
+        "WHERE kk.thang IN :thang_list AND kk.nam = :nam "
+        "AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false"
+    )
+
+    # 1. Tổng hợp
+    th_stmt = sa_text(f"""
+        SELECT
+            COUNT(DISTINCT kk.cong_chuc_id) as so_cc_ke_khai,
+            COUNT(*) as so_luot_khai,
+            COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem,
+            COUNT(DISTINCT kk.cong_chuc_id) FILTER (WHERE kk.so_loi_chat_luong > 0) as so_cc_co_loi_cl,
+            COUNT(DISTINCT kk.cong_chuc_id) FILTER (WHERE kk.so_loi_tien_do > 0) as so_cc_co_loi_td
+        FROM ke_khai_cong_viec kk
+        {base_where}
+    """).bindparams(bindparam('thang_list', expanding=True))
+    th_row = (await db.execute(th_stmt, params)).first()
+    so_cc_ke_khai = int(th_row[0] or 0)
+    so_luot_khai = int(th_row[1] or 0)
+    tong_diem_all = float(th_row[2] or 0)
+    so_cc_co_loi_cl = int(th_row[3] or 0)
+    so_cc_co_loi_td = int(th_row[4] or 0)
+
+    bien_che_result = await db.execute(sa_text(
+        "SELECT COUNT(*) FROM cong_chuc WHERE is_active = true"
+    ))
+    tong_bien_che = int(bien_che_result.scalar() or 0)
+
+    top_lv_stmt = sa_text(f"""
+        SELECT kk.linh_vuc_snapshot,
+               MAX(dm.ten_linh_vuc) as ten_lv,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
-        WHERE kk.thang IN :thang_list AND kk.nam = :nam
-              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(sp.ten_sp, 'V2_PL3 (theo lĩnh vực)')
-        ORDER BY ma_sp
+        {base_where} AND kk.linh_vuc_snapshot IS NOT NULL
+        GROUP BY kk.linh_vuc_snapshot
+        ORDER BY tong_diem DESC
+        LIMIT 1
     """).bindparams(bindparam('thang_list', expanding=True))
+    top_lv_row = (await db.execute(top_lv_stmt, params)).first()
+    linh_vuc_top = None
+    if top_lv_row:
+        linh_vuc_top = {
+            "ma_lv": top_lv_row[0],
+            "ten_lv": top_lv_row[1] or "",
+            "tong_diem": float(top_lv_row[2] or 0),
+        }
 
-    sp_result = await db.execute(sp_stmt, {"thang_list": thang_list, "nam": nam})
-    sp_data = [{
-        "ma_sp": row[0], "ten_sp": row[1],
-        "so_khai": int(row[2]), "tong_sp": float(row[3]),
-    } for row in sp_result]
+    tong_hop = {
+        "so_cc_ke_khai": so_cc_ke_khai,
+        "so_luot_khai": so_luot_khai,
+        "tong_diem": tong_diem_all,
+        "tb_diem_per_cc": (tong_diem_all / so_cc_ke_khai) if so_cc_ke_khai > 0 else 0.0,
+        "ty_le_ke_khai": (so_cc_ke_khai / tong_bien_che * 100) if tong_bien_che > 0 else 0.0,
+        "tong_bien_che": tong_bien_che,
+        "so_cc_co_loi_cl": so_cc_co_loi_cl,
+        "so_cc_co_loi_td": so_cc_co_loi_td,
+        "linh_vuc_top": linh_vuc_top,
+    }
 
-    # Theo cấp độ phức tạp — LEFT JOIN, V2 gom "V2_PL3"
-    cap_do_stmt = sa_text("""
-        SELECT COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
-               COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)') AS ten_cap_do,
-               COUNT(*) as so_khai,
-               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp_quy_doi
+    # 2. Nhóm PL3
+    nhom_stmt = sa_text(f"""
+        SELECT kk.nhom_pl3_snapshot, COUNT(*),
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0)
         FROM ke_khai_cong_viec kk
-        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
-        WHERE kk.thang IN :thang_list AND kk.nam = :nam
-              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY COALESCE(cd.ma_cap_do, 'V2_PL3'), COALESCE(cd.ten_cap_do, 'V2_PL3 (theo nhóm PL3)')
-        ORDER BY ma_cap_do
+        {base_where} AND kk.nhom_pl3_snapshot IS NOT NULL
+        GROUP BY kk.nhom_pl3_snapshot
+        ORDER BY kk.nhom_pl3_snapshot
     """).bindparams(bindparam('thang_list', expanding=True))
+    nhom_result = await db.execute(nhom_stmt, params)
+    nhom_map = {int(r[0]): {"so_luot": int(r[1]), "tong_diem": float(r[2])} for r in nhom_result}
+    NHOM_MO_TA = {1: ("Đơn giản", 100), 2: ("Trung bình", 200),
+                  3: ("Khá", 300), 4: ("Khó", 400), 5: ("Rất khó", 500)}
+    nhom_pl3_data = []
+    for n in (1, 2, 3, 4, 5):
+        info = nhom_map.get(n, {"so_luot": 0, "tong_diem": 0.0})
+        ten, khung = NHOM_MO_TA[n]
+        nhom_pl3_data.append({"nhom": n, "ten": ten, "khung": khung,
+                              "so_luot": info["so_luot"], "tong_diem": info["tong_diem"]})
 
-    cap_do_result = await db.execute(cap_do_stmt, {"thang_list": thang_list, "nam": nam})
-    cap_do_data = [{
-        "ma_cap_do": row[0], "ten_cap_do": row[1],
-        "so_khai": int(row[2]), "tong_sp": float(row[3]),
-    } for row in cap_do_result]
-
-    # Theo đơn vị x SP x cấp độ — LEFT JOIN
-    dv_stmt = sa_text("""
+    # 3. Ranking đơn vị
+    rank_stmt = sa_text(f"""
         SELECT dv.ten_don_vi,
-               COALESCE(sp.ma_sp, 'V2_PL3') AS ma_sp,
-               COALESCE(cd.ma_cap_do, 'V2_PL3') AS ma_cap_do,
-               COUNT(*) as so_khai,
-               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_sp
+               COUNT(DISTINCT kk.cong_chuc_id) as so_cc,
+               COUNT(*) as so_luot,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem,
+               COALESCE(SUM(kk.so_loi_chat_luong), 0) as loi_cl,
+               COALESCE(SUM(kk.so_loi_tien_do), 0) as loi_td
         FROM ke_khai_cong_viec kk
-        JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
-        LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
-        LEFT JOIN cap_do_phuc_tap cd ON cd.id = kk.cap_do_id
         JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
-        JOIN don_vi dv ON dv.id = cc.don_vi_id
-        WHERE kk.thang IN :thang_list AND kk.nam = :nam
-              AND kk.trang_thai = 'DA_PHE_DUYET' AND kk.is_deleted = false
-        GROUP BY dv.ten_don_vi, COALESCE(sp.ma_sp, 'V2_PL3'), COALESCE(cd.ma_cap_do, 'V2_PL3')
-        ORDER BY dv.ten_don_vi, ma_sp, ma_cap_do
+        LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        {base_where}
+        GROUP BY dv.ten_don_vi
+        ORDER BY tong_diem DESC
     """).bindparams(bindparam('thang_list', expanding=True))
+    rank_result = await db.execute(rank_stmt, params)
+    ranking_dv = []
+    for r in rank_result:
+        so_cc = int(r[1] or 0)
+        tong_d = float(r[3] or 0)
+        ranking_dv.append({
+            "don_vi": r[0] or "(không xác định)",
+            "so_cc": so_cc, "so_luot": int(r[2] or 0),
+            "tong_diem": tong_d,
+            "tb_per_cc": (tong_d / so_cc) if so_cc > 0 else 0.0,
+            "loi_cl": int(r[4] or 0), "loi_td": int(r[5] or 0),
+        })
 
-    dv_result = await db.execute(dv_stmt, {"thang_list": thang_list, "nam": nam})
-    dv_data = [{
-        "don_vi": row[0], "ma_sp": row[1], "ma_cap_do": row[2],
-        "so_khai": int(row[3]), "tong_sp": float(row[4]),
-    } for row in dv_result]
+    # 4. Pivot đơn vị × nhóm
+    pivot_stmt = sa_text(f"""
+        SELECT dv.ten_don_vi, kk.nhom_pl3_snapshot,
+               COALESCE(SUM(kk.so_sp_goc_quy_doi), 0) as tong_diem
+        FROM ke_khai_cong_viec kk
+        JOIN cong_chuc cc ON cc.id = kk.cong_chuc_id
+        LEFT JOIN don_vi dv ON dv.id = cc.don_vi_id
+        {base_where} AND kk.nhom_pl3_snapshot IS NOT NULL
+        GROUP BY dv.ten_don_vi, kk.nhom_pl3_snapshot
+    """).bindparams(bindparam('thang_list', expanding=True))
+    pivot_result = await db.execute(pivot_stmt, params)
+    pivot_dv_nhom = defaultdict(lambda: defaultdict(float))
+    for r in pivot_result:
+        pivot_dv_nhom[r[0] or "(không xác định)"][int(r[1])] = float(r[2] or 0)
 
-    tong_sp_all = sum(item["tong_sp"] for item in sp_data)
-    return sp_data, cap_do_data, dv_data, tong_sp_all, so_ngay_quy
+    return {
+        "tong_hop": tong_hop,
+        "nhom_pl3": nhom_pl3_data,
+        "ranking_dv": ranking_dv,
+        "pivot_dv_nhom": dict(pivot_dv_nhom),
+        "so_ngay": so_ngay_quy,
+    }
 
 
 # =============================================================================
@@ -5601,14 +5754,19 @@ async def _generate_report_03_quy(db: AsyncSession, quy: int, nam: int) -> io.By
 # =============================================================================
 
 async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.BytesIO:
-    """Generate Excel File 04 quý — Khối lượng công việc cộng dồn 3 tháng."""
+    """Generate Excel File 04 QUÝ — V2 native, cộng dồn 3 tháng (2026-05-14).
+
+    Tái sử dụng cùng layout 4 sheet như tháng (chỉ đổi title).
+    """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from collections import defaultdict
 
-    sp_data, cap_do_data, don_vi_data, tong_sp_all, so_ngay_quy = (
-        await _get_data_04_quy(db, quy, nam)
-    )
+    data = await _get_data_04_quy(db, quy, nam)
+    tong_hop = data["tong_hop"]
+    nhom_pl3 = data["nhom_pl3"]
+    ranking_dv = data["ranking_dv"]
+    pivot_dv_nhom = data["pivot_dv_nhom"]
+    so_ngay_quy = data["so_ngay"]
 
     wb = Workbook()
 
@@ -5616,245 +5774,249 @@ async def _generate_report_04_quy(db: AsyncSession, quy: int, nam: int) -> io.By
     header_font_white = Font(bold=True, size=12, color="FFFFFF")
     title_font = Font(bold=True, size=14)
     percent_font = Font(bold=True, color="0070C0")
-    sp1_fill = PatternFill("solid", fgColor="DAEEF3")
-    sp2_fill = PatternFill("solid", fgColor="E2EFDA")
-    sp3_fill = PatternFill("solid", fgColor="FDE9D9")
-    sp4_fill = PatternFill("solid", fgColor="E4DFEC")
+    alert_fill = PatternFill("solid", fgColor="FFC7CE")
+    warn_fill = PatternFill("solid", fgColor="FFEB9C")
+    gold_fill = PatternFill("solid", fgColor="FFD966")
     border = Border(
         left=Side(style='thin'), right=Side(style='thin'),
         top=Side(style='thin'), bottom=Side(style='thin')
     )
-    center_alignment = Alignment(horizontal='center', vertical='center')
+    center = Alignment(horizontal='center', vertical='center')
+    wrap_top = Alignment(wrap_text=True, vertical='top')
 
-    v2_fill = PatternFill("solid", fgColor="E4DFEC")
-    SP_FILLS = {"SP1": sp1_fill, "SP2": sp2_fill, "SP3": sp3_fill, "SP4": sp4_fill, "V2_PL3": v2_fill}
-    SP_NAMES = {
-        "SP1": "Tờ khai HQ (kiểm tra chi tiết hồ sơ)",
-        "SP2": "Văn bản hành chính",
-        "SP3": "Giờ trực làm việc",
-        "SP4": "Giờ tuần tra kiểm soát",
-        "V2_PL3": "V2_PL3 (theo lĩnh vực — xem Báo cáo 07 quý)",
+    NHOM_FILLS = {
+        1: PatternFill("solid", fgColor="C6EFCE"),
+        2: PatternFill("solid", fgColor="D9EAD3"),
+        3: PatternFill("solid", fgColor="FFEB9C"),
+        4: PatternFill("solid", fgColor="FFC7CE"),
+        5: PatternFill("solid", fgColor="E6B8AF"),
     }
-    CAP_DO_NAMES = {
-        "C1": "Dễ - Đơn giản",
-        "C2": "Trung bình - Thông thường",
-        "C3": "Khó - Nâng cao",
-        "C4": "Rất khó - Phức tạp",
-        "C5": "Đặc biệt khó - Đặc thù",
-        "V2_PL3": "V2_PL3 (theo nhóm PL3 — xem Báo cáo 07 quý)",
-    }
-
-    def pct(val):
-        return f"{val/tong_sp_all*100:.1f}%" if tong_sp_all > 0 else "0%"
 
     # SHEET 1: TỔNG HỢP
     ws1 = wb.active
     ws1.title = "Tổng hợp"
-
     ws1['A1'] = f"4. KHỐI LƯỢNG CÔNG VIỆC (CỘNG DỒN 3 THÁNG) - QUÝ {quy}/{nam}"
     ws1['A1'].font = title_font
-    ws1.merge_cells('A1:E1')
+    ws1.merge_cells('A1:C1')
+    ws1['A2'] = f"Chi cục Hải quan Khu vực VIII | Tổng ngày làm việc quý: {so_ngay_quy}. Dữ liệu V2_PL3."
+    ws1['A2'].font = Font(italic=True, color="666666")
 
-    ws1['A2'] = (f"Chi cục Hải quan Khu vực VIII | Tổng SP quý: {tong_sp_all:,.0f} | Số ngày: {so_ngay_quy}. "
-                 "Dòng V2_PL3 = kê khai mới (lĩnh vực + nhóm PL3) — xem Báo cáo 07 quý.")
-    ws1['A2'].font = Font(bold=True)
+    rows_data = [
+        ("Tổng số CC kê khai (quý)", f"{tong_hop['so_cc_ke_khai']:,}",
+         f"{tong_hop['ty_le_ke_khai']:.1f}% trên {tong_hop['tong_bien_che']} biên chế"),
+        ("Tổng số lượt kê khai (quý)", f"{tong_hop['so_luot_khai']:,}", ""),
+        ("Tổng điểm SP toàn Chi cục (quý)", f"{tong_hop['tong_diem']:,.0f}", "đơn vị: điểm SP quy đổi"),
+        ("Trung bình điểm / CC (quý)", f"{tong_hop['tb_diem_per_cc']:,.1f}", "tổng điểm ÷ số CC kê khai"),
+        ("Số CC có lỗi CL (≥1 lần trong quý)",
+         f"{tong_hop['so_cc_co_loi_cl']:,}",
+         f"{tong_hop['so_cc_co_loi_cl']/tong_hop['so_cc_ke_khai']*100:.1f}%" if tong_hop['so_cc_ke_khai'] > 0 else "0%"),
+        ("Số CC có lỗi TĐ (≥1 lần trong quý)",
+         f"{tong_hop['so_cc_co_loi_td']:,}",
+         f"{tong_hop['so_cc_co_loi_td']/tong_hop['so_cc_ke_khai']*100:.1f}%" if tong_hop['so_cc_ke_khai'] > 0 else "0%"),
+    ]
+    if tong_hop["linh_vuc_top"]:
+        lv = tong_hop["linh_vuc_top"]
+        rows_data.append((
+            "Lĩnh vực nhiều SP nhất (quý)",
+            f"LV {lv['ma_lv']} — {lv['ten_lv'][:40]}",
+            f"{lv['tong_diem']:,.0f} điểm"
+        ))
 
     row = 4
-    ws1.cell(row=row, column=1, value="4.1. KHỐI LƯỢNG CÔNG VIỆC")
-    ws1.cell(row=row, column=1).font = Font(bold=True, size=13, color="2F5496")
-    ws1.merge_cells(f'A{row}:E{row}')
-
-    row += 1
-    headers = ["Loại SP", "Tên", "Số lượng SP", "Tỷ lệ"]
-    for col, h in enumerate(headers, 1):
+    for col, h in enumerate(["Chỉ tiêu", "Giá trị", "Ghi chú"], 1):
         cell = ws1.cell(row=row, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
         cell.border = border
-        cell.alignment = center_alignment
+        cell.alignment = center
 
-    for sp in sp_data:
-        row += 1
-        ws1.cell(row=row, column=1, value=sp["ma_sp"]).border = border
-        ws1.cell(row=row, column=1).fill = SP_FILLS.get(sp["ma_sp"], sp1_fill)
-        ws1.cell(row=row, column=1).font = Font(bold=True)
-        ten_sp = SP_NAMES.get(sp["ma_sp"], sp["ten_sp"])
-        ws1.cell(row=row, column=2, value=ten_sp).border = border
-        ws1.cell(row=row, column=3, value=f"{sp['tong_sp']:,.0f}").border = border
-        ws1.cell(row=row, column=3).alignment = center_alignment
-        ws1.cell(row=row, column=4, value=pct(sp["tong_sp"])).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
-        ws1.cell(row=row, column=4).font = percent_font
+    for i, (label, val, note) in enumerate(rows_data):
+        r = row + 1 + i
+        ws1.cell(row=r, column=1, value=label).border = border
+        ws1.cell(row=r, column=1).font = Font(bold=True)
+        val_cell = ws1.cell(row=r, column=2, value=val)
+        val_cell.border = border
+        val_cell.alignment = center
+        val_cell.font = Font(bold=True, color="0070C0")
+        ws1.cell(row=r, column=3, value=note).border = border
+        ws1.cell(row=r, column=3).alignment = wrap_top
 
-    row += 1
-    ws1.cell(row=row, column=1, value="TỔNG").border = border
-    ws1.cell(row=row, column=1).font = Font(bold=True)
-    ws1.cell(row=row, column=2).border = border
-    ws1.cell(row=row, column=3, value=f"{tong_sp_all:,.0f}").border = border
-    ws1.cell(row=row, column=3).font = Font(bold=True)
-    ws1.cell(row=row, column=3).alignment = center_alignment
-    ws1.cell(row=row, column=4, value="100%").border = border
-    ws1.cell(row=row, column=4).font = Font(bold=True, color="0070C0")
-    ws1.cell(row=row, column=4).alignment = center_alignment
+    ws1.column_dimensions['A'].width = 38
+    ws1.column_dimensions['B'].width = 30
+    ws1.column_dimensions['C'].width = 45
 
-    row += 3
-    ws1.cell(row=row, column=1, value="4.2. MỨC ĐỘ PHỨC TẠP")
-    ws1.cell(row=row, column=1).font = Font(bold=True, size=13, color="2F5496")
-    ws1.merge_cells(f'A{row}:E{row}')
-
-    row += 1
-    for col, h in enumerate(["Cấp độ", "Tên", "Số lượng SP", "Tỷ lệ"], 1):
-        cell = ws1.cell(row=row, column=col, value=h)
-        cell.font = header_font_white
-        cell.fill = header_fill
-        cell.border = border
-        cell.alignment = center_alignment
-
-    cap_do_fills = {
-        "C1": PatternFill("solid", fgColor="C6EFCE"),
-        "C2": PatternFill("solid", fgColor="D9EAD3"),
-        "C3": PatternFill("solid", fgColor="FFEB9C"),
-        "C4": PatternFill("solid", fgColor="FFC7CE"),
-        "C5": PatternFill("solid", fgColor="E6B8AF"),
-        "V2_PL3": v2_fill,
-    }
-
-    for cd in cap_do_data:
-        row += 1
-        ws1.cell(row=row, column=1, value=cd["ma_cap_do"]).border = border
-        ws1.cell(row=row, column=1).fill = cap_do_fills.get(cd["ma_cap_do"], sp1_fill)
-        ws1.cell(row=row, column=1).font = Font(bold=True)
-        ws1.cell(row=row, column=1).alignment = center_alignment
-        ten_cd = CAP_DO_NAMES.get(cd["ma_cap_do"], cd["ten_cap_do"])
-        ws1.cell(row=row, column=2, value=ten_cd).border = border
-        ws1.cell(row=row, column=3, value=f"{cd['tong_sp']:,.0f}").border = border
-        ws1.cell(row=row, column=3).alignment = center_alignment
-        ws1.cell(row=row, column=4, value=pct(cd["tong_sp"])).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
-        ws1.cell(row=row, column=4).font = percent_font
-
-    row += 1
-    tong_cap_do = sum(cd["tong_sp"] for cd in cap_do_data)
-    ws1.cell(row=row, column=1, value="TỔNG").border = border
-    ws1.cell(row=row, column=1).font = Font(bold=True)
-    ws1.cell(row=row, column=2).border = border
-    ws1.cell(row=row, column=3, value=f"{tong_cap_do:,.0f}").border = border
-    ws1.cell(row=row, column=3).font = Font(bold=True)
-    ws1.cell(row=row, column=3).alignment = center_alignment
-    ws1.cell(row=row, column=4, value="100%").border = border
-    ws1.cell(row=row, column=4).font = Font(bold=True, color="0070C0")
-    ws1.cell(row=row, column=4).alignment = center_alignment
-
-    ws1.column_dimensions['A'].width = 12
-    ws1.column_dimensions['B'].width = 40
-    ws1.column_dimensions['C'].width = 15
-    ws1.column_dimensions['D'].width = 12
-
-    # SHEET 2: Theo đơn vị - Loại SP (thêm cột V2_PL3)
-    ws2 = wb.create_sheet("Theo đơn vị - Loại SP")
-    ws2['A1'] = f"CHI TIẾT KHỐI LƯỢNG CV THEO ĐƠN VỊ (CỘNG DỒN 3 THÁNG) - QUÝ {quy}/{nam}"
+    # SHEET 2: NHÓM PL3
+    ws2 = wb.create_sheet("Theo Nhóm PL3")
+    ws2['A1'] = f"PHÂN BỐ KHỐI LƯỢNG THEO NHÓM PL3 (QUÝ) - QUÝ {quy}/{nam}"
     ws2['A1'].font = title_font
-    ws2.merge_cells('A1:H1')
+    ws2.merge_cells('A1:F1')
+    ws2['A2'] = "Cộng dồn 3 tháng. Nhóm 1 (đơn giản) → 5 (rất khó)."
+    ws2['A2'].font = Font(italic=True, color="666666")
 
-    pivot_dv_sp = defaultdict(lambda: defaultdict(float))
-    for item in don_vi_data:
-        pivot_dv_sp[item["don_vi"]][item["ma_sp"]] += item["tong_sp"]
-
-    SP_COLS_Q = ["SP1", "SP2", "SP3", "SP4", "V2_PL3"]
-    for col, h in enumerate(["STT", "Đơn vị"] + SP_COLS_Q + ["Tổng"], 1):
-        cell = ws2.cell(row=3, column=col, value=h)
+    for col, h in enumerate(["Nhóm", "Mô tả", "Khung điểm tối đa", "Số lượt khai (quý)", "Tổng điểm (quý)", "Tỷ lệ"], 1):
+        cell = ws2.cell(row=4, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
         cell.border = border
-        cell.alignment = center_alignment
+        cell.alignment = center
 
-    row = 3
-    for i, (dv, sp_map) in enumerate(sorted(pivot_dv_sp.items()), 1):
-        row += 1
-        ws2.cell(row=row, column=1, value=i).border = border
-        ws2.cell(row=row, column=2, value=dv).border = border
-        tong_dv = 0
-        for col_idx, ma_sp in enumerate(SP_COLS_Q, 3):
-            val = sp_map.get(ma_sp, 0)
-            tong_dv += val
-            cell = ws2.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
-            cell.border = border
-            cell.alignment = center_alignment
-            if val > 0:
-                cell.fill = SP_FILLS.get(ma_sp, sp1_fill)
-        ws2.cell(row=row, column=3 + len(SP_COLS_Q), value=f"{tong_dv:,.0f}").border = border
-        ws2.cell(row=row, column=3 + len(SP_COLS_Q)).font = Font(bold=True)
-        ws2.cell(row=row, column=3 + len(SP_COLS_Q)).alignment = center_alignment
+    tong_diem_nhom = sum(n["tong_diem"] for n in nhom_pl3)
+    tong_luot_nhom = sum(n["so_luot"] for n in nhom_pl3)
+    for i, n in enumerate(nhom_pl3):
+        r = 5 + i
+        nhom_cell = ws2.cell(row=r, column=1, value=n["nhom"])
+        nhom_cell.border = border
+        nhom_cell.alignment = center
+        nhom_cell.font = Font(bold=True)
+        nhom_cell.fill = NHOM_FILLS[n["nhom"]]
+        ws2.cell(row=r, column=2, value=n["ten"]).border = border
+        ws2.cell(row=r, column=3, value=n["khung"]).border = border
+        ws2.cell(row=r, column=3).alignment = center
+        ws2.cell(row=r, column=4, value=n["so_luot"]).border = border
+        ws2.cell(row=r, column=4).alignment = center
+        ws2.cell(row=r, column=5, value=f"{n['tong_diem']:,.0f}").border = border
+        ws2.cell(row=r, column=5).alignment = center
+        ws2.cell(row=r, column=5).font = Font(bold=True)
+        pct_val = (n["tong_diem"] / tong_diem_nhom * 100) if tong_diem_nhom > 0 else 0
+        pct_cell = ws2.cell(row=r, column=6, value=f"{pct_val:.1f}%")
+        pct_cell.border = border
+        pct_cell.alignment = center
+        pct_cell.font = percent_font
 
-    row += 1
-    ws2.cell(row=row, column=1).border = border
-    ws2.cell(row=row, column=2, value="TỔNG").border = border
-    ws2.cell(row=row, column=2).font = Font(bold=True)
-    for col_idx, ma_sp in enumerate(SP_COLS_Q, 3):
-        tong = sum(sp_map.get(ma_sp, 0) for sp_map in pivot_dv_sp.values())
-        cell = ws2.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
-        cell.border = border
-        cell.font = Font(bold=True)
-        cell.alignment = center_alignment
-    ws2.cell(row=row, column=3 + len(SP_COLS_Q), value=f"{tong_sp_all:,.0f}").border = border
-    ws2.cell(row=row, column=3 + len(SP_COLS_Q)).font = Font(bold=True)
-    ws2.cell(row=row, column=3 + len(SP_COLS_Q)).alignment = center_alignment
+    r = 5 + len(nhom_pl3)
+    ws2.cell(row=r, column=1, value="TỔNG").border = border
+    ws2.cell(row=r, column=1).font = Font(bold=True)
+    ws2.cell(row=r, column=2).border = border
+    ws2.cell(row=r, column=3).border = border
+    ws2.cell(row=r, column=4, value=tong_luot_nhom).border = border
+    ws2.cell(row=r, column=4).alignment = center
+    ws2.cell(row=r, column=4).font = Font(bold=True)
+    ws2.cell(row=r, column=5, value=f"{tong_diem_nhom:,.0f}").border = border
+    ws2.cell(row=r, column=5).alignment = center
+    ws2.cell(row=r, column=5).font = Font(bold=True)
+    ws2.cell(row=r, column=6, value="100%").border = border
+    ws2.cell(row=r, column=6).alignment = center
+    ws2.cell(row=r, column=6).font = Font(bold=True, color="0070C0")
 
-    for c, w in [('A', 5), ('B', 35), ('C', 12), ('D', 12), ('E', 12), ('F', 12), ('G', 12), ('H', 12)]:
+    for c, w in [('A', 8), ('B', 18), ('C', 18), ('D', 16), ('E', 16), ('F', 10)]:
         ws2.column_dimensions[c].width = w
 
-    # SHEET 3: Theo đơn vị - Cấp độ (thêm cột V2_PL3)
-    ws3 = wb.create_sheet("Theo đơn vị - Cấp độ")
-    ws3['A1'] = f"CHI TIẾT MỨC ĐỘ PHỨC TẠP THEO ĐƠN VỊ (QUÝ) - QUÝ {quy}/{nam}"
+    # SHEET 3: RANKING ĐƠN VỊ
+    ws3 = wb.create_sheet("Ranking đơn vị")
+    ws3['A1'] = f"XẾP HẠNG ĐƠN VỊ THEO TỔNG ĐIỂM (QUÝ) - QUÝ {quy}/{nam}"
     ws3['A1'].font = title_font
-    ws3.merge_cells('A1:I1')
+    ws3.merge_cells('A1:H1')
+    ws3['A2'] = "Top 3 nền vàng, bottom 3 nền hồng. TB điểm/CC = Tổng điểm ÷ số CC kê khai."
+    ws3['A2'].font = Font(italic=True, color="666666")
 
-    pivot_dv_cd = defaultdict(lambda: defaultdict(float))
-    for item in don_vi_data:
-        pivot_dv_cd[item["don_vi"]][item["ma_cap_do"]] += item["tong_sp"]
-
-    CD_COLS_Q = ["C1", "C2", "C3", "C4", "C5", "V2_PL3"]
-    for col, h in enumerate(["STT", "Đơn vị"] + CD_COLS_Q + ["Tổng"], 1):
-        cell = ws3.cell(row=3, column=col, value=h)
+    for col, h in enumerate(["Hạng", "Đơn vị", "Số CC", "Số lượt khai (quý)", "Tổng điểm (quý)", "TB điểm/CC", "Lỗi CL", "Lỗi TĐ"], 1):
+        cell = ws3.cell(row=4, column=col, value=h)
         cell.font = header_font_white
         cell.fill = header_fill
         cell.border = border
-        cell.alignment = center_alignment
+        cell.alignment = center
 
-    row = 3
-    for i, (dv, cd_map) in enumerate(sorted(pivot_dv_cd.items()), 1):
-        row += 1
-        ws3.cell(row=row, column=1, value=i).border = border
-        ws3.cell(row=row, column=2, value=dv).border = border
-        tong_dv = 0
-        for col_idx, ma_cd in enumerate(CD_COLS_Q, 3):
-            val = cd_map.get(ma_cd, 0)
+    n_dv = len(ranking_dv)
+    for i, dv in enumerate(ranking_dv):
+        r = 5 + i
+        hang_cell = ws3.cell(row=r, column=1, value=i + 1)
+        hang_cell.border = border
+        hang_cell.alignment = center
+        hang_cell.font = Font(bold=True)
+        is_top3 = i < 3
+        is_bottom3 = (n_dv > 6 and i >= n_dv - 3)
+        row_fill = gold_fill if is_top3 else (alert_fill if is_bottom3 else None)
+        if row_fill:
+            hang_cell.fill = row_fill
+        ws3.cell(row=r, column=2, value=dv["don_vi"]).border = border
+        if row_fill:
+            ws3.cell(row=r, column=2).fill = row_fill
+        ws3.cell(row=r, column=3, value=dv["so_cc"]).border = border
+        ws3.cell(row=r, column=3).alignment = center
+        ws3.cell(row=r, column=4, value=dv["so_luot"]).border = border
+        ws3.cell(row=r, column=4).alignment = center
+        ws3.cell(row=r, column=5, value=f"{dv['tong_diem']:,.0f}").border = border
+        ws3.cell(row=r, column=5).alignment = center
+        ws3.cell(row=r, column=5).font = Font(bold=True)
+        ws3.cell(row=r, column=6, value=f"{dv['tb_per_cc']:,.1f}").border = border
+        ws3.cell(row=r, column=6).alignment = center
+        cl_cell = ws3.cell(row=r, column=7, value=dv["loi_cl"])
+        cl_cell.border = border
+        cl_cell.alignment = center
+        if dv["loi_cl"] > 0:
+            cl_cell.fill = alert_fill
+            cl_cell.font = Font(bold=True, color="9C0006")
+        td_cell = ws3.cell(row=r, column=8, value=dv["loi_td"])
+        td_cell.border = border
+        td_cell.alignment = center
+        if dv["loi_td"] > 0:
+            td_cell.fill = warn_fill
+            td_cell.font = Font(bold=True, color="9C5700")
+
+    for c, w in [('A', 6), ('B', 35), ('C', 8), ('D', 16), ('E', 16), ('F', 12), ('G', 9), ('H', 9)]:
+        ws3.column_dimensions[c].width = w
+
+    if ranking_dv:
+        ws3.auto_filter.ref = f"A4:H{4 + n_dv}"
+
+    # SHEET 4: PIVOT ĐƠN VỊ × NHÓM PL3
+    ws4 = wb.create_sheet("Đơn vị × Nhóm PL3")
+    ws4['A1'] = f"PIVOT TỔNG ĐIỂM THEO ĐƠN VỊ × NHÓM PL3 (QUÝ) - QUÝ {quy}/{nam}"
+    ws4['A1'].font = title_font
+    ws4.merge_cells('A1:I1')
+    ws4['A2'] = "Cộng dồn 3 tháng. Cho thấy mỗi đơn vị làm công việc ở mức độ phức tạp nào nhiều nhất."
+    ws4['A2'].font = Font(italic=True, color="666666")
+
+    headers4 = ["STT", "Đơn vị", "Nhóm 1\n(Đơn giản)", "Nhóm 2\n(TB)", "Nhóm 3\n(Khá)",
+                "Nhóm 4\n(Khó)", "Nhóm 5\n(Rất khó)", "Tổng điểm"]
+    for col, h in enumerate(headers4, 1):
+        cell = ws4.cell(row=4, column=col, value=h.replace("\n", "\n"))
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        if col >= 3 and col <= 7:
+            cell.fill = NHOM_FILLS[col - 2]
+
+    dv_sorted = sorted(pivot_dv_nhom.keys())
+    for i, dv in enumerate(dv_sorted):
+        r = 5 + i
+        ws4.cell(row=r, column=1, value=i + 1).border = border
+        ws4.cell(row=r, column=1).alignment = center
+        ws4.cell(row=r, column=2, value=dv).border = border
+        tong_dv = 0.0
+        for col_idx, n in enumerate((1, 2, 3, 4, 5), 3):
+            val = pivot_dv_nhom[dv].get(n, 0)
             tong_dv += val
-            cell = ws3.cell(row=row, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
+            cell = ws4.cell(row=r, column=col_idx, value=f"{val:,.0f}" if val > 0 else "")
             cell.border = border
-            cell.alignment = center_alignment
+            cell.alignment = center
             if val > 0:
-                cell.fill = cap_do_fills.get(ma_cd)
-        ws3.cell(row=row, column=3 + len(CD_COLS_Q), value=f"{tong_dv:,.0f}").border = border
-        ws3.cell(row=row, column=3 + len(CD_COLS_Q)).font = Font(bold=True)
-        ws3.cell(row=row, column=3 + len(CD_COLS_Q)).alignment = center_alignment
+                cell.fill = NHOM_FILLS[n]
+        tong_cell = ws4.cell(row=r, column=8, value=f"{tong_dv:,.0f}")
+        tong_cell.border = border
+        tong_cell.alignment = center
+        tong_cell.font = Font(bold=True)
 
-    row += 1
-    ws3.cell(row=row, column=1).border = border
-    ws3.cell(row=row, column=2, value="TỔNG").border = border
-    ws3.cell(row=row, column=2).font = Font(bold=True)
-    for col_idx, ma_cd in enumerate(CD_COLS_Q, 3):
-        tong = sum(cd_map.get(ma_cd, 0) for cd_map in pivot_dv_cd.values())
-        cell = ws3.cell(row=row, column=col_idx, value=f"{tong:,.0f}")
+    r = 5 + len(dv_sorted)
+    ws4.cell(row=r, column=1).border = border
+    ws4.cell(row=r, column=2, value="TỔNG").border = border
+    ws4.cell(row=r, column=2).font = Font(bold=True)
+    total_all = 0.0
+    for col_idx, n in enumerate((1, 2, 3, 4, 5), 3):
+        tong = sum(dv_map.get(n, 0) for dv_map in pivot_dv_nhom.values())
+        total_all += tong
+        cell = ws4.cell(row=r, column=col_idx, value=f"{tong:,.0f}")
         cell.border = border
         cell.font = Font(bold=True)
-        cell.alignment = center_alignment
-    ws3.cell(row=row, column=3 + len(CD_COLS_Q), value=f"{tong_sp_all:,.0f}").border = border
-    ws3.cell(row=row, column=3 + len(CD_COLS_Q)).font = Font(bold=True)
-    ws3.cell(row=row, column=3 + len(CD_COLS_Q)).alignment = center_alignment
+        cell.alignment = center
+    ws4.cell(row=r, column=8, value=f"{total_all:,.0f}").border = border
+    ws4.cell(row=r, column=8).font = Font(bold=True)
+    ws4.cell(row=r, column=8).alignment = center
 
-    for c, w in [('A', 5), ('B', 35), ('C', 10), ('D', 10), ('E', 10), ('F', 10), ('G', 10), ('H', 12), ('I', 12)]:
-        ws3.column_dimensions[c].width = w
+    ws4.row_dimensions[4].height = 32
+    for c, w in [('A', 5), ('B', 30), ('C', 12), ('D', 11), ('E', 11), ('F', 11), ('G', 13), ('H', 13)]:
+        ws4.column_dimensions[c].width = w
 
     output = io.BytesIO()
     wb.save(output)

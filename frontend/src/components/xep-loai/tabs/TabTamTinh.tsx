@@ -578,7 +578,10 @@ export default function TabTamTinh({ thang, nam, capBac, onPendingCountChange }:
                       <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{tamTinh.tong_cong_viec ?? 0}</td>
                       <td className="px-2 py-3 text-center text-gray-900 border-r">{thucTe.tong_hoan_thanh ?? 0}</td>
                       <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium">{tamTinh.tong_hoan_thanh ?? 0}</td>
-                      {/* Cột d/đ/e: HĐ 111 không có, gạch "-" */}
+                      {/* Cột d/đ/e: HĐ 111 không có, gạch "-".
+                          2026-05-14: trước đây hiển thị literal "d/đ/e" (chỉ tooltip
+                          mới có số) + fallback ?? 1 * 100 → user thấy "luôn 100%".
+                          Giờ hiển thị giá trị trực tiếp dạng "d/đ/e" với 3 số. */}
                       {thucTe.is_hd_111 ? (
                         <>
                           <td className="px-2 py-3 text-center text-gray-400 border-r">-</td>
@@ -586,12 +589,37 @@ export default function TabTamTinh({ thang, nam, capBac, onPendingCountChange }:
                         </>
                       ) : (
                         <>
-                          <td className="px-2 py-3 text-center text-gray-900 border-r" title={`d=${formatScore(((thucTe.d_ket_qua ?? 1) * 100))}% đ=${formatScore(((thucTe.dd_to_chuc ?? 1) * 100))}% e=${formatScore(((thucTe.e_doan_ket ?? 1) * 100))}%`}>
-                            d/đ/e
-                          </td>
-                          <td className="px-2 py-3 text-center text-amber-700 border-r bg-amber-50 font-medium" title={`d=${formatScore(((tamTinh.d_ket_qua ?? 1) * 100))}% đ=${formatScore(((tamTinh.dd_to_chuc ?? 1) * 100))}% e=${formatScore(((tamTinh.e_doan_ket ?? 1) * 100))}%`}>
-                            d/đ/e
-                          </td>
+                          {(() => {
+                            const fmtChiSo = (v: number | undefined): string => {
+                              if (v === undefined || v === null) return '—';
+                              const pct = Math.round(v * 100);
+                              return `${pct}`;
+                            };
+                            const isLow = (v: number | undefined) => v !== undefined && v !== null && v < 1;
+                            const renderTrio = (d: number | undefined, dd: number | undefined, e: number | undefined, isTamTinh: boolean) => {
+                              const cls = (v: number | undefined) =>
+                                isLow(v) ? 'font-bold text-red-600' : (isTamTinh ? 'text-amber-700' : 'text-gray-900');
+                              return (
+                                <span className="inline-flex items-center gap-1 font-medium">
+                                  <span className={cls(d)}>{fmtChiSo(d)}</span>
+                                  <span className="text-gray-300">/</span>
+                                  <span className={cls(dd)}>{fmtChiSo(dd)}</span>
+                                  <span className="text-gray-300">/</span>
+                                  <span className={cls(e)}>{fmtChiSo(e)}</span>
+                                </span>
+                              );
+                            };
+                            return (
+                              <>
+                                <td className="px-2 py-3 text-center border-r" title={`d=${fmtChiSo(thucTe.d_ket_qua)}% đ=${fmtChiSo(thucTe.dd_to_chuc)}% e=${fmtChiSo(thucTe.e_doan_ket)}%`}>
+                                  {renderTrio(thucTe.d_ket_qua, thucTe.dd_to_chuc, thucTe.e_doan_ket, false)}
+                                </td>
+                                <td className="px-2 py-3 text-center border-r bg-amber-50" title={`d=${fmtChiSo(tamTinh.d_ket_qua)}% đ=${fmtChiSo(tamTinh.dd_to_chuc)}% e=${fmtChiSo(tamTinh.e_doan_ket)}%`}>
+                                  {renderTrio(tamTinh.d_ket_qua, tamTinh.dd_to_chuc, tamTinh.e_doan_ket, true)}
+                                </td>
+                              </>
+                            );
+                          })()}
                         </>
                       )}
                       <td className="px-2 py-3 text-center text-gray-400 border-r">-</td>

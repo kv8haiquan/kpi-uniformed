@@ -1716,20 +1716,22 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
         diem_tru = sum(ly["diem_tru"] for ly in cc["ly_do_tru_diem"])
         ws2.cell(row=r, column=6, value=diem_tru).border = border
 
-        # Trạng thái
+        # Trạng thái — TrangThaiDanhGia (cấp phiếu chung)
         tt_raw = cc.get("dgt_trang_thai", "")
         tt_display = {
-            "DA_PHE_DUYET": "Đã duyệt",
-            "CHO_PHE_DUYET": "Chờ duyệt",
+            "HOAN_THANH": "Đã duyệt",
+            "CHO_PHE_DUYET": "Chờ CCT duyệt",
+            "DA_TONG_HOP": "Đã tổng hợp",
+            "CHO_TONG_HOP": "Chờ LĐ tổng hợp",
         }.get(tt_raw, tt_raw or "—")
         tt_cell = ws2.cell(row=r, column=7, value=tt_display)
         tt_cell.border = border
         tt_cell.alignment = center_alignment
-        if tt_raw == "CHO_PHE_DUYET":
+        if tt_raw == "HOAN_THANH":
+            tt_cell.fill = PatternFill("solid", fgColor="C6EFCE")
+        elif tt_raw in ("CHO_PHE_DUYET", "DA_TONG_HOP", "CHO_TONG_HOP"):
             tt_cell.fill = PatternFill("solid", fgColor="FFEB9C")
             tt_cell.font = Font(bold=True, color="9C5700")
-        elif tt_raw == "DA_PHE_DUYET":
-            tt_cell.fill = PatternFill("solid", fgColor="C6EFCE")
 
         ly_do_text = "; ".join([f"{ly['ma']}: {ly['ly_do']}" for ly in cc["ly_do_tru_diem"]])
         ws2.cell(row=r, column=8, value=ly_do_text).border = border
@@ -1886,19 +1888,21 @@ async def _generate_report_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: 
         ws5.cell(row=r, column=8, value=ma_list).border = border
         ws5.cell(row=r, column=8).alignment = center_alignment
 
-        # Cột 9: Trạng thái
+        # Cột 9: Trạng thái — TrangThaiDanhGia
         tt_raw = cc.get("dgt_trang_thai", "")
         tt_display = {
-            "DA_PHE_DUYET": "Đã duyệt",
-            "CHO_PHE_DUYET": "Chờ duyệt",
+            "HOAN_THANH": "Đã duyệt",
+            "CHO_PHE_DUYET": "Chờ CCT duyệt",
+            "DA_TONG_HOP": "Đã tổng hợp",
+            "CHO_TONG_HOP": "Chờ LĐ tổng hợp",
         }.get(tt_raw, tt_raw or "—")
         tt_cell5 = ws5.cell(row=r, column=9, value=tt_display)
         tt_cell5.border = border
         tt_cell5.alignment = center_alignment
-        if tt_raw == "CHO_PHE_DUYET":
+        if tt_raw in ("CHO_PHE_DUYET", "DA_TONG_HOP", "CHO_TONG_HOP"):
             tt_cell5.fill = PatternFill("solid", fgColor="FFEB9C")
             tt_cell5.font = Font(bold=True, color="9C5700")
-        elif tt_raw == "DA_PHE_DUYET":
+        elif tt_raw == "HOAN_THANH":
             tt_cell5.fill = PatternFill("solid", fgColor="C6EFCE")
 
         ws5.cell(row=r, column=10, value=ly_do_text).border = border
@@ -1929,9 +1933,9 @@ async def _get_data_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) ->
     result_tc = await db.execute(stmt_tc)
     all_tieu_chi = result_tc.scalars().all()
 
-    # Lấy đánh giá tháng — chỉ CHO_PHE_DUYET + DA_PHE_DUYET (loại NHAP/TU_CHOI).
-    # 2026-05-14: bao gồm cả CHO_PHE_DUYET để CCT/PCCT thấy được dữ liệu CC
-    # đã gửi nhưng LĐ chưa duyệt; cột "Trạng thái" trong sheet phân biệt.
+    # Lấy đánh giá tháng — TrangThaiDanhGia (cấp phiếu chung, KHÁC TrangThaiTieuChi).
+    # Lấy các bản đã có dữ liệu chấm (LĐ tổng hợp xong → CCT đã duyệt).
+    # Loại bỏ DANG_DANH_GIA (CC nháp) + CO_KIEN_NGHI (đang tranh chấp).
     from app.models.kpi_assessment import TrangThaiDanhGia
     stmt = (
         select(DanhGiaThang)
@@ -1944,8 +1948,10 @@ async def _get_data_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) ->
             DanhGiaThang.nam == nam,
             DanhGiaThang.is_deleted == False,
             DanhGiaThang.trang_thai.in_((
+                TrangThaiDanhGia.CHO_TONG_HOP,
+                TrangThaiDanhGia.DA_TONG_HOP,
                 TrangThaiDanhGia.CHO_PHE_DUYET,
-                TrangThaiDanhGia.DA_PHE_DUYET,
+                TrangThaiDanhGia.HOAN_THANH,
             )),
         )
     )

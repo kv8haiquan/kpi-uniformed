@@ -3292,18 +3292,26 @@ async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int
     center_alignment = Alignment(horizontal='center', vertical='center')
     wrap_alignment = Alignment(wrap_text=True, vertical='top')
 
-    # SHEET 1: TỔNG HỢP DANH MỤC — V2 only (production đã chuyển hoàn toàn từ 4/2026)
+    # Style cho heading hierarchical (lĩnh vực > công tác > nhiệm vụ)
+    lv_heading_fill = PatternFill("solid", fgColor="2F5496")    # xanh đậm — Lĩnh vực
+    ct_heading_fill = PatternFill("solid", fgColor="8FAADC")    # xanh nhạt — Công tác
+    nv_heading_fill = PatternFill("solid", fgColor="D9E1F2")    # xanh rất nhạt — Nhiệm vụ
+    NUM_COLS = 11  # tổng số cột data row
+
+    # SHEET 1: TỔNG HỢP HIERARCHICAL — Lĩnh vực → Công tác → Nhiệm vụ → CV chi tiết
     ws1 = wb.active
     ws1.title = "Tổng hợp"
 
     ws1['A1'] = f"5. THỐNG KÊ DANH MỤC CÔNG VIỆC - THÁNG {thang}/{nam}"
     ws1['A1'].font = title_font
-    ws1.merge_cells('A1:H1')
+    ws1.merge_cells('A1:K1')
 
-    ws1['A2'] = f"Tổng số đầu mục công việc: {len(data)} (V2_PL3 — theo Lĩnh vực + Nhóm PL3 + Điểm chấm)."
-    ws1['A2'].font = Font(bold=True)
+    ws1['A2'] = ("Cấu trúc PL3 phân cấp: Lĩnh vực → Công tác → Nhiệm vụ → Công việc chi tiết. "
+                 "3 cột Lĩnh vực / Công tác / Nhiệm vụ ở từng dòng data để filter Excel dễ dàng.")
+    ws1['A2'].font = Font(italic=True, color="666666")
 
-    headers = ["STT", "Lĩnh vực", "Tên công việc",
+    headers = ["STT", "Lĩnh vực", "Công tác", "Nhiệm vụ",
+               "Tên công việc chi tiết",
                "Số user kê khai", "Số lần kê khai", "Điểm",
                "Điểm chấm", "Nhóm PL3", "Khung điểm"]
     for col, h in enumerate(headers, 1):
@@ -3313,40 +3321,104 @@ async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int
         cell.border = border
         cell.alignment = center_alignment
 
-    row = 4
-    for i, dm in enumerate(data, 1):
-        row += 1
-        ws1.cell(row=row, column=1, value=i).border = border
+    # Helper: format text lĩnh vực
+    def fmt_lv(dm):
+        ma = dm.get("linh_vuc") or ""
+        ten = dm.get("ten_linh_vuc") or ""
+        if not ma:
+            return "—"
+        return f"{ma}" + (f" — {ten}" if ten else "")
+
+    row = 5
+    stt = 0
+    cur_lv = object()  # sentinel
+    cur_ct = object()
+    cur_nv = object()
+    data_first_row = None
+    data_last_row = None
+
+    for dm in data:
+        lv_key = dm.get("linh_vuc") or ""
+        ct_key = dm.get("cong_tac") or ""
+        nv_key = dm.get("nhiem_vu") or ""
+
+        # Heading Lĩnh vực
+        if lv_key != cur_lv:
+            cur_lv = lv_key
+            cur_ct = object()
+            cur_nv = object()
+            ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NUM_COLS)
+            h_cell = ws1.cell(row=row, column=1, value=f"▌ LĨNH VỰC {fmt_lv(dm)}")
+            h_cell.font = Font(bold=True, size=12, color="FFFFFF")
+            h_cell.fill = lv_heading_fill
+            h_cell.alignment = Alignment(horizontal='left', vertical='center', indent=0)
+            for c in range(1, NUM_COLS + 1):
+                ws1.cell(row=row, column=c).fill = lv_heading_fill
+            row += 1
+
+        # Heading Công tác
+        if ct_key != cur_ct:
+            cur_ct = ct_key
+            cur_nv = object()
+            if ct_key:  # chỉ render nếu có
+                ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NUM_COLS)
+                h_cell = ws1.cell(row=row, column=1, value=f"   ▸ Công tác: {ct_key}")
+                h_cell.font = Font(bold=True, size=11, color="2F5496")
+                h_cell.fill = ct_heading_fill
+                h_cell.alignment = Alignment(horizontal='left', vertical='center')
+                for c in range(1, NUM_COLS + 1):
+                    ws1.cell(row=row, column=c).fill = ct_heading_fill
+                row += 1
+
+        # Heading Nhiệm vụ
+        if nv_key != cur_nv:
+            cur_nv = nv_key
+            if nv_key:
+                ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NUM_COLS)
+                h_cell = ws1.cell(row=row, column=1, value=f"      ◦ Nhiệm vụ: {nv_key}")
+                h_cell.font = Font(bold=True, italic=True, size=10, color="2F5496")
+                h_cell.fill = nv_heading_fill
+                h_cell.alignment = Alignment(horizontal='left', vertical='center')
+                for c in range(1, NUM_COLS + 1):
+                    ws1.cell(row=row, column=c).fill = nv_heading_fill
+                row += 1
+
+        # Data row
+        if data_first_row is None:
+            data_first_row = row
+        stt += 1
+        ws1.cell(row=row, column=1, value=stt).border = border
         ws1.cell(row=row, column=1).alignment = center_alignment
 
-        # Lĩnh vực
-        lv_text = f"{dm['linh_vuc'] or ''}{' — ' + dm['ten_linh_vuc'] if dm['ten_linh_vuc'] else ''}".strip(" —")
-        lv_cell = ws1.cell(row=row, column=2, value=lv_text or "—")
+        lv_cell = ws1.cell(row=row, column=2, value=fmt_lv(dm))
         lv_cell.border = border
         lv_cell.alignment = center_alignment
-        lv_cell.font = Font(bold=True)
 
-        ws1.cell(row=row, column=3, value=dm["ten_cong_viec"]).border = border
+        ws1.cell(row=row, column=3, value=dm.get("cong_tac") or "").border = border
+        ws1.cell(row=row, column=3).alignment = wrap_alignment
 
-        ws1.cell(row=row, column=4, value=dm["so_user"]).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
+        ws1.cell(row=row, column=4, value=dm.get("nhiem_vu") or "").border = border
+        ws1.cell(row=row, column=4).alignment = wrap_alignment
 
-        ws1.cell(row=row, column=5, value=dm["tong_lan_khai"]).border = border
-        ws1.cell(row=row, column=5).alignment = center_alignment
+        ws1.cell(row=row, column=5, value=dm["ten_cong_viec"]).border = border
+        ws1.cell(row=row, column=5).alignment = wrap_alignment
 
-        ws1.cell(row=row, column=6, value=f"{dm['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=6, value=dm["so_user"]).border = border
         ws1.cell(row=row, column=6).alignment = center_alignment
 
-        # Điểm chấm (1-500, cố định mỗi danh mục)
-        dc_cell = ws1.cell(row=row, column=7, value=dm.get("diem_cham") or "—")
+        ws1.cell(row=row, column=7, value=dm["tong_lan_khai"]).border = border
+        ws1.cell(row=row, column=7).alignment = center_alignment
+
+        ws1.cell(row=row, column=8, value=f"{dm['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=8).alignment = center_alignment
+
+        dc_cell = ws1.cell(row=row, column=9, value=dm.get("diem_cham") or "—")
         dc_cell.border = border
         dc_cell.alignment = center_alignment
 
-        # Nhóm PL3 (1-5)
-        nhom_cell = ws1.cell(row=row, column=8, value=dm.get("nhom_pl3") or "—")
+        nhom_cell = ws1.cell(row=row, column=10, value=dm.get("nhom_pl3") or "—")
         nhom_cell.border = border
         nhom_cell.alignment = center_alignment
-        # Highlight nhóm cao (4-5 = phức tạp)
         nhom_val = dm.get("nhom_pl3")
         if isinstance(nhom_val, int):
             if nhom_val >= 4:
@@ -3355,25 +3427,32 @@ async def _generate_report_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int
             elif nhom_val == 3:
                 nhom_cell.fill = PatternFill("solid", fgColor="FFEB9C")
 
-        # Khung điểm
-        khung_val = dm.get("khung_diem_toi_da")
-        kh_cell = ws1.cell(row=row, column=9, value=khung_val or "—")
+        kh_cell = ws1.cell(row=row, column=11, value=dm.get("khung_diem_toi_da") or "—")
         kh_cell.border = border
         kh_cell.alignment = center_alignment
 
-    ws1.column_dimensions['A'].width = 5
-    ws1.column_dimensions['B'].width = 30
-    ws1.column_dimensions['C'].width = 50
-    ws1.column_dimensions['D'].width = 14
-    ws1.column_dimensions['E'].width = 14
-    ws1.column_dimensions['F'].width = 14
-    ws1.column_dimensions['G'].width = 12
-    ws1.column_dimensions['H'].width = 11
-    ws1.column_dimensions['I'].width = 12
+        data_last_row = row
+        row += 1
 
-    # Autofilter để CCT/PCCT lọc theo Lĩnh vực / Nhóm PL3
+    ws1.column_dimensions['A'].width = 5
+    ws1.column_dimensions['B'].width = 22
+    ws1.column_dimensions['C'].width = 30
+    ws1.column_dimensions['D'].width = 35
+    ws1.column_dimensions['E'].width = 45
+    ws1.column_dimensions['F'].width = 12
+    ws1.column_dimensions['G'].width = 12
+    ws1.column_dimensions['H'].width = 14
+    ws1.column_dimensions['I'].width = 11
+    ws1.column_dimensions['J'].width = 10
+    ws1.column_dimensions['K'].width = 11
+
+    # Freeze panes (giữ tiêu đề khi cuộn)
+    ws1.freeze_panes = "A5"
+
+    # Autofilter trên hàng header (row 4). Heading rows giữa data sẽ
+    # hiển thị empty cells khi filter → user dễ phân biệt nhóm.
     if data:
-        ws1.auto_filter.ref = f"A4:I{4 + len(data)}"
+        ws1.auto_filter.ref = f"A4:K{row - 1}"
 
     # SHEET 2: CHI TIẾT TỪNG DANH MỤC VÀ USER
     ws2 = wb.create_sheet("Chi tiết theo công việc")
@@ -3469,7 +3548,10 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
             dm.ten_linh_vuc,
             dm.nhom_pl3,
             dm.diem_cham,
-            dm.khung_diem_toi_da
+            dm.khung_diem_toi_da,
+            dm.cong_tac,
+            dm.cong_tac_thu_tu,
+            dm.nhiem_vu
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
         LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
@@ -3483,8 +3565,10 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
                  cc.id, cc.ho_ten, cc.ma_cc, dv.ten_don_vi,
                  cd.ma_cap_do, cd.ten_cap_do,
                  dm.nguon_du_lieu, dm.linh_vuc, dm.ten_linh_vuc,
-                 dm.nhom_pl3, dm.diem_cham, dm.khung_diem_toi_da
-        ORDER BY dm.nguon_du_lieu, sp.ma_sp NULLS LAST, dm.linh_vuc, dm.ten_cong_viec
+                 dm.nhom_pl3, dm.diem_cham, dm.khung_diem_toi_da,
+                 dm.cong_tac, dm.cong_tac_thu_tu, dm.nhiem_vu
+        ORDER BY dm.linh_vuc NULLS LAST, dm.cong_tac_thu_tu NULLS LAST,
+                 dm.cong_tac, dm.nhiem_vu, dm.ten_cong_viec
     """), {"thang": thang, "nam": nam})
 
     raw_data = []
@@ -3509,6 +3593,9 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
             "nhom_pl3": row[16],
             "diem_cham": row[17],
             "khung_diem_toi_da": row[18],
+            "cong_tac": row[19],
+            "cong_tac_thu_tu": row[20],
+            "nhiem_vu": row[21],
         })
 
     # Tổng hợp theo danh mục công việc
@@ -3527,6 +3614,10 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
         "nhom_pl3": None,
         "diem_cham": None,
         "khung_diem_toi_da": None,
+        # Cấu trúc PL3 phân cấp
+        "cong_tac": None,
+        "cong_tac_thu_tu": None,
+        "nhiem_vu": None,
     })
 
     for item in raw_data:
@@ -3546,6 +3637,9 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
         dm["nhom_pl3"] = item["nhom_pl3"]
         dm["diem_cham"] = item["diem_cham"]
         dm["khung_diem_toi_da"] = item["khung_diem_toi_da"]
+        dm["cong_tac"] = item["cong_tac"]
+        dm["cong_tac_thu_tu"] = item["cong_tac_thu_tu"]
+        dm["nhiem_vu"] = item["nhiem_vu"]
 
         # Tìm user đã có chưa
         user_found = False
@@ -3577,9 +3671,16 @@ async def _get_data_05_danh_muc_cv(db: AsyncSession, thang: int, nam: int) -> li
         dm["users"] = sorted(dm["users"], key=lambda x: (x["don_vi"], x["ho_ten"]))
         danh_muc_list.append(dm)
 
+    # Sort hierarchical: lĩnh vực → công tác (theo thứ tự) → nhiệm vụ → tên CV
     danh_muc_list = sorted(
         danh_muc_list,
-        key=lambda x: (x["nguon_du_lieu"], x["ma_sp"] or "", x["linh_vuc"] or "", x["ten_cong_viec"]),
+        key=lambda x: (
+            x["linh_vuc"] or "ZZZ",
+            x["cong_tac_thu_tu"] if x["cong_tac_thu_tu"] is not None else 999,
+            x["cong_tac"] or "",
+            x["nhiem_vu"] or "",
+            x["ten_cong_viec"],
+        ),
     )
 
     return danh_muc_list
@@ -4995,7 +5096,7 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
     thang_list = QUY_TO_THANG[quy]
 
     # 2026-05-14: LEFT JOIN sp_chuan + cap_do để V2 không bị lọc; thêm các
-    # field V2 (nguon_du_lieu, linh_vuc, nhom_pl3, diem_cham, khung_diem).
+    # field V2 + cấu trúc PL3 phân cấp (cong_tac, nhiem_vu).
     stmt = sa_text("""
         SELECT
             dm.id as danh_muc_id,
@@ -5013,7 +5114,8 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
             COALESCE(SUM(kk.so_luong), 0) as tong_so_luong,
             COALESCE(dm.nguon_du_lieu, 'V1') AS nguon_du_lieu,
             dm.linh_vuc, dm.ten_linh_vuc, dm.nhom_pl3,
-            dm.diem_cham, dm.khung_diem_toi_da
+            dm.diem_cham, dm.khung_diem_toi_da,
+            dm.cong_tac, dm.cong_tac_thu_tu, dm.nhiem_vu
         FROM ke_khai_cong_viec kk
         JOIN danh_muc_sp_cong_viec dm ON dm.id = kk.danh_muc_sp_id
         LEFT JOIN sp_cong_viec_chuan sp ON sp.id = dm.sp_chuan_id
@@ -5027,8 +5129,10 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
                  cc.id, cc.ho_ten, cc.ma_cc, dv.ten_don_vi,
                  cd.ma_cap_do, cd.ten_cap_do,
                  dm.nguon_du_lieu, dm.linh_vuc, dm.ten_linh_vuc,
-                 dm.nhom_pl3, dm.diem_cham, dm.khung_diem_toi_da
-        ORDER BY dm.nguon_du_lieu, sp.ma_sp NULLS LAST, dm.linh_vuc, dm.ten_cong_viec
+                 dm.nhom_pl3, dm.diem_cham, dm.khung_diem_toi_da,
+                 dm.cong_tac, dm.cong_tac_thu_tu, dm.nhiem_vu
+        ORDER BY dm.linh_vuc NULLS LAST, dm.cong_tac_thu_tu NULLS LAST,
+                 dm.cong_tac, dm.nhiem_vu, dm.ten_cong_viec
     """).bindparams(bindparam('thang_list', expanding=True))
 
     result = await db.execute(stmt, {"thang_list": thang_list, "nam": nam})
@@ -5045,6 +5149,7 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
         "linh_vuc": row[14], "ten_linh_vuc": row[15],
         "nhom_pl3": row[16], "diem_cham": row[17],
         "khung_diem_toi_da": row[18],
+        "cong_tac": row[19], "cong_tac_thu_tu": row[20], "nhiem_vu": row[21],
     } for row in result]
 
     danh_muc_map = defaultdict(lambda: {
@@ -5053,6 +5158,7 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
         "cap_do_stats": defaultdict(int),
         "nguon_du_lieu": "V1", "linh_vuc": None, "ten_linh_vuc": None,
         "nhom_pl3": None, "diem_cham": None, "khung_diem_toi_da": None,
+        "cong_tac": None, "cong_tac_thu_tu": None, "nhiem_vu": None,
     })
 
     for item in raw_data:
@@ -5071,6 +5177,9 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
         dm["nhom_pl3"] = item["nhom_pl3"]
         dm["diem_cham"] = item["diem_cham"]
         dm["khung_diem_toi_da"] = item["khung_diem_toi_da"]
+        dm["cong_tac"] = item["cong_tac"]
+        dm["cong_tac_thu_tu"] = item["cong_tac_thu_tu"]
+        dm["nhiem_vu"] = item["nhiem_vu"]
 
         user_found = False
         for u in dm["users"]:
@@ -5101,7 +5210,13 @@ async def _get_data_05_quy(db: AsyncSession, quy: int, nam: int) -> list:
 
     danh_muc_list = sorted(
         danh_muc_list,
-        key=lambda x: (x["nguon_du_lieu"], x["ma_sp"] or "", x["linh_vuc"] or "", x["ten_cong_viec"]),
+        key=lambda x: (
+            x["linh_vuc"] or "ZZZ",
+            x["cong_tac_thu_tu"] if x["cong_tac_thu_tu"] is not None else 999,
+            x["cong_tac"] or "",
+            x["nhiem_vu"] or "",
+            x["ten_cong_viec"],
+        ),
     )
     return danh_muc_list
 
@@ -6052,18 +6167,28 @@ async def _generate_report_05_quy(db: AsyncSession, quy: int, nam: int) -> io.By
     )
     center_alignment = Alignment(horizontal='center', vertical='center')
 
-    # SHEET 1: TỔNG HỢP — V2 only
+    wrap_alignment = Alignment(wrap_text=True, vertical='top')
+
+    # Style cho heading hierarchical
+    lv_heading_fill = PatternFill("solid", fgColor="2F5496")
+    ct_heading_fill = PatternFill("solid", fgColor="8FAADC")
+    nv_heading_fill = PatternFill("solid", fgColor="D9E1F2")
+    NUM_COLS = 11
+
+    # SHEET 1: TỔNG HỢP HIERARCHICAL
     ws1 = wb.active
     ws1.title = "Tổng hợp"
 
     ws1['A1'] = f"5. DANH MỤC CÔNG VIỆC (GỘP 3 THÁNG) - QUÝ {quy}/{nam}"
     ws1['A1'].font = title_font
-    ws1.merge_cells('A1:I1')
+    ws1.merge_cells('A1:K1')
 
-    ws1['A2'] = f"Tổng số đầu mục công việc: {len(data)} (V2_PL3 — theo Lĩnh vực + Nhóm PL3 + Điểm chấm)."
-    ws1['A2'].font = Font(bold=True)
+    ws1['A2'] = ("Cấu trúc PL3 phân cấp: Lĩnh vực → Công tác → Nhiệm vụ → Công việc chi tiết. "
+                 "3 cột Lĩnh vực / Công tác / Nhiệm vụ ở từng dòng data để filter Excel dễ dàng.")
+    ws1['A2'].font = Font(italic=True, color="666666")
 
-    headers = ["STT", "Lĩnh vực", "Tên công việc",
+    headers = ["STT", "Lĩnh vực", "Công tác", "Nhiệm vụ",
+               "Tên công việc chi tiết",
                "Số user kê khai", "Số lần kê khai (quý)", "Điểm (quý)",
                "Điểm chấm", "Nhóm PL3", "Khung điểm"]
     for col, h in enumerate(headers, 1):
@@ -6073,31 +6198,92 @@ async def _generate_report_05_quy(db: AsyncSession, quy: int, nam: int) -> io.By
         cell.border = border
         cell.alignment = center_alignment
 
-    row = 4
-    for i, dm in enumerate(data, 1):
-        row += 1
-        ws1.cell(row=row, column=1, value=i).border = border
+    def fmt_lv(dm):
+        ma = dm.get("linh_vuc") or ""
+        ten = dm.get("ten_linh_vuc") or ""
+        if not ma:
+            return "—"
+        return f"{ma}" + (f" — {ten}" if ten else "")
+
+    row = 5
+    stt = 0
+    cur_lv = object()
+    cur_ct = object()
+    cur_nv = object()
+
+    for dm in data:
+        lv_key = dm.get("linh_vuc") or ""
+        ct_key = dm.get("cong_tac") or ""
+        nv_key = dm.get("nhiem_vu") or ""
+
+        if lv_key != cur_lv:
+            cur_lv = lv_key
+            cur_ct = object()
+            cur_nv = object()
+            ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NUM_COLS)
+            h_cell = ws1.cell(row=row, column=1, value=f"▌ LĨNH VỰC {fmt_lv(dm)}")
+            h_cell.font = Font(bold=True, size=12, color="FFFFFF")
+            h_cell.fill = lv_heading_fill
+            h_cell.alignment = Alignment(horizontal='left', vertical='center')
+            for c in range(1, NUM_COLS + 1):
+                ws1.cell(row=row, column=c).fill = lv_heading_fill
+            row += 1
+
+        if ct_key != cur_ct:
+            cur_ct = ct_key
+            cur_nv = object()
+            if ct_key:
+                ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NUM_COLS)
+                h_cell = ws1.cell(row=row, column=1, value=f"   ▸ Công tác: {ct_key}")
+                h_cell.font = Font(bold=True, size=11, color="2F5496")
+                h_cell.fill = ct_heading_fill
+                h_cell.alignment = Alignment(horizontal='left', vertical='center')
+                for c in range(1, NUM_COLS + 1):
+                    ws1.cell(row=row, column=c).fill = ct_heading_fill
+                row += 1
+
+        if nv_key != cur_nv:
+            cur_nv = nv_key
+            if nv_key:
+                ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NUM_COLS)
+                h_cell = ws1.cell(row=row, column=1, value=f"      ◦ Nhiệm vụ: {nv_key}")
+                h_cell.font = Font(bold=True, italic=True, size=10, color="2F5496")
+                h_cell.fill = nv_heading_fill
+                h_cell.alignment = Alignment(horizontal='left', vertical='center')
+                for c in range(1, NUM_COLS + 1):
+                    ws1.cell(row=row, column=c).fill = nv_heading_fill
+                row += 1
+
+        stt += 1
+        ws1.cell(row=row, column=1, value=stt).border = border
         ws1.cell(row=row, column=1).alignment = center_alignment
 
-        lv_text = f"{dm['linh_vuc'] or ''}{' — ' + dm['ten_linh_vuc'] if dm['ten_linh_vuc'] else ''}".strip(" —")
-        lv_cell = ws1.cell(row=row, column=2, value=lv_text or "—")
-        lv_cell.border = border
-        lv_cell.alignment = center_alignment
-        lv_cell.font = Font(bold=True)
+        ws1.cell(row=row, column=2, value=fmt_lv(dm)).border = border
+        ws1.cell(row=row, column=2).alignment = center_alignment
 
-        ws1.cell(row=row, column=3, value=dm["ten_cong_viec"]).border = border
-        ws1.cell(row=row, column=4, value=dm["so_user"]).border = border
-        ws1.cell(row=row, column=4).alignment = center_alignment
-        ws1.cell(row=row, column=5, value=dm["tong_lan_khai"]).border = border
-        ws1.cell(row=row, column=5).alignment = center_alignment
-        ws1.cell(row=row, column=6, value=f"{dm['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=3, value=dm.get("cong_tac") or "").border = border
+        ws1.cell(row=row, column=3).alignment = wrap_alignment
+
+        ws1.cell(row=row, column=4, value=dm.get("nhiem_vu") or "").border = border
+        ws1.cell(row=row, column=4).alignment = wrap_alignment
+
+        ws1.cell(row=row, column=5, value=dm["ten_cong_viec"]).border = border
+        ws1.cell(row=row, column=5).alignment = wrap_alignment
+
+        ws1.cell(row=row, column=6, value=dm["so_user"]).border = border
         ws1.cell(row=row, column=6).alignment = center_alignment
 
-        dc_cell = ws1.cell(row=row, column=7, value=dm.get("diem_cham") or "—")
+        ws1.cell(row=row, column=7, value=dm["tong_lan_khai"]).border = border
+        ws1.cell(row=row, column=7).alignment = center_alignment
+
+        ws1.cell(row=row, column=8, value=f"{dm['tong_sp']:,.0f}").border = border
+        ws1.cell(row=row, column=8).alignment = center_alignment
+
+        dc_cell = ws1.cell(row=row, column=9, value=dm.get("diem_cham") or "—")
         dc_cell.border = border
         dc_cell.alignment = center_alignment
 
-        nhom_cell = ws1.cell(row=row, column=8, value=dm.get("nhom_pl3") or "—")
+        nhom_cell = ws1.cell(row=row, column=10, value=dm.get("nhom_pl3") or "—")
         nhom_cell.border = border
         nhom_cell.alignment = center_alignment
         nhom_val = dm.get("nhom_pl3")
@@ -6108,22 +6294,28 @@ async def _generate_report_05_quy(db: AsyncSession, quy: int, nam: int) -> io.By
             elif nhom_val == 3:
                 nhom_cell.fill = PatternFill("solid", fgColor="FFEB9C")
 
-        kh_cell = ws1.cell(row=row, column=9, value=dm.get("khung_diem_toi_da") or "—")
+        kh_cell = ws1.cell(row=row, column=11, value=dm.get("khung_diem_toi_da") or "—")
         kh_cell.border = border
         kh_cell.alignment = center_alignment
 
+        row += 1
+
     ws1.column_dimensions['A'].width = 5
-    ws1.column_dimensions['B'].width = 30
-    ws1.column_dimensions['C'].width = 50
-    ws1.column_dimensions['D'].width = 14
-    ws1.column_dimensions['E'].width = 16
-    ws1.column_dimensions['F'].width = 14
-    ws1.column_dimensions['G'].width = 12
-    ws1.column_dimensions['H'].width = 11
-    ws1.column_dimensions['I'].width = 12
+    ws1.column_dimensions['B'].width = 22
+    ws1.column_dimensions['C'].width = 30
+    ws1.column_dimensions['D'].width = 35
+    ws1.column_dimensions['E'].width = 45
+    ws1.column_dimensions['F'].width = 12
+    ws1.column_dimensions['G'].width = 14
+    ws1.column_dimensions['H'].width = 14
+    ws1.column_dimensions['I'].width = 11
+    ws1.column_dimensions['J'].width = 10
+    ws1.column_dimensions['K'].width = 11
+
+    ws1.freeze_panes = "A5"
 
     if data:
-        ws1.auto_filter.ref = f"A4:I{4 + len(data)}"
+        ws1.auto_filter.ref = f"A4:K{row - 1}"
 
     # SHEET 2: CHI TIẾT — chỉ nhãn lĩnh vực (đã chuyển hoàn toàn V2)
     ws2 = wb.create_sheet("Chi tiết theo công việc")

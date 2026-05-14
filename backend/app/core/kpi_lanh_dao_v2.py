@@ -319,15 +319,34 @@ async def _sp_trong_don_vi(
 # =============================================================================
 
 async def _get_dde(
-    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int,
+    *, tam_tinh: bool = False,
 ) -> tuple[float, float, float]:
-    """Lấy d, đ, e từ danh_gia_dde đã DA_PHE_DUYET. Mặc định 1.0 nếu thiếu."""
-    stmt = select(DanhGiaDDE).where(
-        DanhGiaDDE.cong_chuc_id == cong_chuc_id,
-        DanhGiaDDE.thang == thang,
-        DanhGiaDDE.nam == nam,
-        DanhGiaDDE.trang_thai == "DA_PHE_DUYET",
-    )
+    """Lấy d, đ, e từ danh_gia_dde. Mặc định 1.0 nếu thiếu.
+
+    Args:
+        tam_tinh: False (default — engine chính thức) chỉ lấy DA_PHE_DUYET.
+                  True → lấy thêm NHAP + CHO_PHE_DUYET cho tab "Tạm tính" UI
+                  (đồng nhất với tinh_diem_kpi_70_lanh_dao(tam_tinh=True)).
+                  Bản chưa duyệt → final = COALESCE(*_phe_duyet, *_ket_qua_don_vi)
+                  rơi xuống giá trị tự đánh giá. KHÔNG ảnh hưởng engine
+                  chính thức (vẫn DA_PHE_DUYET only).
+    """
+    if tam_tinh:
+        statuses = ("NHAP", "CHO_PHE_DUYET", "DA_PHE_DUYET")
+        stmt = select(DanhGiaDDE).where(
+            DanhGiaDDE.cong_chuc_id == cong_chuc_id,
+            DanhGiaDDE.thang == thang,
+            DanhGiaDDE.nam == nam,
+            DanhGiaDDE.trang_thai.in_(statuses),
+        )
+    else:
+        stmt = select(DanhGiaDDE).where(
+            DanhGiaDDE.cong_chuc_id == cong_chuc_id,
+            DanhGiaDDE.thang == thang,
+            DanhGiaDDE.nam == nam,
+            DanhGiaDDE.trang_thai == "DA_PHE_DUYET",
+        )
     dde = (await db.execute(stmt)).scalar_one_or_none()
     if not dde:
         return 1.0, 1.0, 1.0
@@ -589,8 +608,8 @@ async def calc_kpi_lanh_dao_v2(
     # tong_sp_hoan_thanh dùng cho response field
     tong_sp_hoan_thanh = sp_hoan_thanh
 
-    # d, đ, e
-    d, dd, e = await _get_dde(db, cong_chuc_id, thang, nam)
+    # d, đ, e — truyền tam_tinh xuống để tab "Tạm tính" UI thấy bản CHO_PHE_DUYET
+    d, dd, e = await _get_dde(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
 
     # Tổng KPI = (a+b+c+d+đ+e) / 6 — DÙNG SCOPE TỔNG (a/b/c của tổng đơn vị)
     kpi_tong = (a + b + c + d + dd + e) / 6

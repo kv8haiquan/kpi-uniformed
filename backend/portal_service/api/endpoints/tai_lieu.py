@@ -18,13 +18,12 @@ import math
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import RedirectResponse
 
 from portal_service.dependencies import (
     CurrentUserDep,
     DatabaseDep,
-    require_platform_role,
 )
 from portal_service.schemas.base import PaginatedResponse, PaginationInfo, SuccessResponse
 from portal_service.schemas.tai_lieu import (
@@ -101,12 +100,12 @@ async def get_danh_sach(
 async def upload_tai_lieu(
     payload: TaiLieuCreate,
     db: DatabaseDep,
-    user=Depends(require_platform_role("BIEN_TAP", "QT_NOI_DUNG")),
+    user: CurrentUserDep,
 ):
     """Upload tài liệu mới (phiên bản 1).
 
-    Lưu ý: file_url phải là URL đã upload sẵn qua file storage API.
-    Validate file_type + file_size theo giới hạn từng loại.
+    Quyền: mọi công chức đã đăng nhập đều có thể upload tài liệu.
+    Quy trình: upload file qua POST /upload/file → lấy file_url → submit metadata.
     """
     tl = await tai_lieu_service.upload(db, payload, user)
     return SuccessResponse(
@@ -152,10 +151,11 @@ async def cap_nhat_tai_lieu(
     tai_lieu_id: uuid.UUID,
     payload: TaiLieuUpdate,
     db: DatabaseDep,
-    user=Depends(require_platform_role("BIEN_TAP", "QT_NOI_DUNG")),
+    user: CurrentUserDep,
 ):
     """Cập nhật tên, mô tả, tags tài liệu.
 
+    Quyền: người upload gốc HOẶC quản trị viên (BIEN_TAP/QT_NOI_DUNG/SUPER_ADMIN).
     KHÔNG cho sửa file_url — upload phiên bản mới thay thế.
     """
     tl = await tai_lieu_service.cap_nhat(db, tai_lieu_id, payload, user)
@@ -178,9 +178,12 @@ async def cap_nhat_tai_lieu(
 async def xoa_tai_lieu(
     tai_lieu_id: uuid.UUID,
     db: DatabaseDep,
-    user=Depends(require_platform_role("QT_NOI_DUNG")),
+    user: CurrentUserDep,
 ):
-    """Xóa mềm tài liệu (is_deleted = True)."""
+    """Xóa mềm tài liệu (is_deleted = True).
+
+    Quyền: người upload gốc HOẶC quản trị viên (QT_NOI_DUNG/SUPER_ADMIN).
+    """
     result = await tai_lieu_service.xoa(db, tai_lieu_id, user)
     return SuccessResponse(data=result, message=result["message"])
 

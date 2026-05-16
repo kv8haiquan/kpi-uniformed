@@ -1,32 +1,22 @@
 /**
  * components/portal/UploadModal.tsx
  * ====================================
- * Modal upload tài liệu mới hoặc phiên bản mới.
+ * Modal upload tài liệu mới vào thư viện ECM.
  *
- * Note: Khi Common file storage API sẵn sàng, thay thế URL input
- * bằng file upload thực sự.
+ * Flow 2-bước:
+ *   1. Kéo & thả file → FileUploader gọi POST /portal/upload/file
+ *      → nhận { file_name, file_url, file_size, content_type }
+ *   2. Submit form → POST /portal/tai-lieu với metadata + thông tin file
+ *
+ * Quyền: mọi công chức đã login đều upload được (không giới hạn role).
  */
 
 'use client';
 
 import { useState } from 'react';
+import FileUploader, { type UploadResult } from '@/components/lms/FileUploader';
 import { taiLieuApi } from '@/services/portal';
 import type { ITaiLieuCreate } from '@/types/tai-lieu';
-
-// =============================================================================
-// FILE TYPE OPTIONS
-// =============================================================================
-
-const FILE_TYPES = [
-  { value: 'application/pdf', label: 'PDF' },
-  { value: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', label: 'DOCX (Word)' },
-  { value: 'application/msword', label: 'DOC (Word cũ)' },
-  { value: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', label: 'XLSX (Excel)' },
-  { value: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', label: 'PPTX (PowerPoint)' },
-  { value: 'image/jpeg', label: 'JPEG (Ảnh)' },
-  { value: 'image/png', label: 'PNG (Ảnh)' },
-  { value: 'application/zip', label: 'ZIP (Nén)' },
-];
 
 // =============================================================================
 // COMPONENT
@@ -42,22 +32,20 @@ interface UploadModalProps {
 interface FormState {
   ten_tai_lieu: string;
   mo_ta: string;
-  file_url: string;
-  file_name: string;
-  file_type: string;
-  file_size_bytes: string;
   tags_input: string;
 }
 
 const INITIAL_FORM: FormState = {
   ten_tai_lieu: '',
   mo_ta: '',
-  file_url: '',
-  file_name: '',
-  file_type: 'application/pdf',
-  file_size_bytes: '0',
   tags_input: '',
 };
+
+// Định dạng file được chấp nhận (đồng bộ với backend ALLOWED_DOCUMENT_EXTENSIONS)
+const ACCEPT_EXTENSIONS =
+  '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.rtf,' +
+  '.jpg,.jpeg,.png,.webp,.gif,' +
+  '.zip,.rar,.7z';
 
 export default function UploadModal({
   open,
@@ -66,31 +54,38 @@ export default function UploadModal({
   onSuccess,
 }: UploadModalProps) {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
+  const [uploaded, setUploaded] = useState<UploadResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   if (!open) return null;
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Tự động lấy file_name từ URL
-  const handleUrlBlur = () => {
-    if (form.file_url && !form.file_name) {
-      const parts = form.file_url.split('/');
-      const name = parts[parts.length - 1].split('?')[0];
-      if (name) setForm((prev) => ({ ...prev, file_name: name }));
+  const handleUploadDone = (result: UploadResult) => {
+    setUploaded(result);
+    setError('');
+    // Auto-fill tên tài liệu từ tên file nếu user chưa nhập
+    if (!form.ten_tai_lieu.trim()) {
+      // Bỏ đuôi file để làm tên gợi ý
+      const nameWithoutExt = result.file_name.replace(/\.[^/.]+$/, '');
+      setForm((prev) => ({ ...prev, ten_tai_lieu: nameWithoutExt }));
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.ten_tai_lieu.trim() || !form.file_url.trim() || !form.file_name.trim()) {
-      setError('Vui lòng điền đầy đủ tên tài liệu, URL và tên file.');
+    if (!uploaded) {
+      setError('Vui lòng tải lên file trước khi lưu tài liệu.');
+      return;
+    }
+    if (!form.ten_tai_lieu.trim()) {
+      setError('Vui lòng nhập tên tài liệu.');
       return;
     }
     if (!thuMucId) {
@@ -107,10 +102,10 @@ export default function UploadModal({
       thu_muc_id: thuMucId,
       ten_tai_lieu: form.ten_tai_lieu.trim(),
       mo_ta: form.mo_ta.trim() || undefined,
-      file_name: form.file_name.trim(),
-      file_url: form.file_url.trim(),
-      file_size_bytes: parseInt(form.file_size_bytes) || 0,
-      file_type: form.file_type,
+      file_name: uploaded.file_name,
+      file_url: uploaded.file_url,
+      file_size_bytes: uploaded.file_size,
+      file_type: uploaded.content_type,
       tags,
     };
 
@@ -118,14 +113,32 @@ export default function UploadModal({
     setError('');
     try {
       await taiLieuApi.taoMoi(payload);
+      // Reset state
       setForm(INITIAL_FORM);
+      setUploaded(null);
       onSuccess();
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e?.message || 'Có lỗi xảy ra. Vui lòng thử lại.');
+      const e = err as {
+        response?: { data?: { detail?: { error?: { message?: string } } | string } };
+        message?: string;
+      };
+      const msg =
+        (typeof e?.response?.data?.detail === 'object'
+          ? e?.response?.data?.detail?.error?.message
+          : e?.response?.data?.detail) ||
+        e?.message ||
+        'Có lỗi xảy ra. Vui lòng thử lại.';
+      setError(String(msg));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleClose = () => {
+    setForm(INITIAL_FORM);
+    setUploaded(null);
+    setError('');
+    onClose();
   };
 
   return (
@@ -136,7 +149,7 @@ export default function UploadModal({
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Upload tài liệu</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-gray-400 hover:text-gray-700 text-xl leading-none"
           >
             ×
@@ -145,6 +158,24 @@ export default function UploadModal({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+          {/* File upload */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              File tài liệu <span className="text-red-500">*</span>
+            </label>
+            <FileUploader
+              accept={ACCEPT_EXTENSIONS}
+              maxSizeMB={50}
+              folder="tai-lieu"
+              label="Kéo & thả file vào đây, hoặc nhấn để chọn"
+              uploadFn={taiLieuApi.uploadFile}
+              onUploadDone={handleUploadDone}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Hỗ trợ PDF, Word, Excel, PowerPoint, ảnh, ZIP. Tối đa 50 MB.
+            </p>
+          </div>
+
           {/* Tên tài liệu */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -160,87 +191,19 @@ export default function UploadModal({
             />
           </div>
 
-          {/* URL tài liệu */}
+          {/* Tags */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              URL tài liệu <span className="text-red-500">*</span>
+              Tags (phân cách bằng dấu phẩy)
             </label>
             <input
-              type="url"
-              name="file_url"
-              value={form.file_url}
+              type="text"
+              name="tags_input"
+              value={form.tags_input}
               onChange={handleChange}
-              onBlur={handleUrlBlur}
-              placeholder="https://..."
+              placeholder="biểu mẫu, XNK, 2026"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
-            <p className="text-xs text-gray-400 mt-1">
-              Nhập URL trực tiếp. Upload file thực sẽ hỗ trợ trong phiên bản sau.
-            </p>
-          </div>
-
-          {/* Tên file + loại file */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tên file <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="file_name"
-                value={form.file_name}
-                onChange={handleChange}
-                placeholder="ten-file.pdf"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Loại file
-              </label>
-              <select
-                name="file_type"
-                value={form.file_type}
-                onChange={handleChange}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
-              >
-                {FILE_TYPES.map((ft) => (
-                  <option key={ft.value} value={ft.value}>
-                    {ft.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Kích thước + mô tả */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Kích thước (bytes)
-              </label>
-              <input
-                type="number"
-                name="file_size_bytes"
-                value={form.file_size_bytes}
-                onChange={handleChange}
-                min="0"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tags (phân cách bằng dấu phẩy)
-              </label>
-              <input
-                type="text"
-                name="tags_input"
-                value={form.tags_input}
-                onChange={handleChange}
-                placeholder="biểu mẫu, XNK, 2026"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-            </div>
           </div>
 
           {/* Mô tả */}
@@ -267,17 +230,17 @@ export default function UploadModal({
           <div className="flex gap-3 pt-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="flex-1 border border-gray-300 text-gray-700 rounded-lg py-2 text-sm hover:bg-gray-50 transition-colors"
             >
               Hủy
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !uploaded}
               className="flex-1 bg-blue-600 text-white rounded-lg py-2 text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {submitting ? 'Đang upload...' : 'Upload tài liệu'}
+              {submitting ? 'Đang lưu...' : 'Lưu tài liệu'}
             </button>
           </div>
         </form>

@@ -41,6 +41,16 @@ const FILE_TYPE_OPTIONS = [
 export default function TaiLieuPage() {
   const user = useCurrentUser();
   const isAdmin = user?.is_system_admin ?? false;
+  // Người có quyền quản trị tài liệu (xóa của người khác): admin hoặc platform role
+  const isQuanTriTaiLieu =
+    isAdmin ||
+    (user?.platform_roles ?? []).some((r) => r === 'QT_NOI_DUNG' || r === 'BIEN_TAP');
+
+  /** True nếu current user được xóa file này (owner hoặc quản trị) */
+  const canDelete = (file: ITaiLieuItem) => {
+    if (isQuanTriTaiLieu) return true;
+    return user?.id === file.nguoi_tai_len?.id;
+  };
 
   const [folders, setFolders] = useState<IThuMucTree[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -122,6 +132,22 @@ export default function TaiLieuPage() {
   const handleFilterType = (val: string) => {
     setFilterType(val);
     setPage(1);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Bạn có chắc muốn xóa tài liệu này? Thao tác này không thể hoàn tác.')) return;
+    try {
+      await taiLieuApi.xoa(id);
+      fetchFiles();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { detail?: { error?: { message?: string } } | string } } };
+      const msg =
+        (typeof e?.response?.data?.detail === 'object'
+          ? e?.response?.data?.detail?.error?.message
+          : e?.response?.data?.detail) ||
+        'Xóa tài liệu thất bại. Vui lòng thử lại.';
+      alert(String(msg));
+    }
   };
 
   const selectedFolderName = (() => {
@@ -297,13 +323,21 @@ export default function TaiLieuPage() {
             ) : viewMode === 'grid' ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
                 {files.map((f) => (
-                  <FileCard key={f.id} file={f} />
+                  <FileCard
+                    key={f.id}
+                    file={f}
+                    onDelete={canDelete(f) ? handleDelete : undefined}
+                  />
                 ))}
               </div>
             ) : (
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 {files.map((f) => (
-                  <FileListItem key={f.id} file={f} />
+                  <FileListItem
+                    key={f.id}
+                    file={f}
+                    onDelete={canDelete(f) ? handleDelete : undefined}
+                  />
                 ))}
               </div>
             )}

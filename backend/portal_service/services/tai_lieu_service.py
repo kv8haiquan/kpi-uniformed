@@ -97,6 +97,23 @@ def _la_admin_qt(user: TokenPayload) -> bool:
     return "QT_NOI_DUNG" in (user.platform_roles or [])
 
 
+def _la_quan_tri_tai_lieu(user: TokenPayload) -> bool:
+    """Co quyen quan tri tai lieu (xoa/sua tai lieu nguoi khac)."""
+    if user.vai_tro == "SUPER_ADMIN" or user.is_admin:
+        return True
+    roles = set(user.platform_roles or [])
+    return bool(roles & {"QT_NOI_DUNG", "BIEN_TAP"})
+
+
+def _co_quyen_sua_xoa(tai_lieu: TaiLieu, user: TokenPayload) -> bool:
+    """Owner (nguoi upload goc) HOAC quan tri tai lieu duoc sua/xoa."""
+    if _la_quan_tri_tai_lieu(user):
+        return True
+    if tai_lieu.nguoi_tai_len_id and str(tai_lieu.nguoi_tai_len_id) == str(user.sub):
+        return True
+    return False
+
+
 def _kiem_tra_quyen_entity(
     quyen_truy_cap: str,
     don_vi_ids: Optional[list],
@@ -386,9 +403,22 @@ async def cap_nhat(
 ) -> TaiLieu:
     """Cập nhật metadata tài liệu (tên, mô tả, tags).
 
+    Quyền: người upload gốc HOẶC quản trị viên (BIEN_TAP/QT_NOI_DUNG/SUPER_ADMIN).
     KHÔNG cho cập nhật file_url — phải upload phiên bản mới.
     """
     tl = await _lay_theo_id(db, tai_lieu_id)
+
+    if not _co_quyen_sua_xoa(tl, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PORTAL_ERR_004",
+                    "message": "Bạn chỉ có thể sửa tài liệu do chính mình tải lên",
+                },
+            },
+        )
 
     if data.ten_tai_lieu is not None:
         tl.ten_tai_lieu = data.ten_tai_lieu
@@ -546,9 +576,22 @@ async def xoa(
 ) -> dict:
     """Xóa mềm tài liệu (is_deleted = True).
 
+    Quyền: người upload gốc HOẶC quản trị viên (QT_NOI_DUNG/SUPER_ADMIN/BIEN_TAP).
     Chỉ xóa phiên bản được trỏ đến, KHÔNG ảnh hưởng chain versioning.
     """
     tl = await _lay_theo_id(db, tai_lieu_id)
+
+    if not _co_quyen_sua_xoa(tl, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PORTAL_ERR_004",
+                    "message": "Bạn chỉ có thể xóa tài liệu do chính mình tải lên",
+                },
+            },
+        )
 
     tl.is_deleted = True
     await db.commit()

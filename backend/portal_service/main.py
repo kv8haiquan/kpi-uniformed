@@ -19,6 +19,7 @@ from portal_service.api.endpoints import (
     dashboard,
     tai_lieu,
     thu_muc,
+    upload,
     vinh_danh,
 )
 from portal_service.config import settings
@@ -92,6 +93,7 @@ app.include_router(chuyen_muc.router, prefix=API_PREFIX)
 app.include_router(bai_viet.router, prefix=API_PREFIX)
 app.include_router(thu_muc.router, prefix=API_PREFIX)
 app.include_router(tai_lieu.router, prefix=API_PREFIX)
+app.include_router(upload.router, prefix=API_PREFIX)
 app.include_router(dashboard.router, prefix=API_PREFIX)
 app.include_router(vinh_danh.router, prefix=API_PREFIX)
 

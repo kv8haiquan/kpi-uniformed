@@ -135,20 +135,228 @@ class TestTaiLieuUpload:
         assert tl["ten_tai_lieu"] == "Quy dinh 2026"
         assert tl["phien_ban"] == 1
 
-    async def test_cbcc_khong_upload_duoc(
+    async def test_cbcc_upload_duoc(
         self, client: AsyncClient, cbcc_user, sample_thu_muc
     ):
-        """CBCC không có quyền upload tài liệu."""
+        """CBCC thường (không có platform role) vẫn upload được tài liệu.
+
+        Đây là chính sách mới: mọi công chức đã login đều có thể upload tài liệu
+        vào thư viện ECM. Trước đây chỉ BIEN_TAP/QT_NOI_DUNG/ADMIN mới upload được.
+        """
         resp = await client.post(
             "/api/v1/tai-lieu",
             json={
-                "ten_tai_lieu": "Tai lieu CBCC",
-                "file_url": "https://example.com/x.pdf",
-                "file_name": "x.pdf",
+                "ten_tai_lieu": "Tai lieu CBCC tu upload",
+                "thu_muc_id": sample_thu_muc["id"],
+                "file_url": "/uploads/portal/tai-lieu/abc_cbcc.pdf",
+                "file_name": "cbcc.pdf",
+                "file_size_bytes": 1024,
                 "file_type": "application/pdf",
             },
         )
+        assert resp.status_code == 201
+        tl = resp.json()["data"]
+        assert tl["ten_tai_lieu"] == "Tai lieu CBCC tu upload"
+        # nguoi_tai_len phai la cbcc_user (idx=0)
+        assert tl["nguoi_tai_len"]["id"] == "00327c43-c9a3-44d7-8306-7084e75cb2b5"
+
+
+class TestTaiLieuQuyenSuaXoa:
+    """Test owner-based permission cho cap_nhat / xoa."""
+
+    async def test_owner_xoa_duoc_tai_lieu_minh_tao(
+        self, client: AsyncClient, db_session, sample_thu_muc, cbcc_user
+    ):
+        """User tự xóa được tài liệu chính mình upload."""
+        from portal_service.models.tai_lieu import TaiLieu
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        # cbcc_user là idx=0 → sub = 00327c43-...
+        tl = TaiLieu(
+            ten_tai_lieu="Tai lieu cua cbcc",
+            thu_muc_id=UUID(sample_thu_muc["id"]),
+            file_url="/uploads/portal/tai-lieu/abc.pdf",
+            file_name="abc.pdf",
+            file_size_bytes=1024,
+            file_type="application/pdf",
+            phien_ban=1,
+            quyen_truy_cap="TAT_CA",
+            nguoi_tai_len_id=UUID("00327c43-c9a3-44d7-8306-7084e75cb2b5"),
+            is_deleted=False,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db_session.add(tl)
+        await db_session.flush()
+        await db_session.refresh(tl)
+
+        resp = await client.delete(f"/api/v1/tai-lieu/{tl.id}")
+        assert resp.status_code == 200
+
+    async def test_user_khac_khong_xoa_duoc(
+        self, client: AsyncClient, db_session, sample_thu_muc, cbcc_user
+    ):
+        """User A KHÔNG xóa được tài liệu của user B."""
+        from portal_service.models.tai_lieu import TaiLieu
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        # cbcc_user là idx=0. Tạo tài liệu do user khác (idx=3) upload
+        tl = TaiLieu(
+            ten_tai_lieu="Tai lieu cua nguoi khac",
+            thu_muc_id=UUID(sample_thu_muc["id"]),
+            file_url="/uploads/portal/tai-lieu/other.pdf",
+            file_name="other.pdf",
+            file_size_bytes=1024,
+            file_type="application/pdf",
+            phien_ban=1,
+            quyen_truy_cap="TAT_CA",
+            nguoi_tai_len_id=UUID("02a492ad-fb32-430d-8c4e-e9ded9b8d964"),  # idx=3
+            is_deleted=False,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db_session.add(tl)
+        await db_session.flush()
+        await db_session.refresh(tl)
+
+        resp = await client.delete(f"/api/v1/tai-lieu/{tl.id}")
         assert resp.status_code == 403
+
+    async def test_admin_xoa_duoc_moi_tai_lieu(
+        self, client: AsyncClient, admin_user, sample_tai_lieu
+    ):
+        """Admin SUPER_ADMIN xóa được mọi tài liệu (kể cả của người khác)."""
+        resp = await client.delete(f"/api/v1/tai-lieu/{sample_tai_lieu['id']}")
+        assert resp.status_code == 200
+
+    async def test_qt_noi_dung_xoa_duoc_moi_tai_lieu(
+        self, client: AsyncClient, qt_noi_dung_user, db_session, sample_thu_muc
+    ):
+        """QT_NOI_DUNG xóa được tài liệu của user khác."""
+        from portal_service.models.tai_lieu import TaiLieu
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        # Tạo tài liệu của user idx=0 (cbcc), qt_noi_dung_user là idx=2 → không phải owner
+        tl = TaiLieu(
+            ten_tai_lieu="Tai lieu cua nguoi khac",
+            thu_muc_id=UUID(sample_thu_muc["id"]),
+            file_url="/uploads/portal/tai-lieu/other.pdf",
+            file_name="other.pdf",
+            file_size_bytes=1024,
+            file_type="application/pdf",
+            phien_ban=1,
+            quyen_truy_cap="TAT_CA",
+            nguoi_tai_len_id=UUID("00327c43-c9a3-44d7-8306-7084e75cb2b5"),  # idx=0
+            is_deleted=False,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db_session.add(tl)
+        await db_session.flush()
+        await db_session.refresh(tl)
+
+        resp = await client.delete(f"/api/v1/tai-lieu/{tl.id}")
+        assert resp.status_code == 200
+
+    async def test_owner_cap_nhat_duoc(
+        self, client: AsyncClient, db_session, sample_thu_muc, cbcc_user
+    ):
+        """Owner cập nhật được metadata tài liệu của mình."""
+        from portal_service.models.tai_lieu import TaiLieu
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        tl = TaiLieu(
+            ten_tai_lieu="Ten cu",
+            thu_muc_id=UUID(sample_thu_muc["id"]),
+            file_url="/uploads/portal/tai-lieu/x.pdf",
+            file_name="x.pdf",
+            file_size_bytes=1024,
+            file_type="application/pdf",
+            phien_ban=1,
+            quyen_truy_cap="TAT_CA",
+            nguoi_tai_len_id=UUID("00327c43-c9a3-44d7-8306-7084e75cb2b5"),  # cbcc
+            is_deleted=False,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db_session.add(tl)
+        await db_session.flush()
+        await db_session.refresh(tl)
+
+        resp = await client.put(
+            f"/api/v1/tai-lieu/{tl.id}",
+            json={"ten_tai_lieu": "Ten moi"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["ten_tai_lieu"] == "Ten moi"
+
+    async def test_user_khac_khong_cap_nhat_duoc(
+        self, client: AsyncClient, db_session, sample_thu_muc, cbcc_user
+    ):
+        """User A không sửa được tài liệu của user B."""
+        from portal_service.models.tai_lieu import TaiLieu
+        from datetime import datetime, timezone
+        from uuid import UUID
+
+        tl = TaiLieu(
+            ten_tai_lieu="Ten cu",
+            thu_muc_id=UUID(sample_thu_muc["id"]),
+            file_url="/uploads/portal/tai-lieu/x.pdf",
+            file_name="x.pdf",
+            file_size_bytes=1024,
+            file_type="application/pdf",
+            phien_ban=1,
+            quyen_truy_cap="TAT_CA",
+            nguoi_tai_len_id=UUID("02a492ad-fb32-430d-8c4e-e9ded9b8d964"),  # idx=3
+            is_deleted=False,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        )
+        db_session.add(tl)
+        await db_session.flush()
+        await db_session.refresh(tl)
+
+        resp = await client.put(
+            f"/api/v1/tai-lieu/{tl.id}",
+            json={"ten_tai_lieu": "Ten moi"},
+        )
+        assert resp.status_code == 403
+
+
+class TestUploadFile:
+    """Test endpoint POST /upload/file (upload file thật)."""
+
+    async def test_cbcc_upload_file_pdf_thanh_cong(
+        self, client: AsyncClient, cbcc_user, tmp_path
+    ):
+        """CBCC thường upload được file PDF qua POST /upload/file."""
+        import io
+
+        content = b"%PDF-1.4 test fake pdf content"
+        files = {"file": ("test.pdf", io.BytesIO(content), "application/pdf")}
+        resp = await client.post("/api/v1/upload/file", files=files)
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["success"] is True
+        assert data["data"]["file_name"] == "test.pdf"
+        assert data["data"]["file_url"].startswith("/uploads/portal/tai-lieu/")
+        assert data["data"]["file_size"] == len(content)
+
+        # Cleanup file da ghi xuong disk
+        from pathlib import Path
+        file_path = Path(data["data"]["file_url"].lstrip("/"))
+        if file_path.exists():
+            file_path.unlink()
+
+    async def test_upload_dinh_dang_khong_ho_tro(
+        self, client: AsyncClient, cbcc_user
+    ):
+        """Upload file .exe → 400."""
+        import io
+
+        files = {"file": ("malware.exe", io.BytesIO(b"fake"), "application/octet-stream")}
+        resp = await client.post("/api/v1/upload/file", files=files)
+        assert resp.status_code == 400
 
 
 class TestTaiLieuChiTiet:

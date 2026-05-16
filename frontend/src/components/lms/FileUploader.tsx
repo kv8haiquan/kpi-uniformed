@@ -1,7 +1,7 @@
 /**
  * src/components/lms/FileUploader.tsx
  * =====================================
- * Drag-and-drop file uploader tích hợp với LMS upload endpoint.
+ * Drag-and-drop file uploader dùng chung (LMS, Portal, …).
  * Hỗ trợ: progress bar, client-side validation, file type icons, replace/delete.
  *
  * Props:
@@ -11,11 +11,14 @@
  *   label          — Nhãn hiển thị trong vùng kéo thả
  *   onUploadDone   — Callback khi upload thành công, nhận { file_name, file_url, file_size, content_type }
  *   currentFileUrl — URL file hiện tại (khi edit), để hiển thị trạng thái "đã có file"
+ *   uploadFn       — Hàm upload tuỳ chọn (default: LMS uploadApi.uploadFile).
+ *                    Cho phép module khác (Portal/Legal) tái sử dụng component với endpoint riêng.
  */
 
 'use client';
 
 import { useRef, useState, useCallback } from 'react';
+import type { AxiosResponse } from 'axios';
 import { uploadApi } from '@/services/lms';
 
 // =============================================================================
@@ -29,13 +32,20 @@ export interface UploadResult {
   content_type: string;
 }
 
+export type UploadFn = (
+  file: File,
+  folder: string,
+  onProgress?: (pct: number) => void,
+) => Promise<AxiosResponse<{ data: UploadResult }>>;
+
 interface FileUploaderProps {
-  accept?:        string;             // VD: ".pdf,.docx"
-  maxSizeMB?:     number;
-  folder?:        string;
-  label?:         string;
-  onUploadDone:   (result: UploadResult) => void;
+  accept?:         string;             // VD: ".pdf,.docx"
+  maxSizeMB?:      number;
+  folder?:         string;
+  label?:          string;
+  onUploadDone:    (result: UploadResult) => void;
   currentFileUrl?: string | null;
+  uploadFn?:       UploadFn;           // Override hàm upload (default = LMS)
 }
 
 // =============================================================================
@@ -78,6 +88,7 @@ export default function FileUploader({
   label,
   onUploadDone,
   currentFileUrl,
+  uploadFn = uploadApi.uploadFile,
 }: FileUploaderProps) {
   const inputRef    = useRef<HTMLInputElement>(null);
   const [dragging,  setDragging]  = useState(false);
@@ -104,7 +115,7 @@ export default function FileUploader({
 
     setProgress(0);
     try {
-      const res = await uploadApi.uploadFile(file, folder, (pct) => setProgress(pct));
+      const res = await uploadFn(file, folder, (pct) => setProgress(pct));
       const result: UploadResult = res.data.data;
       setUploaded(result);
       setProgress(null);
@@ -114,10 +125,10 @@ export default function FileUploader({
       const msg =
         err?.response?.data?.detail?.error?.message ||
         err?.response?.data?.detail ||
-        'Upload thất bại. Kiểm tra kết nối LMS (port 8001).';
+        'Upload thất bại. Vui lòng thử lại.';
       setErrMsg(String(msg));
     }
-  }, [folder, maxSizeMB, onUploadDone]);
+  }, [folder, maxSizeMB, onUploadDone, uploadFn]);
 
   // --------------------------------------------------------------------------
   // Drag & Drop handlers

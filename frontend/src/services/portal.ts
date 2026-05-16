@@ -131,6 +131,35 @@ export const thuMucApi = {
 // =============================================================================
 
 export const taiLieuApi = {
+  /**
+   * Upload 1 file vào thư viện tài liệu — POST /upload/file
+   * Quyền: mọi user đã login đều dùng được.
+   * @param file        File object từ input
+   * @param onProgress  Callback nhận % tiến trình (0–100)
+   * @param folder      Sub-folder (default 'tai-lieu')
+   * Returns: { file_name, file_url, file_size, content_type }
+   */
+  uploadFile: (
+    file: File,
+    folder: string = 'tai-lieu',
+    onProgress?: (pct: number) => void,
+  ) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return portalAxios.post(
+      `/upload/file?folder=${encodeURIComponent(folder)}`,
+      fd,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          if (onProgress && e.total) {
+            onProgress(Math.round((e.loaded * 100) / e.total));
+          }
+        },
+      },
+    );
+  },
+
   /** Danh sách tài liệu (latest version only) — GET /tai-lieu */
   danhSach: (params?: ITaiLieuParams) =>
     portalAxios.get('/tai-lieu', { params }),

@@ -66,6 +66,10 @@ class ThiSinh(Base):
     chi_tiet_tra_loi: Mapped[Optional[list]] = mapped_column(JSONB, server_default="'[]'")
     lich_su_thi: Mapped[Optional[list]] = mapped_column(JSONB, server_default="'[]'")
 
+    # Auto-save bai lam nhap (frontend gui moi 30s)
+    chi_tiet_nhap: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    so_lan_vi_pham: Mapped[Optional[int]] = mapped_column(Integer, server_default="0")
+
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, server_default=text("CURRENT_TIMESTAMP")
     )

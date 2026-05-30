@@ -35,8 +35,14 @@ export default function ThiDgnlPage() {
   const [traLoi, setTraLoi] = useState<Record<string, any>>({});
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [violations, setViolations] = useState(0);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const handleNopBaiRef = useRef<() => void>(() => {});
+  const handleNopBaiRef = useRef<(opts?: { retry?: number }) => Promise<void>>(async () => {});
+  const traLoiRef = useRef(traLoi);
+  const violationsRef = useRef(violations);
+  traLoiRef.current = traLoi;
+  violationsRef.current = violations;
 
   // Load ky thi info
   useEffect(() => {
@@ -53,13 +59,13 @@ export default function ThiDgnlPage() {
     if (kyThiId) load();
   }, [kyThiId]);
 
-  // Timer
+  // Timer — dem nguoc dua tren mocac dau tu server.
   useEffect(() => {
     if (state !== 'DANG_LAM' || timeLeft === null) return;
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev === null || prev <= 0) {
-          if (timerRef.current) clearInterval(timerRef.current);
+          if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
           handleNopBaiRef.current();
           return 0;
         }
@@ -67,6 +73,47 @@ export default function ThiDgnlPage() {
       });
     }, 1000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [state]);
+
+  // Auto-save bai lam moi 30s (Bug C/D fix 27/05/2026): tranh mat bai khi treo
+  // may / dong tab / mat mang. Backend bo qua silently neu khong phai DANG_THI.
+  useEffect(() => {
+    if (state !== 'DANG_LAM') return;
+    const interval = setInterval(async () => {
+      const entries = Object.entries(traLoiRef.current);
+      if (entries.length === 0) return;
+      try {
+        await kyThiApi.luuNhap(kyThiId, {
+          cau_tra_loi: entries.map(([cau_hoi_id, tra_loi]) => ({ cau_hoi_id, tra_loi })),
+          so_lan_vi_pham: violationsRef.current,
+        });
+      } catch { /* bo qua loi autosave de khong gay nhiu cho user */ }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [state, kyThiId]);
+
+  // Canh bao khi user dong tab/F5 khi dang thi
+  useEffect(() => {
+    if (state !== 'DANG_LAM') return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'Bạn đang làm bài thi. Nếu thoát, có thể mất bài làm chưa lưu.';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [state]);
+
+  // Dem so lan thoat tab/visibility (anti-cheat)
+  useEffect(() => {
+    if (state !== 'DANG_LAM') return;
+    const handleVisibility = () => {
+      if (document.hidden) {
+        setViolations(v => v + 1);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [state]);
 
   // Bat dau thi
@@ -77,6 +124,24 @@ export default function ThiDgnlPage() {
       const data = res.data.data;
       setCauHoi(data.cau_hoi || []);
       setTimeLeft(data.thoi_gian_con_lai_giay);
+
+      // Restore bai lam nhap neu dang tiep tuc (resume autosave)
+      if (data.dang_tiep_tuc && Array.isArray(data.chi_tiet_nhap)) {
+        const restored: Record<string, any> = {};
+        for (const item of data.chi_tiet_nhap) {
+          if (item?.cau_hoi_id && item.tra_loi != null) {
+            restored[item.cau_hoi_id] = item.tra_loi;
+          }
+        }
+        setTraLoi(restored);
+        setViolations(data.so_lan_vi_pham || 0);
+        const tongCau = data.cau_hoi?.length || 0;
+        const soKhoiPhuc = Object.keys(restored).length;
+        setResumeNotice(`🔄 Đã khôi phục bài làm dở: ${soKhoiPhuc}/${tongCau} câu đã trả lời.`);
+        // Tu an thong bao sau 8 giay
+        setTimeout(() => setResumeNotice(null), 8000);
+      }
+
       setState('DANG_LAM');
     } catch (err: any) {
       setError(err?.response?.data?.detail?.error?.message || 'Không thể bắt đầu thi');
@@ -85,25 +150,56 @@ export default function ThiDgnlPage() {
     }
   };
 
-  // Nop bai
-  const handleNopBai = useCallback(async () => {
+  // Nop bai — co retry voi backoff (1s, 3s, 8s) cho 4 lan thu.
+  const handleNopBai = useCallback(async (opts?: { retry?: number }) => {
     if (submitting) return;
     setSubmitting(true);
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
-    try {
-      const cauTraLoi = cauHoi.map(ch => ({
-        cau_hoi_id: ch.id,
-        tra_loi: traLoi[ch.id] || null,
-      }));
-      await kyThiApi.nopBai(kyThiId, { cau_tra_loi: cauTraLoi });
-      setState('DA_NOP');
-    } catch (err: any) {
-      setError(err?.response?.data?.detail?.error?.message || 'Lỗi nộp bài');
-    } finally {
-      setSubmitting(false);
+    const cauTraLoi = cauHoi.map(ch => ({
+      cau_hoi_id: ch.id,
+      tra_loi: traLoiRef.current[ch.id] || null,
+    }));
+
+    const delays = [0, 1000, 3000, 8000];
+    const maxAttempts = delays.length;
+    const startAttempt = opts?.retry ?? 0;
+
+    for (let attempt = startAttempt; attempt < maxAttempts; attempt++) {
+      if (delays[attempt] > 0) {
+        await new Promise(r => setTimeout(r, delays[attempt]));
+      }
+      try {
+        await kyThiApi.nopBai(kyThiId, { cau_tra_loi: cauTraLoi });
+        setState('DA_NOP');
+        setError(null);
+        setSubmitting(false);
+        return;
+      } catch (err: any) {
+        const code = err?.response?.data?.detail?.error?.code;
+        // Bug B fix: backend tra DGNL_033 nghia la bai da nop tu lan submit
+        // truoc (commit DB thanh cong, response mat). Coi nhu nop thanh cong.
+        if (code === 'DGNL_033') {
+          setState('DA_NOP');
+          setError(null);
+          setSubmitting(false);
+          return;
+        }
+        // Loi nghiep vu khac (vd: DGNL_028 het han) — dung retry ngay
+        if (code && code !== 'DGNL_033' && err?.response?.status && err.response.status < 500 && err.response.status !== 408 && err.response.status !== 429) {
+          setError(err?.response?.data?.detail?.error?.message || 'Lỗi nộp bài');
+          setSubmitting(false);
+          return;
+        }
+        // Lan cuoi van fail -> hien loi, cho user thu lai thu cong
+        if (attempt === maxAttempts - 1) {
+          setError('Không nộp được bài sau nhiều lần thử. Vui lòng kiểm tra mạng và bấm "Nộp bài" lại.');
+          setSubmitting(false);
+          return;
+        }
+      }
     }
-  }, [submitting, cauHoi, traLoi, kyThiId]);
+  }, [submitting, cauHoi, kyThiId]);
 
   handleNopBaiRef.current = handleNopBai;
 
@@ -163,6 +259,20 @@ export default function ThiDgnlPage() {
 
   // ===== CHUA_BAT_DAU =====
   if (state === 'CHUA_BAT_DAU') {
+    // Phan biet hanh vi theo trang thai thi sinh hien tai
+    const ttTs = kyThi?.trang_thai_thi_sinh;
+    const lanThi = kyThi?.lan_thi_hien_tai || 0;
+    const soLanToiDa = kyThi?.so_lan_thi_toi_da || 1;
+    const isResume = ttTs === 'DANG_THI';
+    const isRetry = ttTs === 'DA_NOP' && lanThi < soLanToiDa;
+    const hetLuot = ttTs === 'DA_NOP' && lanThi >= soLanToiDa;
+    const isVang = ttTs === 'VANG';
+
+    let btnLabel = 'Bắt đầu thi';
+    let btnColor = 'bg-blue-600 hover:bg-blue-700';
+    if (isResume) { btnLabel = '🔄 Tiếp tục làm bài'; btnColor = 'bg-amber-500 hover:bg-amber-600'; }
+    else if (isRetry) { btnLabel = `Thi lại (lần ${lanThi + 1}/${soLanToiDa})`; btnColor = 'bg-indigo-600 hover:bg-indigo-700'; }
+
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-lg">
@@ -171,6 +281,30 @@ export default function ThiDgnlPage() {
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
               {error}
+            </div>
+          )}
+
+          {isResume && (
+            <div className="mb-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg text-amber-900">
+              <div className="font-semibold mb-1">🔄 Bài thi đang dở dang</div>
+              <p className="text-sm">
+                Bạn đã bắt đầu thi nhưng chưa nộp bài. Hệ thống sẽ khôi phục đáp án đã chọn và
+                thời gian còn lại. Bấm <strong>"Tiếp tục làm bài"</strong> để vào lại.
+              </p>
+            </div>
+          )}
+
+          {hetLuot && (
+            <div className="mb-4 p-4 bg-red-50 border-2 border-red-300 rounded-lg text-red-900">
+              <div className="font-semibold mb-1">⛔ Đã hết lượt thi</div>
+              <p className="text-sm">Bạn đã thi {lanThi}/{soLanToiDa} lần. Không thể thi thêm.</p>
+            </div>
+          )}
+
+          {isVang && (
+            <div className="mb-4 p-4 bg-red-50 border-2 border-red-300 rounded-lg text-red-900">
+              <div className="font-semibold mb-1">⛔ Đã đánh dấu vắng</div>
+              <p className="text-sm">Bạn không thể tham gia kỳ thi này.</p>
             </div>
           )}
 
@@ -184,8 +318,10 @@ export default function ThiDgnlPage() {
               <span className="font-semibold">{kyThi?.diem_dat}%</span>
             </div>
             <div className="flex justify-between py-2 border-b">
-              <span className="text-gray-500">Số lượt thi tối đa</span>
-              <span className="font-semibold">{kyThi?.so_lan_thi_toi_da}</span>
+              <span className="text-gray-500">Số lượt thi</span>
+              <span className="font-semibold">
+                {ttTs ? `${lanThi}/${soLanToiDa}` : soLanToiDa}
+              </span>
             </div>
             <div className="flex justify-between py-2 border-b">
               <span className="text-gray-500">Trộn câu hỏi</span>
@@ -193,17 +329,20 @@ export default function ThiDgnlPage() {
             </div>
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-sm text-yellow-800">
-            <strong>Lưu ý:</strong> Sau khi bấm "Bắt đầu thi", đồng hồ sẽ bắt đầu đếm ngược.
-            Bài thi sẽ tự động nộp khi hết giờ.
-          </div>
+          {!isResume && !hetLuot && !isVang && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-sm text-yellow-800">
+              <strong>Lưu ý:</strong> Sau khi bấm &ldquo;{btnLabel}&rdquo;, đồng hồ sẽ bắt đầu đếm ngược.
+              Bài thi sẽ tự động nộp khi hết giờ.
+            </div>
+          )}
 
           <div className="flex gap-3">
             <button
               onClick={handleBatDau}
-              className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+              disabled={hetLuot || isVang}
+              className={`flex-1 px-6 py-3 text-white rounded-lg font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed ${btnColor}`}
             >
-              Bắt đầu thi
+              {btnLabel}
             </button>
             <button
               onClick={() => router.push('/dao-tao/ky-thi')}
@@ -220,6 +359,12 @@ export default function ThiDgnlPage() {
   // ===== DANG_LAM =====
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Resume notice — hien 8 giay sau khi khoi phuc bai lam do */}
+      {resumeNotice && (
+        <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 text-sm text-amber-900 text-center font-medium">
+          {resumeNotice}
+        </div>
+      )}
       {/* Top bar */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">

@@ -1763,9 +1763,11 @@ async def phe_duyet_tieu_chi_bulk(
             and not danh_gia.ngay_phe_duyet_tc_cap1
         )
         if is_duyet_thang:
+            # v3.6 (15/05/2026 BUG FIX): KHÔNG dùng _diem_pd_tu_ld (binary) trực
+            # tiếp — sẽ ăn điểm thập phân CC tự chấm. Dùng _apply_dieu_chinh_ld
+            # với fallback="cc" để đồng ý CC chấm, giữ nguyên diem_tu_cham.
             for tc in danh_gia.tieu_chi_chungs:
-                tc.is_achieved_ld = tc.is_achieved_cc
-                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+                _apply_dieu_chinh_ld(tc, None, fallback="cc")
                 tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
                 tc.ngay_phe_duyet = now
                 tc.ghi_chu_ld = payload.ghi_chu
@@ -1786,16 +1788,20 @@ async def phe_duyet_tieu_chi_bulk(
         # Xử lý theo cấp
         # Cấp 1
         if is_approver_cap1 and not danh_gia.ngay_phe_duyet_tc_cap1:
+            # v3.6 (15/05/2026 BUG FIX): đồng ý CC chấm → giữ diem_tu_cham qua
+            # _apply_dieu_chinh_ld(fallback="cc"). Lưu snapshot [PDV:N] giống
+            # single endpoint để FE hiển thị 3 cột CC/PDV/TDV.
             for tc in danh_gia.tieu_chi_chungs:
-                tc.is_achieved_ld = tc.is_achieved_cc
-                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+                _apply_dieu_chinh_ld(tc, None, fallback="cc")
                 tc.ghi_chu_ld = payload.ghi_chu
-            
+                pdv_diem = float(tc.diem_phe_duyet) if tc.diem_phe_duyet is not None else 0.0
+                _save_pdv_snapshot(tc, pdv_diem)
+
             tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
             danh_gia.ngay_phe_duyet_tc_cap1 = now
             danh_gia.diem_tc_cap1 = Decimal(str(tong_hop.tong_diem))
             danh_gia.trang_thai_tc = TrangThaiTieuChi.CHO_CAP2  # v3.5: Phân biệt cấp
-            
+
             # Tìm ĐT
             don_vi_id = danh_gia.cong_chuc.don_vi_id if danh_gia.cong_chuc else None
             if don_vi_id:
@@ -1808,34 +1814,38 @@ async def phe_duyet_tieu_chi_bulk(
                 dt = result_dt.scalar_one_or_none()
                 if dt:
                     danh_gia.nguoi_phe_duyet_tc_cap2_id = dt.id
-            
+
             processed_ids.append(dgt_id)
             continue
-        
+
         # Cấp 2
         if is_approver_cap2 and danh_gia.ngay_phe_duyet_tc_cap1 and not danh_gia.ngay_phe_duyet_tc_cap2:
+            # v3.6 (15/05/2026 BUG FIX — ăn điểm thập phân): TDV đồng ý quyết
+            # định PDV → GIỮ NGUYÊN diem_phe_duyet đã có từ cấp 1. Trước đây
+            # recompute qua _diem_pd_tu_ld (binary) khiến TC mà CC chấm thập
+            # phân < max (is_achieved_ld=False, diem=2.0/2.5) bị overwrite về 0.
             for tc in danh_gia.tieu_chi_chungs:
-                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+                _apply_dieu_chinh_ld(tc, None, fallback="keep")
                 tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
                 tc.ngay_phe_duyet = now
-            
+
             tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
             danh_gia.diem_tieu_chi_chung = Decimal(str(tong_hop.tong_diem))
             danh_gia.trang_thai_tc = TrangThaiTieuChi.DA_PHE_DUYET
             danh_gia.ngay_phe_duyet_tc_cap2 = now
             danh_gia.diem_tc_cap2 = danh_gia.diem_tieu_chi_chung
-            
+
             processed_ids.append(dgt_id)
             continue
-        
+
         # Fallback legacy
         tc_cho_duyet = [tc for tc in danh_gia.tieu_chi_chungs if tc.trang_thai == TrangThaiTieuChi.CHO_PHE_DUYET]
         if not tc_cho_duyet:
             continue
-        
+
+        # v3.6 (15/05/2026 BUG FIX): đồng ý CC chấm → giữ diem_tu_cham.
         for tc in danh_gia.tieu_chi_chungs:
-            tc.is_achieved_ld = tc.is_achieved_cc
-            tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+            _apply_dieu_chinh_ld(tc, None, fallback="cc")
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
             tc.ghi_chu_ld = payload.ghi_chu

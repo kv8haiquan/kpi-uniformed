@@ -14,7 +14,7 @@ import type { IKhoaHoc, IChuyenDe, IPagination } from '@/types/lms';
 import ChuyenDeManager from '@/components/lms/ChuyenDeManager';
 import KhoaHocEditor from '@/components/lms/KhoaHocEditor';
 import CauHoiManager from '@/components/lms/CauHoiManager';
-import GiaoBaiForm from '@/components/lms/GiaoBaiForm';
+import GiaoBaiModal from '@/components/lms/GiaoBaiModal';
 import KetQuaBaoCaoPanel from '@/components/lms/KetQuaBaoCaoPanel';
 
 const TT_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
@@ -42,7 +42,8 @@ export default function QuanLyPage() {
   const [editKhoaHocId, setEditKhoaHocId] = useState<string | null>(null);
   // Modal states cho "Tạo khóa học" và "Giao bài"
   const [showEditor, setShowEditor] = useState(false);
-  const [showGiaoBai, setShowGiaoBai] = useState(false);
+  // Giao bài: modal theo từng khóa (giống ĐGNL)
+  const [giaoBaiKhoaHoc, setGiaoBaiKhoaHoc] = useState<{ id: string; ma_khoa_hoc: string; ten_khoa_hoc: string } | null>(null);
 
   // Modal từ chối duyệt — yêu cầu ghi_chu bắt buộc
   const [rejectTarget, setRejectTarget] = useState<{ id: string; ten: string } | null>(null);
@@ -142,10 +143,6 @@ export default function QuanLyPage() {
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 whitespace-nowrap">
                   ➕ Tạo khóa học
                 </button>
-                <button onClick={() => setShowGiaoBai(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 whitespace-nowrap">
-                  📋 Giao bài
-                </button>
                 <Link href="/dao-tao/ky-thi/quan-ly"
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 whitespace-nowrap">
                   📝 Kỳ thi ĐGNL
@@ -191,6 +188,12 @@ export default function QuanLyPage() {
                                 onClick={() => { setEditKhoaHocId(kh.id); setShowEditor(true); }}
                                 className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
                               >Sửa</button>
+                              {kh.trang_thai === 'DA_XUAT_BAN' && (
+                                <button
+                                  onClick={() => setGiaoBaiKhoaHoc({ id: kh.id, ma_khoa_hoc: kh.ma_khoa_hoc, ten_khoa_hoc: kh.ten_khoa_hoc })}
+                                  className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs hover:bg-green-200"
+                                >Giao bài</button>
+                              )}
                               {kh.trang_thai === 'NHAP' && (
                                 <button onClick={() => handleWorkflow(kh.id, 'CHO_DUYET')}
                                   className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs hover:bg-yellow-200">Gửi duyệt</button>
@@ -280,18 +283,12 @@ export default function QuanLyPage() {
         </div>
       )}
 
-      {/* Modal: GiaoBaiForm (Giao bài cho CBCC) */}
-      {showGiaoBai && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowGiaoBai(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">📋 Giao bài cho CBCC</h3>
-              <button onClick={() => setShowGiaoBai(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
-            </div>
-            <GiaoBaiForm />
-          </div>
-        </div>
+      {/* Modal: GiaoBaiModal (Giao bài cho 1 khóa học cụ thể) */}
+      {giaoBaiKhoaHoc && (
+        <GiaoBaiModal
+          khoaHoc={giaoBaiKhoaHoc}
+          onClose={() => { setGiaoBaiKhoaHoc(null); loadList(); }}
+        />
       )}
 
       {/* Modal từ chối duyệt — ghi_chu bắt buộc */}

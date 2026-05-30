@@ -95,6 +95,26 @@ class KyThiService:
         result = await self.db.execute(stmt)
         rows = result.all()
 
+        # Trang thai thi sinh cua user hien tai (batch query, tranh N+1)
+        kt_ids = [kt.id for kt, _, _ in rows]
+        ts_status_map: dict[uuid.UUID, dict] = {}
+        if kt_ids:
+            ts_r = await self.db.execute(
+                select(
+                    ThiSinh.ky_thi_id,
+                    ThiSinh.trang_thai,
+                    ThiSinh.lan_thi_hien_tai,
+                ).where(
+                    ThiSinh.cong_chuc_id == uuid.UUID(user.sub),
+                    ThiSinh.ky_thi_id.in_(kt_ids),
+                )
+            )
+            for kt_id, tt, lan in ts_r.all():
+                ts_status_map[kt_id] = {
+                    "trang_thai_thi_sinh": tt,
+                    "lan_thi_hien_tai": lan or 0,
+                }
+
         items = []
         for kt, nt_ten, nd_ten in rows:
             # Dem thi sinh
@@ -111,12 +131,16 @@ class KyThiService:
             )
             so_vt = vt_count.scalar() or 0
 
+            ts_info = ts_status_map.get(kt.id, {})
             items.append({
                 **{c.key: getattr(kt, c.key) for c in kt.__table__.columns},
                 "nguoi_tao_ho_ten": nt_ten,
                 "nguoi_duyet_ho_ten": nd_ten,
                 "tong_thi_sinh": tong_ts,
                 "so_vi_tri": so_vt,
+                # Trang thai thi sinh cua user hien tai (None neu khong duoc giao)
+                "trang_thai_thi_sinh": ts_info.get("trang_thai_thi_sinh"),
+                "lan_thi_hien_tai": ts_info.get("lan_thi_hien_tai", 0),
             })
 
         return {
@@ -166,12 +190,24 @@ class KyThiService:
             select(func.count(func.distinct(CauTrucDe.vi_tri_id))).where(CauTrucDe.ky_thi_id == kt.id)
         )
 
+        # Trang thai thi sinh cua user hien tai — FE dung de quyet dinh
+        # "Bat dau" vs "Tiep tuc" vs "Thi lai".
+        ts_r = await self.db.execute(
+            select(ThiSinh.trang_thai, ThiSinh.lan_thi_hien_tai).where(
+                ThiSinh.ky_thi_id == kt.id,
+                ThiSinh.cong_chuc_id == uuid.UUID(user.sub),
+            )
+        )
+        ts_row = ts_r.first()
+
         return {
             **{c.key: getattr(kt, c.key) for c in kt.__table__.columns},
             "nguoi_tao_ho_ten": row.nguoi_tao_ho_ten if row else None,
             "nguoi_duyet_ho_ten": row.nguoi_duyet_ho_ten if row else None,
             "tong_thi_sinh": ts_count.scalar() or 0,
             "so_vi_tri": vt_count.scalar() or 0,
+            "trang_thai_thi_sinh": ts_row.trang_thai if ts_row else None,
+            "lan_thi_hien_tai": (ts_row.lan_thi_hien_tai or 0) if ts_row else 0,
         }
 
     async def tao_moi(self, data: KyThiCreate, user: TokenPayload) -> KyThi:

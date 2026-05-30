@@ -30,6 +30,20 @@ class ThiSinhBatchCreate(BaseModel):
     vi_tri_id: Optional[UUID] = None  # Bat buoc khi giao theo don_vi
 
 
+class LichSuThiSummary(BaseModel):
+    """Summary 1 lan thi de hien thi trong expand panel."""
+    lan: int
+    diem: float = 0
+    xep_loai: Optional[str] = None
+    so_cau_dung: Optional[int] = None
+    so_cau_sai: Optional[int] = None
+    tong_so_cau: Optional[int] = None
+    thoi_gian_bat_dau: Optional[str] = None
+    thoi_gian_nop: Optional[str] = None
+    thoi_gian_lam_giay: Optional[int] = None
+    has_chi_tiet: bool = False  # FE dung de enable/disable nut "Xem bai lam"
+
+
 class ThiSinhResponse(BaseModel):
     """Response 1 thi sinh."""
     model_config = ConfigDict(from_attributes=True)
@@ -55,6 +69,8 @@ class ThiSinhResponse(BaseModel):
     ma_cc: Optional[str] = None
     don_vi_ten: Optional[str] = None
     vi_tri_ten: Optional[str] = None
+    # Lich su cac lan thi truoc (summary)
+    lich_su_thi: Optional[list[LichSuThiSummary]] = None
 
 
 # ============================================================
@@ -70,6 +86,12 @@ class CauTraLoi(BaseModel):
 class NopBaiRequest(BaseModel):
     """Body nop bai thi."""
     cau_tra_loi: list[CauTraLoi] = []
+
+
+class LuuNhapRequest(BaseModel):
+    """Body luu nhap (auto-save moi 30s)."""
+    cau_tra_loi: list[CauTraLoi] = []
+    so_lan_vi_pham: int = 0
 
 
 # ============================================================
@@ -91,4 +113,6 @@ class KetQuaResponse(BaseModel):
     ket_qua: dict
     diem_theo_linh_vuc: list[DiemLinhVuc] = []
     chi_tiet: Optional[list] = None  # Chi hien neu ky_thi.hien_dap_an = true
-    lich_su_thi: Optional[list] = None
+    # Summary cac lan thi (KHONG kem chi_tiet_tra_loi de gon payload). FE goi
+    # endpoint drill-down /ket-qua/{lan} de xem chi tiet 1 lan cu the.
+    lich_su_thi: Optional[list[LichSuThiSummary]] = None

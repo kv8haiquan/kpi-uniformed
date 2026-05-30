@@ -422,6 +422,9 @@ export interface IKyThi {
   tong_thi_sinh: number;
   so_vi_tri: number;
   created_at: string;
+  // Trang thai thi sinh cua user hien tai (CHUA_THI | DANG_THI | DA_NOP | VANG | null)
+  trang_thai_thi_sinh?: string | null;
+  lan_thi_hien_tai?: number;
 }
 
 export interface IKyThiCreate {
@@ -473,6 +476,19 @@ export interface ICauTrucDeByViTri {
 // ĐGNL — THÍ SINH
 // =============================================================================
 
+export interface ILichSuThiSummary {
+  lan: number;
+  diem: number;
+  xep_loai: string | null;
+  so_cau_dung: number | null;
+  so_cau_sai: number | null;
+  tong_so_cau: number | null;
+  thoi_gian_bat_dau: string | null;
+  thoi_gian_nop: string | null;
+  thoi_gian_lam_giay: number | null;
+  has_chi_tiet: boolean;
+}
+
 export interface IThiSinh {
   id: string;
   ky_thi_id: string;
@@ -493,6 +509,7 @@ export interface IThiSinh {
   ma_cc: string | null;
   don_vi_ten: string | null;
   vi_tri_ten: string | null;
+  lich_su_thi?: ILichSuThiSummary[] | null;
 }
 
 export interface IDgnlBatDauResponse {
@@ -525,8 +542,20 @@ export interface IDgnlKetQua {
     lan_thi: number;
   };
   diem_theo_linh_vuc: { linh_vuc: string; so_cau_dung: number; tong_cau: number; phan_tram: number }[];
-  chi_tiet: any[] | null;
-  lich_su_thi: any[] | null;
+  chi_tiet: IDgnlKetQuaChiTiet[] | null;
+  lich_su_thi: ILichSuThiSummary[] | null;
+}
+
+export interface IDgnlKetQuaChiTiet {
+  cau_hoi_id: string;
+  tra_loi: any;
+  dap_an_dung: any;
+  dung: boolean;
+  noi_dung?: string;
+  loai?: string;
+  giai_thich?: string | null;
+  diem_toi_da?: number;
+  diem_dat?: number;
 }
 
 export interface IDgnlValidateResponse {

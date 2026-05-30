@@ -107,6 +107,9 @@ class KyThiResponse(BaseModel):
     # Thong ke nhanh
     tong_thi_sinh: Optional[int] = 0
     so_vi_tri: Optional[int] = 0
+    # Trang thai thi sinh cua user hien tai — FE quyet dinh nut Vao thi/Tiep tuc/Thi lai
+    trang_thai_thi_sinh: Optional[str] = None  # CHUA_THI | DANG_THI | DA_NOP | VANG
+    lan_thi_hien_tai: Optional[int] = 0
 
 
 # ============================================================

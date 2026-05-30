@@ -24,6 +24,7 @@ from lms_service.dependencies import get_db, get_current_user, require_platform_
 from lms_service.schemas.thi_sinh import (
     ThiSinhBatchCreate, ThiSinhResponse,
     NopBaiRequest, KetQuaResponse,
+    LuuNhapRequest,
 )
 from lms_service.services.thi_sinh_service import ThiSinhService
 from shared.auth import TokenPayload
@@ -122,6 +123,21 @@ async def nop_bai(
     }
 
 
+@router.post("/{ky_thi_id}/luu-nhap")
+async def luu_nhap(
+    ky_thi_id: UUID,
+    data: LuuNhapRequest,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Luu bai lam nhap (auto-save). Frontend goi moi 30s."""
+    service = ThiSinhService(db)
+    result = await service.luu_nhap(
+        ky_thi_id, data.cau_tra_loi, data.so_lan_vi_pham, user
+    )
+    return {"success": True, "data": result}
+
+
 # ================================================================
 # KET QUA
 # ================================================================
@@ -156,6 +172,30 @@ async def ket_qua_cbcc(
     return {"success": True, "data": result.model_dump(mode="json")}
 
 
+@router.get("/{ky_thi_id}/thi-sinh/{cong_chuc_id}/ket-qua/{lan}")
+async def ket_qua_lan_thi(
+    ky_thi_id: UUID,
+    cong_chuc_id: UUID,
+    lan: int,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Xem chi tiet bai lam cua 1 lan thi cu the — QT_DAO_TAO hoac Lanh dao.
+
+    `lan` la so thu tu lan thi (1, 2, 3, ...). Lan moi nhat (= lan_thi_hien_tai)
+    duoc tra ve giong nhu /ket-qua/{cong_chuc_id}. Lan cu hon duoc lay tu
+    lich_su_thi JSONB.
+    """
+    service = ThiSinhService(db)
+    if not service._is_manager(user) and not service._is_lanh_dao(user):
+        raise HTTPException(
+            status_code=403,
+            detail={"success": False, "error": {"code": "PERM_001", "message": "Yêu cầu vai trò QT_DAO_TAO hoặc Lãnh đạo"}},
+        )
+    result = await service.ket_qua_lan_thi(ky_thi_id, cong_chuc_id, lan, user)
+    return {"success": True, "data": result.model_dump(mode="json")}
+
+
 # ================================================================
 # EXPORT EXCEL
 # ================================================================
@@ -164,10 +204,15 @@ async def ket_qua_cbcc(
 async def export_ket_qua(
     ky_thi_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
+    user: TokenPayload = Depends(get_current_user),
 ):
-    """Export ket qua ky thi ra file Excel (.xlsx)."""
+    """Export ket qua ky thi ra file Excel (.xlsx). QT xem tat ca, LD xem don vi minh."""
     service = ThiSinhService(db)
+    if not service._is_manager(user) and not service._is_lanh_dao(user):
+        raise HTTPException(
+            status_code=403,
+            detail={"success": False, "error": {"code": "PERM_001", "message": "Yêu cầu vai trò QT_DAO_TAO hoặc Lãnh đạo"}},
+        )
     xlsx_bytes = await service.export_excel(ky_thi_id, user)
     return Response(
         content=xlsx_bytes,

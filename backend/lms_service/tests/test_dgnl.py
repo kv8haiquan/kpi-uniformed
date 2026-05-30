@@ -520,6 +520,7 @@ class TestLamThi:
         assert resp.status_code == 200
         assert resp.json()["data"]["thi_sinh"]["ho_ten"] is not None
 
+
     async def test_thong_ke_ky_thi(self, client, admin_user):
         data = await self._setup_and_open(client, admin_user)
         kt = data["ky_thi"]
@@ -535,6 +536,181 @@ class TestLamThi:
         tq = resp.json()["data"]["tong_quan"]
         assert tq["tong_thi_sinh"] == 1
         assert tq["da_thi"] == 1
+
+
+# =========================================================================
+# LICH SU LAN THI — snapshot + drill-down (30/05/2026)
+# =========================================================================
+
+class TestLichSuLanThi:
+    """Test snapshot lich_su_thi day du + drill-down 1 lan thi cu the.
+
+    Setup rieng (khong dung _setup_full_exam): seed truc tiep cau_hoi_dgnl bank
+    qua POST /dgnl/ngan-hang vi bat_dau_thi() query bang `cau_hoi_dgnl`, khong
+    phai `cau_hoi` (cua BKT).
+    """
+
+    async def _setup_dgnl_exam(self, client) -> dict:
+        """Tao linh_vuc + vi_tri + ky_thi + 10 cau_hoi_dgnl + cau_truc_de."""
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-LSU-{uid}", "Lĩnh vực Lich Su Thi")
+        vt = await _create_vi_tri(client, f"VT-LSU-{uid}", "Vị trí Lich Su Thi")
+        kt = await _create_ky_thi(client, f"KT-LSU-{uid}")
+
+        # Seed cau_hoi_dgnl bank: 5 DE + 3 TB + 2 KHO
+        def _ch_body(noi_dung, do_kho):
+            return {
+                "linh_vuc_id": lv["id"],
+                "noi_dung": noi_dung,
+                "loai": "TRAC_NGHIEM_1",
+                "do_kho": do_kho,
+                "dap_an": {
+                    "lua_chon": [
+                        {"key": "A", "noi_dung": "Đáp A"},
+                        {"key": "B", "noi_dung": "Đáp B"},
+                    ],
+                    "dap_an_dung": "A",
+                },
+            }
+
+        for i in range(5):
+            r = await client.post(f"{BASE}/dgnl/ngan-hang", json=_ch_body(f"DGNL Dễ {uid}-{i}", "DE"))
+            assert r.status_code == 201, r.json()
+        for i in range(3):
+            r = await client.post(f"{BASE}/dgnl/ngan-hang", json=_ch_body(f"DGNL TB {uid}-{i}", "TRUNG_BINH"))
+            assert r.status_code == 201, r.json()
+        for i in range(2):
+            r = await client.post(f"{BASE}/dgnl/ngan-hang", json=_ch_body(f"DGNL Khó {uid}-{i}", "KHO"))
+            assert r.status_code == 201, r.json()
+
+        # Cau truc de: 2 DE + 1 TB + 1 KHO = 4 cau
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt["id"],
+            "cau_truc": [
+                {"linh_vuc_id": lv["id"], "so_cau_de": 2, "so_cau_trung_binh": 1, "so_cau_kho": 1},
+            ],
+        })
+        assert resp.status_code == 201, resp.json()
+
+        return {"linh_vuc": lv, "vi_tri": vt, "ky_thi": kt}
+
+    async def _open_with_dap_an(self, client, admin_user) -> tuple[dict, str]:
+        """Setup + bat hien_dap_an=True + giao thi sinh + mo ky thi."""
+        data = await self._setup_dgnl_exam(client)
+        kt = data["ky_thi"]
+        vt = data["vi_tri"]
+        # Bat hien_dap_an de chi_tiet co the duoc tra ve trong drill-down test
+        r = await client.put(f"{BASE}/ky-thi/{kt['id']}", json={"hien_dap_an": True})
+        assert r.status_code == 200, r.json()
+
+        cc_id = "00327c43-c9a3-44d7-8306-7084e75cb2b5"  # admin_user idx=0
+        await client.post(f"{BASE}/ky-thi/{kt['id']}/thi-sinh", json={
+            "danh_sach": [{"cong_chuc_id": cc_id, "vi_tri_id": vt["id"]}],
+        })
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "CHO_DUYET"})
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "DANG_MO"})
+        return data, cc_id
+
+    async def _thi_va_nop(self, client, kt_id: str):
+        """Bat dau + nop bai 1 lan (chon A cho tat ca cau)."""
+        start = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert start.status_code == 200, f"bat-dau failed: {start.status_code} {start.json()}"
+        cau_hoi = start.json()["data"]["cau_hoi"]
+        cau_tra_loi = [{"cau_hoi_id": c["id"], "tra_loi": {"dap_an": "A"}} for c in cau_hoi]
+        nop = await client.post(f"{BASE}/ky-thi/{kt_id}/nop-bai", json={"cau_tra_loi": cau_tra_loi})
+        assert nop.status_code == 200, f"nop-bai failed: {nop.status_code} {nop.json()}"
+
+    async def test_nop_bai_snapshot_lich_su_voi_chi_tiet(self, client, admin_user):
+        """Sau khi nop lan 1, lich_su_thi (summary) co 1 entry voi has_chi_tiet=True.
+
+        Response /ket-qua tra ve summary projection -> KHONG co chi_tiet_tra_loi raw.
+        Verify chi_tiet day du qua endpoint drill-down /ket-qua/{lan}.
+        """
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt = data["ky_thi"]
+        await self._thi_va_nop(client, kt["id"])
+
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/ket-qua")
+        assert resp.status_code == 200
+        lich_su = resp.json()["data"]["lich_su_thi"]
+        assert lich_su is not None and len(lich_su) == 1
+        entry = lich_su[0]
+        assert entry["lan"] == 1
+        assert entry["tong_so_cau"] == 4
+        assert entry["thoi_gian_nop"] is not None
+        # Summary KHONG kem chi_tiet raw, dung has_chi_tiet flag
+        assert entry["has_chi_tiet"] is True
+        assert "chi_tiet_tra_loi" not in entry
+
+        # Drill-down lan 1 -> chi_tiet day du (4 cau)
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh/{cc_id}/ket-qua/1")
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]["chi_tiet"]) == 4
+
+    async def test_thi_lai_upsert_idempotent(self, client, admin_user):
+        """Retake + nop lan 2 -> lich_su_thi co 2 entry (lan 1, lan 2), khong trung."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt = data["ky_thi"]
+        await self._thi_va_nop(client, kt["id"])  # lan 1
+        await self._thi_va_nop(client, kt["id"])  # lan 2 (retake)
+
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/ket-qua")
+        lich_su = resp.json()["data"]["lich_su_thi"]
+        assert len(lich_su) == 2
+        lans = sorted(e["lan"] for e in lich_su)
+        assert lans == [1, 2]
+        # Ca 2 entry summary deu co has_chi_tiet=True (upsert thay vi append duplicate)
+        for e in lich_su:
+            assert e["has_chi_tiet"] is True
+        # Drill-down ca 2 lan -> chi_tiet day du
+        for lan in [1, 2]:
+            r = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh/{cc_id}/ket-qua/{lan}")
+            assert r.status_code == 200
+            assert len(r.json()["data"]["chi_tiet"]) == 4
+
+    async def test_danh_sach_thi_sinh_tra_ve_lich_su_summary(self, client, admin_user):
+        """Endpoint /thi-sinh tra ve lich_su_thi summary (khong co chi_tiet_tra_loi)."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt = data["ky_thi"]
+        await self._thi_va_nop(client, kt["id"])
+
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh")
+        assert resp.status_code == 200
+        items = resp.json()["data"]
+        ts = next(i for i in items if i["cong_chuc_id"] == cc_id)
+        assert ts["lich_su_thi"] is not None and len(ts["lich_su_thi"]) == 1
+        entry = ts["lich_su_thi"][0]
+        # Summary: co has_chi_tiet, KHONG co chi_tiet_tra_loi raw
+        assert entry["has_chi_tiet"] is True
+        assert "chi_tiet_tra_loi" not in entry
+        assert entry["lan"] == 1
+        assert entry["tong_so_cau"] == 4
+
+    async def test_ket_qua_lan_thi_drill_down(self, client, admin_user):
+        """GET /ky-thi/{id}/thi-sinh/{ccId}/ket-qua/{lan} tra dung data lan cu."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt = data["ky_thi"]
+        await self._thi_va_nop(client, kt["id"])  # lan 1
+        await self._thi_va_nop(client, kt["id"])  # lan 2
+
+        # Drill-down lan cu
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh/{cc_id}/ket-qua/1")
+        assert resp.status_code == 200, resp.json()
+        result = resp.json()["data"]
+        assert result["ket_qua"]["lan_thi"] == 1
+        assert result["ket_qua"]["tong_so_cau"] == 4
+        # chi_tiet co tu lich_su_thi entry (vi hien_dap_an=True)
+        assert result["chi_tiet"] is not None
+        assert len(result["chi_tiet"]) == 4
+
+        # Drill-down lan hien tai
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh/{cc_id}/ket-qua/2")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["ket_qua"]["lan_thi"] == 2
+
+        # Lan khong ton tai
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh/{cc_id}/ket-qua/99")
+        assert resp.status_code == 404
 
 
 # =========================================================================
@@ -568,3 +744,165 @@ class TestPhanQuyen:
         """CBCC duoc xem danh sach ky thi (chi thay duoc giao)."""
         resp = await client.get(f"{BASE}/ky-thi")
         assert resp.status_code == 200
+
+
+# =========================================================================
+# UNIT TEST — PHAN QUYEN XEM BAI LAM (siet chi CCT/PCCT, bo TDV/PDV)
+# =========================================================================
+
+class TestPhanQuyenXemBaiLam:
+    """Test helper _is_lanh_dao: chi CCT/PCCT moi duoc coi la lanh dao xem bai lam.
+    TDV/PDV (is_lanh_dao=True nhung vai_tro khac) phai bi tu choi."""
+
+    def _make_service(self):
+        # ThiSinhService can db nhung _is_lanh_dao khong su dung db -> truyen None.
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        return ThiSinhService(db=None)  # type: ignore[arg-type]
+
+    def _make_user(self, vai_tro: str, is_lanh_dao: bool = False, platform_roles=None):
+        from shared.auth import TokenPayload
+        return TokenPayload(
+            sub="00000000-0000-0000-0000-000000000001",
+            exp=int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
+            type="access",
+            ma_cc="TEST",
+            vai_tro=vai_tro,
+            don_vi_id="a0000000-0000-0000-0000-000000000001",
+            is_lanh_dao=is_lanh_dao,
+            platform_roles=platform_roles or [],
+        )
+
+    def test_cct_la_lanh_dao(self):
+        svc = self._make_service()
+        assert svc._is_lanh_dao(self._make_user("CCT")) is True
+
+    def test_pcct_la_lanh_dao(self):
+        svc = self._make_service()
+        assert svc._is_lanh_dao(self._make_user("PCCT")) is True
+
+    def test_tdv_khong_la_lanh_dao(self):
+        """TDV (TRUONG_PHONG, is_lanh_dao=True) PHAI bi tu choi."""
+        svc = self._make_service()
+        assert svc._is_lanh_dao(self._make_user("TRUONG_PHONG", is_lanh_dao=True)) is False
+
+    def test_pdv_khong_la_lanh_dao(self):
+        """PDV (PHO_PHONG, is_lanh_dao=True) PHAI bi tu choi."""
+        svc = self._make_service()
+        assert svc._is_lanh_dao(self._make_user("PHO_PHONG", is_lanh_dao=True)) is False
+
+    def test_chuyen_vien_khong_la_lanh_dao(self):
+        svc = self._make_service()
+        assert svc._is_lanh_dao(self._make_user("CHUYEN_VIEN")) is False
+
+    def test_super_admin_khong_la_lanh_dao(self):
+        """SUPER_ADMIN duoc xem qua _is_manager, khong qua _is_lanh_dao."""
+        svc = self._make_service()
+        assert svc._is_lanh_dao(self._make_user("SUPER_ADMIN")) is False
+
+
+# =========================================================================
+# UNIT TEST — NORMALIZE DAP_AN_DUNG (bug fix [object Object] tren FE)
+# =========================================================================
+
+class TestNormalizeDapAnDung:
+    """Test helper _normalize_dap_an_dung — chuan hoa shape dap_an_dung."""
+
+    def test_trac_nghiem_1_unwrap_string(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        da = {"lua_chon": [{"key": "A", "noi_dung": "X"}], "dap_an_dung": "A"}
+        assert ThiSinhService._normalize_dap_an_dung(da) == "A"
+
+    def test_trac_nghiem_nhieu_unwrap_list(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        da = {"lua_chon": [{"key": "A"}, {"key": "B"}], "dap_an_dung": ["A", "C"]}
+        assert ThiSinhService._normalize_dap_an_dung(da) == ["A", "C"]
+
+    def test_dung_sai_unwrap_string(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        da = {"lua_chon": [{"key": "A"}, {"key": "B"}], "dap_an_dung": "A"}
+        assert ThiSinhService._normalize_dap_an_dung(da) == "A"
+
+    def test_tu_luan_unwrap_goi_y(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        da = {"goi_y": "Trinh bay cac buoc xu ly ho so"}
+        assert ThiSinhService._normalize_dap_an_dung(da) == "Trinh bay cac buoc xu ly ho so"
+
+    def test_none_passthrough(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        assert ThiSinhService._normalize_dap_an_dung(None) is None
+
+    def test_string_passthrough(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        assert ThiSinhService._normalize_dap_an_dung("A") == "A"
+
+    def test_list_passthrough(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        assert ThiSinhService._normalize_dap_an_dung(["A", "B"]) == ["A", "B"]
+
+    def test_empty_dict_returns_none(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        assert ThiSinhService._normalize_dap_an_dung({}) is None
+
+    def test_unknown_dict_returns_none(self):
+        """Dict khong co dap_an_dung/goi_y → None de FE khong hien [object Object]."""
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        assert ThiSinhService._normalize_dap_an_dung({"something_else": "x"}) is None
+
+    def test_result_never_dict(self):
+        """Tat ca code path KHONG bao gio tra ve dict (root cause bug)."""
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        cases = [
+            {"lua_chon": [], "dap_an_dung": "A"},
+            {"lua_chon": [], "dap_an_dung": ["A", "B"]},
+            {"goi_y": "x"},
+            {},
+            None,
+            "A",
+            ["A", "B"],
+        ]
+        for c in cases:
+            assert not isinstance(ThiSinhService._normalize_dap_an_dung(c), dict), (
+                f"input {c!r} cho ra dict — bug ['object Object'] van con!"
+            )
+
+
+# =========================================================================
+# UNIT TEST — UPSERT LAN THI (idempotent theo lan)
+# =========================================================================
+
+class TestUpsertLanThi:
+    """Test _upsert_lan_thi: append neu chua co, replace neu da co cung lan."""
+
+    class _FakeTs:
+        def __init__(self, lich_su=None):
+            self.lich_su_thi = lich_su
+
+    def test_append_khi_chua_co(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        ts = self._FakeTs(lich_su=[])
+        ThiSinhService._upsert_lan_thi(ts, {"lan": 1, "diem": 60})
+        assert len(ts.lich_su_thi) == 1
+        assert ts.lich_su_thi[0]["lan"] == 1
+
+    def test_append_khi_lich_su_None(self):
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        ts = self._FakeTs(lich_su=None)
+        ThiSinhService._upsert_lan_thi(ts, {"lan": 1, "diem": 60})
+        assert len(ts.lich_su_thi) == 1
+
+    def test_replace_khi_trung_lan(self):
+        """Upsert lan 1 lan thu 2 -> replace, khong tao duplicate."""
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        ts = self._FakeTs(lich_su=[{"lan": 1, "diem": 60}])
+        ThiSinhService._upsert_lan_thi(ts, {"lan": 1, "diem": 75})
+        assert len(ts.lich_su_thi) == 1
+        assert ts.lich_su_thi[0]["diem"] == 75  # da bi replace
+
+    def test_append_khi_lan_khac(self):
+        """Append lan 2 vao lich su da co lan 1."""
+        from lms_service.services.thi_sinh_service import ThiSinhService
+        ts = self._FakeTs(lich_su=[{"lan": 1, "diem": 60}])
+        ThiSinhService._upsert_lan_thi(ts, {"lan": 2, "diem": 80})
+        assert len(ts.lich_su_thi) == 2
+        lans = sorted(e["lan"] for e in ts.lich_su_thi)
+        assert lans == [1, 2]

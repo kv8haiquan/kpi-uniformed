@@ -7,7 +7,7 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
-import type { IChuyenDeCreate, IChuyenDeUpdate, IBaiHocCreate, ICauHoiCreate, IBaiKiemTraCreate } from '@/types/lms';
+import type { IChuyenDeCreate, IChuyenDeUpdate, IBaiHocCreate, ICauHoiCreate, IBaiKiemTraCreate, IThiSinh } from '@/types/lms';
 
 // =============================================================================
 // AXIOS INSTANCE cho LMS
@@ -335,6 +335,14 @@ export const cbccApi = {
    */
   getDonVi: () =>
     lmsApi.get('/don-vi'),
+
+  /**
+   * Toàn bộ CBCC active của 1 đơn vị — GET /don-vi/{id}/cong-chuc
+   * Dùng cho form giao bài kiểu accordion (bỏ chọn từng người).
+   * Auth: GIANG_VIEN, QT_DAO_TAO, ADMIN, Lãnh đạo (lãnh đạo chỉ đơn vị mình).
+   */
+  congChucTheoDonVi: (donViId: string) =>
+    lmsApi.get(`/don-vi/${donViId}/cong-chuc`),
 };
 
 // =============================================================================
@@ -381,12 +389,39 @@ export const kyThiApi = {
   // Thi sinh
   giaoThiSinh: (id: string, data: any) => lmsApi.post(`/ky-thi/${id}/thi-sinh`, data),
   danhSachThiSinh: (id: string, params?: any) => lmsApi.get(`/ky-thi/${id}/thi-sinh`, { params }),
+  /** Lấy TẤT CẢ thí sinh — tự phân trang hết (bỏ giới hạn page_size). */
+  danhSachThiSinhTatCa: async (id: string, params?: any): Promise<IThiSinh[]> => {
+    const PAGE_SIZE = 500;
+    const first = await lmsApi.get(`/ky-thi/${id}/thi-sinh`, {
+      params: { ...params, page: 1, page_size: PAGE_SIZE },
+    });
+    let all: IThiSinh[] = first.data.data || [];
+    const totalPages: number = first.data.pagination?.total_pages || 1;
+    if (totalPages > 1) {
+      const rest = await Promise.all(
+        Array.from({ length: totalPages - 1 }, (_, i) =>
+          lmsApi.get(`/ky-thi/${id}/thi-sinh`, {
+            params: { ...params, page: i + 2, page_size: PAGE_SIZE },
+          }),
+        ),
+      );
+      rest.forEach((r) => {
+        all = all.concat(r.data.data || []);
+      });
+    }
+    return all;
+  },
   xoaThiSinh: (id: string, ccId: string) => lmsApi.delete(`/ky-thi/${id}/thi-sinh/${ccId}`),
   // Lam thi
   batDau: (id: string) => lmsApi.post(`/ky-thi/${id}/bat-dau`),
   nopBai: (id: string, data: any) => lmsApi.post(`/ky-thi/${id}/nop-bai`, data),
+  luuNhap: (id: string, data: { cau_tra_loi: any[]; so_lan_vi_pham: number }) =>
+    lmsApi.post(`/ky-thi/${id}/luu-nhap`, data),
   ketQua: (id: string) => lmsApi.get(`/ky-thi/${id}/ket-qua`),
   ketQuaCBCC: (id: string, ccId: string) => lmsApi.get(`/ky-thi/${id}/ket-qua/${ccId}`),
+  /** Chi tiết bài làm 1 lần thi cụ thể (lan = 1, 2, 3...). QT_DAO_TAO/LD. */
+  ketQuaLan: (id: string, ccId: string, lan: number) =>
+    lmsApi.get(`/ky-thi/${id}/thi-sinh/${ccId}/ket-qua/${lan}`),
   exportExcel: (id: string) => lmsApi.get(`/ky-thi/${id}/export`, { responseType: 'blob' }),
 };
 

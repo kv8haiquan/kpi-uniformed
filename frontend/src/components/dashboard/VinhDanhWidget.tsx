@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from 'react';
 import { vinhDanhApi } from '@/services/portal';
+import LaurelWreath from './LaurelWreath';
 import type { IVinhDanhThang } from '@/types/vinh-danh';
 
 const PORTAL_BASE =
@@ -70,16 +71,18 @@ export default function VinhDanhWidget() {
           </div>
 
           <div className="p-5 flex flex-col sm:flex-row gap-5 items-center sm:items-start">
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 relative mx-3 my-2">
+              <LaurelWreath className="absolute -inset-6 z-0 pointer-events-none drop-shadow-sm" />
               {anhUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={anhUrl}
                   alt={vinhDanh.cong_chuc?.ho_ten || 'Ảnh chân dung'}
-                  className="w-28 h-28 rounded-full object-cover border-4 border-amber-300 shadow-md"
+                  className="relative z-10 w-28 h-28 rounded-full object-cover border-4 border-amber-300 shadow-md"
+                  style={{ objectPosition: vinhDanh.anh_vi_tri || '50% 50%' }}
                 />
               ) : (
-                <div className="w-28 h-28 rounded-full bg-amber-200 border-4 border-amber-300 shadow-md flex items-center justify-center text-4xl">
+                <div className="relative z-10 w-28 h-28 rounded-full bg-amber-200 border-4 border-amber-300 shadow-md flex items-center justify-center text-4xl">
                   👤
                 </div>
               )}
@@ -142,18 +145,22 @@ export default function VinhDanhWidget() {
 
             <div className="p-6">
               <div className="flex flex-col sm:flex-row gap-5 mb-5">
-                {anhUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={anhUrl}
-                    alt={vinhDanh.cong_chuc?.ho_ten || ''}
-                    className="w-32 h-32 rounded-full object-cover border-4 border-amber-300 shadow-md mx-auto sm:mx-0"
-                  />
-                ) : (
-                  <div className="w-32 h-32 rounded-full bg-amber-200 border-4 border-amber-300 shadow-md flex items-center justify-center text-5xl mx-auto sm:mx-0">
-                    👤
-                  </div>
-                )}
+                <div className="relative flex-shrink-0 mx-auto sm:mx-0 w-32 h-32">
+                  <LaurelWreath className="absolute -inset-6 z-0 pointer-events-none drop-shadow-sm" />
+                  {anhUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={anhUrl}
+                      alt={vinhDanh.cong_chuc?.ho_ten || ''}
+                      className="relative z-10 w-32 h-32 rounded-full object-cover border-4 border-amber-300 shadow-md"
+                      style={{ objectPosition: vinhDanh.anh_vi_tri || '50% 50%' }}
+                    />
+                  ) : (
+                    <div className="relative z-10 w-32 h-32 rounded-full bg-amber-200 border-4 border-amber-300 shadow-md flex items-center justify-center text-5xl">
+                      👤
+                    </div>
+                  )}
+                </div>
                 <div className="flex-1 text-center sm:text-left">
                   <h4 className="text-xl font-bold text-gray-900">
                     {vinhDanh.cong_chuc?.ho_ten || '—'}

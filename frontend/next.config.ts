@@ -33,6 +33,13 @@ const nextConfig: NextConfig = {
         source: '/api/portal/v1/:path*',
         destination: 'http://localhost:8004/api/v1/:path*',
       },
+      // Portal static files (ảnh vinh danh, ảnh tin tức) — dev proxy, production dùng nginx
+      // Frontend gọi: /uploads/portal/vinh-danh/filename.jpg
+      // Backend phục vụ qua FastAPI StaticFiles mount tại /uploads/portal/
+      {
+        source: '/uploads/portal/:path*',
+        destination: 'http://localhost:8004/uploads/portal/:path*',
+      },
       // LMS module — port 8001
       // Frontend gọi: /api/v1/lms/dashboard/summary
       // Backend nhận: http://localhost:8001/api/v1/lms/dashboard/summary

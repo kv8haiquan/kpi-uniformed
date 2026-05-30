@@ -6,11 +6,35 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { kyThiApi } from '@/services/lms';
 import type { IKyThi, IDgnlThongKe, IThiSinh, ILichSuThiSummary } from '@/types/lms';
+
+/**
+ * Kết quả 1 lần thi cụ thể của thí sinh để hiển thị ở cột Điểm/Xếp loại.
+ * viewLan='all' -> lần mới nhất; viewLan=N -> lần N (lấy từ lich_su_thi hoặc ts.* nếu là lần hiện tại).
+ */
+function resolveKetQuaLan(
+  ts: IThiSinh,
+  viewLan: number | 'all',
+): { diem: number | null; xepLoai: string | null; lan: number | null; hasData: boolean; hasChiTiet: boolean } {
+  if (viewLan === 'all') {
+    const ok = ts.trang_thai === 'DA_NOP';
+    return { diem: ts.diem_tong, xepLoai: ts.xep_loai, lan: ts.lan_thi_hien_tai || null, hasData: ok, hasChiTiet: ok };
+  }
+  // Lần hiện tại (đã nộp) -> lấy từ ts.* trực tiếp, luôn xem được chi tiết
+  if (viewLan === ts.lan_thi_hien_tai && ts.trang_thai === 'DA_NOP') {
+    return { diem: ts.diem_tong, xepLoai: ts.xep_loai, lan: viewLan, hasData: true, hasChiTiet: true };
+  }
+  // Lần cũ -> tra trong lich_su_thi (chi tiết chỉ có nếu has_chi_tiet)
+  const entry = (ts.lich_su_thi || []).find((e) => e.lan === viewLan);
+  if (entry) {
+    return { diem: entry.diem, xepLoai: entry.xep_loai, lan: viewLan, hasData: true, hasChiTiet: !!entry.has_chi_tiet };
+  }
+  return { diem: null, xepLoai: null, lan: viewLan, hasData: false, hasChiTiet: false };
+}
 
 export default function ThongKeKyThiPage() {
   const params = useParams();
@@ -24,6 +48,17 @@ export default function ThongKeKyThiPage() {
   const [exporting, setExporting] = useState(false);
   // ID thi_sinh dang mo expand panel (xem lich su cac lan thi)
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Filter "xem theo lan": 'all' = lan moi nhat, hoac so lan cu the (1,2,3...)
+  const [viewLan, setViewLan] = useState<number | 'all'>('all');
+
+  // So lan thi toi da trong ky -> dung de render options dropdown
+  const maxLan = useMemo(() => {
+    let m = 0;
+    for (const ts of thiSinh) {
+      m = Math.max(m, ts.lan_thi_hien_tai || 0, ...(ts.lich_su_thi || []).map((e) => e.lan));
+    }
+    return m;
+  }, [thiSinh]);
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -209,7 +244,30 @@ export default function ThongKeKyThiPage() {
 
       {/* Danh sach thi sinh */}
       <div className="bg-white rounded-xl border p-4">
-        <h3 className="font-semibold text-gray-700 mb-3">Danh sách thí sinh ({thiSinh.length})</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h3 className="font-semibold text-gray-700">Danh sách thí sinh ({thiSinh.length})</h3>
+          {maxLan > 1 && (
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <span>Xem điểm theo:</span>
+              <select
+                value={viewLan}
+                onChange={(e) => setViewLan(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                className="border border-gray-300 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">Lần mới nhất</option>
+                {Array.from({ length: maxLan }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>Lần {n}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        {viewLan !== 'all' && (
+          <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Đang xem điểm <strong>Lần {viewLan}</strong> của từng thí sinh. Ai chưa thi đến lần này hiển thị
+            &ldquo;—&rdquo;. (Các thẻ thống kê phía trên vẫn tính theo lần mới nhất.)
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -222,7 +280,9 @@ export default function ThongKeKyThiPage() {
                 <th className="py-2 px-3">Vị trí</th>
                 <th className="py-2 px-3 text-center">Trạng thái</th>
                 <th className="py-2 px-3 text-center">Số lần</th>
-                <th className="py-2 px-3 text-center">Điểm</th>
+                <th className="py-2 px-3 text-center">
+                  {viewLan === 'all' ? 'Điểm' : `Điểm (Lần ${viewLan})`}
+                </th>
                 <th className="py-2 px-3 text-center">Xếp loại</th>
                 <th className="py-2 px-3 text-center">Hành động</th>
               </tr>
@@ -246,6 +306,7 @@ export default function ThongKeKyThiPage() {
                     coTheExpand={coTheExpand}
                     isOpen={isOpen}
                     onToggle={() => toggleExpand(ts.id)}
+                    viewLan={viewLan}
                   />
                 );
               })}
@@ -258,7 +319,7 @@ export default function ThongKeKyThiPage() {
 }
 
 function FragmentRow({
-  ts, idx, kyThiId, lichSu, soLan, coTheExpand, isOpen, onToggle,
+  ts, idx, kyThiId, lichSu, soLan, coTheExpand, isOpen, onToggle, viewLan,
 }: {
   ts: IThiSinh;
   idx: number;
@@ -268,7 +329,14 @@ function FragmentRow({
   coTheExpand: boolean;
   isOpen: boolean;
   onToggle: () => void;
+  viewLan: number | 'all';
 }) {
+  // Ket qua hien thi theo lan da chon (hoac lan moi nhat)
+  const kq = resolveKetQuaLan(ts, viewLan);
+  // Link "Xem bai lam": khi loc theo lan cu thi tro toi dung lan do
+  const baiLamHref = viewLan === 'all' || viewLan === ts.lan_thi_hien_tai
+    ? `/dao-tao/ky-thi/${kyThiId}/thi-sinh/${ts.cong_chuc_id}/bai-lam`
+    : `/dao-tao/ky-thi/${kyThiId}/thi-sinh/${ts.cong_chuc_id}/bai-lam?lan=${viewLan}`;
   return (
     <>
       <tr className="border-b hover:bg-gray-50">
@@ -304,23 +372,25 @@ function FragmentRow({
           {soLan > 0 ? soLan : '-'}
         </td>
         <td className="py-2 px-3 text-center font-medium">
-          {ts.diem_tong !== null ? `${ts.diem_tong}%` : '-'}
+          {kq.hasData && kq.diem !== null ? `${kq.diem}%` : <span className="text-gray-300">—</span>}
         </td>
         <td className="py-2 px-3 text-center">
-          {ts.xep_loai && (
+          {kq.hasData && kq.xepLoai ? (
             <span className={`px-2 py-0.5 rounded-full text-xs ${
-              ts.xep_loai === 'DAT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+              kq.xepLoai === 'DAT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
             }`}>
-              {ts.xep_loai === 'DAT' ? 'Đạt' : 'Không đạt'}
+              {kq.xepLoai === 'DAT' ? 'Đạt' : 'Không đạt'}
             </span>
+          ) : (
+            viewLan !== 'all' && <span className="text-gray-300 text-xs">chưa thi</span>
           )}
         </td>
         <td className="py-2 px-3 text-center">
-          {ts.trang_thai === 'DA_NOP' ? (
+          {kq.hasData && kq.hasChiTiet ? (
             <Link
-              href={`/dao-tao/ky-thi/${kyThiId}/thi-sinh/${ts.cong_chuc_id}/bai-lam`}
+              href={baiLamHref}
               className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium inline-flex items-center gap-1"
-              title="Xem bài làm lần mới nhất"
+              title={viewLan === 'all' ? 'Xem bài làm lần mới nhất' : `Xem bài làm lần ${viewLan}`}
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -328,6 +398,10 @@ function FragmentRow({
               </svg>
               Xem bài làm
             </Link>
+          ) : kq.hasData && !kq.hasChiTiet ? (
+            <span className="text-gray-400 text-xs" title="Lần thi cũ không lưu chi tiết câu trả lời">
+              Không có chi tiết
+            </span>
           ) : (
             <span className="text-gray-300 text-xs">—</span>
           )}

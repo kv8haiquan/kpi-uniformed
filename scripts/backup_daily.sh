@@ -67,12 +67,15 @@ pg_dump \
     "$DB_NAME" \
     | gzip -9 > "$DUMP_FILE"
 
-# Verify dump không corrupt — size > 1MB (DB thật chắc chắn lớn hơn)
+# Verify dump không corrupt — gzip integrity (gzip -t) + size > 1MB
+if ! gzip -t "$DUMP_FILE" 2>/dev/null; then
+    die "Dump corrupt — gzip integrity check FAIL ($DUMP_FILE)"
+fi
 DUMP_SIZE=$(stat -c%s "$DUMP_FILE")
 if [ "$DUMP_SIZE" -lt 1048576 ]; then
     die "Dump corrupt hoặc DB rỗng — size=${DUMP_SIZE}B (<1MB)"
 fi
-log "pg_dump OK (${DUMP_SIZE}B)"
+log "pg_dump OK (${DUMP_SIZE}B, gzip integrity OK)"
 
 # ─── 2. rsync uploads (loại trừ preview cache) ───────────────────────
 if [ -d "$HKG_UPLOAD_DIR" ]; then

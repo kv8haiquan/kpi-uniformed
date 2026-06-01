@@ -26,6 +26,7 @@ from app.api.deps import (
 from pydantic import BaseModel, Field
 
 from app.core.security import verify_password, hash_password, create_access_token
+from app.core.hdld_vb714 import HDLD_VB714_FROM_NAM, HDLD_VB714_FROM_THANG
 from app.models.user_org import CongChuc
 from app.schemas.token import Token
 
@@ -343,6 +344,8 @@ async def get_current_user_info(
         # PL3 V2 fields (28/04/2026)
         "kpi_version_pinned": pinned,
         "effective_kpi_version": effective_kpi_version,
+        # HĐLĐ 111 — mốc áp dụng Bộ tiêu chí VB714 (FE route view theo tháng kê khai)
+        "hdld_vb714_from": {"nam": HDLD_VB714_FROM_NAM, "thang": HDLD_VB714_FROM_THANG} if is_hd_111 else None,
     }
     
     # Thêm thông tin đơn vị

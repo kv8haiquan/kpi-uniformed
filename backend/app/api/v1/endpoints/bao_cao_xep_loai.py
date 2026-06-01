@@ -422,13 +422,42 @@ async def tinh_diem_lanh_dao(
                 so_ngay_nghi=so_ngay_nghi_v2,
             )
     
+    # =====================================================================
+    # NHÁNH HĐLĐ 111 VB714 (01/06/2026): từ T5/2026 đọc điểm từ hdld_danh_gia
+    # (Bộ tiêu chí VB714, 3 tiêu chí × cột cấp quản lý). Nếu chưa có bản DA_DUYET
+    # → rơi xuống nhánh cũ (ke_khai_lanh_dao) để không vỡ tháng chuyển tiếp.
+    # =====================================================================
+    if is_hd_111:
+        from app.core.hdld_vb714 import (
+            is_hdld_vb714_active, get_hdld_danh_gia_da_duyet, kpi_70_tu_tb, tb_3_tieu_chi,
+        )
+        if is_hdld_vb714_active(thang, nam):
+            dg_vb714 = await get_hdld_danh_gia_da_duyet(db, cong_chuc_id, thang, nam)
+            if dg_vb714 is not None:
+                diem_kpi_vb714 = dg_vb714.diem_kpi_70
+                if diem_kpi_vb714 is None:
+                    diem_kpi_vb714 = kpi_70_tu_tb(
+                        tb_3_tieu_chi([ct.diem_ql for ct in dg_vb714.chi_tiets])
+                    )
+                diem_kpi_vb714 = diem_kpi_vb714 or Decimal("0")
+                diem_tong_vb714 = (diem_tcc or Decimal("0")) + diem_kpi_vb714
+                nghi_vb714 = await tinh_tong_ngay_nghi_thang(db, cong_chuc_id, thang, nam)
+                return KetQuaTinhDiem(
+                    diem_tieu_chi_chung=diem_tcc,
+                    diem_kpi=diem_kpi_vb714,
+                    diem_tong=diem_tong_vb714,
+                    xep_loai=tinh_xep_loai(diem_tong_vb714).value,
+                    so_ngay_lam_viec=Decimal(str(nghi_vb714.get("so_ngay_lam_viec", 0))),
+                    so_ngay_nghi=Decimal(str(nghi_vb714.get("tong_ngay_nghi", 0))),
+                )
+
     # =========================================================================
     # Tính số ngày làm việc và nghỉ (v1.1)
     # =========================================================================
     nghi_phep_data = await tinh_tong_ngay_nghi_thang(db, cong_chuc_id, thang, nam)
     so_ngay_lam_viec = Decimal(str(nghi_phep_data.get("so_ngay_lam_viec", 0)))
     so_ngay_nghi = Decimal(str(nghi_phep_data.get("tong_ngay_nghi", 0)))
-    
+
     # Tính a, b, c từ ke_khai_lanh_dao (đã phê duyệt)
     kk_stmt = select(KeKhaiLanhDao).where(
         KeKhaiLanhDao.cong_chuc_id == cong_chuc_id,

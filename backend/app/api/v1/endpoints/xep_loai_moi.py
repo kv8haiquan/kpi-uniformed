@@ -27,6 +27,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.core.kpi_calculator_v2 import calculate_kpi_score_v2
 from app.core.kpi_version import resolve_kpi_version, VERSION_V2
+from app.core.hdld_vb714 import is_hdld_vb714_active, tinh_diem_kpi_70_hdld_vb714
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChungDanhGia,
@@ -767,6 +768,11 @@ async def get_tong_hop_xep_loai(
         # Công chức thường: V1 hoặc V2_PL3 (đã dispatch trong tinh_diem_kpi_70).
         if cc.is_lanh_dao:
             diem_70_data = await tinh_diem_kpi_70_lanh_dao(db, cc.id, thang, nam, tam_tinh=tam_tinh)
+        elif cc.is_hd_111 and is_hdld_vb714_active(thang, nam) and (
+            _hdld_vb714 := await tinh_diem_kpi_70_hdld_vb714(db, cc.id, thang, nam, tam_tinh=tam_tinh)
+        ) is not None:
+            # HĐLĐ 111 từ T5/2026: Bộ tiêu chí VB714 (3 tiêu chí × cấp quản lý)
+            diem_70_data = _hdld_vb714
         elif cc.is_hd_111 and await _has_ke_khai_lanh_dao(db, cc.id, thang, nam):
             diem_70_data = await tinh_diem_kpi_70_hd_111(db, cc.id, thang, nam, tam_tinh=tam_tinh)
         else:

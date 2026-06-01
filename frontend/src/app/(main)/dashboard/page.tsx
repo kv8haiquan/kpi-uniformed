@@ -28,6 +28,7 @@ import {
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
 import WidgetPhanCongPhuTrach from '@/components/dashboard/WidgetPhanCongPhuTrach';
+import WidgetDuyetHdld from '@/components/dashboard/WidgetDuyetHdld';
 import VinhDanhWidget from '@/components/dashboard/VinhDanhWidget';
 
 import { formatScore } from '@/lib/format';
@@ -788,6 +789,9 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+
+          {/* HĐLĐ 111 VB714 (01/06/2026): widget duyệt cho TDV/PDV (tự ẩn nếu < T5/2026) */}
+          <WidgetDuyetHdld visible={isDoiTruong || isPhoDT} />
         </div>
 
         <div className="mt-8 text-center text-xs text-gray-400">

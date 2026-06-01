@@ -51,6 +51,16 @@ export const TABS_CONFIG: ITabConfig[] = [
     approverRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG], // +CCT: duyệt SP Trưởng ĐV & Phó CCT (BR 8.1)
   },
   {
+    id: 'hdld',
+    label: 'Duyệt HĐLĐ',
+    shortLabel: 'HĐLĐ',
+    icon: '🧰',
+    description: 'Duyệt đánh giá HĐLĐ 111 theo Bộ tiêu chí VB714 (từ T5/2026)',
+    // Chỉ TDV/PDV cùng đơn vị (người HĐLĐ tự chọn) thấy & duyệt
+    allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG],
+    approverRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG],
+  },
+  {
     id: 'tieu-chi',
     label: 'Duyệt tiêu chí',
     shortLabel: 'Tiêu chí',
@@ -103,16 +113,6 @@ export const TABS_CONFIG: ITabConfig[] = [
     description: 'Tổng hợp đánh giá quý (đọc từ báo cáo tháng đã duyệt)',
     allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG],
     approverRoles: [], // Không có quyền phê duyệt, chỉ xem
-  },
-  {
-    id: 'hdld',
-    label: 'Duyệt HĐLĐ',
-    shortLabel: 'HĐLĐ',
-    icon: '🧰',
-    description: 'Duyệt đánh giá HĐLĐ 111 theo Bộ tiêu chí VB714 (từ T5/2026)',
-    // Chỉ TDV/PDV cùng đơn vị (người HĐLĐ tự chọn) thấy & duyệt
-    allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG],
-    approverRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG],
   },
 ];
 

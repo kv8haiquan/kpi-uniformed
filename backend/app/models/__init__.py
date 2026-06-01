@@ -133,6 +133,15 @@ from app.models.phan_cong_phu_trach import PhanCongPhuTrach
 # Điều chỉnh KQCV (LĐ sửa CV của CC/cấp dưới — Yêu cầu 2, 06/05/2026)
 from app.models.dieu_chinh_kqcv import DieuChinhKqcv
 
+# HĐLĐ 111 — Bộ tiêu chí đánh giá theo QĐ 714/QĐ-CHQ (08/5/2026, áp dụng từ T5/2026)
+from app.models.hdld import (
+    TrangThaiHdldDanhGia,
+    TEN_NHOM_HDLD,
+    HdldTieuChi,
+    HdldDanhGia,
+    HdldDanhGiaChiTiet,
+)
+
 __all__ = [
     # ==========================================================================
     # BASE CLASSES
@@ -257,4 +266,13 @@ __all__ = [
     # DIEU CHINH KQCV (Yêu cầu 2 — 06/05/2026)
     # ==========================================================================
     "DieuChinhKqcv",
+
+    # ==========================================================================
+    # HĐLĐ 111 — Bộ tiêu chí VB714 (QĐ 714/QĐ-CHQ, 08/5/2026)
+    # ==========================================================================
+    "TrangThaiHdldDanhGia",
+    "TEN_NHOM_HDLD",
+    "HdldTieuChi",
+    "HdldDanhGia",
+    "HdldDanhGiaChiTiet",
 ]

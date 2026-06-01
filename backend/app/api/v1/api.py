@@ -32,6 +32,7 @@ from app.api.v1.endpoints import (
     phan_cong_phu_trach,  # KPI LĐ mới (05/05/2026): Phân công CCT/PCCT phụ trách
     kpi_lanh_dao_v2,      # KPI LĐ mới (05/05/2026): Công thức v2 từ tháng 4/2026
     dieu_chinh_kqcv,      # Yêu cầu 2 (06/05/2026): LĐ điều chỉnh KQCV
+    hdld_danh_gia,        # HĐLĐ 111 (01/06/2026): Bộ tiêu chí VB714 từ T5/2026
 )
 
 # =============================================================================
@@ -255,4 +256,11 @@ api_router.include_router(
     dieu_chinh_kqcv.router,
     prefix="/dieu-chinh-kqcv",
     tags=["Điều chỉnh KQCV"],
+)
+
+# HĐLĐ 111 — Bộ tiêu chí VB714 (QĐ 714/QĐ-CHQ, áp dụng từ T5/2026)
+api_router.include_router(
+    hdld_danh_gia.router,
+    prefix="/hdld",
+    tags=["HĐLĐ 111 (VB714)"],
 )

@@ -426,6 +426,21 @@ async def create_ke_khai_lanh_dao(
     if not check_is_lanh_dao(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
 
+    # HĐLĐ 111 (01/06/2026): từ T5/2026 kê khai theo Bộ tiêu chí VB714 (/hdld),
+    # không dùng form công việc lãnh đạo nữa.
+    from app.core.hdld_vb714 import is_hdld_vb714_active
+    if current_user.is_hd_111 and is_hdld_vb714_active(payload.thang, payload.nam):
+        raise HTTPException(
+            status_code=400,
+            detail=error_response(
+                code="HDLD_USE_VB714",
+                message=(
+                    "Từ tháng 5/2026 HĐLĐ 111 đánh giá theo Bộ tiêu chí VB714. "
+                    "Vui lòng dùng chức năng đánh giá HĐLĐ (/hdld)."
+                ),
+            ),
+        )
+
     # Phase 3 (05/05/2026): LĐ thật từ tháng 4/2026 phải kê khai trên /ke-khai-v2
     # (HĐ 111 vẫn dùng form này như cũ)
     from app.core.kpi_lanh_dao_v2 import is_kpi_lanh_dao_v2_active

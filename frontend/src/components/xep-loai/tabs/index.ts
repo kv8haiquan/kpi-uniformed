@@ -13,3 +13,4 @@ export { default as TabNghiPhep } from './TabNghiPhep';
 export { default as TabBaoCao } from './TabBaoCao';
 export { default as TabTamTinh } from './TabTamTinh';
 export { default as TabQuy } from './TabQuy';
+export { default as TabHdld } from './TabHdld';

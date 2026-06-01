@@ -117,10 +117,7 @@ function useMenuSections(): MenuSection[] {
     ...(user?.is_lanh_dao && !user?.is_hd_111
       ? [{ label: 'Điều chỉnh KQCV', href: '/dieu-chinh-kqcv', icon: CheckSquare }]
       : []),
-    // HĐLĐ 111 VB714 (01/06/2026): TDV/PDV duyệt đánh giá HĐLĐ trong đơn vị
-    ...(user?.is_lanh_dao && !user?.is_hd_111
-      ? [{ label: 'Duyệt HĐLĐ', href: '/hdld-duyet', icon: CheckSquare }]
-      : []),
+    // HĐLĐ 111 VB714 (01/06/2026): duyệt nằm trong trang Phê duyệt (/xep-loai, tab HĐLĐ)
   ];
 
   const sections: MenuSection[] = [

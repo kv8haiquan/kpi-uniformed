@@ -21,6 +21,10 @@ import {
 interface Props {
   thang: number;
   nam: number;
+  /** Nếu false → chỉ xem, ẩn nút Duyệt/Trả lại (read-only). Mặc định true. */
+  canApprove?: boolean;
+  /** Bắn số bản chờ duyệt lên parent (để hiện badge tab). */
+  onPendingCountChange?: (count: number) => void;
 }
 
 interface DuyetInput {
@@ -30,7 +34,9 @@ interface DuyetInput {
   ly_do_sua: string;
 }
 
-export default function Hdld111DuyetView({ thang, nam }: Props) {
+export default function Hdld111DuyetView({
+  thang, nam, canApprove = true, onPendingCountChange,
+}: Props) {
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<IHdldDanhGia[]>([]);
   const [selected, setSelected] = useState<IHdldDanhGia | null>(null);
@@ -44,12 +50,14 @@ export default function Hdld111DuyetView({ thang, nam }: Props) {
     try {
       const data = await hdldService.getChoDuyet(thang, nam);
       setList(data);
+      onPendingCountChange?.(data.length);
     } catch {
       setList([]);
+      onPendingCountChange?.(0);
     } finally {
       setLoading(false);
     }
-  }, [thang, nam]);
+  }, [thang, nam, onPendingCountChange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -276,22 +284,26 @@ export default function Hdld111DuyetView({ thang, nam }: Props) {
               </div>
             )}
 
-            <div className="mt-4 flex gap-2 justify-end">
-              <button
-                onClick={handleTraLai}
-                disabled={saving}
-                className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50"
-              >
-                Trả lại
-              </button>
-              <button
-                onClick={handleDuyet}
-                disabled={saving}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
-              >
-                {saving ? 'Đang xử lý…' : 'Duyệt'}
-              </button>
-            </div>
+            {canApprove ? (
+              <div className="mt-4 flex gap-2 justify-end">
+                <button
+                  onClick={handleTraLai}
+                  disabled={saving}
+                  className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50"
+                >
+                  Trả lại
+                </button>
+                <button
+                  onClick={handleDuyet}
+                  disabled={saving}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                >
+                  {saving ? 'Đang xử lý…' : 'Duyệt'}
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 text-right text-sm text-gray-400">Chế độ chỉ xem</div>
+            )}
           </>
         )}
       </div>

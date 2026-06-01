@@ -28,6 +28,8 @@ import {
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
 import WidgetPhanCongPhuTrach from '@/components/dashboard/WidgetPhanCongPhuTrach';
+import hdldService from '@/services/hdld.service';
+import { isHdldVb714Active } from '@/types/hdld';
 import VinhDanhWidget from '@/components/dashboard/VinhDanhWidget';
 
 import { formatScore } from '@/lib/format';
@@ -369,6 +371,7 @@ export default function DashboardPage() {
   const [pendingTCCount, setPendingTCCount] = useState(0);
   const [pendingXepLoaiCount, setPendingXepLoaiCount] = useState(0);
   const [pendingDCKqcvCount, setPendingDCKqcvCount] = useState(0);
+  const [pendingHdldCount, setPendingHdldCount] = useState(0);
   const [isLoadingPending, setIsLoadingPending] = useState(true);
   
   // Thong bao
@@ -421,21 +424,27 @@ export default function DashboardPage() {
     if (isAdmin) return;
     if (isLanhDao) {
       setIsLoadingPending(true);
+      // HĐLĐ 111 VB714: chỉ TDV/PDV duyệt, chỉ tính từ T5/2026
+      const loadHdld = (isDoiTruong || isPhoDT) && isHdldVb714Active(currentMonth, currentYear)
+        ? hdldService.getChoDuyet(currentMonth, currentYear).catch(() => [])
+        : Promise.resolve([]);
       Promise.all([
         kpiService.getPendingStats().catch(() => null),
         tieuChiChungService.getChoPheyet(1, 1).catch(() => ({ total: 0 })),
         canApproveXepLoai ? baoCaoXepLoaiService.getChoPeDuyet().catch(() => []) : Promise.resolve([]),
         dieuChinhKqcvService.listChoToiDuyet().catch(() => []),
-      ]).then(([stats, tcResult, xepLoaiList, dcList]) => {
+        loadHdld,
+      ]).then(([stats, tcResult, xepLoaiList, dcList, hdldList]) => {
         setPendingStats(stats);
         setPendingTCCount(tcResult?.total || 0);
         setPendingXepLoaiCount(Array.isArray(xepLoaiList) ? xepLoaiList.length : 0);
         setPendingDCKqcvCount(Array.isArray(dcList) ? dcList.length : 0);
+        setPendingHdldCount(Array.isArray(hdldList) ? hdldList.length : 0);
       }).finally(() => {
         setIsLoadingPending(false);
       });
     }
-  }, [isLanhDao, canApproveXepLoai, isAdmin]);
+  }, [isLanhDao, canApproveXepLoai, isAdmin, isDoiTruong, isPhoDT, currentMonth, currentYear]);
 
   // Load Thong bao
   useEffect(() => {
@@ -669,6 +678,8 @@ export default function DashboardPage() {
             <SectionHeader icon="✅" title="Phê duyệt" subtitle="Xử lý các đơn chờ phê duyệt từ nhân viên" />
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <QuickActionCard icon="📦" title="Phê duyệt Công việc" description={pendingSanPham > 0 ? `${pendingSanPham} kê khai chờ duyệt` : 'Duyệt kê khai công việc'} href="/xep-loai?tab=cong-viec" color="yellow" badge={pendingSanPham} size="large" />
+              {/* HĐLĐ 111 VB714 (01/06/2026): chỉ TDV/PDV duyệt, chỉ hiện từ T5/2026 */}
+              {(isDoiTruong || isPhoDT) && isHdldVb714Active(currentMonth, currentYear) && <QuickActionCard icon="🧰" title="Phê duyệt HĐLĐ" description={pendingHdldCount > 0 ? `${pendingHdldCount} bản chờ duyệt` : 'Duyệt đánh giá HĐLĐ 111'} href="/xep-loai?tab=hdld" color="orange" badge={pendingHdldCount} size="large" />}
               <QuickActionCard icon="🏅" title="Phê duyệt Tiêu chí" description={pendingTCCount > 0 ? `${pendingTCCount} đơn chờ duyệt` : 'Duyệt 30 điểm TC chung'} href="/xep-loai?tab=tieu-chi" color="orange" badge={pendingTCCount} size="large" />
               <QuickActionCard icon="🏖️" title="Phê duyệt Nghỉ phép" description="Duyệt đơn nghỉ phép" href="/xep-loai?tab=nghi-phep" color="cyan" size="large" />
               <QuickActionCard icon="✏️" title="Điều chỉnh KQCV" description={pendingDCKqcvCount > 0 ? `${pendingDCKqcvCount} bản chờ duyệt` : 'Duyệt điều chỉnh KQCV cấp dưới'} href="/dieu-chinh-kqcv" color="indigo" badge={pendingDCKqcvCount} size="large" />

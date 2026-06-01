@@ -12,7 +12,7 @@ import type { IUser } from '@/types/auth';
 // ENUMS & CONSTANTS
 // =============================================================================
 
-export type TabId = 'cong-viec' | 'tieu-chi' | 'danh-gia-ld' | 'nghi-phep' | 'bao-cao' | 'tam-tinh' | 'quy';
+export type TabId = 'cong-viec' | 'tieu-chi' | 'danh-gia-ld' | 'nghi-phep' | 'bao-cao' | 'tam-tinh' | 'quy' | 'hdld';
 
 /**
  * Cấp bậc vai trò - mapping từ ma_vai_tro
@@ -49,6 +49,16 @@ export const TABS_CONFIG: ITabConfig[] = [
     description: 'Phê duyệt kê khai công việc của công chức',
     allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG],
     approverRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG, CapBacVaiTro.CHI_CUC_TRUONG], // +CCT: duyệt SP Trưởng ĐV & Phó CCT (BR 8.1)
+  },
+  {
+    id: 'hdld',
+    label: 'Duyệt HĐLĐ',
+    shortLabel: 'HĐLĐ',
+    icon: '🧰',
+    description: 'Duyệt đánh giá HĐLĐ 111 theo Bộ tiêu chí VB714 (từ T5/2026)',
+    // Chỉ TDV/PDV cùng đơn vị (người HĐLĐ tự chọn) thấy & duyệt
+    allowedRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG],
+    approverRoles: [CapBacVaiTro.PHO_DOI_TRUONG, CapBacVaiTro.DOI_TRUONG],
   },
   {
     id: 'tieu-chi',
@@ -126,6 +136,7 @@ export interface IPendingCounts {
   'bao-cao': number;
   'tam-tinh': number;
   'quy': number;
+  'hdld': number;
 }
 
 // =============================================================================
@@ -210,5 +221,6 @@ export function createDefaultPendingCounts(): IPendingCounts {
     'bao-cao': 0,
     'tam-tinh': 0,
     'quy': 0,
+    'hdld': 0,
   };
 }

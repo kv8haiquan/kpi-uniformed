@@ -26,7 +26,7 @@ import {
 } from '@/types/xep-loai';
 
 import { MonthYearSelector, TabBadge, ViewOnlyBadge } from '@/components/xep-loai/shared';
-import { TabCongViec, TabTieuChi, TabDanhGiaLD, TabNghiPhep, TabBaoCao, TabTamTinh, TabQuy } from '@/components/xep-loai/tabs';
+import { TabCongViec, TabTieuChi, TabDanhGiaLD, TabNghiPhep, TabBaoCao, TabTamTinh, TabQuy, TabHdld } from '@/components/xep-loai/tabs';
 
 const Icons = {
   back: (
@@ -96,6 +96,7 @@ export default function XepLoaiPage() {
   const onBaoCaoCountChange = useCallback((count: number) => handlePendingCountChange('bao-cao', count), [handlePendingCountChange]);
   const onTamTinhCountChange = useCallback((count: number) => handlePendingCountChange('tam-tinh', count), [handlePendingCountChange]);
   const onQuýCountChange = useCallback((count: number) => handlePendingCountChange('quy', count), [handlePendingCountChange]);
+  const onHdldCountChange = useCallback((count: number) => handlePendingCountChange('hdld', count), [handlePendingCountChange]);
 
   if (accessibleTabs.length === 0) {
     return (
@@ -168,6 +169,7 @@ export default function XepLoaiPage() {
         {activeTab === 'bao-cao' && <TabBaoCao thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onBaoCaoCountChange} />}
         {activeTab === 'tam-tinh' && <TabTamTinh thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onTamTinhCountChange} />}
         {activeTab === 'quy' && <TabQuy thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onQuýCountChange} />}
+        {activeTab === 'hdld' && <TabHdld thang={selectedThang} nam={selectedNam} canApprove={canApproveActiveTab} capBac={capBac} onPendingCountChange={onHdldCountChange} />}
       </main>
 
       <footer className="bg-white border-t border-gray-200 mt-auto">

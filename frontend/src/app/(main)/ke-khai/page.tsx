@@ -33,6 +33,8 @@ import { useRouter } from 'next/navigation';
 
 import { useAuthStore, useIsLanhDao, useIsQLDV, useIsHd111 } from '@/stores/useAuthStore';
 import LeaderKeKhaiView from '@/components/ke-khai/LeaderKeKhaiView';
+import Hdld111View from '@/components/hdld/Hdld111View';
+import { isHdldVb714Active } from '@/types/hdld';
 import { kpiService } from '@/services/kpi.service';
 import { isApiError } from '@/lib/axios';
 import {
@@ -372,9 +374,13 @@ export default function KeKhaiPage() {
           </div>
         </header>
 
-        {/* Main - Leader View */}
+        {/* Main - HĐLĐ 111 từ T5/2026 dùng Bộ tiêu chí VB714; còn lại dùng form LĐ cũ */}
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <LeaderKeKhaiView thang={selectedThang} nam={selectedNam} isHd111={isHd111} />
+          {isHd111 && isHdldVb714Active(selectedThang, selectedNam) ? (
+            <Hdld111View thang={selectedThang} nam={selectedNam} />
+          ) : (
+            <LeaderKeKhaiView thang={selectedThang} nam={selectedNam} isHd111={isHd111} />
+          )}
         </main>
       </div>
     );

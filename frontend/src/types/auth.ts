@@ -111,6 +111,9 @@ export interface IUser {
   kpi_version_pinned?: 'V1' | 'V2_PL3' | null;  // CC pin riêng (NULL = dùng default)
   effective_kpi_version?: 'V1' | 'V2_PL3';      // resolved version để FE biết route
 
+  // HĐLĐ 111 VB714 (01/06/2026): mốc áp dụng Bộ tiêu chí (FE route view theo tháng)
+  hdld_vb714_from?: { nam: number; thang: number } | null;
+
   // HKG (01/05/2026): platform_roles từ JWT — fallback decode token nếu /me không trả
   platform_roles?: string[];
 }

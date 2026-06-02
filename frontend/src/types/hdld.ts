@@ -122,8 +122,9 @@ export interface IHdldTraLaiRequest {
   ly_do: string;
 }
 
-// Mốc áp dụng VB714 (đồng bộ backend: T5/2026)
-export const HDLD_VB714_FROM = { nam: 2026, thang: 5 };
+// Mốc áp dụng VB714 (đồng bộ backend) — 01/06/2026: đổi về T1/2026
+// (HĐLĐ kê khai lại toàn bộ T1–T6 theo VB714)
+export const HDLD_VB714_FROM = { nam: 2026, thang: 1 };
 
 export function isHdldVb714Active(thang: number, nam: number): boolean {
   return nam > HDLD_VB714_FROM.nam

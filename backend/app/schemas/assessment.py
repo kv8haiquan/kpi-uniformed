@@ -655,6 +655,12 @@ class DanhSachChoPheDuyetItem(BaseModel):
         default=None,
         description="'cap1' hoặc 'cap2' - cấp đang chờ duyệt"
     )
+    # v3.7 (02/06/2026): True nếu người gọi API được phép duyệt đơn này NGAY BÂY GIỜ
+    # (gồm cả LĐ đơn vị hiện tại của CC — xử lý CC chuyển đơn vị). FE dùng để hiện nút duyệt.
+    co_the_duyet: Optional[bool] = Field(
+        default=None,
+        description="Người gọi API có quyền phê duyệt đơn này lúc này không"
+    )
 
 
 class DanhSachChoPheDuyetResponse(BaseModel):

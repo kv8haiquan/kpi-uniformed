@@ -537,6 +537,7 @@ async def export_phieu_danh_gia(
         tinh_diem_kpi_70_hd_111,
         _has_ke_khai_lanh_dao,
     )
+    from app.core.hdld_vb714 import is_hdld_vb714_active, tinh_diem_kpi_70_hdld_vb714
 
     # Gọi hàm tính điểm (tam_tinh=False vì cần kết quả chính thức)
     diem_a = None
@@ -548,7 +549,16 @@ async def export_phieu_danh_gia(
     diem_kpi_nhiem_vu = None
 
     try:
-        if is_lanh_dao:
+        if cc.is_hd_111 and is_hdld_vb714_active(thang, nam):
+            # HĐLĐ 111 VB714 (từ T1/2026): 3 tiêu chí → map vào a/b/c.
+            # Nguồn: hdld_danh_gia (cột cấp quản lý). KHÔNG có d/đ/e.
+            kpi_data = await tinh_diem_kpi_70_hdld_vb714(db, cc.id, thang, nam, tam_tinh=False)
+            if kpi_data:
+                diem_a = min(kpi_data.get("a_so_luong", 0) * 100, 100.0)  # TC1
+                diem_b = min(kpi_data.get("b_tien_do", 0) * 100, 100.0)   # TC2
+                diem_c = min(kpi_data.get("c_chat_luong", 0) * 100, 100.0)  # TC3
+                diem_kpi_nhiem_vu = kpi_data.get("diem_70", 0)
+        elif is_lanh_dao:
             # Lãnh đạo: dùng công thức 6 chỉ số (a,b,c,d,đ,e)
             kpi_data = await tinh_diem_kpi_70_lanh_dao(db, cc.id, thang, nam, tam_tinh=False)
             # Cap tỷ lệ % ở 100% (phục vụ hiển thị trong phiếu đánh giá)
@@ -857,6 +867,119 @@ async def export_phieu_danh_gia(
 
 
 # =============================================================================
+# BẢNG KÊ HĐLĐ 111 THEO VB714 (3 tiêu chí — build bằng python-docx)
+# =============================================================================
+
+async def _build_bang_ke_hdld_vb714(
+    db, cc: CongChuc, thang: int, nam: int
+) -> StreamingResponse:
+    """Bảng kê đánh giá HĐLĐ 111 theo Bộ tiêu chí VB714.
+
+    Khác PL-02 (liệt kê công việc) — đây là bảng 3 tiêu chí với 2 cột điểm
+    (Tự đánh giá / Cấp quản lý đánh giá), build trực tiếp bằng python-docx.
+    """
+    from app.core.hdld_vb714 import get_hdld_in_data
+
+    data = await get_hdld_in_data(db, cc.id, thang, nam)
+
+    doc = Document()
+    # Font mặc định Times New Roman 13
+    style = doc.styles["Normal"]
+    style.font.name = "Times New Roman"
+    style.font.size = Pt(13)
+
+    # Tiêu đề
+    h = doc.add_paragraph()
+    h.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = h.add_run("BẢNG KÊ ĐÁNH GIÁ KẾT QUẢ THỰC HIỆN NHIỆM VỤ")
+    run.bold = True
+    run.font.size = Pt(14)
+    h2 = doc.add_paragraph()
+    h2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run2 = h2.add_run("ĐỐI VỚI HỢP ĐỒNG LAO ĐỘNG (theo QĐ 714/QĐ-CHQ)")
+    run2.bold = True
+    h3 = doc.add_paragraph()
+    h3.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    h3.add_run(f"Kỳ đánh giá: Tháng {thang}/{nam}").italic = True
+
+    # Thông tin cá nhân
+    don_vi_ten = cc.don_vi.ten_don_vi if cc.don_vi else ""
+    nhom_str = ""
+    if data and data.get("nhom_nghe"):
+        nhom_str = f"{data['nhom_nghe']}. {data.get('ten_nhom') or ''}".strip()
+    doc.add_paragraph(f"Họ và tên: {cc.ho_ten or ''}")
+    doc.add_paragraph(f"Chức vụ: {cc.chuc_vu or 'Hợp đồng 111'}")
+    doc.add_paragraph(f"Đơn vị: {don_vi_ten}")
+    doc.add_paragraph(f"Nhóm nghề: {nhom_str or '(chưa chọn)'}")
+
+    if not data:
+        doc.add_paragraph(
+            "Chưa có bản đánh giá đã được duyệt cho kỳ này."
+        ).italic = True
+    else:
+        # Bảng 6 cột: STT | Tiêu chí | Tự ĐG (%) | Ghi chú | Cấp QL (%) | Ghi chú
+        table = doc.add_table(rows=1, cols=6)
+        table.style = "Table Grid"
+        hdr = table.rows[0].cells
+        headers = ["STT", "Tiêu chí", "Tự đánh giá (%)", "Ghi chú", "Cấp QL đánh giá (%)", "Ghi chú"]
+        for i, htext in enumerate(headers):
+            hdr[i].text = htext
+            set_cell_font_times_new_roman(hdr[i])
+            for p in hdr[i].paragraphs:
+                for r in p.runs:
+                    r.bold = True
+
+        for tc in data["tieu_chi"]:
+            row = table.add_row().cells
+            row[0].text = str(tc["so_tt"])
+            row[1].text = tc["ten"]
+            row[2].text = "" if tc["diem_tu"] is None else f"{tc['diem_tu']:.0f}"
+            row[3].text = tc["ghi_chu_tu"]
+            row[4].text = "" if tc["diem_ql"] is None else f"{tc['diem_ql']:.0f}"
+            row[5].text = tc["ghi_chu_ql"]
+            for cell in row:
+                set_cell_font_times_new_roman(cell)
+
+        # Dòng trung bình
+        avg = table.add_row().cells
+        avg[0].merge(avg[1])
+        avg[0].text = "Điểm trung bình"
+        tb_tu = data.get("diem_tc_tb_tu")
+        tb_ql = data.get("diem_tc_tb_ql")
+        avg[2].text = "" if tb_tu is None else f"{tb_tu:.2f}"
+        avg[3].text = ""
+        avg[4].text = "" if tb_ql is None else f"{tb_ql:.2f}"
+        avg[5].text = ""
+        for cell in avg:
+            set_cell_font_times_new_roman(cell)
+            for p in cell.paragraphs:
+                for r in p.runs:
+                    r.bold = True
+
+        # Điểm KPI (70)
+        kpi = data.get("diem_kpi_70")
+        p_kpi = doc.add_paragraph()
+        p_kpi.add_run(
+            f"Điểm KPI (quy về thang 70): {kpi:.2f}/70" if kpi is not None else
+            "Điểm KPI: chưa tính"
+        ).bold = True
+
+    # Footer chữ ký (tái dùng helper chung)
+    await _apply_auto_fill_chung(doc, db, cc, ngay_ky=None)
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    ma_cc_safe = cc.ma_cc.replace("/", "-") if cc.ma_cc else "user"
+    filename = f"BangKeHDLD_{ma_cc_safe}_T{thang}_{nam}.docx"
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# =============================================================================
 # ENDPOINT 2: IN BẢNG KÊ CÔNG VIỆC (PL-02)
 # =============================================================================
 
@@ -904,6 +1027,13 @@ async def export_bang_ke_cong_viec(
         raise HTTPException(status_code=404, detail="Không tìm thấy thông tin công chức")
 
     is_lanh_dao = cc.is_lanh_dao or False
+
+    # HĐLĐ 111 VB714 (từ T1/2026): không có "công việc" — bảng kê là 3 tiêu chí.
+    # Build tài liệu riêng và trả về sớm (không qua logic công việc bên dưới).
+    from app.core.hdld_vb714 import is_hdld_vb714_active
+    if cc.is_hd_111 and is_hdld_vb714_active(thang, nam):
+        return await _build_bang_ke_hdld_vb714(db, cc, thang, nam)
+
     # HĐ 111 (Phase 3 — 29/04/2026) kê khai dùng form Lãnh đạo (ke_khai_lanh_dao),
     # nên PL-02 cũng phải đọc từ KeKhaiLanhDao thay vì KeKhaiCongViec — nếu không
     # bảng kê sẽ rỗng.

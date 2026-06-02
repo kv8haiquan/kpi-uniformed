@@ -20,8 +20,10 @@ from app.models.hdld import HdldDanhGia, TrangThaiHdldDanhGia
 
 
 # Mốc áp dụng VB714 — (năm, tháng)
+# 01/06/2026: đổi về T1/2026 — HĐLĐ kê khai lại toàn bộ T1–T6 theo VB714
+# (đã xóa sạch dữ liệu kê khai cũ form lãnh đạo của HĐLĐ).
 HDLD_VB714_FROM_NAM = 2026
-HDLD_VB714_FROM_THANG = 5
+HDLD_VB714_FROM_THANG = 1
 
 
 def is_hdld_vb714_active(thang: int, nam: int) -> bool:

@@ -47,6 +47,65 @@ def kpi_70_tu_tb(diem_tb: Optional[Decimal]) -> Optional[Decimal]:
     return (Decimal(str(diem_tb)) / Decimal(100) * Decimal(70)).quantize(Decimal("0.01"))
 
 
+async def get_hdld_in_data(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> Optional[dict]:
+    """Dữ liệu phục vụ IN bảng kê / phiếu đánh giá HĐLĐ theo VB714.
+
+    Lấy bản đánh giá đã duyệt (DA_DUYET) + tên 3 tiêu chí theo nhóm nghề.
+    Trả None nếu chưa có bản duyệt (caller fallback / báo "chưa có dữ liệu").
+
+    Cấu trúc trả về:
+        {
+          "nhom_nghe": "I", "ten_nhom": "...",
+          "tieu_chi": [  # đúng 3 dòng, sort theo so_tt
+            {"so_tt": 1, "ten": "...", "diem_tu": 90.0, "ghi_chu_tu": "...",
+             "diem_ql": 95.0, "ghi_chu_ql": "..."},
+            ...
+          ],
+          "diem_tc_tb_tu": 90.0, "diem_tc_tb_ql": 93.33, "diem_kpi_70": 65.33,
+        }
+    """
+    from app.models.hdld import HdldTieuChi  # tránh import vòng ở module top
+
+    dg = await get_hdld_danh_gia_da_duyet(db, cong_chuc_id, thang, nam)
+    if dg is None:
+        return None
+
+    # Tên tiêu chí theo nhóm nghề (nếu đã chọn)
+    ten_map: dict[int, str] = {}
+    ten_nhom = None
+    if dg.nhom_nghe:
+        rows = (await db.execute(
+            select(HdldTieuChi).where(
+                HdldTieuChi.nhom == dg.nhom_nghe, HdldTieuChi.is_active == True
+            )
+        )).scalars().all()
+        for tc in rows:
+            ten_map[tc.so_tt] = tc.ten_tieu_chi
+            ten_nhom = tc.ten_nhom
+
+    tieu_chi = []
+    for ct in sorted(dg.chi_tiets, key=lambda x: x.so_tt):
+        tieu_chi.append({
+            "so_tt": ct.so_tt,
+            "ten": ten_map.get(ct.so_tt, f"Tiêu chí {ct.so_tt}"),
+            "diem_tu": float(ct.diem_tu) if ct.diem_tu is not None else None,
+            "ghi_chu_tu": ct.ghi_chu_tu or "",
+            "diem_ql": float(ct.diem_ql) if ct.diem_ql is not None else None,
+            "ghi_chu_ql": ct.ghi_chu_ql or "",
+        })
+
+    return {
+        "nhom_nghe": dg.nhom_nghe,
+        "ten_nhom": ten_nhom,
+        "tieu_chi": tieu_chi,
+        "diem_tc_tb_tu": float(dg.diem_tc_tb_tu) if dg.diem_tc_tb_tu is not None else None,
+        "diem_tc_tb_ql": float(dg.diem_tc_tb_ql) if dg.diem_tc_tb_ql is not None else None,
+        "diem_kpi_70": float(dg.diem_kpi_70) if dg.diem_kpi_70 is not None else None,
+    }
+
+
 async def get_hdld_danh_gia_da_duyet(
     db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
 ) -> Optional[HdldDanhGia]:

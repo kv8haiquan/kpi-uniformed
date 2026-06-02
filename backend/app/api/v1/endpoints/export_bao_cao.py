@@ -475,6 +475,69 @@ def _build_mau02_data(
     }
 
 
+def _build_mau02_data_hdld_vb714(
+    user: CongChuc,
+    thang: int, nam: int,
+    hdld_data: Optional[dict],
+    chi_tiet_xep_loai: Optional[ChiTietXepLoai],
+) -> dict:
+    """Build data Mẫu 02 cho HĐLĐ 111 theo VB714.
+
+    HĐLĐ không có "công việc" — mỗi dòng là 1 tiêu chí (3 tiêu chí). Map vào
+    cong_viec_items để template Node hiện được; điểm tổng/xếp loại lấy từ
+    chi_tiet_xep_loai (đã tính theo nguồn VB714 ở bao_cao_xep_loai).
+
+    hdld_data: kết quả get_hdld_in_data() — None nếu chưa có bản duyệt.
+    """
+    cong_viec_items = []
+    if hdld_data:
+        for tc in hdld_data.get("tieu_chi", []):
+            diem_ql = tc.get("diem_ql")
+            ghi_chu = " | ".join(filter(None, [
+                f"Tự ĐG: {tc['diem_tu']:.0f}%" if tc.get("diem_tu") is not None else "",
+                tc.get("ghi_chu_ql") or "",
+            ]))
+            cong_viec_items.append({
+                "ten_cong_viec": tc.get("ten", ""),
+                "cap_do": ghi_chu,
+                "so_luong": 1,
+                "sp_quy_doi": (diem_ql / 100.0) if diem_ql is not None else 0.0,
+                "tu_dg_tien_do": 0,
+                "tu_dg_chat_luong": 0,
+                "so_loi_tien_do": 0,
+                "so_loi_chat_luong": 0,
+                "sp_chat_luong": (diem_ql or 0) / 100.0,
+                "sp_tien_do": (diem_ql or 0) / 100.0,
+            })
+
+    so_ngay_lv = float(chi_tiet_xep_loai.so_ngay_lam_viec or 0) if chi_tiet_xep_loai else 0
+    so_ngay_nghi = float(chi_tiet_xep_loai.so_ngay_nghi or 0) if chi_tiet_xep_loai else 0
+    diem_tcc = float(chi_tiet_xep_loai.diem_tieu_chi_chung) if chi_tiet_xep_loai else 0
+    diem_kpi = float(chi_tiet_xep_loai.diem_kpi) if chi_tiet_xep_loai else 0
+    diem_tong = float(chi_tiet_xep_loai.diem_tong) if chi_tiet_xep_loai else 0
+    tb_ql = (hdld_data or {}).get("diem_tc_tb_ql") or 0
+
+    return {
+        "ho_ten": user.ho_ten,
+        "chuc_vu": user.chuc_vu or "Hợp đồng 111",
+        "don_vi": user.don_vi.ten_don_vi if user.don_vi else "",
+        "thang": thang,
+        "nam": nam,
+        "so_ngay_lam_viec": so_ngay_lv,
+        "so_ngay_nghi": so_ngay_nghi,
+        "cong_viec_items": cong_viec_items,
+        "tong_sp_quy_doi": float(tb_ql) / 100.0 * 3 if tb_ql else 0.0,
+        "tong_sp_chat_luong": float(tb_ql) / 100.0 * 3 if tb_ql else 0.0,
+        "tong_sp_tien_do": float(tb_ql) / 100.0 * 3 if tb_ql else 0.0,
+        "target_sp": 3.0,  # 3 tiêu chí
+        "diem_tieu_chi_chung": diem_tcc,
+        "diem_kpi": diem_kpi,
+        "diem_tong": diem_tong,
+        "xep_loai": chi_tiet_xep_loai.xep_loai_cuoi_cung if chi_tiet_xep_loai else "E",
+        "is_hdld_vb714": True,
+    }
+
+
 def _build_mau02_data_lanh_dao_style(
     user: CongChuc,
     thang: int, nam: int,
@@ -1074,15 +1137,19 @@ async def export_ca_nhan(
     # Phase 3 KPI LĐ V2 (05/05/2026): từ tháng 5/2026, LĐ THẬT đã chuyển
     # sang kê khai trên ke_khai_cong_viec (form V2). HĐ 111 vẫn giữ form cũ.
     from app.core.kpi_lanh_dao_v2 import is_kpi_lanh_dao_v2_active
-    use_old_form = (
+    from app.core.hdld_vb714 import is_hdld_vb714_active, get_hdld_in_data
+    if target_user.is_hd_111 and is_hdld_vb714_active(thang, nam):
+        # HĐLĐ 111 VB714 (từ T1/2026): Mẫu 02 = 3 tiêu chí từ hdld_danh_gia.
+        hdld_data = await get_hdld_in_data(db, target_user.id, thang, nam)
+        mau02_data = _build_mau02_data_hdld_vb714(target_user, thang, nam, hdld_data, chi_tiet_xl)
+    elif (
         target_user.kekhai_dung_form_lanh_dao
         and not (
             target_user.is_lanh_dao
             and not target_user.is_hd_111
             and is_kpi_lanh_dao_v2_active(thang, nam)
         )
-    )
-    if use_old_form:
+    ):
         ke_khai_ld = await _get_ke_khai_lanh_dao_list(db, target_user.id, thang, nam)
         mau02_data = _build_mau02_data_lanh_dao_style(target_user, thang, nam, ke_khai_ld, chi_tiet_xl)
     else:

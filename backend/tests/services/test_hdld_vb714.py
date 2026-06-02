@@ -28,7 +28,7 @@ from app.schemas.hdld import (
 )
 
 
-# ===================== FEATURE FLAG (mốc T5/2026) ===================== #
+# ===================== FEATURE FLAG (mốc T1/2026 — đổi 01/06/2026) ===================== #
 
 class TestFeatureFlag:
     def test_active_tai_moc(self):
@@ -38,8 +38,13 @@ class TestFeatureFlag:
         assert is_hdld_vb714_active(6, 2026)
         assert is_hdld_vb714_active(1, 2027)
 
+    def test_active_moi_thang_2026(self):
+        # Sau khi đổi mốc về T1/2026: mọi tháng 2026 đều active
+        for thang in range(1, 13):
+            assert is_hdld_vb714_active(thang, 2026)
+
     def test_khong_active_truoc_moc(self):
-        assert not is_hdld_vb714_active(4, 2026)
+        # Trước 2026 (vd T12/2025) không active
         assert not is_hdld_vb714_active(12, 2025)
 
 

@@ -29,7 +29,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, aliased
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.core.kpi_version import resolve_kpi_version
@@ -239,17 +239,36 @@ def _co_the_duyet_tc(dg: "DanhGiaThang", current_user) -> bool:
     if dg.ngay_phe_duyet_tc_cap2:
         return False
     uid = current_user.id
+    # 1) Người được gán duyệt (luồng chuẩn) — giữ nguyên hành vi cũ
     if dg.nguoi_phe_duyet_tc_cap1_id == uid and not dg.ngay_phe_duyet_tc_cap1:
         return True
     if (dg.nguoi_phe_duyet_tc_cap2_id == uid and dg.ngay_phe_duyet_tc_cap1
             and not dg.ngay_phe_duyet_tc_cap2):
         return True
+
+    # 2) v3.7: LĐ ĐV HIỆN TẠI của CC — CHỈ cho đơn MỒ CÔI do chuyển ĐV.
+    # Điều kiện chặt để tránh "nhảy" sai người duyệt:
+    #   - Người kê khai là CC thường (is_lanh_dao=False). LĐ (TDV/PCCT) gửi lên CCT
+    #     ở đơn vị khác là HỢP LỆ, KHÔNG được reroute về Phó ĐT.
+    #   - Người được gán duyệt ở cấp đang chờ KHÔNG còn thuộc ĐV hiện tại của CC
+    #     (đã chuyển đi) hoặc chưa được gán.
+    cc = dg.cong_chuc
+    if not cc or cc.is_lanh_dao or cc.don_vi_id != current_user.don_vi_id:
+        return False
     cap = current_user.vai_tro.cap_bac if current_user.vai_tro else None
-    same_unit = bool(dg.cong_chuc and dg.cong_chuc.don_vi_id == current_user.don_vi_id)
-    if same_unit and cap == CapBacVaiTro.PHO_DON_VI and not dg.ngay_phe_duyet_tc_cap1:
-        return True
-    if same_unit and cap == CapBacVaiTro.TRUONG_DON_VI and not dg.ngay_phe_duyet_tc_cap2:
-        return True
+    cc_dv = cc.don_vi_id
+    if not dg.ngay_phe_duyet_tc_cap1:
+        # Đang chờ cấp 1 (hoặc duyệt thẳng): xét người được gán cấp 1
+        pd1 = dg.nguoi_phe_duyet_tc_cap1
+        cap1_orphan = pd1 is None or pd1.don_vi_id != cc_dv
+        if cap1_orphan and cap in (CapBacVaiTro.PHO_DON_VI, CapBacVaiTro.TRUONG_DON_VI):
+            return True
+    elif not dg.ngay_phe_duyet_tc_cap2:
+        # Đã qua cấp 1, chờ cấp 2: xét người được gán cấp 2
+        pd2 = dg.nguoi_phe_duyet_tc_cap2
+        cap2_orphan = pd2 is None or pd2.don_vi_id != cc_dv
+        if cap2_orphan and cap == CapBacVaiTro.TRUONG_DON_VI:
+            return True
     return False
 
 
@@ -795,36 +814,55 @@ async def get_danh_sach_cho_phe_duyet(
         ).distinct().order_by(DanhGiaThang.created_at.desc())
     else:
         # Lãnh đạo: theo logic cũ
-        # v3.7 (02/06/2026): bổ sung visibility theo ĐƠN VỊ HIỆN TẠI của CC để xử lý
-        # CC chuyển đơn vị. Khi CC kê khai ở ĐV cũ rồi chuyển sang ĐV mới, người duyệt
-        # được gán vẫn là LĐ ĐV cũ → LĐ ĐV mới không thấy đơn. Thêm nhánh "đơn của CC
-        # đang thuộc đơn vị mình" để LĐ mới thấy & duyệt được (action vẫn được guard ở
-        # endpoint phê duyệt theo cấp bậc + same_don_vi).
+        # v3.7 (02/06/2026): bổ sung visibility cho LĐ ĐV HIỆN TẠI của CC — NHƯNG CHỈ
+        # với đơn MỒ CÔI do chuyển đơn vị, để không "nhảy" sai người duyệt.
+        # Mồ côi = (a) người kê khai là CC thường (is_lanh_dao=False — LĐ gửi lên CCT ở
+        # ĐV khác là hợp lệ, KHÔNG reroute) VÀ (b) người được gán duyệt ở cấp đang chờ
+        # KHÔNG còn thuộc ĐV hiện tại của CC (đã chuyển đi) hoặc chưa được gán.
         cap_bac_cur = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+        Pd1 = aliased(CongChuc)  # người được gán duyệt cấp 1
+        Pd2 = aliased(CongChuc)  # người được gán duyệt cấp 2
+        cap1_orphan = or_(Pd1.id == None, Pd1.don_vi_id != CongChuc.don_vi_id)
+        cap2_orphan = or_(Pd2.id == None, Pd2.don_vi_id != CongChuc.don_vi_id)
+
         don_vi_clauses = []
         if cap_bac_cur == CapBacVaiTro.TRUONG_DON_VI:
-            # ĐT: thấy đơn CC trong ĐV đang chờ duyệt (duyệt thẳng CHO_PHE_DUYET hoặc cấp 2 CHO_CAP2)
+            # ĐT: nhận đơn mồ côi của CC trong ĐV — chờ cấp 1 (duyệt thẳng) hoặc chờ cấp 2.
+            # CHỈ đơn ĐÃ GỬI (CHO_PHE_DUYET/CHO_CAP2) — loại bỏ NHAP (nháp chưa gửi).
             don_vi_clauses.append(and_(
                 CongChuc.don_vi_id == current_user.don_vi_id,
-                or_(
-                    DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_PHE_DUYET,
-                    DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2,
-                ),
+                CongChuc.is_lanh_dao == False,
+                DanhGiaThang.trang_thai_tc.in_([
+                    TrangThaiTieuChi.CHO_PHE_DUYET, TrangThaiTieuChi.CHO_CAP2
+                ]),
                 DanhGiaThang.ngay_phe_duyet_tc_cap2 == None,
+                or_(
+                    and_(DanhGiaThang.ngay_phe_duyet_tc_cap1 == None, cap1_orphan),
+                    and_(DanhGiaThang.ngay_phe_duyet_tc_cap1 != None, cap2_orphan),
+                ),
             ))
         elif cap_bac_cur == CapBacVaiTro.PHO_DON_VI:
-            # Phó ĐT: thấy đơn CC trong ĐV đang chờ cấp 1
+            # Phó ĐT: nhận đơn mồ côi của CC trong ĐV đang chờ cấp 1 (đã gửi, chưa duyệt).
             don_vi_clauses.append(and_(
                 CongChuc.don_vi_id == current_user.don_vi_id,
+                CongChuc.is_lanh_dao == False,
                 DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_PHE_DUYET,
                 DanhGiaThang.ngay_phe_duyet_tc_cap1 == None,
+                cap1_orphan,
             ))
 
         stmt = select(DanhGiaThang).options(
             selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
             selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
             selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
-        ).join(CongChuc, DanhGiaThang.cong_chuc_id == CongChuc.id).where(
+            selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2).selectinload(CongChuc.vai_tro),
+        ).join(
+            CongChuc, DanhGiaThang.cong_chuc_id == CongChuc.id
+        ).outerjoin(
+            Pd1, DanhGiaThang.nguoi_phe_duyet_tc_cap1_id == Pd1.id
+        ).outerjoin(
+            Pd2, DanhGiaThang.nguoi_phe_duyet_tc_cap2_id == Pd2.id
+        ).where(
             DanhGiaThang.is_deleted == False,
             or_(
                 # Cấp 1: Phó ĐT chờ duyệt
@@ -847,7 +885,7 @@ async def get_danh_sach_cho_phe_duyet(
                     ),
                     DanhGiaThang.ngay_phe_duyet_tc_cap2 == None
                 ),
-                # v3.7: đơn của CC đang thuộc đơn vị mình (xử lý chuyển đơn vị)
+                # v3.7: đơn MỒ CÔI của CC thường đang thuộc đơn vị mình (xử lý chuyển đơn vị)
                 *don_vi_clauses,
             )
         ).distinct().order_by(DanhGiaThang.created_at.desc())
@@ -1058,17 +1096,12 @@ async def get_chi_tiet_phe_duyet(
     is_approver_cap1 = danh_gia.nguoi_phe_duyet_tc_cap1_id == current_user.id
     is_approver_cap2 = danh_gia.nguoi_phe_duyet_tc_cap2_id == current_user.id
     is_approver_legacy = any(tc.nguoi_phe_duyet_id == current_user.id for tc in danh_gia.tieu_chi_chungs)
-    cap_bac_cur = current_user.vai_tro.cap_bac if current_user.vai_tro else None
-    is_cct = cap_bac_cur == CapBacVaiTro.CHI_CUC_TRUONG
-    # v3.7 (02/06/2026): LĐ (Phó ĐT/ĐT) của ĐƠN VỊ HIỆN TẠI của CC cũng được xem —
-    # xử lý CC chuyển đơn vị (người duyệt được gán là LĐ ĐV cũ, LĐ ĐV mới vẫn cần xử lý).
-    is_leader_same_unit = (
-        cap_bac_cur in (CapBacVaiTro.PHO_DON_VI, CapBacVaiTro.TRUONG_DON_VI)
-        and danh_gia.cong_chuc is not None
-        and danh_gia.cong_chuc.don_vi_id == current_user.don_vi_id
-    )
+    is_cct = current_user.vai_tro and current_user.vai_tro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
+    # v3.7 (02/06/2026): LĐ ĐV hiện tại của CC được xem khi đơn MỒ CÔI do chuyển đơn vị
+    # (dùng chung điều kiện với danh sách chờ duyệt — tránh "nhảy" sai người duyệt).
+    is_leader_orphan = _co_the_duyet_tc(danh_gia, current_user)
 
-    if not (is_approver_cap1 or is_approver_cap2 or is_approver_legacy or is_cct or is_leader_same_unit):
+    if not (is_approver_cap1 or is_approver_cap2 or is_approver_legacy or is_cct or is_leader_orphan):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_002", message="Không có quyền"))
     
     tc_list = [build_tieu_chi_response(tc, danh_gia.id) for tc in danh_gia.tieu_chi_chungs]

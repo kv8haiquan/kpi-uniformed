@@ -27,6 +27,7 @@ export default function NguoiTheoDoiPage() {
   const [nguoiTrongDonVi, setNguoiTrongDonVi] = useState<ICongChucSearch[]>([]);
   const [loadingNguoi, setLoadingNguoi] = useState(false);
   const [chonNguoiId, setChonNguoiId] = useState('');
+  const [nguoiSearch, setNguoiSearch] = useState('');
   const [saving, setSaving] = useState(false);
 
   const donViMap = useMemo(() => {
@@ -49,9 +50,9 @@ export default function NguoiTheoDoiPage() {
 
   // Khi chọn đơn vị → load người trong đơn vị đó
   useEffect(() => {
-    if (!donViId) { setNguoiTrongDonVi([]); setChonNguoiId(''); return; }
+    if (!donViId) { setNguoiTrongDonVi([]); setChonNguoiId(''); setNguoiSearch(''); return; }
     (async () => {
-      setLoadingNguoi(true); setChonNguoiId('');
+      setLoadingNguoi(true); setChonNguoiId(''); setNguoiSearch('');
       try {
         const res = await nguoiTheoDoiApi.timCongChuc({ don_vi_id: donViId });
         setNguoiTrongDonVi(res.data.data || []);
@@ -81,7 +82,7 @@ export default function NguoiTheoDoiPage() {
       await nguoiTheoDoiApi.gan({ cong_chuc_id: chonNguoiId, don_vi_ids });
       const ten = nguoiTrongDonVi.find((c) => c.id === chonNguoiId)?.ho_ten || '';
       flash(`Đã gán ${ten} theo dõi ${donViMap[donViId]?.ten_don_vi || ''}`);
-      setChonNguoiId('');
+      setChonNguoiId(''); setNguoiSearch('');
       await load();
     } catch (e) { onErr(e); } finally { setSaving(false); }
   };
@@ -103,8 +104,14 @@ export default function NguoiTheoDoiPage() {
     catch (e) { onErr(e); }
   };
 
-  // Dropdown người: ưu tiên người chưa theo dõi đơn vị này
-  const optionNguoi = nguoiTrongDonVi.filter((c) => !dangTheoDoiIds.has(c.id));
+  // Người có thể thêm: chưa theo dõi đơn vị này, + lọc theo từ khóa tìm
+  const optionNguoi = useMemo(() => {
+    const q = nguoiSearch.trim().toLowerCase();
+    return nguoiTrongDonVi
+      .filter((c) => !dangTheoDoiIds.has(c.id))
+      .filter((c) => !q || (c.ho_ten || '').toLowerCase().includes(q) || (c.ma_cc || '').toLowerCase().includes(q));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nguoiTrongDonVi, nguoiSearch, list, donViId]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -158,22 +165,35 @@ export default function NguoiTheoDoiPage() {
                 {loadingNguoi ? (
                   <div className="text-sm text-gray-400">Đang tải danh sách công chức...</div>
                 ) : (
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <select className="flex-1 min-w-[260px] border rounded-lg px-3 py-2 text-sm"
-                      value={chonNguoiId} onChange={(e) => setChonNguoiId(e.target.value)}>
-                      <option value="">-- Chọn công chức trong đơn vị --</option>
-                      {optionNguoi.map((c) => (
-                        <option key={c.id} value={c.id}>{c.ho_ten} ({c.ma_cc}){c.chuc_vu ? ` — ${c.chuc_vu}` : ''}</option>
-                      ))}
-                    </select>
-                    <button onClick={themNguoi} disabled={saving || !chonNguoiId}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium">
-                      {saving ? 'Đang lưu...' : 'Thêm'}
-                    </button>
-                    {optionNguoi.length === 0 && nguoiTrongDonVi.length > 0 && (
-                      <span className="text-xs text-gray-400">Tất cả công chức trong đơn vị đã được gán.</span>
+                  <>
+                    <div className="flex gap-2 items-center mb-2">
+                      <input className="flex-1 min-w-[220px] border rounded-lg px-3 py-2 text-sm"
+                        placeholder="🔍 Tìm theo tên hoặc mã công chức..."
+                        value={nguoiSearch} onChange={(e) => setNguoiSearch(e.target.value)} />
+                      <button onClick={themNguoi} disabled={saving || !chonNguoiId}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium whitespace-nowrap">
+                        {saving ? 'Đang lưu...' : 'Thêm'}
+                      </button>
+                    </div>
+                    {nguoiTrongDonVi.filter((c) => !dangTheoDoiIds.has(c.id)).length === 0 ? (
+                      <div className="text-xs text-gray-400">Tất cả công chức trong đơn vị đã được gán.</div>
+                    ) : optionNguoi.length === 0 ? (
+                      <div className="text-xs text-gray-400">Không tìm thấy công chức khớp “{nguoiSearch}”.</div>
+                    ) : (
+                      <div className="border rounded-lg divide-y max-h-60 overflow-y-auto">
+                        {optionNguoi.map((c) => (
+                          <button key={c.id} type="button" onClick={() => setChonNguoiId(c.id)}
+                            className={`w-full text-left px-3 py-2 text-sm flex justify-between items-center ${chonNguoiId === c.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                            <span>
+                              <b>{c.ho_ten}</b> <span className="text-gray-400">({c.ma_cc})</span>
+                              {c.chuc_vu ? <span className="text-gray-400"> — {c.chuc_vu}</span> : null}
+                            </span>
+                            {chonNguoiId === c.id && <span className="text-blue-600 text-xs font-medium">✓ Đã chọn</span>}
+                          </button>
+                        ))}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
             </div>

@@ -29,7 +29,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, aliased
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.core.kpi_version import resolve_kpi_version
@@ -173,11 +173,13 @@ def _apply_dieu_chinh_ld(tc, dc, *, fallback: str = "cc") -> None:
 
 # =============================================================================
 # NỚI HẠN TẠM THỜI (2026-04-21): Cho phép tự đánh giá + phê duyệt tiêu chí chung
-# cho mọi tháng từ 2026-01 trở đi, đến hết 2026-05-31 để CC bổ sung các tháng
+# cho mọi tháng từ 2026-01 trở đi, đến hết 2026-07-31 để CC bổ sung các tháng
 # còn thiếu. Sau deadline này, tự động quay về quy tắc gốc.
 # Xem thêm: CONFIRM với người dùng ngày 2026-04-21.
+# Gia hạn 2026-06-02: 2026-05-31 → 2026-07-31 (xử lý tồn đọng CC chuyển đơn vị
+# bị kẹt CHO_PHE_DUYET/is_khoa khi window cũ vừa hết hạn).
 # =============================================================================
-HAN_MO_RONG_TAM_THOI_DEN = date(2026, 5, 31)
+HAN_MO_RONG_TAM_THOI_DEN = date(2026, 7, 31)
 MO_RONG_TU_THANG_NAM = (2026, 1)  # (năm, tháng) — tuple để so sánh
 
 
@@ -212,12 +214,62 @@ def kiem_tra_thoi_han_tu_danh_gia(thang: int, nam: int) -> bool:
 
 
 def _dang_bi_khoa(danh_gia: "DanhGiaThang") -> bool:
-    """Wrapper: bypass `is_khoa` trong window nới tạm thời (2026-04 → 2026-05-31)."""
+    """Wrapper: bypass `is_khoa` trong window nới tạm thời (2026-01 → 2026-07-31)."""
     if not danh_gia.is_khoa:
         return False
     if _trong_han_mo_rong_tam_thoi(danh_gia.thang, danh_gia.nam):
         return False
     return True
+
+
+def _co_the_duyet_tc(dg: "DanhGiaThang", current_user) -> bool:
+    """True nếu current_user được phép phê duyệt tiêu chí chung của đơn `dg` lúc này.
+
+    Bao gồm:
+    - Người được gán duyệt cấp 1 (chưa duyệt cấp 1), hoặc cấp 2 (đã qua cấp 1, chưa cấp 2).
+    - v3.7 (02/06/2026): LĐ (Phó ĐT/ĐT) của ĐƠN VỊ HIỆN TẠI của CC — xử lý CC chuyển
+      đơn vị khi người được gán duyệt vẫn là LĐ đơn vị cũ. Action thực tế vẫn được
+      guard ở endpoint phê duyệt (theo cấp bậc + same_don_vi).
+    FE dùng cờ `co_the_duyet` này để hiện nút Duyệt/Từ chối.
+    """
+    if dg.trang_thai_tc not in (
+        TrangThaiTieuChi.CHO_PHE_DUYET, TrangThaiTieuChi.CHO_CAP2, None
+    ):
+        return False
+    if dg.ngay_phe_duyet_tc_cap2:
+        return False
+    uid = current_user.id
+    # 1) Người được gán duyệt (luồng chuẩn) — giữ nguyên hành vi cũ
+    if dg.nguoi_phe_duyet_tc_cap1_id == uid and not dg.ngay_phe_duyet_tc_cap1:
+        return True
+    if (dg.nguoi_phe_duyet_tc_cap2_id == uid and dg.ngay_phe_duyet_tc_cap1
+            and not dg.ngay_phe_duyet_tc_cap2):
+        return True
+
+    # 2) v3.7: LĐ ĐV HIỆN TẠI của CC — CHỈ cho đơn MỒ CÔI do chuyển ĐV.
+    # Điều kiện chặt để tránh "nhảy" sai người duyệt:
+    #   - Người kê khai là CC thường (is_lanh_dao=False). LĐ (TDV/PCCT) gửi lên CCT
+    #     ở đơn vị khác là HỢP LỆ, KHÔNG được reroute về Phó ĐT.
+    #   - Người được gán duyệt ở cấp đang chờ KHÔNG còn thuộc ĐV hiện tại của CC
+    #     (đã chuyển đi) hoặc chưa được gán.
+    cc = dg.cong_chuc
+    if not cc or cc.is_lanh_dao or cc.don_vi_id != current_user.don_vi_id:
+        return False
+    cap = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    cc_dv = cc.don_vi_id
+    if not dg.ngay_phe_duyet_tc_cap1:
+        # Đang chờ cấp 1 (hoặc duyệt thẳng): xét người được gán cấp 1
+        pd1 = dg.nguoi_phe_duyet_tc_cap1
+        cap1_orphan = pd1 is None or pd1.don_vi_id != cc_dv
+        if cap1_orphan and cap in (CapBacVaiTro.PHO_DON_VI, CapBacVaiTro.TRUONG_DON_VI):
+            return True
+    elif not dg.ngay_phe_duyet_tc_cap2:
+        # Đã qua cấp 1, chờ cấp 2: xét người được gán cấp 2
+        pd2 = dg.nguoi_phe_duyet_tc_cap2
+        cap2_orphan = pd2 is None or pd2.don_vi_id != cc_dv
+        if cap2_orphan and cap == CapBacVaiTro.TRUONG_DON_VI:
+            return True
+    return False
 
 
 async def get_or_create_danh_gia_thang(
@@ -762,10 +814,54 @@ async def get_danh_sach_cho_phe_duyet(
         ).distinct().order_by(DanhGiaThang.created_at.desc())
     else:
         # Lãnh đạo: theo logic cũ
+        # v3.7 (02/06/2026): bổ sung visibility cho LĐ ĐV HIỆN TẠI của CC — NHƯNG CHỈ
+        # với đơn MỒ CÔI do chuyển đơn vị, để không "nhảy" sai người duyệt.
+        # Mồ côi = (a) người kê khai là CC thường (is_lanh_dao=False — LĐ gửi lên CCT ở
+        # ĐV khác là hợp lệ, KHÔNG reroute) VÀ (b) người được gán duyệt ở cấp đang chờ
+        # KHÔNG còn thuộc ĐV hiện tại của CC (đã chuyển đi) hoặc chưa được gán.
+        cap_bac_cur = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+        Pd1 = aliased(CongChuc)  # người được gán duyệt cấp 1
+        Pd2 = aliased(CongChuc)  # người được gán duyệt cấp 2
+        cap1_orphan = or_(Pd1.id == None, Pd1.don_vi_id != CongChuc.don_vi_id)
+        cap2_orphan = or_(Pd2.id == None, Pd2.don_vi_id != CongChuc.don_vi_id)
+
+        don_vi_clauses = []
+        if cap_bac_cur == CapBacVaiTro.TRUONG_DON_VI:
+            # ĐT: nhận đơn mồ côi của CC trong ĐV — chờ cấp 1 (duyệt thẳng) hoặc chờ cấp 2.
+            # CHỈ đơn ĐÃ GỬI (CHO_PHE_DUYET/CHO_CAP2) — loại bỏ NHAP (nháp chưa gửi).
+            don_vi_clauses.append(and_(
+                CongChuc.don_vi_id == current_user.don_vi_id,
+                CongChuc.is_lanh_dao == False,
+                DanhGiaThang.trang_thai_tc.in_([
+                    TrangThaiTieuChi.CHO_PHE_DUYET, TrangThaiTieuChi.CHO_CAP2
+                ]),
+                DanhGiaThang.ngay_phe_duyet_tc_cap2 == None,
+                or_(
+                    and_(DanhGiaThang.ngay_phe_duyet_tc_cap1 == None, cap1_orphan),
+                    and_(DanhGiaThang.ngay_phe_duyet_tc_cap1 != None, cap2_orphan),
+                ),
+            ))
+        elif cap_bac_cur == CapBacVaiTro.PHO_DON_VI:
+            # Phó ĐT: nhận đơn mồ côi của CC trong ĐV đang chờ cấp 1 (đã gửi, chưa duyệt).
+            don_vi_clauses.append(and_(
+                CongChuc.don_vi_id == current_user.don_vi_id,
+                CongChuc.is_lanh_dao == False,
+                DanhGiaThang.trang_thai_tc == TrangThaiTieuChi.CHO_PHE_DUYET,
+                DanhGiaThang.ngay_phe_duyet_tc_cap1 == None,
+                cap1_orphan,
+            ))
+
         stmt = select(DanhGiaThang).options(
             selectinload(DanhGiaThang.cong_chuc).selectinload(CongChuc.don_vi),
             selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
             selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap1).selectinload(CongChuc.vai_tro),
+            selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2).selectinload(CongChuc.vai_tro),
+        ).join(
+            CongChuc, DanhGiaThang.cong_chuc_id == CongChuc.id
+        ).outerjoin(
+            Pd1, DanhGiaThang.nguoi_phe_duyet_tc_cap1_id == Pd1.id
+        ).outerjoin(
+            Pd2, DanhGiaThang.nguoi_phe_duyet_tc_cap2_id == Pd2.id
         ).where(
             DanhGiaThang.is_deleted == False,
             or_(
@@ -789,6 +885,8 @@ async def get_danh_sach_cho_phe_duyet(
                     ),
                     DanhGiaThang.ngay_phe_duyet_tc_cap2 == None
                 ),
+                # v3.7: đơn MỒ CÔI của CC thường đang thuộc đơn vị mình (xử lý chuyển đơn vị)
+                *don_vi_clauses,
             )
         ).distinct().order_by(DanhGiaThang.created_at.desc())
     
@@ -872,6 +970,8 @@ async def get_danh_sach_cho_phe_duyet(
             diem_tieu_chi_chung=float(dg.diem_tieu_chi_chung) if dg.diem_tieu_chi_chung is not None else None,
             ly_do_tu_choi_tc=dg.ly_do_tu_choi_tc,
             cap_phe_duyet_hien_tai="cap2" if dg.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2 else "cap1",
+            # v3.7 (02/06/2026): cờ cho FE — gồm cả LĐ ĐV hiện tại (xử lý chuyển ĐV)
+            co_the_duyet=_co_the_duyet_tc(dg, current_user),
         ))
     
     return success_response(
@@ -997,8 +1097,11 @@ async def get_chi_tiet_phe_duyet(
     is_approver_cap2 = danh_gia.nguoi_phe_duyet_tc_cap2_id == current_user.id
     is_approver_legacy = any(tc.nguoi_phe_duyet_id == current_user.id for tc in danh_gia.tieu_chi_chungs)
     is_cct = current_user.vai_tro and current_user.vai_tro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
-    
-    if not (is_approver_cap1 or is_approver_cap2 or is_approver_legacy or is_cct):
+    # v3.7 (02/06/2026): LĐ ĐV hiện tại của CC được xem khi đơn MỒ CÔI do chuyển đơn vị
+    # (dùng chung điều kiện với danh sách chờ duyệt — tránh "nhảy" sai người duyệt).
+    is_leader_orphan = _co_the_duyet_tc(danh_gia, current_user)
+
+    if not (is_approver_cap1 or is_approver_cap2 or is_approver_legacy or is_cct or is_leader_orphan):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_002", message="Không có quyền"))
     
     tc_list = [build_tieu_chi_response(tc, danh_gia.id) for tc in danh_gia.tieu_chi_chungs]
@@ -1773,9 +1876,11 @@ async def phe_duyet_tieu_chi_bulk(
             and not danh_gia.ngay_phe_duyet_tc_cap1
         )
         if is_duyet_thang:
+            # v3.6 (15/05/2026 BUG FIX): KHÔNG dùng _diem_pd_tu_ld (binary) trực
+            # tiếp — sẽ ăn điểm thập phân CC tự chấm. Dùng _apply_dieu_chinh_ld
+            # với fallback="cc" để đồng ý CC chấm, giữ nguyên diem_tu_cham.
             for tc in danh_gia.tieu_chi_chungs:
-                tc.is_achieved_ld = tc.is_achieved_cc
-                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+                _apply_dieu_chinh_ld(tc, None, fallback="cc")
                 tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
                 tc.ngay_phe_duyet = now
                 tc.ghi_chu_ld = payload.ghi_chu
@@ -1796,16 +1901,20 @@ async def phe_duyet_tieu_chi_bulk(
         # Xử lý theo cấp
         # Cấp 1
         if is_approver_cap1 and not danh_gia.ngay_phe_duyet_tc_cap1:
+            # v3.6 (15/05/2026 BUG FIX): đồng ý CC chấm → giữ diem_tu_cham qua
+            # _apply_dieu_chinh_ld(fallback="cc"). Lưu snapshot [PDV:N] giống
+            # single endpoint để FE hiển thị 3 cột CC/PDV/TDV.
             for tc in danh_gia.tieu_chi_chungs:
-                tc.is_achieved_ld = tc.is_achieved_cc
-                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+                _apply_dieu_chinh_ld(tc, None, fallback="cc")
                 tc.ghi_chu_ld = payload.ghi_chu
-            
+                pdv_diem = float(tc.diem_phe_duyet) if tc.diem_phe_duyet is not None else 0.0
+                _save_pdv_snapshot(tc, pdv_diem)
+
             tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
             danh_gia.ngay_phe_duyet_tc_cap1 = now
             danh_gia.diem_tc_cap1 = Decimal(str(tong_hop.tong_diem))
             danh_gia.trang_thai_tc = TrangThaiTieuChi.CHO_CAP2  # v3.5: Phân biệt cấp
-            
+
             # Tìm ĐT
             don_vi_id = danh_gia.cong_chuc.don_vi_id if danh_gia.cong_chuc else None
             if don_vi_id:
@@ -1818,34 +1927,38 @@ async def phe_duyet_tieu_chi_bulk(
                 dt = result_dt.scalar_one_or_none()
                 if dt:
                     danh_gia.nguoi_phe_duyet_tc_cap2_id = dt.id
-            
+
             processed_ids.append(dgt_id)
             continue
-        
+
         # Cấp 2
         if is_approver_cap2 and danh_gia.ngay_phe_duyet_tc_cap1 and not danh_gia.ngay_phe_duyet_tc_cap2:
+            # v3.6 (15/05/2026 BUG FIX — ăn điểm thập phân): TDV đồng ý quyết
+            # định PDV → GIỮ NGUYÊN diem_phe_duyet đã có từ cấp 1. Trước đây
+            # recompute qua _diem_pd_tu_ld (binary) khiến TC mà CC chấm thập
+            # phân < max (is_achieved_ld=False, diem=2.0/2.5) bị overwrite về 0.
             for tc in danh_gia.tieu_chi_chungs:
-                tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+                _apply_dieu_chinh_ld(tc, None, fallback="keep")
                 tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
                 tc.ngay_phe_duyet = now
-            
+
             tong_hop = await tinh_tong_diem_tieu_chi_chung(danh_gia.tieu_chi_chungs, use_ld=True)
             danh_gia.diem_tieu_chi_chung = Decimal(str(tong_hop.tong_diem))
             danh_gia.trang_thai_tc = TrangThaiTieuChi.DA_PHE_DUYET
             danh_gia.ngay_phe_duyet_tc_cap2 = now
             danh_gia.diem_tc_cap2 = danh_gia.diem_tieu_chi_chung
-            
+
             processed_ids.append(dgt_id)
             continue
-        
+
         # Fallback legacy
         tc_cho_duyet = [tc for tc in danh_gia.tieu_chi_chungs if tc.trang_thai == TrangThaiTieuChi.CHO_PHE_DUYET]
         if not tc_cho_duyet:
             continue
-        
+
+        # v3.6 (15/05/2026 BUG FIX): đồng ý CC chấm → giữ diem_tu_cham.
         for tc in danh_gia.tieu_chi_chungs:
-            tc.is_achieved_ld = tc.is_achieved_cc
-            tc.diem_phe_duyet = _diem_pd_tu_ld(tc)
+            _apply_dieu_chinh_ld(tc, None, fallback="cc")
             tc.trang_thai = TrangThaiTieuChi.DA_PHE_DUYET
             tc.ngay_phe_duyet = now
             tc.ghi_chu_ld = payload.ghi_chu

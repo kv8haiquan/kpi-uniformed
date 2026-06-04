@@ -68,6 +68,9 @@ interface ITieuChiItem {
   cong_chuc?: { ho_ten?: string; ma_cc?: string; don_vi_ten?: string };
   trang_thai_tc?: string;
   diem_tieu_chi_chung_val?: number;
+  // v3.7 (02/06/2026): backend báo người dùng hiện tại có quyền duyệt đơn này không.
+  // Gồm cả LĐ đơn vị HIỆN TẠI của CC (xử lý CC chuyển đơn vị → người được gán là LĐ ĐV cũ).
+  co_the_duyet?: boolean;
 }
 
 interface ITieuChiChiTiet {
@@ -106,7 +109,9 @@ type ApprovalLevel = 'all' | 'cap1' | 'cap2' | 'thang';
  */
 function isItemUserInvolved(item: ITieuChiItem, currentUserId?: string): boolean {
   if (!currentUserId) return false;
-  return item.nguoi_phe_duyet_tc_cap1_id === currentUserId
+  // v3.7: co_the_duyet = LĐ đơn vị hiện tại của CC (xử lý chuyển đơn vị) cũng "dính líu".
+  return item.co_the_duyet === true
+      || item.nguoi_phe_duyet_tc_cap1_id === currentUserId
       || item.nguoi_phe_duyet_tc_cap2_id === currentUserId;
 }
 
@@ -382,7 +387,8 @@ function TieuChiRow({ item, isSelected, onSelect, onApprove, onReject, onTraLai,
     item.nguoi_phe_duyet_tc_cap1_id === currentUserId && 
     item.ngay_phe_duyet_tc_cap1);
   
-  const canShowApproveButtons = canApprove && isPending && (canApproveCap1 || canApproveCap2);
+  // v3.7: thêm co_the_duyet (LĐ đơn vị hiện tại của CC chuyển đến)
+  const canShowApproveButtons = canApprove && isPending && (canApproveCap1 || canApproveCap2 || item.co_the_duyet === true);
 
   // ⭐ v3.6 (12/05/2026): "Duyệt thẳng" = CC gửi trực tiếp cho TDV/CCT/PCCT,
   // KHÔNG phải PDV. Phân biệt qua cap_bac của người được gán cấp 1.
@@ -878,12 +884,13 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
       
     console.log('canApproveCap1:', canApproveCap1);
     
-    const canApproveCap2 = !!(currentUserId && 
-      item.nguoi_phe_duyet_tc_cap2_id === currentUserId && 
-      item.ngay_phe_duyet_tc_cap1 && 
+    const canApproveCap2 = !!(currentUserId &&
+      item.nguoi_phe_duyet_tc_cap2_id === currentUserId &&
+      item.ngay_phe_duyet_tc_cap1 &&
       !item.ngay_phe_duyet_tc_cap2);
-    
-    return canApproveCap1 || canApproveCap2;
+
+    // v3.7: LĐ đơn vị hiện tại của CC (CC chuyển ĐV) — backend đã tính sẵn cờ này.
+    return canApproveCap1 || canApproveCap2 || item.co_the_duyet === true;
   };
 
   // ✅ FIX (CCT): Chỉ giữ đơn user có dính líu (cap1 hoặc cap2 approver).
@@ -1000,10 +1007,12 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
     // ✅ FIX: Apply levelFilter
     if (levelFilter !== 'all') {
       result = result.filter(item => {
-        const isWaitCap1 = !item.ngay_phe_duyet_tc_cap1 && item.nguoi_phe_duyet_tc_cap1_id === currentUserId;
-        const isWaitCap2 = !!item.ngay_phe_duyet_tc_cap1 && !item.ngay_phe_duyet_tc_cap2 && item.nguoi_phe_duyet_tc_cap2_id === currentUserId;
-        const isDuyetThang = !item.ngay_phe_duyet_tc_cap1 && 
-                             item.nguoi_phe_duyet_tc_cap2_id === currentUserId && 
+        // v3.7: co_the_duyet (LĐ ĐV hiện tại của CC chuyển đến) phân loại theo cấp đang chờ
+        const mine = item.co_the_duyet === true;
+        const isWaitCap1 = !item.ngay_phe_duyet_tc_cap1 && (item.nguoi_phe_duyet_tc_cap1_id === currentUserId || mine);
+        const isWaitCap2 = !!item.ngay_phe_duyet_tc_cap1 && !item.ngay_phe_duyet_tc_cap2 && (item.nguoi_phe_duyet_tc_cap2_id === currentUserId || mine);
+        const isDuyetThang = !item.ngay_phe_duyet_tc_cap1 &&
+                             item.nguoi_phe_duyet_tc_cap2_id === currentUserId &&
                              item.nguoi_phe_duyet_tc_cap1_id !== currentUserId;
         
         if (levelFilter === 'cap1') return isWaitCap1;

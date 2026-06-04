@@ -1744,21 +1744,31 @@ async def phe_duyet_tieu_chi_bulk(
             cap_bac_cc = danh_gia.cong_chuc.vai_tro.cap_bac
 
         # --- DUYỆT THẲNG 1 CẤP ---
-        # Các flow duyệt thẳng (không qua 2 cấp Phó ĐT → ĐT):
-        #   (a) ĐT/PCCT → CCT duyệt
-        #   (b) CCT tự đánh giá → CCT tự duyệt
-        # Nếu rơi vào nhánh "Cấp 1" bên dưới, trạng thái sẽ bị kẹt ở
-        # CHO_CAP2 và cap2_id bị pre-fill sai (= chính CC hoặc null).
+        # Bản chất luồng 2 cấp: CHỈ phát sinh khi người duyệt CẤP 1 là Phó ĐT
+        # (PHO_DON_VI) — đó là chuỗi CC thường → Phó ĐT (cấp 1) → ĐT (cấp 2).
+        # Mọi trường hợp còn lại, khi current_user chính là người được giao
+        # duyệt cấp 1 (is_approver_cap1) NHƯNG KHÔNG phải Phó ĐT, đều là DUYỆT
+        # THẲNG 1 cấp. Bao gồm:
+        #   (a) CCT tự đánh giá → CCT tự duyệt
+        #   (b) ĐT/PCCT → CCT duyệt
+        #   (c) ĐT duyệt thẳng CC thường (CC chọn "Đội trưởng - duyệt thẳng")
+        #   (d) Phó ĐT gửi → ĐT duyệt (1 cấp, giống TRƯỜNG HỢP 3 endpoint single)
+        #
+        # BUG FIX (04/06/2026): trước đây nhánh `is_duyet_thang` chỉ nhận ra
+        # (a)+(b). Các case (c)/(d) rơi xuống nhánh "Cấp 1" → set CHO_CAP2 và
+        # gán cap2_id = ĐT cùng đơn vị = CHÍNH người vừa duyệt → kẹt deadlock
+        # (cap1_id == cap2_id). Endpoint single đã xử lý đúng; bulk nay đồng bộ.
         is_cct_tu_danh_gia = (
             cap_bac_cc == CapBacVaiTro.CHI_CUC_TRUONG
             and danh_gia.cong_chuc_id == current_user.id
         )
-        is_dt_pcct_gui_cct = (
-            cap_bac_cc in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
-            and cap_bac_current == CapBacVaiTro.CHI_CUC_TRUONG
+        # Người được giao duyệt cấp 1 mà KHÔNG phải Phó ĐT → luôn duyệt thẳng.
+        is_cap1_khong_phai_pho_dt = (
+            is_approver_cap1
+            and cap_bac_current != CapBacVaiTro.PHO_DON_VI
         )
         is_duyet_thang = (
-            (is_cct_tu_danh_gia or is_dt_pcct_gui_cct)
+            (is_cct_tu_danh_gia or is_cap1_khong_phai_pho_dt)
             and is_approver_cap1
             and not danh_gia.ngay_phe_duyet_tc_cap1
         )

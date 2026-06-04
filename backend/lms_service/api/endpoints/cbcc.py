@@ -5,8 +5,9 @@ Endpoints helper tra cuu CBCC va Don vi tu public schema.
 Dung cho chuc nang giao bai, chon hoc vien ma khong can biet UUID truoc.
 
 Endpoints:
-  GET /cbcc/search    Tim kiem CBCC theo ten hoac ma so (GIANG_VIEN, QT_DAO_TAO, ADMIN, Lanh dao)
-  GET /don-vi         Danh sach tat ca don vi (tat ca CBCC da dang nhap)
+  GET /cbcc/search                Tim kiem CBCC theo ten hoac ma so (GIANG_VIEN, QT_DAO_TAO, ADMIN, Lanh dao)
+  GET /don-vi                     Danh sach tat ca don vi (tat ca CBCC da dang nhap)
+  GET /don-vi/{id}/cong-chuc      Toan bo CBCC active cua 1 don vi (cho UI giao bai bo chon tung nguoi)
 """
 
 from typing import Optional
@@ -147,3 +148,105 @@ async def danh_sach_don_vi(
         "data": data,
         "message": f"Lấy {len(data)} đơn vị thành công",
     }
+
+
+# =============================================================================
+# GET /don-vi/{don_vi_id}/cong-chuc — Toan bo CBCC active cua 1 don vi
+# =============================================================================
+
+@router.get("/don-vi/{don_vi_id}/cong-chuc")
+async def cong_chuc_theo_don_vi(
+    don_vi_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """
+    Lấy TOÀN BỘ CBCC active của 1 đơn vị (không giới hạn 100 như /cbcc/search).
+
+    Dùng cho form giao bài kiểu accordion: tick đơn vị → hiển thị danh sách
+    người để bỏ chọn từng cá nhân trước khi giao.
+
+    Auth: GIANG_VIEN, QT_DAO_TAO, SUPER_ADMIN, Lãnh đạo.
+    Lãnh đạo (không phải QT_DAO_TAO/SUPER_ADMIN) chỉ được xem đơn vị mình
+    — mirror đúng ràng buộc của endpoint giao bài.
+    """
+    platform_roles = set(user.platform_roles or [])
+    is_manager = (
+        user.is_admin
+        or user.vai_tro == "SUPER_ADMIN"
+        or "QT_DAO_TAO" in platform_roles
+    )
+    co_quyen = (
+        is_manager
+        or "GIANG_VIEN" in platform_roles
+        or user.is_lanh_dao
+    )
+    if not co_quyen:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "PERM_001",
+                    "message": "Yêu cầu vai trò GIANG_VIEN, QT_DAO_TAO hoặc Lãnh đạo",
+                },
+            },
+        )
+
+    # Lãnh đạo (không phải manager) chỉ được xem CBCC đơn vị mình
+    if not is_manager and user.is_lanh_dao:
+        user_don_vi = uuid_or_none(user.don_vi_id)
+        if user_don_vi is not None and don_vi_id != user_don_vi:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "LMS_ERR_008",
+                        "message": "Lãnh đạo chỉ được xem CBCC thuộc đơn vị mình",
+                    },
+                },
+            )
+
+    stmt = (
+        select(
+            CongChucRef.id,
+            CongChucRef.ma_cc,
+            CongChucRef.ho_ten,
+            CongChucRef.chuc_vu,
+            CongChucRef.is_lanh_dao,
+        )
+        .where(CongChucRef.don_vi_id == don_vi_id)
+        .where(CongChucRef.is_active.is_(True))
+        .order_by(CongChucRef.ho_ten)
+    )
+
+    result = await db.execute(stmt)
+    rows = result.mappings().all()
+
+    data = [
+        {
+            "id": str(row["id"]),
+            "ma_cc": row["ma_cc"],
+            "ho_ten": row["ho_ten"],
+            "chuc_vu": row["chuc_vu"],
+            "is_lanh_dao": row["is_lanh_dao"],
+        }
+        for row in rows
+    ]
+
+    return {
+        "success": True,
+        "data": data,
+        "message": f"Lấy {len(data)} CBCC của đơn vị",
+    }
+
+
+def uuid_or_none(value) -> Optional[UUID]:
+    """Parse UUID an toàn, trả None nếu rỗng/không hợp lệ."""
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (ValueError, TypeError):
+        return None

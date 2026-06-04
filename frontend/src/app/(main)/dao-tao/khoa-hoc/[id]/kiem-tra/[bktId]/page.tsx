@@ -48,11 +48,11 @@ export default function KiemTraPage() {
   const [submitting, setSubmitting] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Anti-cheating (bo qua khi preview hoac THUC_HANH)
+  // Silent audit — đếm thoát fullscreen / chuyển tab âm thầm cho TCCB tham khảo.
+  // KHÔNG hiển thị cho user, KHÔNG auto-nộp, KHÔNG yêu cầu fullscreen.
   const [violations, setViolations] = useState(0);
-  const MAX_VIOLATIONS = 3;
-  const [showViolationWarning, setShowViolationWarning] = useState(false);
-  const warningShownRef = useRef(false);
+  const lastViolationAtRef = useRef(0);
+  const SILENT_COOLDOWN_MS = 2000;
 
   // Ket qua state
   const [ketQua, setKetQua] = useState<IKetQuaResponse | null>(null);
@@ -92,60 +92,34 @@ export default function KiemTraPage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [state]);
 
-  // Fullscreen enforcement + violation tracking
+  // Silent audit — ghi nhận âm thầm số lần thoát fullscreen / chuyển tab.
+  // Cooldown 2s chống đếm trùng khi 1 hành động fire cả 2 event.
   useEffect(() => {
     if (state !== 'DANG_LAM') return;
-    if (isPreview) return; // Preview: không bật fullscreen
+    if (isPreview) return;
 
-    // Request fullscreen
-    const requestFullscreen = async () => {
-      try {
-        await document.documentElement.requestFullscreen();
-      } catch (e) { /* ignore if not supported */ }
-    };
-    requestFullscreen();
-
-    // Handle fullscreen change
-    const handleFullscreenChange = () => {
-      if (!document.fullscreenElement && state === 'DANG_LAM' && !warningShownRef.current) {
-        warningShownRef.current = true;
-        setViolations(prev => {
-          const newCount = prev + 1;
-          if (newCount >= MAX_VIOLATIONS) {
-            handleNopBaiRef.current(); // Use ref to avoid stale closure
-          } else {
-            setShowViolationWarning(true);
-          }
-          return newCount;
-        });
-      }
+    const tryCount = () => {
+      const now = Date.now();
+      if (now - lastViolationAtRef.current < SILENT_COOLDOWN_MS) return;
+      lastViolationAtRef.current = now;
+      setViolations(prev => prev + 1);
     };
 
-    // Handle visibility change (tab switch)
-    const handleVisibilityChange = () => {
-      if (document.hidden && state === 'DANG_LAM' && !warningShownRef.current) {
-        warningShownRef.current = true;
-        setViolations(prev => {
-          const newCount = prev + 1;
-          if (newCount >= MAX_VIOLATIONS) {
-            handleNopBaiRef.current(); // Use ref to avoid stale closure
-          } else {
-            setShowViolationWarning(true);
-          }
-          return newCount;
-        });
-      }
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) tryCount();
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) tryCount();
     };
 
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [state]);
+  }, [state, isPreview]);
 
   // Fix Issue 3: Warn before closing tab/navigating away during exam
   useEffect(() => {
@@ -158,13 +132,6 @@ export default function KiemTraPage() {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [state]);
-
-  // Exit fullscreen when exam is done (DA_NOP)
-  useEffect(() => {
-    if (state === 'DA_NOP' && document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    }
   }, [state]);
 
   // Auto-save refs to access latest state
@@ -644,11 +611,6 @@ export default function KiemTraPage() {
             <div className="text-sm font-medium text-gray-900">{bkt?.tieu_de}</div>
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-500">Câu {currentIdx + 1}/{cauHoi.length}</span>
-              {violations > 0 && (
-                <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                  Vi phạm: {violations}/{MAX_VIOLATIONS}
-                </span>
-              )}
               {timeLeft !== null && (
                 <span className={`px-3 py-1 rounded-full text-sm font-mono font-bold ${
                   timeLeft < 300 ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-blue-100 text-blue-700'
@@ -777,33 +739,6 @@ export default function KiemTraPage() {
           </div>
         </div>
 
-        {/* Violation warning overlay */}
-        {showViolationWarning && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
-            <div className="bg-white rounded-xl p-6 max-w-sm mx-4 text-center shadow-2xl">
-              <div className="text-5xl mb-3">⚠️</div>
-              <h3 className="text-lg font-bold text-red-600 mb-2">Cảnh báo vi phạm!</h3>
-              <p className="text-sm text-gray-700 mb-1">Không được thoát chế độ toàn màn hình hoặc chuyển tab khi đang làm bài.</p>
-              <p className="text-sm text-red-600 font-bold mb-4">
-                Lần vi phạm: {violations}/{MAX_VIOLATIONS}
-              </p>
-              <p className="text-xs text-gray-500 mb-4">
-                {violations >= MAX_VIOLATIONS
-                  ? 'Đã hết lượt vi phạm! Bài thi sẽ được nộp tự động.'
-                  : `Còn ${MAX_VIOLATIONS - violations} lần vi phạm trước khi bị nộp bài tự động.`}
-              </p>
-              <button onClick={() => {
-                warningShownRef.current = false;
-                setShowViolationWarning(false);
-                // Re-enter fullscreen
-                try { document.documentElement.requestFullscreen(); } catch {}
-              }}
-                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors">
-                Tiếp tục làm bài
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -860,17 +795,6 @@ export default function KiemTraPage() {
               </div>
             )}
 
-            {/* Violation flag warning */}
-            {violations > 0 && (
-              <div className="mb-5 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 flex items-start gap-2">
-                <span className="text-lg shrink-0">🚩</span>
-                <div>
-                  <span className="font-semibold">Cảnh báo gian lận:</span> Bạn có {violations} lần vi phạm trong quá trình làm bài.
-                  Kết quả này đã được gắn cờ và thông báo đến quản trị viên.
-                </div>
-              </div>
-            )}
-
             <div className="flex gap-3">
               <Link href={`/dao-tao/khoa-hoc/${khoaHocId}`}
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 text-center">
@@ -896,6 +820,20 @@ export default function KiemTraPage() {
                 {ketQua.chi_tiet!.map((ct: any, i: number) => {
                   const isCorrect = ct.dung === true;
                   const isWrong   = ct.dung === false;
+                  const formatAnswer = (v: any): string => {
+                    if (v === null || v === undefined) return 'Không trả lời';
+                    let raw: any = v;
+                    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+                      if ('dap_an' in raw) raw = raw.dap_an;
+                      else if ('dap_an_dung' in raw) raw = raw.dap_an_dung;
+                      else if ('goi_y' in raw) raw = raw.goi_y;
+                    }
+                    if (raw === null || raw === undefined || raw === '') return 'Không trả lời';
+                    if (Array.isArray(raw)) return raw.length ? raw.join(', ') : 'Không trả lời';
+                    if (typeof raw === 'boolean') return raw ? 'Đúng' : 'Sai';
+                    if (typeof raw === 'object') return JSON.stringify(raw);
+                    return String(raw);
+                  };
 
                   return (
                     <div key={i} className={`rounded-lg border p-4 ${
@@ -927,11 +865,7 @@ export default function KiemTraPage() {
                           isCorrect ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                         }`}>
                           <span className="font-medium">Bạn chọn:</span>{' '}
-                          {Array.isArray(ct.tra_loi)
-                            ? ct.tra_loi.join(', ')
-                            : typeof ct.tra_loi === 'boolean'
-                            ? (ct.tra_loi ? 'Đúng' : 'Sai')
-                            : String(ct.tra_loi)}
+                          {formatAnswer(ct.tra_loi)}
                         </div>
                       )}
 
@@ -939,11 +873,7 @@ export default function KiemTraPage() {
                       {ct.dap_an_dung !== undefined && ct.dap_an_dung !== null && isWrong && (
                         <div className="mt-1.5 px-3 py-1.5 rounded text-xs bg-green-100 text-green-800">
                           <span className="font-medium">Đáp án đúng:</span>{' '}
-                          {Array.isArray(ct.dap_an_dung)
-                            ? ct.dap_an_dung.join(', ')
-                            : typeof ct.dap_an_dung === 'boolean'
-                            ? (ct.dap_an_dung ? 'Đúng' : 'Sai')
-                            : String(ct.dap_an_dung)}
+                          {formatAnswer(ct.dap_an_dung)}
                         </div>
                       )}
 

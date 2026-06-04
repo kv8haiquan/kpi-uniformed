@@ -19,6 +19,14 @@ const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: strin
   DA_DONG: { label: 'Đã đóng', bg: 'bg-red-100', text: 'text-red-600' },
 };
 
+// Badge trang thai thi sinh — hien tren card de user biet minh dang o dau
+const TRANG_THAI_TS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+  CHUA_THI: { label: 'Chưa thi', bg: 'bg-white/30', text: 'text-white' },
+  DANG_THI: { label: '🔄 Đang làm dở', bg: 'bg-amber-400', text: 'text-amber-900' },
+  DA_NOP: { label: '✅ Đã nộp', bg: 'bg-emerald-400', text: 'text-emerald-900' },
+  VANG: { label: '⛔ Vắng', bg: 'bg-red-400', text: 'text-red-900' },
+};
+
 const GRADIENTS = [
   'from-blue-500 to-indigo-600',
   'from-green-500 to-teal-600',
@@ -112,15 +120,33 @@ export default function DanhSachKyThiPage() {
             const end = new Date(kt.ngay_ket_thuc);
             const isExpired = now > end;
 
+            // Trang thai thi sinh cua user — quyet dinh nut hien thi
+            const ttTs = kt.trang_thai_thi_sinh;
+            const ttCfg = ttTs ? TRANG_THAI_TS_CONFIG[ttTs] : null;
+            const lanThi = kt.lan_thi_hien_tai || 0;
+            const soLanToiDa = kt.so_lan_thi_toi_da || 1;
+            const conLuotThiLai = ttTs === 'DA_NOP' && lanThi < soLanToiDa;
+            const canShowVaoThi = kt.trang_thai === 'DANG_MO' && !isExpired && !ttTs;
+            const canShowTiepTuc = kt.trang_thai === 'DANG_MO' && !isExpired && ttTs === 'DANG_THI';
+            const canShowThiLai = kt.trang_thai === 'DANG_MO' && !isExpired && conLuotThiLai;
+            const canShowVaoThiAssigned = kt.trang_thai === 'DANG_MO' && !isExpired && ttTs === 'CHUA_THI';
+
             return (
               <div key={kt.id} className="bg-white rounded-xl border shadow-sm overflow-hidden hover:shadow-md transition-shadow">
                 {/* Gradient header */}
                 <div className={`bg-gradient-to-r ${gradient} p-4 text-white`}>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                     <span className="text-xs font-mono opacity-80">{kt.ma_ky_thi}</span>
-                    <span className={`${cfg.bg} ${cfg.text} px-2 py-0.5 rounded-full text-xs font-medium`}>
-                      {cfg.label}
-                    </span>
+                    <div className="flex gap-1.5">
+                      {ttCfg && (
+                        <span className={`${ttCfg.bg} ${ttCfg.text} px-2 py-0.5 rounded-full text-xs font-semibold`}>
+                          {ttCfg.label}
+                        </span>
+                      )}
+                      <span className={`${cfg.bg} ${cfg.text} px-2 py-0.5 rounded-full text-xs font-medium`}>
+                        {cfg.label}
+                      </span>
+                    </div>
                   </div>
                   <h3 className="font-semibold text-lg leading-tight">{kt.ten_ky_thi}</h3>
                 </div>
@@ -133,7 +159,9 @@ export default function DanhSachKyThiPage() {
                     <div className="text-gray-500">Điểm đạt:</div>
                     <div className="text-right font-medium">{kt.diem_dat}%</div>
                     <div className="text-gray-500">Số lượt thi:</div>
-                    <div className="text-right font-medium">{kt.so_lan_thi_toi_da}</div>
+                    <div className="text-right font-medium">
+                      {ttTs ? `${lanThi}/${soLanToiDa}` : soLanToiDa}
+                    </div>
                   </div>
 
                   <div className="text-xs text-gray-400 border-t pt-2">
@@ -146,12 +174,28 @@ export default function DanhSachKyThiPage() {
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-1">
-                    {kt.trang_thai === 'DANG_MO' && !isExpired && (
+                    {canShowTiepTuc && (
+                      <Link
+                        href={`/dao-tao/ky-thi/${kt.id}/thi`}
+                        className="flex-1 text-center px-3 py-2 bg-amber-500 text-white text-sm rounded-lg hover:bg-amber-600 font-semibold animate-pulse"
+                      >
+                        🔄 Tiếp tục làm bài
+                      </Link>
+                    )}
+                    {(canShowVaoThi || canShowVaoThiAssigned) && (
                       <Link
                         href={`/dao-tao/ky-thi/${kt.id}/thi`}
                         className="flex-1 text-center px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
                       >
                         Vào thi
+                      </Link>
+                    )}
+                    {canShowThiLai && (
+                      <Link
+                        href={`/dao-tao/ky-thi/${kt.id}/thi`}
+                        className="flex-1 text-center px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+                      >
+                        Thi lại (lần {lanThi + 1})
                       </Link>
                     )}
                     <Link

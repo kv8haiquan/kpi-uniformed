@@ -190,8 +190,11 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                 </span>
               )}
               {!laThucHanh && ketQuaList.some((kq) => (kq.so_lan_vi_pham || 0) > 0) && (
-                <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                  🚩 {ketQuaList.filter((kq) => (kq.so_lan_vi_pham || 0) > 0).length} bài bị gắn cờ
+                <span
+                  className="px-2 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-medium"
+                  title="Dấu hiệu tham khảo (số lần thoát toàn màn hình / chuyển tab) — không có ý nghĩa kỷ luật."
+                >
+                  🔍 {ketQuaList.filter((kq) => (kq.so_lan_vi_pham || 0) > 0).length} bài có dấu hiệu tham khảo
                 </span>
               )}
             </div>
@@ -210,7 +213,12 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                   {laThucHanh ? (
                     <th className="px-4 py-3 text-center font-medium text-gray-500">Bài nộp</th>
                   ) : (
-                    <th className="px-4 py-3 text-center font-medium text-gray-500">Vi phạm</th>
+                    <th
+                      className="px-4 py-3 text-center font-medium text-gray-500"
+                      title="Số lần thoát toàn màn hình / chuyển tab trong khi làm bài — chỉ mang tính tham khảo, không có ý nghĩa kỷ luật."
+                    >
+                      Tham khảo
+                    </th>
                   )}
                   <th className="px-4 py-3 text-left font-medium text-gray-500">
                     {laThucHanh ? 'Ngày nộp' : 'Ngày thi'}
@@ -230,9 +238,7 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                   return (
                     <tr
                       key={i}
-                      className={`hover:bg-gray-50 ${
-                        hasViolation ? 'bg-red-50' : choCham ? 'bg-yellow-50' : ''
-                      }`}
+                      className={`hover:bg-gray-50 ${choCham ? 'bg-yellow-50' : ''}`}
                     >
                       <td className="px-4 py-3 font-medium text-gray-900">{kq.ho_ten || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{kq.ma_cc || '—'}</td>
@@ -288,11 +294,14 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                       ) : (
                         <td className="px-4 py-3 text-center">
                           {hasViolation ? (
-                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
-                              🚩 {kq.so_lan_vi_pham}
+                            <span
+                              className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full text-xs font-medium"
+                              title="Số lần thoát toàn màn hình / chuyển tab — chỉ tham khảo, không có ý nghĩa kỷ luật."
+                            >
+                              🔍 {kq.so_lan_vi_pham}
                             </span>
                           ) : (
-                            <span className="text-green-600 text-xs">✓</span>
+                            <span className="text-gray-400 text-xs">—</span>
                           )}
                         </td>
                       )}

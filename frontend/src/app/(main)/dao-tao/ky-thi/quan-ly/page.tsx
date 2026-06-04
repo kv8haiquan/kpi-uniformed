@@ -11,6 +11,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { kyThiApi, linhVucApi, viTriApi, nganHangDgnlApi, cbccApi } from '@/services/lms';
 import type { IKyThi, ILinhVuc, IViTriViecLam, ICauTrucDeByViTri, IDgnlValidateResponse, ICauHoiDgnl, IThongKeNganHang } from '@/types/lms';
+import DonViCongChucPicker from '@/components/lms/DonViCongChucPicker';
 
 const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   NHAP: { label: 'Nháp', bg: 'bg-gray-100', text: 'text-gray-600' },
@@ -36,6 +37,7 @@ export default function QuanLyKyThiPage() {
     ngay_bat_dau: '', ngay_ket_thuc: '',
     thoi_gian_lam_bai_phut: 60, diem_dat: 50,
     so_lan_thi_toi_da: 1,
+    hien_dap_an: false,
   });
   const [creating, setCreating] = useState(false);
 
@@ -84,7 +86,7 @@ export default function QuanLyKyThiPage() {
     try {
       await kyThiApi.taoMoi(form);
       setSuccess('Tạo kỳ thi thành công!');
-      setForm({ ma_ky_thi: '', ten_ky_thi: '', mo_ta: '', ngay_bat_dau: '', ngay_ket_thuc: '', thoi_gian_lam_bai_phut: 60, diem_dat: 50, so_lan_thi_toi_da: 1 });
+      setForm({ ma_ky_thi: '', ten_ky_thi: '', mo_ta: '', ngay_bat_dau: '', ngay_ket_thuc: '', thoi_gian_lam_bai_phut: 60, diem_dat: 50, so_lan_thi_toi_da: 1, hien_dap_an: false });
       setTab('danh-sach');
       await loadData();
     } catch (err: any) {
@@ -348,6 +350,15 @@ export default function QuanLyKyThiPage() {
                   className="w-full border rounded-lg px-3 py-2 text-sm" />
               </div>
             </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.hien_dap_an}
+                onChange={e => setForm({...form, hien_dap_an: e.target.checked})}
+                className="w-4 h-4"
+              />
+              <span>Cho phép thí sinh xem chi tiết câu sai sau khi nộp bài</span>
+            </label>
             <button
               onClick={handleCreate}
               disabled={creating}
@@ -623,6 +634,7 @@ function SuaKyThiModal({ kyThi, onClose }: { kyThi: IKyThi; onClose: () => void 
     thoi_gian_lam_bai_phut: kyThi.thoi_gian_lam_bai_phut,
     diem_dat: kyThi.diem_dat,
     so_lan_thi_toi_da: kyThi.so_lan_thi_toi_da,
+    hien_dap_an: kyThi.hien_dap_an ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -702,6 +714,15 @@ function SuaKyThiModal({ kyThi, onClose }: { kyThi: IKyThi; onClose: () => void 
                 className="w-full border rounded-lg px-3 py-2 text-sm" />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={form.hien_dap_an}
+              onChange={e => setForm({...form, hien_dap_an: e.target.checked})}
+              className="w-4 h-4"
+            />
+            <span>Cho phép thí sinh xem chi tiết câu sai sau khi nộp bài</span>
+          </label>
           <div className="flex gap-2 pt-2 border-t">
             <button onClick={handleSave} disabled={saving}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
@@ -872,7 +893,10 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
 }) {
   const [mode, setMode] = useState<'don-vi' | 'ca-nhan'>('don-vi');
   const [donViList, setDonViList] = useState<{ id: string; ten_don_vi: string }[]>([]);
-  const [selectedDonVi, setSelectedDonVi] = useState<string[]>([]);
+  // Mode "Theo đơn vị": cong_chuc_ids cuối cùng (đã trừ người bỏ chọn) do picker tính.
+  const [donViCongChucIds, setDonViCongChucIds] = useState<string[]>([]);
+  const [donViPickerKey, setDonViPickerKey] = useState(0);
+  const handleDonViChange = useCallback((ids: string[]) => setDonViCongChucIds(ids), []);
   const [selectedViTri, setSelectedViTri] = useState('');
   const [searchText, setSearchText] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -889,7 +913,7 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
     const load = async () => {
       const [dvRes, tsRes] = await Promise.allSettled([
         cbccApi.getDonVi(),
-        kyThiApi.danhSachThiSinh(kyThi.id, { page_size: 200 }),
+        kyThiApi.danhSachThiSinhTatCa(kyThi.id),
       ]);
       if (dvRes.status === 'fulfilled') {
         setDonViList(dvRes.value.data.data || []);
@@ -898,7 +922,7 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
         setError('Không thể tải danh sách đơn vị');
       }
       if (tsRes.status === 'fulfilled') {
-        setExistingTS(tsRes.value.data.data || []);
+        setExistingTS(tsRes.value || []);
       }
       setLoadingTS(false);
     };
@@ -930,12 +954,13 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
     try {
       let body: any;
       if (mode === 'don-vi') {
-        if (selectedDonVi.length === 0 || !selectedViTri) {
-          setError('Vui lòng chọn đơn vị và vị trí thi');
+        if (!selectedViTri || donViCongChucIds.length === 0) {
+          setError('Vui lòng chọn vị trí thi và ít nhất 1 thí sinh');
           setSaving(false);
           return;
         }
-        body = { don_vi_ids: selectedDonVi, vi_tri_id: selectedViTri };
+        // Gửi danh_sach (đã trừ người bỏ chọn) thay vì don_vi_ids
+        body = { danh_sach: donViCongChucIds.map(id => ({ cong_chuc_id: id, vi_tri_id: selectedViTri })) };
       } else {
         if (danhSach.length === 0) {
           setError('Vui lòng thêm ít nhất 1 thí sinh');
@@ -947,11 +972,12 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
       const res = await kyThiApi.giaoThiSinh(kyThi.id, body);
       setResult(res.data.data);
       setDanhSach([]);
-      setSelectedDonVi([]);
+      setDonViCongChucIds([]);
+      setDonViPickerKey(k => k + 1); // remount picker → xoá lựa chọn
       // Reload existing — tach rieng de khong ghi de ket qua thanh cong
       try {
-        const tsRes = await kyThiApi.danhSachThiSinh(kyThi.id, { page_size: 200 });
-        setExistingTS(tsRes.data.data || []);
+        const tsAll = await kyThiApi.danhSachThiSinhTatCa(kyThi.id);
+        setExistingTS(tsAll);
       } catch { /* reload fail khong anh huong */ }
     } catch (err: any) {
       setError(err?.response?.data?.detail?.error?.message || 'Lỗi giao thí sinh');
@@ -1050,42 +1076,21 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
           </select>
         </div>
 
-        {/* Mode: don vi */}
+        {/* Mode: don vi (accordion — bo chon tung nguoi) */}
         {mode === 'don-vi' && (
           <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-gray-600">Chọn đơn vị (có thể chọn nhiều)</label>
-              {donViList.length > 0 && (
-                <div className="flex gap-2">
-                  <button onClick={() => setSelectedDonVi(donViList.map(d => d.id))}
-                    className="text-xs text-blue-600 hover:underline">Chọn tất cả</button>
-                  <button onClick={() => setSelectedDonVi([])}
-                    className="text-xs text-gray-500 hover:underline">Bỏ chọn</button>
-                </div>
-              )}
-            </div>
-            {donViList.length === 0 ? (
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
-                Không tải được danh sách đơn vị. Vui lòng đóng và mở lại.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto border rounded-lg p-2">
-                {donViList.map(dv => (
-                  <label key={dv.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-50 p-1 rounded">
-                    <input type="checkbox"
-                      checked={selectedDonVi.includes(dv.id)}
-                      onChange={e => {
-                        if (e.target.checked) setSelectedDonVi([...selectedDonVi, dv.id]);
-                        else setSelectedDonVi(selectedDonVi.filter(id => id !== dv.id));
-                      }} />
-                    {dv.ten_don_vi}
-                  </label>
-                ))}
-              </div>
-            )}
-            {selectedDonVi.length > 0 && (
-              <div className="text-xs text-gray-500 mt-1">Đã chọn {selectedDonVi.length} đơn vị</div>
-            )}
+            <label className="text-xs font-medium text-gray-600 block mb-1">
+              Chọn đơn vị — tick để chọn sẵn toàn bộ, mở rộng để bỏ chọn từng người
+            </label>
+            <DonViCongChucPicker
+              key={donViPickerKey}
+              donVis={donViList}
+              donViLoading={loadingTS}
+              onChange={handleDonViChange}
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Tất cả thí sinh đã chọn sẽ được giao vào vị trí thi chọn ở trên.
+            </p>
           </div>
         )}
 

@@ -227,15 +227,39 @@ def main():
                     "ghi_chu": "; ".join(ghi_chu),
                 })
 
+    fieldnames = [
+        "linh_vuc", "sheet", "chi_tieu", "loai_muc", "don_vi_excel",
+        "ma_don_vi", "nam", "gia_tri_giao_raw", "gia_tri_giao_num", "ghi_chu",
+    ]
+    headers_vi = [
+        "Lĩnh vực", "Sheet", "Chỉ tiêu", "Loại mức", "Đơn vị (Excel)",
+        "Mã đơn vị", "Năm", "Giá trị giao năm (gốc)", "Giá trị giao năm (số)", "Ghi chú",
+    ]
+
+    # CSV (utf-8-sig)
     with open(OUT, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=[
-            "linh_vuc", "sheet", "chi_tieu", "loai_muc", "don_vi_excel",
-            "ma_don_vi", "nam", "gia_tri_giao_raw", "gia_tri_giao_num", "ghi_chu",
-        ])
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(out_rows)
 
-    print(f"✓ Trich xuat {len(out_rows)} dong giao nam -> {OUT}")
+    # XLSX — khong bao gio loi bang ma khi mo bang Excel
+    out_xlsx = OUT.with_suffix(".xlsx")
+    wb_out = openpyxl.Workbook()
+    ws = wb_out.active
+    ws.title = "Chi tieu giao nam"
+    ws.append(headers_vi)
+    for r in out_rows:
+        ws.append([r[k] for k in fieldnames])
+    # bold header + freeze
+    from openpyxl.styles import Font
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    ws.freeze_panes = "A2"
+    wb_out.save(out_xlsx)
+
+    print(f"✓ Trich xuat {len(out_rows)} dong giao nam:")
+    print(f"    CSV : {OUT}")
+    print(f"    XLSX: {out_xlsx}  (mo file nay neu CSV bi loi font)")
     print(f"  Trong do {canh_bao} dong co canh bao; {so_khong_giao} o 'Khong giao chi tieu' (da bo qua).")
     # Thong ke nhanh theo linh vuc
     from collections import Counter

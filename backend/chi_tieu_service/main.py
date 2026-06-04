@@ -17,6 +17,7 @@ from chi_tieu_service.api.endpoints.giao_nam import router as giao_nam_router
 from chi_tieu_service.api.endpoints.dang_ky import router as dang_ky_router
 from chi_tieu_service.api.endpoints.duyet import router as duyet_router
 from chi_tieu_service.api.endpoints.bao_cao import router as bao_cao_router
+from chi_tieu_service.api.endpoints.nguoi_theo_doi import router as nguoi_theo_doi_router
 
 
 @asynccontextmanager
@@ -50,6 +51,7 @@ app.include_router(giao_nam_router, prefix=_PREFIX)
 app.include_router(dang_ky_router, prefix=_PREFIX)
 app.include_router(duyet_router, prefix=_PREFIX)
 app.include_router(bao_cao_router, prefix=_PREFIX)
+app.include_router(nguoi_theo_doi_router, prefix=_PREFIX)
 
 
 @app.get("/health")

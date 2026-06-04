@@ -49,6 +49,10 @@ export default function ChiTieuHomePage() {
       href: '/chi-tieu/giao-nam', icon: '🎯', title: 'Giao chỉ tiêu năm',
       desc: 'Giao chỉ tiêu năm (pháp lệnh / phấn đấu) cho đơn vị', color: 'cyan', show: laQuanTri,
     },
+    {
+      href: '/chi-tieu/nguoi-theo-doi', icon: '👥', title: 'Quản lý người theo dõi',
+      desc: 'Gán người theo dõi chỉ tiêu cho từng đơn vị', color: 'blue', show: laQuanTri,
+    },
   ];
 
   const colorMap: Record<string, string> = {

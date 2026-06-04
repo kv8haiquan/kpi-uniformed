@@ -153,6 +153,29 @@ export interface ILinhVucBaoCao {
   chi_tieu: IChiTieuBaoCao[];
 }
 
+// ---- Người theo dõi (gán platform_role) ----
+export type RoleChiTieu = 'THEO_DOI_CHI_TIEU' | 'QT_CHI_TIEU';
+
+export interface INguoiTheoDoi {
+  cong_chuc_id: string;
+  ma_cc?: string | null;
+  ho_ten?: string | null;
+  chuc_vu?: string | null;
+  don_vi_cong_chuc?: string | null;
+  role: string;
+  don_vi_ids: string[];
+  is_active: boolean;
+}
+
+export interface ICongChucSearch {
+  id: string;
+  ma_cc?: string | null;
+  ho_ten?: string | null;
+  chuc_vu?: string | null;
+  don_vi_id?: string | null;
+  ten_don_vi?: string | null;
+}
+
 // ---- Nhãn trạng thái (UI) ----
 export const TRANG_THAI_LABEL: Record<TrangThaiChiTieu, { label: string; bg: string; text: string }> = {
   NHAP: { label: 'Nháp', bg: 'bg-gray-100', text: 'text-gray-600' },

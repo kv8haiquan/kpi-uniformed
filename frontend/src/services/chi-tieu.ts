@@ -8,7 +8,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import type {
-  IChiTieuCreate, IGiaoNamCreate, ILinhVucCreate, LoaiChoDuyet,
+  IChiTieuCreate, IGiaoNamCreate, ILinhVucCreate, LoaiChoDuyet, RoleChiTieu,
 } from '@/types/chi-tieu';
 
 const CHI_TIEU_API_URL = process.env.NEXT_PUBLIC_CHI_TIEU_API_URL || '/api/v1/chi-tieu';
@@ -101,6 +101,22 @@ export const baoCaoApi = {
     chiTieuApi.get('/bao-cao/ra-soat', { params }),
   luyKe: (params: { nam: number; don_vi_id?: string; thang?: number }) =>
     chiTieuApi.get('/bao-cao/luy-ke', { params }),
+};
+
+// =============================================================================
+// NGƯỜI THEO DÕI (gán platform_role — QT_CHI_TIEU/admin)
+// =============================================================================
+export const nguoiTheoDoiApi = {
+  danhSach: (role: RoleChiTieu = 'THEO_DOI_CHI_TIEU') =>
+    chiTieuApi.get('/nguoi-theo-doi', { params: { role } }),
+  timCongChuc: (params: { search?: string; don_vi_id?: string }) =>
+    chiTieuApi.get('/nguoi-theo-doi/cong-chuc', { params }),
+  gan: (data: { cong_chuc_id: string; don_vi_ids: string[]; role?: RoleChiTieu }) =>
+    chiTieuApi.post('/nguoi-theo-doi', data),
+  capNhat: (cong_chuc_id: string, data: { don_vi_ids: string[]; role?: RoleChiTieu }) =>
+    chiTieuApi.put(`/nguoi-theo-doi/${cong_chuc_id}`, data),
+  go: (cong_chuc_id: string, role: RoleChiTieu = 'THEO_DOI_CHI_TIEU') =>
+    chiTieuApi.delete(`/nguoi-theo-doi/${cong_chuc_id}`, { params: { role } }),
 };
 
 export default chiTieuApi;

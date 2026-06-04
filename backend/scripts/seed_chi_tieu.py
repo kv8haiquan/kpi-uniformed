@@ -15,7 +15,8 @@ YEU CAU:
 ⚠️ AN TOAN: script GHI du lieu. Bat buoc co co --confirm. Truoc khi ghi se in ro
    DB host/name de ban kiem tra — KHONG vo tinh seed nham production neu chua muon.
 
-IDEMPOTENT: ON CONFLICT DO NOTHING theo ma_linh_vuc / ma_chi_tieu — chay nhieu lan an toan.
+IDEMPOTENT: ON CONFLICT DO UPDATE theo ma_linh_vuc / ma_chi_tieu — chay lai se
+cap nhat ten/don vi tinh/... cua cac ma da co (dung de sua noi dung danh muc mau).
 
 Nguon: docs/Chi Tieu/CHI_TIEU_BUSINESS_RULES.md muc 1.1 + 2.2.
 """
@@ -35,30 +36,30 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from chi_tieu_service.config import settings
 
 
-# 7 linh vuc (ma, ten, van ban ke hoach, thu tu)
+# 7 lĩnh vực (ma, tên, văn bản kế hoạch, thứ tự)
 LINH_VUC = [
-    ("GSQL", "Giam sat quan ly", "KH 24/KH-HQKV8", 1),
-    ("THUE", "Thue XNK", "KH 306, KH 1342", 2),
-    ("KTSTQ", "Kiem tra sau thong quan", "KH 251, CV 851", 3),
-    ("DAOTAO", "Dao tao, tap huan", "KH 91", 4),
-    ("QLRR", "Quan ly rui ro", "QD 51, QD 56", 5),
-    ("CBL", "Kiem soat chong buon lau", "KH 15", 6),
-    ("TRUYENTHONG", "Truyen thong", None, 7),
+    ("GSQL", "Giám sát quản lý", "KH 24/KH-HQKV8", 1),
+    ("THUE", "Thuế XNK", "KH 306, KH 1342", 2),
+    ("KTSTQ", "Kiểm tra sau thông quan", "KH 251, CV 851", 3),
+    ("DAOTAO", "Đào tạo, tập huấn", "KH 91", 4),
+    ("QLRR", "Quản lý rủi ro", "QĐ 51, QĐ 56", 5),
+    ("CBL", "Kiểm soát chống buôn lậu", "KH 15", 6),
+    ("TRUYENTHONG", "Truyền thông", None, 7),
 ]
 
-# Bo chi tieu mau (ma_linh_vuc, ma_chi_tieu, ten, don_vi_tinh, kieu_du_lieu, co_phan_dau, thu_tu)
+# Bộ chỉ tiêu mẫu (ma_linh_vuc, ma_chi_tieu, tên, đơn vị tính, kiểu dữ liệu, có phấn đấu, thứ tự)
 CHI_TIEU = [
-    ("GSQL", "GSQL_01", "Kim ngach XNK (khong gom KNQ, TNTX)", "trieu USD", "THAP_PHAN", False, 1),
-    ("GSQL", "GSQL_02", "So to khai", "to khai", "SO_NGUYEN", False, 2),
-    ("GSQL", "GSQL_03", "So doanh nghiep lam thu tuc", "doanh nghiep", "SO_NGUYEN", False, 3),
-    ("THUE", "THUE_01", "So thu thue XNK", "ty dong", "THAP_PHAN", True, 1),
-    ("KTSTQ", "KTSTQ_01", "So thu KTSTQ", "trieu dong", "THAP_PHAN", True, 1),
-    ("KTSTQ", "KTSTQ_02", "So cuoc KTSTQ", "cuoc", "SO_NGUYEN", False, 2),
-    ("DAOTAO", "DAOTAO_01", "So hoi nghi/lop tap huan", "hoi nghi", "SO_NGUYEN", False, 1),
-    ("QLRR", "QLRR_01", "Ty le to khai luong xanh", "%", "PHAN_TRAM", False, 1),
-    ("CBL", "CBL_01", "So vu vi pham phat hien", "vu", "SO_NGUYEN", False, 1),
-    ("CBL", "CBL_02", "Tri gia hang vi pham", "trieu dong", "THAP_PHAN", False, 2),
-    ("TRUYENTHONG", "TT_01", "So tin/bai truyen thong", "tin bai", "SO_NGUYEN", False, 1),
+    ("GSQL", "GSQL_01", "Kim ngạch XNK (không gồm KNQ, TNTX)", "triệu USD", "THAP_PHAN", False, 1),
+    ("GSQL", "GSQL_02", "Số tờ khai", "tờ khai", "SO_NGUYEN", False, 2),
+    ("GSQL", "GSQL_03", "Số doanh nghiệp làm thủ tục", "doanh nghiệp", "SO_NGUYEN", False, 3),
+    ("THUE", "THUE_01", "Số thu thuế XNK", "tỷ đồng", "THAP_PHAN", True, 1),
+    ("KTSTQ", "KTSTQ_01", "Số thu KTSTQ", "triệu đồng", "THAP_PHAN", True, 1),
+    ("KTSTQ", "KTSTQ_02", "Số cuộc KTSTQ", "cuộc", "SO_NGUYEN", False, 2),
+    ("DAOTAO", "DAOTAO_01", "Số hội nghị/lớp tập huấn", "hội nghị", "SO_NGUYEN", False, 1),
+    ("QLRR", "QLRR_01", "Tỷ lệ tờ khai luồng xanh", "%", "PHAN_TRAM", False, 1),
+    ("CBL", "CBL_01", "Số vụ vi phạm phát hiện", "vụ", "SO_NGUYEN", False, 1),
+    ("CBL", "CBL_02", "Trị giá hàng vi phạm", "triệu đồng", "THAP_PHAN", False, 2),
+    ("TRUYENTHONG", "TT_01", "Số tin/bài truyền thông", "tin bài", "SO_NGUYEN", False, 1),
 ]
 
 
@@ -72,7 +73,11 @@ async def seed():
             res = await db.execute(text("""
                 INSERT INTO chi_tieu.linh_vuc (ma_linh_vuc, ten_linh_vuc, van_ban_ke_hoach, thu_tu)
                 VALUES (:ma, :ten, :vb, :tt)
-                ON CONFLICT (ma_linh_vuc) DO NOTHING
+                ON CONFLICT (ma_linh_vuc) DO UPDATE SET
+                    ten_linh_vuc = EXCLUDED.ten_linh_vuc,
+                    van_ban_ke_hoach = EXCLUDED.van_ban_ke_hoach,
+                    thu_tu = EXCLUDED.thu_tu,
+                    updated_at = CURRENT_TIMESTAMP
             """), {"ma": ma, "ten": ten, "vb": vb, "tt": tt})
             n_lv += res.rowcount or 0
 
@@ -91,13 +96,19 @@ async def seed():
                 INSERT INTO chi_tieu.danh_muc_chi_tieu
                     (linh_vuc_id, ma_chi_tieu, ten_chi_tieu, don_vi_tinh, kieu_du_lieu, co_phan_dau, thu_tu)
                 VALUES (:lv, :ma, :ten, :dvt, :kdl, :cpd, :tt)
-                ON CONFLICT (ma_chi_tieu) DO NOTHING
+                ON CONFLICT (ma_chi_tieu) DO UPDATE SET
+                    ten_chi_tieu = EXCLUDED.ten_chi_tieu,
+                    don_vi_tinh = EXCLUDED.don_vi_tinh,
+                    kieu_du_lieu = EXCLUDED.kieu_du_lieu,
+                    co_phan_dau = EXCLUDED.co_phan_dau,
+                    thu_tu = EXCLUDED.thu_tu,
+                    updated_at = CURRENT_TIMESTAMP
             """), {"lv": lv_id, "ma": ma_ct, "ten": ten, "dvt": dvt, "kdl": kdl, "cpd": cpd, "tt": tt})
             n_ct += res.rowcount or 0
 
         await db.commit()
     await engine.dispose()
-    print(f"✓ Seed xong: them moi {n_lv} linh vuc, {n_ct} chi tieu (cac ma da co bi bo qua).")
+    print(f"✓ Seed xong: xử lý {n_lv} lĩnh vực, {n_ct} chỉ tiêu (insert mới hoặc cập nhật theo mã).")
 
 
 def main():

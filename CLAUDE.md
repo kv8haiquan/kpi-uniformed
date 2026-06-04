@@ -159,7 +159,7 @@ alembic stamp head
 ⛔ NẾU LỠ tạo smoke test trên production (localhost:5432 hoặc 79.108.216.189): PHẢI cleanup NGAY trong cùng session — không để dữ liệu rác qua đêm
 
 ✅ CHỈ ĐỌC bảng public.cong_chuc, public.don_vi, public.vai_tro (FK reference)
-✅ CHỈ THÊM bảng mới vào schema riêng (lms.*, forum.*, legal.*, portal.*, common.*)
+✅ CHỈ THÊM bảng mới vào schema riêng (lms.*, forum.*, legal.*, portal.*, common.*, chi_tieu.*)
 ✅ CHỈ THÊM 3 bảng vào public: platform_role, cong_chuc_platform_role, platform_config
 ✅ LUÔN đọc file spec tương ứng TRƯỚC KHI implement feature mới
 ✅ LUÔN tạo branch feature/[module]-[feature] trước khi code
@@ -176,7 +176,8 @@ kpi_haiquan (database)
 ├── forum      ← Module Diễn đàn (5 bảng)
 ├── legal      ← Module Pháp luật (6 bảng)
 ├── portal     ← Module Portal/CMS (4 bảng)
-└── common     ← Module dùng chung (4 bảng)
+├── common     ← Module dùng chung (4 bảng)
+└── chi_tieu   ← Module Chỉ tiêu đơn vị (5 bảng + 1 view)
 ```
 
 Lý do: Cross-schema JOIN hoạt động bình thường, 1 connection pool, FK trực tiếp đến public.cong_chuc(id).
@@ -192,6 +193,7 @@ Lý do: Cross-schema JOIN hoạt động bình thường, 1 connection pool, FK 
 | Portal Backend | 8004 | backend/portal_service/ | ✅ Đã chạy |
 | Common Backend | 8005 | backend/common_service/ | ✅ Đã chạy |
 | HKG Backend (Họp Không Giấy) | 8006 | backend/meeting_service/ | 🔄 G2 + Phase 4.1 page-sync (BE done 2026-05-09) |
+| Chỉ tiêu Backend (Chỉ tiêu đơn vị) | 8007 | backend/chi_tieu_service/ | ✅ Đã chạy PM2 (migrated + 26 endpoints + 6 trang FE, 04/06/2026) |
 | Frontend | 3000 | frontend/ | ✅ Production |
 
 > **Reconciled 01/05/2026** — phát hiện portal_service (8004) và common_service (8005) chưa document trước đó (gốc rễ port conflict khi scaffold HKG).

@@ -52,6 +52,13 @@ const nextConfig: NextConfig = {
         source: '/uploads/lms/:path*',
         destination: 'http://localhost:8001/uploads/lms/:path*',
       },
+      // Chỉ tiêu đơn vị module — port 8007
+      // Frontend gọi: /api/v1/chi-tieu/linh-vuc
+      // Backend nhận: http://localhost:8007/api/v1/chi-tieu/linh-vuc
+      {
+        source: '/api/v1/chi-tieu/:path*',
+        destination: 'http://localhost:8007/api/v1/chi-tieu/:path*',
+      },
       // Forum module — port 8002
       // Frontend goi: /api/forum/v1/chu-de
       // Backend nhan: http://localhost:8002/api/forum/v1/chu-de

@@ -23,6 +23,7 @@ const ENDPOINTS = {
   DANH_GIA: `${BASE}/danh-gia`,
   LICH_SU: `${BASE}/danh-gia/lich-su`,
   CHO_DUYET: `${BASE}/cho-duyet`,
+  DA_DUYET: `${BASE}/da-duyet`,
   TU_DANH_GIA: (id: string) => `${BASE}/danh-gia/${id}/tu-danh-gia`,
   NOP: (id: string) => `${BASE}/danh-gia/${id}/nop`,
   DUYET: (id: string) => `${BASE}/danh-gia/${id}/duyet`,
@@ -68,6 +69,15 @@ class HdldService {
     if (thang) params.thang = thang;
     if (nam) params.nam = nam;
     const res = await apiClient.get(ENDPOINTS.CHO_DUYET, { params });
+    return res.data.success ? res.data.data || [] : [];
+  }
+
+  /** Cấp quản lý: danh sách đã duyệt (để có thể trả lại nếu duyệt nhầm). */
+  async getDaDuyet(thang?: number, nam?: number): Promise<IHdldDanhGia[]> {
+    const params: Record<string, number> = {};
+    if (thang) params.thang = thang;
+    if (nam) params.nam = nam;
+    const res = await apiClient.get(ENDPOINTS.DA_DUYET, { params });
     return res.data.success ? res.data.data || [] : [];
   }
 

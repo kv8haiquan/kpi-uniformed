@@ -73,5 +73,14 @@ module.exports = {
     // (xem README backend/meeting_service/)
     // ════════════════════════════════════════════════════════════════
     fastapiService('meeting-backend', 'meeting_service', 8006, { host: '127.0.0.1' }),
+
+    // ════════════════════════════════════════════════════════════════
+    // CHI TIEU SERVICE (Chỉ tiêu đơn vị) — MỚI 2026-06-04
+    // Internal-only (bind 127.0.0.1) — Nginx/dev-rewrite đã trỏ localhost:8007.
+    // ⚠️ Migration `create_chi_tieu_schema_20260604` CHƯA apply lên DB.
+    //    Start service trước khi migrate → endpoint nghiệp vụ sẽ lỗi (chưa có
+    //    schema chi_tieu). Chỉ start sau khi đã `alembic upgrade head`.
+    // ════════════════════════════════════════════════════════════════
+    fastapiService('chi-tieu-backend', 'chi_tieu_service', 8007, { host: '127.0.0.1' }),
   ],
 };

@@ -9,7 +9,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import hdldService from '@/services/hdld.service';
 import {
   IHdldDanhGia,
@@ -37,6 +37,8 @@ interface DuyetInput {
 export default function Hdld111DuyetView({
   thang, nam, canApprove = true, onPendingCountChange,
 }: Props) {
+  const [mode, setMode] = useState<'CHO_DUYET' | 'DA_DUYET'>('CHO_DUYET');
+  const [ccFilter, setCcFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<IHdldDanhGia[]>([]);
   const [selected, setSelected] = useState<IHdldDanhGia | null>(null);
@@ -45,19 +47,47 @@ export default function Hdld111DuyetView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Chế độ xem bản đã duyệt: chỉ đọc điểm, chỉ cho phép Trả lại.
+  const readOnly = mode === 'DA_DUYET';
+
+  // Danh sách HĐLĐ unique để lọc (theo tên).
+  const uniqueCC = useMemo(() => {
+    const map = new Map<string, { id: string; ho_ten: string; ma_cc: string }>();
+    list.forEach((dg) => {
+      const id = dg.cong_chuc?.id || dg.cong_chuc_id;
+      if (id && !map.has(id)) {
+        map.set(id, {
+          id,
+          ho_ten: dg.cong_chuc?.ho_ten || '',
+          ma_cc: dg.cong_chuc?.ma_cc || '',
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.ho_ten.localeCompare(b.ho_ten, 'vi'));
+  }, [list]);
+
+  // Áp dụng filter CBCC vào danh sách hiển thị.
+  const filteredList = useMemo(() => {
+    if (ccFilter === 'all') return list;
+    return list.filter((dg) => (dg.cong_chuc?.id || dg.cong_chuc_id) === ccFilter);
+  }, [list, ccFilter]);
+
   const load = useCallback(async () => {
     setLoading(true);
+    setSelected(null);
     try {
-      const data = await hdldService.getChoDuyet(thang, nam);
+      const data = mode === 'DA_DUYET'
+        ? await hdldService.getDaDuyet(thang, nam)
+        : await hdldService.getChoDuyet(thang, nam);
       setList(data);
-      onPendingCountChange?.(data.length);
+      if (mode === 'CHO_DUYET') onPendingCountChange?.(data.length);
     } catch {
       setList([]);
-      onPendingCountChange?.(0);
+      if (mode === 'CHO_DUYET') onPendingCountChange?.(0);
     } finally {
       setLoading(false);
     }
-  }, [thang, nam, onPendingCountChange]);
+  }, [mode, thang, nam, onPendingCountChange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -151,17 +181,57 @@ export default function Hdld111DuyetView({
   if (loading) return <div className="p-8 text-center text-gray-500">Đang tải…</div>;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* Danh sách chờ duyệt */}
+    <div className="space-y-4">
+      {/* Bộ lọc: trạng thái (toggle) + CBCC */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+          {(['CHO_DUYET', 'DA_DUYET'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); setCcFilter('all'); }}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition ${
+                mode === m ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {m === 'CHO_DUYET' ? 'Chờ duyệt' : 'Đã duyệt'}
+            </button>
+          ))}
+        </div>
+
+        {uniqueCC.length > 1 && (
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">CBCC:</span>
+            <select
+              value={ccFilter}
+              onChange={(e) => setCcFilter(e.target.value)}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 max-w-[240px]"
+            >
+              <option value="all">Tất cả ({uniqueCC.length})</option>
+              {uniqueCC.map((cc) => (
+                <option key={cc.id} value={cc.id}>
+                  {cc.ho_ten} {cc.ma_cc ? `(${cc.ma_cc})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Danh sách */}
       <div className="lg:col-span-1 bg-white rounded-xl border border-gray-200 p-4">
         <h3 className="font-semibold text-gray-800 mb-3">
-          Chờ duyệt tháng {thang}/{nam} ({list.length})
+          {readOnly ? 'Đã duyệt' : 'Chờ duyệt'} tháng {thang}/{nam} ({filteredList.length})
         </h3>
-        {list.length === 0 ? (
-          <p className="text-sm text-gray-500">Không có bản nào chờ duyệt.</p>
+        {filteredList.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            {ccFilter !== 'all'
+              ? 'Không có bản nào của CBCC đã chọn.'
+              : readOnly ? 'Chưa duyệt bản nào.' : 'Không có bản nào chờ duyệt.'}
+          </p>
         ) : (
           <ul className="space-y-2">
-            {list.map((dg) => (
+            {filteredList.map((dg) => (
               <li key={dg.id}>
                 <button
                   onClick={() => openDetail(dg)}
@@ -185,7 +255,9 @@ export default function Hdld111DuyetView({
       {/* Chi tiết duyệt */}
       <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
         {!selected ? (
-          <div className="p-8 text-center text-gray-400">Chọn 1 bản để duyệt</div>
+          <div className="p-8 text-center text-gray-400">
+            {readOnly ? 'Chọn 1 bản đã duyệt để xem / trả lại' : 'Chọn 1 bản để duyệt'}
+          </div>
         ) : (
           <>
             <div className="mb-3">
@@ -229,16 +301,18 @@ export default function Hdld111DuyetView({
                           )}
                           {/* Nhận xét cấp QL */}
                           <input
-                            className="mt-2 w-full border border-gray-300 rounded px-2 py-1 text-xs"
+                            className="mt-2 w-full border border-gray-300 rounded px-2 py-1 text-xs disabled:bg-gray-50 disabled:text-gray-500"
                             placeholder="Nhận xét của cấp quản lý (tuỳ chọn)"
                             value={inp?.ghi_chu_ql || ''}
+                            disabled={readOnly}
                             onChange={(e) => updateInput(ct.so_tt, 'ghi_chu_ql', e.target.value)}
                           />
-                          {khacTuCham && (
+                          {(khacTuCham || (readOnly && inp?.ly_do_sua)) && (
                             <input
-                              className="mt-1 w-full border border-amber-300 bg-amber-50 rounded px-2 py-1 text-xs"
+                              className="mt-1 w-full border border-amber-300 bg-amber-50 rounded px-2 py-1 text-xs disabled:text-gray-600"
                               placeholder="Lý do sửa khác điểm tự chấm (bắt buộc)"
                               value={inp?.ly_do_sua || ''}
+                              disabled={readOnly}
                               onChange={(e) => updateInput(ct.so_tt, 'ly_do_sua', e.target.value)}
                             />
                           )}
@@ -249,8 +323,9 @@ export default function Hdld111DuyetView({
                         <td className="border px-2 py-2 text-center">
                           <input
                             type="number" min={0} max={100} step="0.5"
-                            className="w-20 border border-gray-300 rounded px-2 py-1 text-center"
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-center disabled:bg-gray-50 disabled:text-gray-700 disabled:font-medium"
                             value={inp?.diem_ql || ''}
+                            disabled={readOnly}
                             onChange={(e) => updateInput(ct.so_tt, 'diem_ql', e.target.value)}
                           />
                         </td>
@@ -271,20 +346,47 @@ export default function Hdld111DuyetView({
             <div className="mt-3">
               <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú chung</label>
               <textarea
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-600"
                 rows={2}
                 value={ghiChu}
+                disabled={readOnly}
                 onChange={(e) => setGhiChu(e.target.value)}
               />
             </div>
 
-            {tbQl && (
+            {readOnly ? (
               <div className="mt-2 text-sm text-gray-600">
-                KPI dự kiến: <strong>{(parseFloat(tbQl) / 100 * 70).toFixed(2)}</strong> / 70
+                KPI đã chốt: <strong>{selected.diem_kpi_70 != null ? selected.diem_kpi_70 : '—'}</strong> / 70
+                {selected.ngay_duyet && (
+                  <span className="ml-2 text-gray-400">
+                    · Duyệt ngày {new Date(selected.ngay_duyet).toLocaleDateString('vi-VN')}
+                  </span>
+                )}
               </div>
+            ) : (
+              tbQl && (
+                <div className="mt-2 text-sm text-gray-600">
+                  KPI dự kiến: <strong>{(parseFloat(tbQl) / 100 * 70).toFixed(2)}</strong> / 70
+                </div>
+              )
             )}
 
-            {canApprove ? (
+            {!canApprove ? (
+              <div className="mt-4 text-right text-sm text-gray-400">Chế độ chỉ xem</div>
+            ) : readOnly ? (
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <span className="text-xs text-amber-600">
+                  Trả lại sẽ huỷ kết quả duyệt và cho HĐLĐ sửa, nộp lại.
+                </span>
+                <button
+                  onClick={handleTraLai}
+                  disabled={saving}
+                  className="px-4 py-2 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50"
+                >
+                  {saving ? 'Đang xử lý…' : 'Trả lại'}
+                </button>
+              </div>
+            ) : (
               <div className="mt-4 flex gap-2 justify-end">
                 <button
                   onClick={handleTraLai}
@@ -301,11 +403,10 @@ export default function Hdld111DuyetView({
                   {saving ? 'Đang xử lý…' : 'Duyệt'}
                 </button>
               </div>
-            ) : (
-              <div className="mt-4 text-right text-sm text-gray-400">Chế độ chỉ xem</div>
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   );

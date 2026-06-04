@@ -42,10 +42,10 @@ export default function GiaoNamPage() {
   }, []);
 
   const loadGiaoNam = async () => {
-    if (!donViId) { setGiaoNams([]); return; }
     setLoading(true);
     try {
-      const res = await giaoNamApi.danhSach({ nam, don_vi_id: donViId });
+      // don_vi_id rỗng → backend trả tất cả đơn vị (trong phạm vi xem)
+      const res = await giaoNamApi.danhSach({ nam, don_vi_id: donViId || undefined });
       setGiaoNams(res.data.data || []);
     } catch (e: any) {
       setErr(e?.response?.data?.error?.message || 'Lỗi tải giao năm');
@@ -57,6 +57,10 @@ export default function GiaoNamPage() {
   const tenChiTieu = (id: string) => {
     const c = chiTieus.find((x) => x.id === id);
     return c ? `${c.ma_chi_tieu} — ${c.ten_chi_tieu} (${c.don_vi_tinh})` : id;
+  };
+  const tenDonVi = (id: string) => {
+    const d = donVis.find((x) => x.id === id);
+    return d ? `${d.ma_don_vi} — ${d.ten_don_vi}` : id;
   };
 
   const themGiao = async () => {
@@ -96,7 +100,7 @@ export default function GiaoNamPage() {
             <label className="block text-xs text-gray-500 mb-1">Đơn vị</label>
             <select className="border rounded-lg px-3 py-2 text-sm min-w-[260px]"
               value={donViId} onChange={(e) => setDonViId(e.target.value)}>
-              <option value="">-- Chọn đơn vị --</option>
+              <option value="">Tất cả đơn vị</option>
               {donVis.map((dv) => <option key={dv.id} value={dv.id}>{dv.ma_don_vi} — {dv.ten_don_vi}</option>)}
             </select>
           </div>
@@ -107,11 +111,10 @@ export default function GiaoNamPage() {
           </div>
         </div>
 
-        {donViId && (
-          <>
-            {/* Form thêm */}
+        {/* Form thêm — chỉ khi chọn 1 đơn vị cụ thể */}
+        {donViId ? (
             <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-              <h2 className="font-semibold text-gray-900 mb-3 text-sm">➕ Giao chỉ tiêu cho đơn vị</h2>
+              <h2 className="font-semibold text-gray-900 mb-3 text-sm">➕ Giao chỉ tiêu cho {tenDonVi(donViId)}</h2>
               <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
                 <div className="md:col-span-5">
                   <label className="block text-xs text-gray-500 mb-1">Chỉ tiêu</label>
@@ -146,49 +149,59 @@ export default function GiaoNamPage() {
                 </div>
               </div>
             </div>
-
-            {/* Danh sách */}
-            <div className="bg-white rounded-xl border border-gray-200">
-              <div className="px-5 py-3 border-b border-gray-100 font-semibold text-gray-900 text-sm">
-                Chỉ tiêu đã giao năm {nam}
-              </div>
-              {loading ? (
-                <div className="p-8 text-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto" /></div>
-              ) : giaoNams.length === 0 ? (
-                <div className="p-6 text-center text-gray-500 text-sm">Chưa giao chỉ tiêu nào cho đơn vị này.</div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs text-gray-500 border-b">
-                      <th className="py-2 px-4">Chỉ tiêu</th>
-                      <th className="py-2 px-4">Mức</th>
-                      <th className="py-2 px-4 text-right">Giá trị giao</th>
-                      <th className="py-2 px-4 text-right">Lũy kế đầu kỳ</th>
-                      <th className="py-2 px-4"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {giaoNams.map((g) => (
-                      <tr key={g.id} className="border-b border-gray-50 last:border-0">
-                        <td className="py-2 px-4">{tenChiTieu(g.chi_tieu_id)}</td>
-                        <td className="py-2 px-4">
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${g.loai_muc === 'PHAP_LENH' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'}`}>
-                            {LOAI_MUC_LABEL[g.loai_muc]}
-                          </span>
-                        </td>
-                        <td className="py-2 px-4 text-right font-medium">{g.gia_tri_giao}</td>
-                        <td className="py-2 px-4 text-right text-gray-500">{g.luy_ke_dau_ky}</td>
-                        <td className="py-2 px-4 text-right">
-                          <button onClick={() => xoaGiao(g.id)} className="text-xs text-red-500 hover:underline">Xóa</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </>
+        ) : (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg text-sm">
+            Đang xem <b>tất cả đơn vị</b>. Chọn một đơn vị ở trên để thêm / sửa / xóa chỉ tiêu giao năm.
+          </div>
         )}
+
+        {/* Danh sách (luôn hiện) */}
+        <div className="bg-white rounded-xl border border-gray-200">
+          <div className="px-5 py-3 border-b border-gray-100 font-semibold text-gray-900 text-sm">
+            Chỉ tiêu đã giao năm {nam} · {donViId ? tenDonVi(donViId) : `tất cả đơn vị (${giaoNams.length} dòng)`}
+          </div>
+          {loading ? (
+            <div className="p-8 text-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto" /></div>
+          ) : giaoNams.length === 0 ? (
+            <div className="p-6 text-center text-gray-500 text-sm">Chưa có chỉ tiêu giao năm.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b">
+                  {!donViId && <th className="py-2 px-4">Đơn vị</th>}
+                  <th className="py-2 px-4">Chỉ tiêu</th>
+                  <th className="py-2 px-4">Mức</th>
+                  <th className="py-2 px-4 text-right">Giá trị giao</th>
+                  <th className="py-2 px-4 text-right">Lũy kế đầu kỳ</th>
+                  <th className="py-2 px-4"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(donViId
+                  ? giaoNams
+                  : [...giaoNams].sort((a, b) =>
+                      tenDonVi(a.don_vi_id).localeCompare(tenDonVi(b.don_vi_id)) ||
+                      tenChiTieu(a.chi_tieu_id).localeCompare(tenChiTieu(b.chi_tieu_id)))
+                ).map((g) => (
+                  <tr key={g.id} className="border-b border-gray-50 last:border-0">
+                    {!donViId && <td className="py-2 px-4 text-gray-700 whitespace-nowrap">{tenDonVi(g.don_vi_id)}</td>}
+                    <td className="py-2 px-4">{tenChiTieu(g.chi_tieu_id)}</td>
+                    <td className="py-2 px-4">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${g.loai_muc === 'PHAP_LENH' ? 'bg-blue-100 text-blue-700' : 'bg-cyan-100 text-cyan-700'}`}>
+                        {LOAI_MUC_LABEL[g.loai_muc]}
+                      </span>
+                    </td>
+                    <td className="py-2 px-4 text-right font-medium">{g.gia_tri_giao}</td>
+                    <td className="py-2 px-4 text-right text-gray-500">{g.luy_ke_dau_ky}</td>
+                    <td className="py-2 px-4 text-right">
+                      <button onClick={() => xoaGiao(g.id)} className="text-xs text-red-500 hover:underline">Xóa</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );

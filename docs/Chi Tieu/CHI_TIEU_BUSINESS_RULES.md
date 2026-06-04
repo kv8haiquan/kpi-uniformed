@@ -2,7 +2,7 @@
 ## Module Quản lý Chỉ tiêu Đơn vị — Nền tảng Số HQKV8
 
 > **Phiên bản:** 1.0 | **Ngày:** 04/06/2026
-> **Schema:** `chi_tieu` | **Service:** chi_tieu_service (port 8004)
+> **Schema:** `chi_tieu` | **Service:** chi_tieu_service (port 8007)
 > **Nguồn nghiệp vụ:** File rà soát chỉ tiêu các đơn vị T4/2026, các Kế hoạch công tác của Chi cục
 > **Quan hệ với KPI cá nhân:** ĐỘC LẬP HOÀN TOÀN (không tính vào điểm KPI công chức)
 
@@ -17,7 +17,7 @@ Module này quản lý **chỉ tiêu công tác cấp ĐƠN VỊ** (Phòng/Độ
 | Đối tượng | Từng công chức | Từng đơn vị |
 | Dữ liệu gốc | Kê khai sản phẩm/công việc | Đăng ký + kết quả chỉ tiêu theo kế hoạch |
 | Schema | `public` | `chi_tieu` |
-| Service | port 8000 | port 8004 |
+| Service | port 8000 | port 8007 |
 | Liên kết | — | Không ghi vào KPI cá nhân |
 
 ### 1.1. Các lĩnh vực công tác (7 nhóm chỉ tiêu)
@@ -81,7 +81,7 @@ Hai vai trò bổ sung (`platform_role`), gán thêm cho công chức, **không*
 
 | Mã role | Tên | Phạm vi |
 |---------|-----|---------|
-| `THEO_DOI_CHI_TIEU` | Người theo dõi chỉ tiêu | Gán theo đơn vị (`pham_vi.don_vi_ids`); **mỗi đơn vị 1 người** |
+| `THEO_DOI_CHI_TIEU` | Người theo dõi chỉ tiêu | Gán theo đơn vị (`pham_vi.don_vi_ids`); linh hoạt — 1 người có thể theo dõi nhiều đơn vị, và 1 đơn vị có thể có nhiều người theo dõi (không ràng buộc cứng) |
 | `QT_CHI_TIEU` | Quản trị chỉ tiêu | Toàn Chi cục: quản lý danh mục + giao chỉ tiêu năm + xem báo cáo |
 
 Việc **duyệt** do **Trưởng đơn vị (Trưởng ĐV)** đảm nhiệm — dùng `cap_bac = TRUONG_DON_VI` sẵn có, không cần role mới.
@@ -145,8 +145,10 @@ Mỗi bản ghi = một bộ ba `(đơn vị, chỉ tiêu, tháng/năm)` đi qua
 
 1. Người theo dõi nhập "Kết quả thực hiện" cho từng chỉ tiêu.
 2. Gửi duyệt → `CHO_DUYET_KET_QUA`.
-3. Trưởng ĐV duyệt → `DA_DUYET_KET_QUA` (chốt) hoặc từ chối (quay lại nhập).
+3. Trưởng ĐV duyệt → `DA_DUYET_KET_QUA` (chốt) hoặc **từ chối**.
 4. Khi chốt, hệ thống cập nhật lũy kế năm & Đạt%.
+
+> **Từ chối kết quả** (`TU_CHOI_KET_QUA`): bản ghi quay về `DA_DUYET_DANG_KY` (KHÔNG có trạng thái "đang nhập kết quả" riêng — việc nhập kết quả diễn ra ngay trên trạng thái `DA_DUYET_DANG_KY`). **Giá trị kết quả cũ (`gia_tri_ket_qua`) được GIỮ NGUYÊN** để người theo dõi nhìn con số bị từ chối + lý do mà sửa, không nhập lại từ đầu. Hệ thống chỉ reset `ngay_gui_ket_qua`/`ngay_duyet_ket_qua` về NULL và ghi `ly_do_tu_choi` + `lich_su_duyet` (snapshot trước/sau). Sửa lại `gia_tri_ket_qua` → tính lại `danh_gia_tu_dong` → gửi duyệt lần nữa.
 
 ### 4.4. Khóa & mở khóa
 
@@ -178,6 +180,8 @@ Mỗi bản ghi = một bộ ba `(đơn vị, chỉ tiêu, tháng/năm)` đi qua
 Lũy kế năm (đến tháng N) = Lũy kế đầu kỳ + Σ (Kết quả đã DUYỆT của tháng 1..N)
 ```
 > `Lũy kế đầu kỳ` (`luy_ke_dau_ky`) phục vụ khi nhập liệu giữa năm (số liệu đã phát sinh trước khi dùng phần mềm). Mặc định 0.
+>
+> ⚠️ **Lũy kế luôn cắt theo THÁNG ĐANG XEM (N), không cộng toàn bộ năm.** Khi xem báo cáo tháng 4, lũy kế chỉ gồm kết quả đã duyệt của tháng 1→4, kể cả khi tháng 5, 6 đã chốt. Báo cáo phải truyền tham số tháng vào điều kiện `thang <= N` (xem View hỗ trợ trong DATABASE_DESIGN).
 
 ### 5.3. Đạt% theo năm (so với chỉ tiêu giao)
 
@@ -195,6 +199,8 @@ Lũy kế năm (đến tháng N) = Lũy kế đầu kỳ + Σ (Kết quả đã 
 | Không đăng ký | `Không đăng ký` |
 
 > Nhãn tự động chỉ là **gợi ý**; người theo dõi/Trưởng ĐV được ghi đè bằng chữ tùy chỉnh (vd "Đã thực hiện T3").
+>
+> ⚠️ **`danh_gia_tu_dong` phải được tính lại NGAY mỗi khi `gia_tri_ket_qua` hoặc `gia_tri_dang_ky` thay đổi** (nhập/sửa kết quả, duyệt sửa đăng ký, mở khóa nhập lại). Không để nhãn cũ tồn tại sau khi số liệu đã đổi. `danh_gia_ghi_chu` (chữ ghi đè thủ công) thì giữ nguyên cho tới khi người dùng tự sửa.
 
 ---
 
@@ -245,3 +251,4 @@ Gửi duyệt đăng ký, duyệt/từ chối đăng ký, gửi sửa, duyệt s
 | Phiên bản | Ngày | Nội dung |
 |-----------|------|----------|
 | 1.0 | 04/06/2026 | Bản đầu tiên — định nghĩa nghiệp vụ module Chỉ tiêu đơn vị |
+| 1.1 | 04/06/2026 | Port 8004→8007 (tránh trùng portal); nới "1 người/đơn vị"; làm rõ từ chối kết quả → DA_DUYET_DANG_KY; lũy kế cắt theo tháng đang xem; tính lại nhãn khi đổi số liệu |

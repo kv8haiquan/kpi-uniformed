@@ -58,33 +58,20 @@ INSERT INTO public.platform_role (ma_role, ten_role, mo_ta) VALUES
 
 ## 4. SCHEMA & ENUMS
 
+> **Quy ước dự án:** KHÔNG dùng PostgreSQL `ENUM` type. Mọi trường trạng thái/loại dùng `VARCHAR` + `CHECK` constraint (dễ migrate, không phải `ALTER TYPE` khi bổ sung giá trị). Các giá trị hợp lệ liệt kê trong CHECK và ràng buộc thêm ở tầng schema/service.
+
 ```sql
 CREATE SCHEMA IF NOT EXISTS chi_tieu;
-
--- Mức chỉ tiêu năm
-CREATE TYPE chi_tieu.LOAI_MUC AS ENUM ('PHAP_LENH', 'PHAN_DAU');
-
--- Kiểu dữ liệu của chỉ tiêu (để format & validate)
-CREATE TYPE chi_tieu.KIEU_DU_LIEU AS ENUM ('SO_NGUYEN', 'THAP_PHAN', 'PHAN_TRAM');
-
--- Trạng thái vòng đời bản ghi tháng
-CREATE TYPE chi_tieu.TRANG_THAI AS ENUM (
-    'NHAP',                -- Đang soạn đăng ký
-    'CHO_DUYET_DANG_KY',   -- Gửi TĐV duyệt đăng ký đầu tháng
-    'DA_DUYET_DANG_KY',    -- TĐV đã duyệt đăng ký
-    'CHO_DUYET_SUA',       -- Gửi TĐV duyệt yêu cầu sửa đăng ký
-    'CHO_DUYET_KET_QUA',   -- Gửi TĐV duyệt kết quả cuối tháng
-    'DA_DUYET_KET_QUA'     -- TĐV đã duyệt kết quả → chốt, đã khóa
-);
-
--- Hành động trong lịch sử duyệt
-CREATE TYPE chi_tieu.HANH_DONG AS ENUM (
-    'GUI_DANG_KY', 'DUYET_DANG_KY', 'TU_CHOI_DANG_KY',
-    'GUI_SUA', 'DUYET_SUA', 'TU_CHOI_SUA',
-    'GUI_KET_QUA', 'DUYET_KET_QUA', 'TU_CHOI_KET_QUA',
-    'MO_KHOA'
-);
 ```
+
+Các tập giá trị hợp lệ (khai báo qua `CHECK` trên từng cột, xem mục 5):
+
+| Nhóm | Cột áp dụng | Giá trị hợp lệ |
+|------|-------------|----------------|
+| Mức chỉ tiêu năm (`loai_muc`) | `giao_nam.loai_muc` | `PHAP_LENH`, `PHAN_DAU` |
+| Kiểu dữ liệu chỉ tiêu (`kieu_du_lieu`) | `danh_muc_chi_tieu.kieu_du_lieu` | `SO_NGUYEN`, `THAP_PHAN`, `PHAN_TRAM` |
+| Trạng thái bản ghi tháng (`trang_thai`) | `dang_ky_thang.trang_thai` | `NHAP`, `CHO_DUYET_DANG_KY`, `DA_DUYET_DANG_KY`, `CHO_DUYET_SUA`, `CHO_DUYET_KET_QUA`, `DA_DUYET_KET_QUA` |
+| Hành động lịch sử (`hanh_dong`) | `lich_su_duyet.hanh_dong` | `GUI_DANG_KY`, `DUYET_DANG_KY`, `TU_CHOI_DANG_KY`, `GUI_SUA`, `DUYET_SUA`, `TU_CHOI_SUA`, `GUI_KET_QUA`, `DUYET_KET_QUA`, `TU_CHOI_KET_QUA`, `MO_KHOA` |
 
 ---
 
@@ -114,7 +101,8 @@ CREATE TABLE chi_tieu.danh_muc_chi_tieu (
     ma_chi_tieu VARCHAR(30) UNIQUE NOT NULL,        -- GSQL_01, THUE_PL...
     ten_chi_tieu VARCHAR(500) NOT NULL,             -- "Kim ngạch XNK (không gồm KNQ, TNTX)"
     don_vi_tinh VARCHAR(50) NOT NULL,               -- "triệu USD", "tỷ đồng", "số vụ", "%"...
-    kieu_du_lieu chi_tieu.KIEU_DU_LIEU DEFAULT 'THAP_PHAN',
+    kieu_du_lieu VARCHAR(20) NOT NULL DEFAULT 'THAP_PHAN'
+        CHECK (kieu_du_lieu IN ('SO_NGUYEN', 'THAP_PHAN', 'PHAN_TRAM')),
     co_phan_dau BOOLEAN DEFAULT FALSE,              -- TRUE nếu chỉ tiêu có 2 mức
     van_ban_giao VARCHAR(300),                      -- văn bản riêng nếu khác lĩnh vực
     mo_ta TEXT,
@@ -135,7 +123,8 @@ CREATE TABLE chi_tieu.giao_nam (
     don_vi_id UUID NOT NULL REFERENCES public.don_vi(id),
     chi_tieu_id UUID NOT NULL REFERENCES chi_tieu.danh_muc_chi_tieu(id),
     nam INT NOT NULL CHECK (nam >= 2025),
-    loai_muc chi_tieu.LOAI_MUC NOT NULL DEFAULT 'PHAP_LENH',
+    loai_muc VARCHAR(20) NOT NULL DEFAULT 'PHAP_LENH'
+        CHECK (loai_muc IN ('PHAP_LENH', 'PHAN_DAU')),
 
     gia_tri_giao DECIMAL(18,3) NOT NULL,            -- chỉ tiêu giao năm
     luy_ke_dau_ky DECIMAL(18,3) DEFAULT 0,          -- số liệu mang sang khi nhập giữa năm
@@ -175,7 +164,11 @@ CREATE TABLE chi_tieu.dang_ky_thang (
     danh_gia_ghi_chu VARCHAR(200),                  -- "Vượt chỉ tiêu", "Đã thực hiện T3"...
 
     -- Trạng thái vòng đời
-    trang_thai chi_tieu.TRANG_THAI NOT NULL DEFAULT 'NHAP',
+    trang_thai VARCHAR(30) NOT NULL DEFAULT 'NHAP'
+        CHECK (trang_thai IN (
+            'NHAP', 'CHO_DUYET_DANG_KY', 'DA_DUYET_DANG_KY',
+            'CHO_DUYET_SUA', 'CHO_DUYET_KET_QUA', 'DA_DUYET_KET_QUA'
+        )),
 
     -- Người liên quan
     nguoi_theo_doi_id UUID NOT NULL REFERENCES public.cong_chuc(id),
@@ -210,7 +203,12 @@ CREATE INDEX idx_ct_dk_nguoiduyet ON chi_tieu.dang_ky_thang(nguoi_duyet_id);
 CREATE TABLE chi_tieu.lich_su_duyet (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     dang_ky_thang_id UUID NOT NULL REFERENCES chi_tieu.dang_ky_thang(id),
-    hanh_dong chi_tieu.HANH_DONG NOT NULL,
+    hanh_dong VARCHAR(30) NOT NULL
+        CHECK (hanh_dong IN (
+            'GUI_DANG_KY', 'DUYET_DANG_KY', 'TU_CHOI_DANG_KY',
+            'GUI_SUA', 'DUYET_SUA', 'TU_CHOI_SUA',
+            'GUI_KET_QUA', 'DUYET_KET_QUA', 'TU_CHOI_KET_QUA', 'MO_KHOA'
+        )),
     nguoi_thuc_hien_id UUID NOT NULL REFERENCES public.cong_chuc(id),
     noi_dung_truoc JSONB,                           -- snapshot trước
     noi_dung_sau JSONB,                             -- snapshot sau
@@ -225,29 +223,44 @@ CREATE INDEX idx_ct_lichsu_dangky ON chi_tieu.lich_su_duyet(dang_ky_thang_id);
 
 ## 6. VIEW HỖ TRỢ BÁO CÁO
 
+Lũy kế phải **cắt theo tháng đang xem** (không cộng toàn bộ năm). View dưới đây trả về **lũy kế chạy theo TỪNG tháng** — báo cáo tháng N chỉ việc lấy dòng `thang = N`:
+
 ```sql
--- Lũy kế & Đạt% theo (đơn vị, chỉ tiêu, năm) — tính từ kết quả ĐÃ DUYỆT
-CREATE VIEW chi_tieu.v_luy_ke_nam AS
+-- Lũy kế & Đạt% chạy theo (đơn vị, chỉ tiêu, năm, THÁNG) — tính từ kết quả ĐÃ DUYỆT
+-- luy_ke_den_thang = lũy kế đầu kỳ + Σ kết quả đã duyệt của các tháng 1..thang
+CREATE VIEW chi_tieu.v_luy_ke_thang AS
 SELECT
     g.don_vi_id,
     g.chi_tieu_id,
     g.nam,
     g.loai_muc,
     g.gia_tri_giao,
-    g.luy_ke_dau_ky + COALESCE(SUM(d.gia_tri_ket_qua), 0) AS luy_ke_nam,
+    d.thang,
+    g.luy_ke_dau_ky
+      + SUM(d.gia_tri_ket_qua) OVER (
+            PARTITION BY g.don_vi_id, g.chi_tieu_id, g.nam, g.loai_muc
+            ORDER BY d.thang
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS luy_ke_den_thang,
     CASE WHEN g.gia_tri_giao > 0
-         THEN ROUND((g.luy_ke_dau_ky + COALESCE(SUM(d.gia_tri_ket_qua),0)) / g.gia_tri_giao * 100, 2)
-         ELSE NULL END AS dat_phan_tram_nam
+         THEN ROUND((g.luy_ke_dau_ky
+              + SUM(d.gia_tri_ket_qua) OVER (
+                    PARTITION BY g.don_vi_id, g.chi_tieu_id, g.nam, g.loai_muc
+                    ORDER BY d.thang
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                )) / g.gia_tri_giao * 100, 2)
+         ELSE NULL END AS dat_phan_tram_den_thang
 FROM chi_tieu.giao_nam g
-LEFT JOIN chi_tieu.dang_ky_thang d
+JOIN chi_tieu.dang_ky_thang d
        ON d.don_vi_id = g.don_vi_id
       AND d.chi_tieu_id = g.chi_tieu_id
       AND d.nam = g.nam
       AND d.trang_thai = 'DA_DUYET_KET_QUA'
       AND d.is_deleted = FALSE
-WHERE g.is_deleted = FALSE
-GROUP BY g.don_vi_id, g.chi_tieu_id, g.nam, g.loai_muc, g.gia_tri_giao, g.luy_ke_dau_ky;
+WHERE g.is_deleted = FALSE;
 ```
+
+> Báo cáo "rà soát tháng N" lấy `WHERE thang = N`. Nếu cần tổng lũy kế cả năm thì lấy dòng `thang` lớn nhất đã chốt. View dùng `JOIN` (không `LEFT JOIN`) vì lũy kế chỉ phát sinh khi có kết quả đã duyệt; chỉ tiêu chưa có tháng nào chốt sẽ không xuất hiện — báo cáo coi như lũy kế = `luy_ke_dau_ky`.
 
 ---
 
@@ -266,3 +279,4 @@ GROUP BY g.don_vi_id, g.chi_tieu_id, g.nam, g.loai_muc, g.gia_tri_giao, g.luy_ke
 | Phiên bản | Ngày | Nội dung |
 |-----------|------|----------|
 | 1.0 | 04/06/2026 | Thiết kế schema `chi_tieu` (5 bảng + 1 view) + 2 platform_role |
+| 1.1 | 04/06/2026 | Bỏ PostgreSQL ENUM → `VARCHAR` + `CHECK` (theo convention dự án); view lũy kế tính chạy theo từng tháng (`v_luy_ke_thang`) |

@@ -2,7 +2,7 @@
 ## Đặc tả REST API — Module Quản lý Chỉ tiêu Đơn vị
 
 > **Phiên bản:** 1.0 | **Ngày:** 04/06/2026
-> **Service:** chi_tieu_service (port 8004) | **Base URL:** `https://kpi.kv08.vn/api/v1/chi-tieu`
+> **Service:** chi_tieu_service (port 8007) | **Base URL:** `https://kpi.kv08.vn/api/v1/chi-tieu`
 > **Tham chiếu:** CHI_TIEU_BUSINESS_RULES.md, CHI_TIEU_DATABASE_DESIGN.md, API_CONTRACT_BETWEEN_MODULES.md
 
 ---
@@ -149,7 +149,15 @@ Logic chuyển trạng thái khi **duyệt**:
 |---------------------|---------------|
 | CHO_DUYET_DANG_KY | DA_DUYET_DANG_KY |
 | CHO_DUYET_SUA | DA_DUYET_DANG_KY (áp giá trị mới) |
-| CHO_DUYET_KET_QUA | DA_DUYET_KET_QUA + `is_khoa=true` + cập nhật lũy kế |
+| CHO_DUYET_KET_QUA | DA_DUYET_KET_QUA + `is_khoa=true` + cập nhật lũy kế + tính lại `danh_gia_tu_dong` |
+
+Logic chuyển trạng thái khi **từ chối** (`tu-choi`, kèm `ly_do_tu_choi`):
+
+| Trạng thái hiện tại | Sau khi từ chối |
+|---------------------|-----------------|
+| CHO_DUYET_DANG_KY | NHAP |
+| CHO_DUYET_SUA | DA_DUYET_DANG_KY (giữ giá trị cũ, hủy yêu cầu sửa) |
+| CHO_DUYET_KET_QUA | DA_DUYET_DANG_KY (nhập lại kết quả) |
 
 ### 5.3. Mở khóa (QT_CHI_TIEU / LĐ Chi cục)
 ```
@@ -194,3 +202,4 @@ POST /internal/v1/common/thong-bao        # nhắc đăng ký/nhập kết quả
 | Phiên bản | Ngày | Nội dung |
 |-----------|------|----------|
 | 1.0 | 04/06/2026 | Đặc tả API module Chỉ tiêu đơn vị (danh mục, giao năm, đăng ký/kết quả, duyệt, báo cáo) |
+| 1.1 | 04/06/2026 | Port 8004→8007; bổ sung bảng chuyển trạng thái khi từ chối; tính lại `danh_gia_tu_dong` khi chốt |

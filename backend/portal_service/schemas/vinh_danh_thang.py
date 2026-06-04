@@ -43,6 +43,9 @@ class VinhDanhThangCreate(BaseModel):
     tieu_de: str = Field(..., min_length=1, max_length=200, description="Tieu de")
     ly_do: str = Field(..., min_length=1, description="Ly do / cau chuyen vinh danh")
     anh_chan_dung: Optional[str] = Field(None, max_length=500, description="URL anh")
+    anh_vi_tri: Optional[str] = Field(
+        None, max_length=20, description="Vi tri anh trong khung tron (CSS object-position)"
+    )
     loi_tuyen_duong: Optional[str] = Field(None, description="Loi tuyen duong (banner)")
 
 
@@ -55,6 +58,7 @@ class VinhDanhThangUpdate(BaseModel):
     tieu_de: Optional[str] = Field(None, min_length=1, max_length=200)
     ly_do: Optional[str] = Field(None, min_length=1)
     anh_chan_dung: Optional[str] = Field(None, max_length=500)
+    anh_vi_tri: Optional[str] = Field(None, max_length=20)
     loi_tuyen_duong: Optional[str] = None
 
 
@@ -72,6 +76,7 @@ class VinhDanhThangResponse(BaseModel):
     tieu_de: str
     ly_do: str
     anh_chan_dung: Optional[str] = None
+    anh_vi_tri: Optional[str] = None
     loi_tuyen_duong: Optional[str] = None
     trang_thai: str
     ngay_cong_bo: Optional[datetime] = None

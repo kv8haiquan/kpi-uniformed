@@ -10,7 +10,7 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { vinhDanhApi } from '@/services/portal';
 import { adminService } from '@/services/admin.service';
 import type {
@@ -35,6 +35,112 @@ function getApiErrorMessage(err: unknown, fallback: string): string {
   return e?.response?.data?.detail?.error?.message ?? fallback;
 }
 
+const VI_TRI_MAC_DINH = '50% 50%';
+
+/** Parse chuỗi "50% 30%" → [50, 30]; fallback [50, 50]. */
+function parseViTri(value?: string | null): [number, number] {
+  if (!value) return [50, 50];
+  const m = value.match(/(-?\d+(?:\.\d+)?)%?\s+(-?\d+(?:\.\d+)?)%?/);
+  if (!m) return [50, 50];
+  const x = Math.min(100, Math.max(0, Number(m[1])));
+  const y = Math.min(100, Math.max(0, Number(m[2])));
+  return [x, y];
+}
+
+const clamp = (n: number) => Math.min(100, Math.max(0, n));
+
+/**
+ * Editor kéo-thả để chỉnh vị trí ảnh trong khung tròn.
+ * Người dùng giữ chuột và rê ảnh để canh khuôn mặt vào giữa.
+ * Lưu kết quả dưới dạng CSS object-position "x% y%".
+ */
+function AnhViTriEditor({
+  src,
+  value,
+  onChange,
+}: {
+  src: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [px, py] = parseViTri(value);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = frameRef.current;
+    if (!el) return;
+    el.setPointerCapture(e.pointerId);
+    drag.current = { sx: e.clientX, sy: e.clientY, px, py };
+    setDragging(true);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    const el = frameRef.current;
+    if (!d || !el) return;
+    const rect = el.getBoundingClientRect();
+    // Rê ảnh sang phải → hiện phần bên trái → object-position-x giảm
+    const nx = clamp(d.px - ((e.clientX - d.sx) / rect.width) * 100);
+    const ny = clamp(d.py - ((e.clientY - d.sy) / rect.height) * 100);
+    onChange(`${Math.round(nx)}% ${Math.round(ny)}%`);
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    drag.current = null;
+    setDragging(false);
+    try {
+      frameRef.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      /* noop */
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="flex flex-col items-center gap-2">
+        <div
+          ref={frameRef}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          className={`relative w-36 h-36 rounded-full overflow-hidden border-4 shadow select-none touch-none ${
+            dragging ? 'border-amber-500 cursor-grabbing' : 'border-amber-300 cursor-grab'
+          }`}
+          title="Giữ chuột và rê để chỉnh vị trí ảnh"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt="Chỉnh vị trí ảnh"
+            draggable={false}
+            className="w-full h-full object-cover pointer-events-none"
+            style={{ objectPosition: value || VI_TRI_MAC_DINH }}
+          />
+          {/* Vòng ngắm ở giữa để canh mặt */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-full border border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.04)]" />
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onChange(VI_TRI_MAC_DINH)}
+          className="text-xs text-amber-700 hover:text-amber-900 hover:underline"
+        >
+          ↺ Về giữa
+        </button>
+      </div>
+      <div className="text-xs text-gray-500 leading-relaxed">
+        <p className="font-medium text-gray-700 mb-1">Chỉnh vị trí khuôn mặt</p>
+        <p>Giữ chuột và <strong>rê ảnh</strong> trong khung tròn để canh khuôn mặt vào giữa.</p>
+        <p className="mt-1 text-gray-400">Đây chính là khung tròn hiển thị trên trang tổng quan.</p>
+      </div>
+    </div>
+  );
+}
+
 interface FormState {
   thang: number;
   nam: number;
@@ -42,6 +148,7 @@ interface FormState {
   tieu_de: string;
   ly_do: string;
   anh_chan_dung: string;
+  anh_vi_tri: string;
   loi_tuyen_duong: string;
 }
 
@@ -54,6 +161,7 @@ const EMPTY_FORM: FormState = {
   tieu_de: `Công chức tiêu biểu tháng ${NOW.getMonth() + 1}/${NOW.getFullYear()}`,
   ly_do: '',
   anh_chan_dung: '',
+  anh_vi_tri: VI_TRI_MAC_DINH,
   loi_tuyen_duong: '',
 };
 
@@ -143,6 +251,7 @@ export default function VinhDanhAdminPage() {
       tieu_de: vd.tieu_de,
       ly_do: vd.ly_do,
       anh_chan_dung: vd.anh_chan_dung || '',
+      anh_vi_tri: vd.anh_vi_tri || VI_TRI_MAC_DINH,
       loi_tuyen_duong: vd.loi_tuyen_duong || '',
     });
     if (vd.cong_chuc) {
@@ -201,6 +310,7 @@ export default function VinhDanhAdminPage() {
           tieu_de: form.tieu_de.trim(),
           ly_do: form.ly_do.trim(),
           anh_chan_dung: form.anh_chan_dung || null,
+          anh_vi_tri: form.anh_vi_tri || VI_TRI_MAC_DINH,
           loi_tuyen_duong: form.loi_tuyen_duong || null,
         };
         await vinhDanhApi.capNhat(editing.id, update);
@@ -212,6 +322,7 @@ export default function VinhDanhAdminPage() {
           tieu_de: form.tieu_de.trim(),
           ly_do: form.ly_do.trim(),
           anh_chan_dung: form.anh_chan_dung || null,
+          anh_vi_tri: form.anh_vi_tri || VI_TRI_MAC_DINH,
           loi_tuyen_duong: form.loi_tuyen_duong || null,
         };
         await vinhDanhApi.taoMoi(create);
@@ -620,20 +731,14 @@ export default function VinhDanhAdminPage() {
 
                 {form.anh_chan_dung ? (
                   // Đã có ảnh — hiển thị preview lớn + nút thay/xóa
-                  <div className="border-2 border-amber-300 rounded-xl p-4 bg-amber-50/50 flex items-center gap-4">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                  <div className="border-2 border-amber-300 rounded-xl p-4 bg-amber-50/50 space-y-4">
+                    {/* Editor kéo-thả chỉnh vị trí ảnh trong khung tròn */}
+                    <AnhViTriEditor
                       src={buildAnhUrl(form.anh_chan_dung) || ''}
-                      alt="Ảnh chân dung đã tải"
-                      className="w-28 h-28 rounded-full object-cover border-4 border-white shadow"
+                      value={form.anh_vi_tri}
+                      onChange={(v) => setForm((f) => ({ ...f, anh_vi_tri: v }))}
                     />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900 mb-1">
-                        Ảnh đã được tải lên
-                      </p>
-                      <p className="text-xs text-gray-500 mb-3">
-                        Bấm &ldquo;Thay ảnh khác&rdquo; nếu muốn thay đổi.
-                      </p>
+                    <div className="flex-1 border-t border-amber-200 pt-3">
                       <div className="flex gap-2">
                         <label className="px-3 py-1.5 bg-white border border-amber-400 text-amber-700 hover:bg-amber-100 rounded-lg cursor-pointer text-sm font-medium transition">
                           🔄 Thay ảnh khác

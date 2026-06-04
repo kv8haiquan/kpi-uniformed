@@ -21,6 +21,8 @@ export interface IVinhDanhThang {
   tieu_de: string;
   ly_do: string;
   anh_chan_dung?: string | null;
+  /** Vị trí ảnh trong khung tròn (CSS object-position), vd "50% 30%" */
+  anh_vi_tri?: string | null;
   loi_tuyen_duong?: string | null;
   trang_thai: TrangThaiVinhDanh;
   ngay_cong_bo?: string | null;
@@ -37,6 +39,7 @@ export interface IVinhDanhThangCreate {
   tieu_de: string;
   ly_do: string;
   anh_chan_dung?: string | null;
+  anh_vi_tri?: string | null;
   loi_tuyen_duong?: string | null;
 }
 
@@ -47,6 +50,7 @@ export interface IVinhDanhThangUpdate {
   tieu_de?: string;
   ly_do?: string;
   anh_chan_dung?: string | null;
+  anh_vi_tri?: string | null;
   loi_tuyen_duong?: string | null;
 }
 

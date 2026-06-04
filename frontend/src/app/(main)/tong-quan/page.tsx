@@ -45,6 +45,7 @@ import WidgetTinTuc from './components/WidgetTinTuc';
 import WidgetLegal from './components/WidgetLegal';
 import WidgetForum from './components/WidgetForum';
 import WidgetHKG from './components/WidgetHKG';
+import VinhDanhWidget from '@/components/dashboard/VinhDanhWidget';
 
 // =============================================================================
 // CONSTANTS
@@ -196,6 +197,12 @@ export default function TongQuanPage() {
             </button>
           </div>
         </div>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Banner Vinh danh công chức tiêu biểu (tự ẩn nếu tháng này chưa có)  */}
+        {/* Hiển thị cho MỌI công chức trên trang tổng quan                     */}
+        {/* ------------------------------------------------------------------ */}
+        <VinhDanhWidget />
 
         {/* ------------------------------------------------------------------ */}
         {/* Widget Grid                                                          */}

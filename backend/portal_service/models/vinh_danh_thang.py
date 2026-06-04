@@ -47,6 +47,10 @@ class VinhDanhThang(Base):
     tieu_de: Mapped[str] = mapped_column(String(200), nullable=False)
     ly_do: Mapped[str] = mapped_column(Text, nullable=False)
     anh_chan_dung: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Vi tri anh trong khung tron (CSS object-position), vd "50% 30%"
+    anh_vi_tri: Mapped[Optional[str]] = mapped_column(
+        String(20), server_default=text("'50% 50%'"), nullable=True
+    )
     loi_tuyen_duong: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Workflow: DRAFT | PUBLISHED

@@ -153,6 +153,7 @@ async def tao_moi(
         tieu_de=data.tieu_de,
         ly_do=data.ly_do,
         anh_chan_dung=data.anh_chan_dung,
+        anh_vi_tri=data.anh_vi_tri or "50% 50%",
         loi_tuyen_duong=data.loi_tuyen_duong,
         trang_thai="DRAFT",
         nguoi_tao_id=nguoi_tao_id,
@@ -195,6 +196,8 @@ async def cap_nhat(
         vd.ly_do = data.ly_do
     if data.anh_chan_dung is not None:
         vd.anh_chan_dung = data.anh_chan_dung
+    if data.anh_vi_tri is not None:
+        vd.anh_vi_tri = data.anh_vi_tri
     if data.loi_tuyen_duong is not None:
         vd.loi_tuyen_duong = data.loi_tuyen_duong
 

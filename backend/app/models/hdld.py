@@ -78,14 +78,14 @@ class HdldDanhGia(BaseModel):
     __tablename__ = "hdld_danh_gia"
 
     cong_chuc_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey('public.cong_chuc.id'), nullable=False
+        PGUUID(as_uuid=True), ForeignKey('cong_chuc.id'), nullable=False
     )
     thang: Mapped[int] = mapped_column(Integer, nullable=False)
     nam: Mapped[int] = mapped_column(Integer, nullable=False)
     nhom_nghe: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
     trang_thai: Mapped[str] = mapped_column(String(50), nullable=False, server_default="NHAP")
     nguoi_duyet_id: Mapped[Optional[UUID]] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey('public.cong_chuc.id'), nullable=True
+        PGUUID(as_uuid=True), ForeignKey('cong_chuc.id'), nullable=True
     )
     diem_tc_tb_tu: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2), nullable=True)
     diem_tc_tb_ql: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2), nullable=True)

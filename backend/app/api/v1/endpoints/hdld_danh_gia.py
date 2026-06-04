@@ -274,6 +274,30 @@ async def list_cho_duyet(
     return success_response(data)
 
 
+@router.get("/da-duyet")
+async def list_da_duyet(
+    db: DatabaseDep, current_user: ActiveUserDep,
+    thang: Optional[int] = Query(None, ge=1, le=12), nam: Optional[int] = Query(None, ge=2020, le=2100),
+):
+    """Cấp quản lý xem danh sách HĐLĐ mình đã duyệt (để có thể trả lại nếu duyệt nhầm)."""
+    conds = [
+        HdldDanhGia.nguoi_duyet_id == current_user.id,
+        HdldDanhGia.trang_thai == TrangThaiHdldDanhGia.DA_DUYET.value,
+    ]
+    if thang is not None:
+        conds.append(HdldDanhGia.thang == thang)
+    if nam is not None:
+        conds.append(HdldDanhGia.nam == nam)
+    stmt = select(HdldDanhGia).where(and_(*conds)).options(
+        selectinload(HdldDanhGia.chi_tiets),
+        selectinload(HdldDanhGia.cong_chuc),
+        selectinload(HdldDanhGia.nguoi_duyet),
+    ).order_by(HdldDanhGia.ngay_duyet.desc())
+    rows = (await db.execute(stmt)).scalars().all()
+    data = [await _build_response(db, dg) for dg in rows]
+    return success_response(data)
+
+
 @router.post("/danh-gia/{dg_id}/duyet")
 async def duyet_danh_gia(
     dg_id: UUID, payload: HdldDuyetRequest,

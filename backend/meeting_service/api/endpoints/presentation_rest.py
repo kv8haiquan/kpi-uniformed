@@ -39,14 +39,13 @@ _VALID_STATES_FOR_TOKEN = ("DA_THONG_BAO", "DANG_DIEN_RA")
 
 @router.get(
     "/{cuoc_hop_id}/presentation/state",
-    response_model=PresentationStateResponse,
     summary="State hiện tại của phiên trình chiếu + WS token",
 )
 async def get_presentation_state(
     cuoc_hop_id: UUID,
     db: DatabaseDep,
     user: CurrentUserDep,
-) -> PresentationStateResponse:
+) -> dict:
     """
     Trả state phiên trình chiếu + cấp WS token để client kết nối WS.
 
@@ -131,7 +130,7 @@ async def get_presentation_state(
         if ch.don_vi_to_chuc_id in thu_ky_dvs:
             is_thu_ky = True
 
-    return PresentationStateResponse(
+    payload = PresentationStateResponse(
         cuoc_hop_id=state.cuoc_hop_id,
         is_active=state.is_active,
         tai_lieu_hien_tai_id=state.tai_lieu_hien_tai_id,
@@ -146,3 +145,4 @@ async def get_presentation_state(
         is_chu_toa=is_chu_toa,
         is_thu_ky=is_thu_ky,
     )
+    return {"success": True, "data": payload.model_dump(mode="json")}

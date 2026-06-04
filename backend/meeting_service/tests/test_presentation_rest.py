@@ -89,7 +89,7 @@ async def test_get_state_creates_row_lazy(
     )
     resp = await client.get(f"{BASE}/{cuoc_hop_id}/presentation/state")
     assert resp.status_code == 200, resp.text
-    data = resp.json()
+    data = resp.json()["data"]
     assert data["cuoc_hop_id"] == str(cuoc_hop_id)
     assert data["is_active"] is False
     assert data["trang_hien_tai"] == 1
@@ -131,7 +131,7 @@ async def test_get_state_chu_toa_flags(
     )
     resp = await client.get(f"{BASE}/{cuoc_hop_id}/presentation/state")
     assert resp.status_code == 200
-    data = resp.json()
+    data = resp.json()["data"]
     assert data["is_chu_toa"] is True
     assert data["is_thu_ky"] is False
 
@@ -160,7 +160,7 @@ async def test_get_state_thu_ky_flags(
     try:
         resp = await client.get(f"{BASE}/{cuoc_hop_id}/presentation/state")
         assert resp.status_code == 200, resp.text
-        data = resp.json()
+        data = resp.json()["data"]
         assert data["is_chu_toa"] is False
         assert data["is_thu_ky"] is True
     finally:
@@ -238,7 +238,7 @@ async def test_get_state_ws_token_ttl_formula(
 
     resp = await client.get(f"{BASE}/{cuoc_hop_id}/presentation/state")
     assert resp.status_code == 200, resp.text
-    expires_at = datetime.fromisoformat(resp.json()["ws_token_expires_at"])
+    expires_at = datetime.fromisoformat(resp.json()["data"]["ws_token_expires_at"])
     expected = end_target + timedelta(hours=1)
 
     # Tolerance ±2 phút (clock drift + parsing)
@@ -274,7 +274,7 @@ async def test_get_state_ws_token_fallback_no_gio_ket_thuc(
 
     resp = await client.get(f"{BASE}/{cuoc_hop_id}/presentation/state")
     assert resp.status_code == 200, resp.text
-    expires_at = datetime.fromisoformat(resp.json()["ws_token_expires_at"])
+    expires_at = datetime.fromisoformat(resp.json()["data"]["ws_token_expires_at"])
     expected = start_target + timedelta(hours=4)
 
     diff = abs((expires_at.astimezone(HCM) - expected).total_seconds())

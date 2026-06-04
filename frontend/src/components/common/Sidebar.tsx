@@ -35,6 +35,7 @@ import {
   Settings,
   ChevronLeft,
   CalendarCheck,
+  Target,
   ChevronRight,
   Menu,
   X,
@@ -105,6 +106,14 @@ function useMenuSections(): MenuSection[] {
     platform_roles: platformRoles,
   });
 
+  // Chỉ tiêu đơn vị: visible cho người theo dõi/QT chỉ tiêu, Trưởng ĐV (duyệt), LĐ Chi cục, admin.
+  const maVaiTro = user?.vai_tro?.ma_vai_tro;
+  const chiTieuVisible =
+    user?.is_system_admin === true ||
+    platformRoles.includes('THEO_DOI_CHI_TIEU') ||
+    platformRoles.includes('QT_CHI_TIEU') ||
+    ['TDV', 'PCCT', 'CCT'].includes(maVaiTro ?? '');
+
   // KPI menu items — QLDV: ẩn "Kê khai công việc" (không có quyền tạo)
   const kpiItems: MenuItem[] = [
     { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -149,6 +158,9 @@ function useMenuSections(): MenuSection[] {
         // Sau UAT pass → bỏ điều kiện hkgVisible để mở cho 549 user.
         ...(hkgVisible
           ? [{ label: 'Họp Không Giấy', href: '/hop-khong-giay', icon: CalendarCheck }]
+          : []),
+        ...(chiTieuVisible
+          ? [{ label: 'Chỉ tiêu đơn vị', href: '/chi-tieu', icon: Target }]
           : []),
       ],
     },

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from chi_tieu_service.dependencies import get_db, get_current_user, require_platform_role
 from chi_tieu_service.schemas.giao_nam import GiaoNamCreate, GiaoNamUpdate, GiaoNamResponse
 from chi_tieu_service.services.giao_nam_service import GiaoNamService
+from chi_tieu_service.services.guards import allowed_view_don_vi_ids, loc_don_vi_theo_pham_vi
 from shared.auth import TokenPayload
 
 router = APIRouter(prefix="/giao-nam", tags=["Chỉ tiêu - Giao năm"])
@@ -27,7 +28,11 @@ async def danh_sach(
     db: AsyncSession = Depends(get_db),
     user: TokenPayload = Depends(get_current_user),
 ):
-    result = await GiaoNamService(db).danh_sach(nam=nam, don_vi_id=don_vi_id, page=page, page_size=page_size)
+    allowed = await allowed_view_don_vi_ids(db, user)
+    don_vi_ids = loc_don_vi_theo_pham_vi(allowed, don_vi_id)
+    result = await GiaoNamService(db).danh_sach(
+        nam=nam, don_vi_id=None, don_vi_ids=don_vi_ids, page=page, page_size=page_size
+    )
     return {
         "success": True,
         "data": [GiaoNamResponse.model_validate(i).model_dump(mode="json") for i in result["items"]],

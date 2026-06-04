@@ -21,10 +21,10 @@ class BaoCaoService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def luy_ke(self, nam: int, don_vi_id: Optional[UUID], thang: Optional[int] = None) -> list[dict]:
+    async def luy_ke(self, nam: int, don_vi_ids: Optional[list] = None, thang: Optional[int] = None) -> list[dict]:
         """
-        Luy ke nam tu view. Neu truyen thang -> cat den thang do (lay dong thang lon nhat <= thang).
-        Mac dinh: lay dong thang lon nhat da chot trong nam.
+        Luy ke nam tu view. Neu truyen thang -> cat den thang do.
+        don_vi_ids: None = toan bo; list = chi cac don vi nay ([] = khong co don vi nao).
         """
         sql = """
             SELECT DISTINCT ON (don_vi_id, chi_tieu_id, loai_muc)
@@ -36,12 +36,12 @@ class BaoCaoService:
               {thang_filter}
             ORDER BY don_vi_id, chi_tieu_id, loai_muc, thang DESC
         """.format(
-            don_vi_filter="AND don_vi_id = :don_vi_id" if don_vi_id else "",
+            don_vi_filter="AND don_vi_id = ANY(:don_vi_ids)" if don_vi_ids is not None else "",
             thang_filter="AND thang <= :thang" if thang else "",
         )
         params: dict = {"nam": nam}
-        if don_vi_id:
-            params["don_vi_id"] = str(don_vi_id)
+        if don_vi_ids is not None:
+            params["don_vi_ids"] = [str(d) for d in don_vi_ids]
         if thang:
             params["thang"] = thang
         rows = (await self.db.execute(text(sql), params)).mappings().all()
@@ -61,7 +61,7 @@ class BaoCaoService:
 
     async def ra_soat(
         self, thang: int, nam: int,
-        linh_vuc_id: Optional[UUID] = None, don_vi_id: Optional[UUID] = None,
+        linh_vuc_id: Optional[UUID] = None, don_vi_ids: Optional[list] = None,
     ) -> list[dict]:
         """
         Cau truc long: linh_vuc[] -> chi_tieu[] -> dong_don_vi[].
@@ -97,13 +97,13 @@ class BaoCaoService:
             WHERE d.thang = :thang AND d.nam = :nam AND d.is_deleted = FALSE
         """
         dk_params: dict = {"thang": thang, "nam": nam}
-        if don_vi_id:
-            dk_sql += " AND d.don_vi_id = :don_vi_id"
-            dk_params["don_vi_id"] = str(don_vi_id)
+        if don_vi_ids is not None:
+            dk_sql += " AND d.don_vi_id = ANY(:don_vi_ids)"
+            dk_params["don_vi_ids"] = [str(d) for d in don_vi_ids]
         dks = (await self.db.execute(text(dk_sql), dk_params)).mappings().all()
 
         # 4. Luy ke den thang (cat theo thang dang xem)
-        luy_ke_rows = await self.luy_ke(nam=nam, don_vi_id=don_vi_id, thang=thang)
+        luy_ke_rows = await self.luy_ke(nam=nam, don_vi_ids=don_vi_ids, thang=thang)
         luy_ke_map: dict = {}
         for lk in luy_ke_rows:
             luy_ke_map.setdefault((lk["chi_tieu_id"], lk["don_vi_id"]), {})[lk["loai_muc"]] = lk

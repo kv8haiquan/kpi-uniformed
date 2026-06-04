@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { dangKyApi, danhMucApi } from '@/services/chi-tieu';
+import { dangKyApi, danhMucApi, baoCaoApi } from '@/services/chi-tieu';
 import { adminService } from '@/services/admin.service';
 import type { IChiTieu, IDongDangKy } from '@/types/chi-tieu';
 import { TRANG_THAI_LABEL } from '@/types/chi-tieu';
@@ -34,13 +34,20 @@ export default function DangKyPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [dvs, ctRes] = await Promise.all([adminService.getDonViList(), danhMucApi.danhSach()]);
-        setDonVis(dvs);
+        const [dvs, ctRes, pvRes] = await Promise.all([
+          adminService.getDonViList(), danhMucApi.danhSach(), baoCaoApi.phamViCuaToi(),
+        ]);
+        const pv = pvRes.data.data || { toan_chi_cuc: true, don_vi_ids: [] };
+        // Người theo dõi chỉ thấy đơn vị trong phạm vi được gán
+        const dvScoped = pv.toan_chi_cuc ? dvs : dvs.filter((d: IDonViOption) => pv.don_vi_ids.includes(d.id));
+        setDonVis(dvScoped);
         const map: Record<string, IChiTieu> = {};
         (ctRes.data.data || []).forEach((c: IChiTieu) => { map[c.id] = c; });
         setChiTieuMap(map);
-        // mặc định đơn vị của user
-        if (user?.don_vi?.id) setDonViId(user.don_vi.id);
+        // mặc định: đơn vị của user nếu trong phạm vi, không thì đơn vị đầu tiên
+        const own = user?.don_vi?.id;
+        if (own && dvScoped.some((d: IDonViOption) => d.id === own)) setDonViId(own);
+        else if (dvScoped.length === 1) setDonViId(dvScoped[0].id);
       } catch (e: any) {
         setErr(e?.response?.data?.error?.message || 'Lỗi tải danh mục');
       }

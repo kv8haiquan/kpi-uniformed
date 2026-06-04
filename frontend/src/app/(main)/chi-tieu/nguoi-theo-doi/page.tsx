@@ -1,7 +1,8 @@
 /**
  * src/app/(main)/chi-tieu/nguoi-theo-doi/page.tsx
  * ===============================================
- * Quản lý người theo dõi chỉ tiêu (gán role THEO_DOI_CHI_TIEU theo đơn vị).
+ * Quản lý người theo dõi chỉ tiêu — đơn-vị-centric:
+ * chọn đơn vị → xem/thêm người theo dõi đơn vị đó (dropdown người trong đơn vị).
  * Quyền: QT_CHI_TIEU / admin.
  */
 
@@ -21,12 +22,11 @@ export default function NguoiTheoDoiPage() {
   const [err, setErr] = useState('');
   const [msg, setMsg] = useState('');
 
-  // Form gán
-  const [search, setSearch] = useState('');
-  const [ketQuaTim, setKetQuaTim] = useState<ICongChucSearch[]>([]);
-  const [chon, setChon] = useState<ICongChucSearch | null>(null);
-  const [donViIds, setDonViIds] = useState<Set<string>>(new Set());
-  const [dangTim, setDangTim] = useState(false);
+  // Luồng gán: chọn đơn vị → chọn người trong đơn vị
+  const [donViId, setDonViId] = useState('');
+  const [nguoiTrongDonVi, setNguoiTrongDonVi] = useState<ICongChucSearch[]>([]);
+  const [loadingNguoi, setLoadingNguoi] = useState(false);
+  const [chonNguoiId, setChonNguoiId] = useState('');
   const [saving, setSaving] = useState(false);
 
   const donViMap = useMemo(() => {
@@ -47,129 +47,143 @@ export default function NguoiTheoDoiPage() {
   };
   useEffect(() => { load(); }, []);
 
+  // Khi chọn đơn vị → load người trong đơn vị đó
+  useEffect(() => {
+    if (!donViId) { setNguoiTrongDonVi([]); setChonNguoiId(''); return; }
+    (async () => {
+      setLoadingNguoi(true); setChonNguoiId('');
+      try {
+        const res = await nguoiTheoDoiApi.timCongChuc({ don_vi_id: donViId });
+        setNguoiTrongDonVi(res.data.data || []);
+      } catch (e: any) {
+        setErr(e?.response?.data?.error?.message || 'Lỗi tải danh sách công chức');
+      } finally { setLoadingNguoi(false); }
+    })();
+  }, [donViId]);
+
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 2500); };
   const onErr = (e: any) => setErr(e?.response?.data?.error?.message || 'Có lỗi xảy ra');
 
-  const timCongChuc = async () => {
-    if (!search.trim()) return;
-    setDangTim(true); setErr('');
-    try {
-      const res = await nguoiTheoDoiApi.timCongChuc({ search: search.trim() });
-      setKetQuaTim(res.data.data || []);
-    } catch (e) { onErr(e); } finally { setDangTim(false); }
-  };
+  // Người đang theo dõi đơn vị đang chọn
+  const nguoiDangTheoDoi = useMemo(
+    () => list.filter((p) => p.don_vi_ids.includes(donViId)),
+    [list, donViId],
+  );
+  const dangTheoDoiIds = new Set(nguoiDangTheoDoi.map((p) => p.cong_chuc_id));
 
-  const toggleDonVi = (id: string) => {
-    setDonViIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const batDauSua = (item: INguoiTheoDoi) => {
-    setChon({ id: item.cong_chuc_id, ma_cc: item.ma_cc, ho_ten: item.ho_ten, chuc_vu: item.chuc_vu, ten_don_vi: item.don_vi_cong_chuc });
-    setDonViIds(new Set(item.don_vi_ids));
-    setKetQuaTim([]);
-    setSearch('');
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const huyChon = () => { setChon(null); setDonViIds(new Set()); };
-
-  const luuGan = async () => {
-    if (!chon) { setErr('Chọn công chức trước'); return; }
-    if (donViIds.size === 0) { setErr('Chọn ít nhất 1 đơn vị theo dõi'); return; }
+  // Thêm 1 người theo dõi đơn vị đang chọn (append vào phạm vi hiện có của họ)
+  const themNguoi = async () => {
+    if (!donViId || !chonNguoiId) { setErr('Chọn đơn vị và người'); return; }
     setSaving(true); setErr('');
     try {
-      await nguoiTheoDoiApi.gan({ cong_chuc_id: chon.id, don_vi_ids: Array.from(donViIds) });
-      flash(`Đã gán ${chon.ho_ten} theo dõi ${donViIds.size} đơn vị`);
-      huyChon();
+      const existing = list.find((p) => p.cong_chuc_id === chonNguoiId)?.don_vi_ids ?? [];
+      const don_vi_ids = Array.from(new Set([...existing, donViId]));
+      await nguoiTheoDoiApi.gan({ cong_chuc_id: chonNguoiId, don_vi_ids });
+      const ten = nguoiTrongDonVi.find((c) => c.id === chonNguoiId)?.ho_ten || '';
+      flash(`Đã gán ${ten} theo dõi ${donViMap[donViId]?.ten_don_vi || ''}`);
+      setChonNguoiId('');
       await load();
     } catch (e) { onErr(e); } finally { setSaving(false); }
   };
 
-  const go = async (item: INguoiTheoDoi) => {
-    if (!confirm(`Gỡ ${item.ho_ten} khỏi vai trò theo dõi chỉ tiêu?`)) return;
-    try { await nguoiTheoDoiApi.go(item.cong_chuc_id); flash('Đã gỡ'); await load(); }
+  // Gỡ 1 người khỏi đơn vị đang chọn (nếu hết đơn vị → gỡ hẳn role)
+  const goKhoiDonVi = async (p: INguoiTheoDoi) => {
+    if (!confirm(`Gỡ ${p.ho_ten} khỏi việc theo dõi ${donViMap[donViId]?.ten_don_vi || 'đơn vị này'}?`)) return;
+    try {
+      const conLai = p.don_vi_ids.filter((id) => id !== donViId);
+      if (conLai.length > 0) await nguoiTheoDoiApi.capNhat(p.cong_chuc_id, { don_vi_ids: conLai });
+      else await nguoiTheoDoiApi.go(p.cong_chuc_id);
+      flash('Đã gỡ'); await load();
+    } catch (e) { onErr(e); }
+  };
+
+  const goHan = async (p: INguoiTheoDoi) => {
+    if (!confirm(`Gỡ ${p.ho_ten} khỏi vai trò theo dõi chỉ tiêu (tất cả đơn vị)?`)) return;
+    try { await nguoiTheoDoiApi.go(p.cong_chuc_id); flash('Đã gỡ'); await load(); }
     catch (e) { onErr(e); }
   };
 
+  // Dropdown người: ưu tiên người chưa theo dõi đơn vị này
+  const optionNguoi = nguoiTrongDonVi.filter((c) => !dangTheoDoiIds.has(c.id));
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="mb-6">
           <Link href="/chi-tieu" className="text-sm text-blue-600 hover:underline">← Chỉ tiêu đơn vị</Link>
           <h1 className="text-2xl font-bold text-gray-900 mt-1">Quản lý người theo dõi</h1>
-          <p className="text-sm text-gray-500 mt-1">Gán công chức theo dõi chỉ tiêu cho từng đơn vị</p>
+          <p className="text-sm text-gray-500 mt-1">Chọn đơn vị, rồi gán người theo dõi chỉ tiêu cho đơn vị đó</p>
         </div>
 
         {err && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{err}</div>}
         {msg && <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">{msg}</div>}
 
-        {/* Form gán */}
+        {/* Bước 1: chọn đơn vị */}
         <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-          <h2 className="font-semibold text-gray-900 mb-3">
-            {chon ? '✏️ Cập nhật phạm vi' : '➕ Gán người theo dõi mới'}
-          </h2>
+          <label className="block text-sm font-semibold text-gray-900 mb-2">1. Chọn đơn vị</label>
+          <select className="w-full sm:w-[420px] border rounded-lg px-3 py-2 text-sm"
+            value={donViId} onChange={(e) => setDonViId(e.target.value)}>
+            <option value="">-- Chọn đơn vị cần gán người theo dõi --</option>
+            {donVis.map((dv) => <option key={dv.id} value={dv.id}>{dv.ma_don_vi} — {dv.ten_don_vi}</option>)}
+          </select>
 
-          {!chon ? (
-            <div className="flex gap-2 mb-3">
-              <input className="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="Tìm theo tên hoặc mã công chức..."
-                value={search} onChange={(e) => setSearch(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && timCongChuc()} />
-              <button onClick={timCongChuc} disabled={dangTim}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm">
-                {dangTim ? 'Đang tìm...' : 'Tìm'}
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between mb-3 p-2 bg-blue-50 rounded-lg">
-              <div className="text-sm">
-                <b>{chon.ho_ten}</b> <span className="text-gray-500">({chon.ma_cc})</span>
-                {chon.ten_don_vi && <span className="text-gray-500"> · {chon.ten_don_vi}</span>}
+          {donViId && (
+            <div className="mt-5 space-y-5">
+              {/* Người đang theo dõi đơn vị này */}
+              <div>
+                <div className="text-sm font-semibold text-gray-900 mb-2">Người đang theo dõi đơn vị này</div>
+                {nguoiDangTheoDoi.length === 0 ? (
+                  <div className="text-sm text-gray-400 italic">Chưa có ai theo dõi đơn vị này.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {nguoiDangTheoDoi.map((p) => (
+                      <div key={p.cong_chuc_id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                        <div className="text-sm">
+                          <b>{p.ho_ten}</b> <span className="text-gray-400">({p.ma_cc})</span>
+                          {p.don_vi_cong_chuc && <span className="text-gray-400"> · {p.don_vi_cong_chuc}</span>}
+                          {p.don_vi_ids.length > 1 && (
+                            <span className="text-xs text-blue-500 ml-2">+{p.don_vi_ids.length - 1} đơn vị khác</span>
+                          )}
+                        </div>
+                        <button onClick={() => goKhoiDonVi(p)} className="text-xs text-red-500 hover:underline">Gỡ khỏi đơn vị</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <button onClick={huyChon} className="text-xs text-gray-500 hover:underline">Hủy</button>
-            </div>
-          )}
 
-          {/* Kết quả tìm */}
-          {!chon && ketQuaTim.length > 0 && (
-            <div className="border rounded-lg divide-y mb-3 max-h-52 overflow-y-auto">
-              {ketQuaTim.map((cc) => (
-                <button key={cc.id} onClick={() => { setChon(cc); setKetQuaTim([]); setDonViIds(cc.don_vi_id ? new Set([cc.don_vi_id]) : new Set()); }}
-                  className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm flex justify-between">
-                  <span><b>{cc.ho_ten}</b> <span className="text-gray-400">({cc.ma_cc})</span></span>
-                  <span className="text-gray-400">{cc.ten_don_vi}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Chọn đơn vị theo dõi */}
-          {chon && (
-            <>
-              <div className="text-xs text-gray-500 mb-2">Chọn đơn vị mà người này theo dõi:</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4 max-h-60 overflow-y-auto">
-                {donVis.map((dv) => (
-                  <label key={dv.id} className={`flex items-center gap-2 text-sm border rounded-lg px-3 py-2 cursor-pointer ${donViIds.has(dv.id) ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
-                    <input type="checkbox" checked={donViIds.has(dv.id)} onChange={() => toggleDonVi(dv.id)} />
-                    <span className="truncate">{dv.ma_don_vi} — {dv.ten_don_vi}</span>
-                  </label>
-                ))}
+              {/* Bước 2: thêm người trong đơn vị */}
+              <div className="pt-4 border-t border-gray-100">
+                <label className="block text-sm font-semibold text-gray-900 mb-2">2. Thêm người theo dõi (chọn người trong đơn vị)</label>
+                {loadingNguoi ? (
+                  <div className="text-sm text-gray-400">Đang tải danh sách công chức...</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <select className="flex-1 min-w-[260px] border rounded-lg px-3 py-2 text-sm"
+                      value={chonNguoiId} onChange={(e) => setChonNguoiId(e.target.value)}>
+                      <option value="">-- Chọn công chức trong đơn vị --</option>
+                      {optionNguoi.map((c) => (
+                        <option key={c.id} value={c.id}>{c.ho_ten} ({c.ma_cc}){c.chuc_vu ? ` — ${c.chuc_vu}` : ''}</option>
+                      ))}
+                    </select>
+                    <button onClick={themNguoi} disabled={saving || !chonNguoiId}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium">
+                      {saving ? 'Đang lưu...' : 'Thêm'}
+                    </button>
+                    {optionNguoi.length === 0 && nguoiTrongDonVi.length > 0 && (
+                      <span className="text-xs text-gray-400">Tất cả công chức trong đơn vị đã được gán.</span>
+                    )}
+                  </div>
+                )}
               </div>
-              <button onClick={luuGan} disabled={saving}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">
-                {saving ? 'Đang lưu...' : `Lưu (${donViIds.size} đơn vị)`}
-              </button>
-            </>
+            </div>
           )}
         </div>
 
-        {/* Danh sách hiện tại */}
+        {/* Tổng quan tất cả người theo dõi */}
         <div className="bg-white rounded-xl border border-gray-200">
           <div className="px-5 py-3 border-b border-gray-100 font-semibold text-gray-900 text-sm">
-            Người theo dõi hiện tại {list.length > 0 && <span className="text-gray-400 font-normal">({list.length})</span>}
+            Tất cả người theo dõi {list.length > 0 && <span className="text-gray-400 font-normal">({list.length})</span>}
           </div>
           {loading ? (
             <div className="p-8 text-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto" /></div>
@@ -203,9 +217,8 @@ export default function NguoiTheoDoiPage() {
                           ))}
                       </div>
                     </td>
-                    <td className="py-2 px-4 text-right whitespace-nowrap">
-                      <button onClick={() => batDauSua(it)} className="text-xs text-blue-600 hover:underline mr-3">Sửa</button>
-                      <button onClick={() => go(it)} className="text-xs text-red-500 hover:underline">Gỡ</button>
+                    <td className="py-2 px-4 text-right">
+                      <button onClick={() => goHan(it)} className="text-xs text-red-500 hover:underline">Gỡ hẳn</button>
                     </td>
                   </tr>
                 ))}

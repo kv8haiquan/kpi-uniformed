@@ -26,6 +26,7 @@ class GiaoNamService:
 
     async def danh_sach(
         self, nam: Optional[int] = None, don_vi_id: Optional[UUID] = None,
+        don_vi_ids: Optional[list] = None,
         page: int = 1, page_size: int = 200,
     ) -> dict:
         conds = [GiaoNam.is_deleted == False]  # noqa: E712
@@ -33,6 +34,9 @@ class GiaoNamService:
             conds.append(GiaoNam.nam == nam)
         if don_vi_id:
             conds.append(GiaoNam.don_vi_id == don_vi_id)
+        # Gioi han pham vi xem (None = khong gioi han)
+        if don_vi_ids is not None:
+            conds.append(GiaoNam.don_vi_id.in_(don_vi_ids))
         total = (await self.db.execute(
             select(func.count()).select_from(GiaoNam).where(*conds)
         )).scalar() or 0

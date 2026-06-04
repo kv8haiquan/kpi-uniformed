@@ -101,6 +101,8 @@ export const baoCaoApi = {
     chiTieuApi.get('/bao-cao/ra-soat', { params }),
   luyKe: (params: { nam: number; don_vi_id?: string; thang?: number }) =>
     chiTieuApi.get('/bao-cao/luy-ke', { params }),
+  /** Phạm vi đơn vị user được xem (để giới hạn picker). */
+  phamViCuaToi: () => chiTieuApi.get('/bao-cao/pham-vi-cua-toi'),
 };
 
 // =============================================================================

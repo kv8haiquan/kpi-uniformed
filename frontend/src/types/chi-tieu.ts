@@ -167,6 +167,11 @@ export interface INguoiTheoDoi {
   is_active: boolean;
 }
 
+export interface IPhamViXem {
+  toan_chi_cuc: boolean;
+  don_vi_ids: string[];
+}
+
 export interface ICongChucSearch {
   id: string;
   ma_cc?: string | null;

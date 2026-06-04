@@ -24,12 +24,22 @@ export default function BaoCaoPage() {
   const [thang, setThang] = useState(THANG_HIEN_TAI);
   const [nam, setNam] = useState(NAM_HIEN_TAI);
   const [donViId, setDonViId] = useState('');
+  const [toanChiCuc, setToanChiCuc] = useState(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
 
   useEffect(() => {
     (async () => {
-      try { setDonVis(await adminService.getDonViList()); } catch { /* ignore */ }
+      try {
+        const [dvs, pvRes] = await Promise.all([
+          adminService.getDonViList(),
+          baoCaoApi.phamViCuaToi(),
+        ]);
+        const pv = pvRes.data.data || { toan_chi_cuc: true, don_vi_ids: [] };
+        setToanChiCuc(pv.toan_chi_cuc);
+        // Chỉ hiện đơn vị trong phạm vi xem
+        setDonVis(pv.toan_chi_cuc ? dvs : dvs.filter((d: IDonViOption) => pv.don_vi_ids.includes(d.id)));
+      } catch { /* ignore */ }
     })();
   }, []);
 
@@ -70,7 +80,7 @@ export default function BaoCaoPage() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">Đơn vị</label>
             <select className="border rounded-lg px-3 py-2 text-sm min-w-[220px]" value={donViId} onChange={(e) => setDonViId(e.target.value)}>
-              <option value="">Tất cả đơn vị</option>
+              <option value="">{toanChiCuc ? 'Tất cả đơn vị' : 'Tất cả đơn vị của tôi'}</option>
               {donVis.map((dv) => <option key={dv.id} value={dv.id}>{dv.ma_don_vi} — {dv.ten_don_vi}</option>)}
             </select>
           </div>

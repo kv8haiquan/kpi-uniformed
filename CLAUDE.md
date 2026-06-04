@@ -116,6 +116,14 @@ Monthly cycle: Staff **declares** work (ke_khai) → Unit leader **reviews/appro
 
 > ⚠️ **CẢNH BÁO QUAN TRỌNG**: DB tại `localhost:5432` (theo `backend/.env`) **CHÍNH LÀ PRODUCTION** đang được công chức kê khai live. KHÔNG bao giờ chạy E2E test, smoke test có write/update trên DB này mà không có user xác nhận. Mọi test data phải cleanup. Cấm chạy `INSERT/UPDATE/DELETE` không transactional rollback.
 >
+> ⛔ **CẤM TUYỆT ĐỐI smoke test / E2E test trên server cloud production `79.108.216.189`**. Server này phục vụ người dùng thật, mọi write request (INSERT/UPDATE/DELETE) phải được user duyệt từng lần. Không tự động hóa test trên server này dưới bất kỳ hình thức nào.
+>
+> 🧹 **NẾU lỡ tạo smoke test / E2E test trên production (kể cả `localhost:5432` hay `79.108.216.189`)**: PHẢI cleanup NGAY trong cùng session, KHÔNG để dữ liệu rác qua đêm. Quy trình bắt buộc:
+> 1. Liệt kê toàn bộ row đã tạo (kèm `created_at`, pattern tên test)
+> 2. Báo user và xin confirm phạm vi xóa
+> 3. Chạy DELETE trong `BEGIN ... COMMIT` transaction, verify `count=0` trước khi COMMIT
+> 4. Verify dữ liệu thật KHÔNG bị đụng (sanity query sau COMMIT)
+>
 > Địa chỉ `27.71.229.103` ở phần `QUY TẮC TUYỆT ĐỐI` bên dưới CHỈ là cảnh báo cho tương lai khi deploy lên server riêng — hiện tại chưa dùng.
 
 - PostgreSQL exposed on port **5432** (`backend/.env`: `DB_HOST=localhost`, `DB_PORT=5432`)
@@ -147,6 +155,8 @@ alembic stamp head
 ⛔ KHÔNG BAO GIỜ chạy migration trên production database (27.71.229.103)
 ⛔ KHÔNG BAO GIỜ commit trực tiếp vào branch main hoặc develop
 ⛔ KHÔNG BAO GIỜ hardcode SECRET_KEY, password, hoặc database credential
+⛔ KHÔNG BAO GIỜ chạy smoke test / E2E test trên server cloud production 79.108.216.189
+⛔ NẾU LỠ tạo smoke test trên production (localhost:5432 hoặc 79.108.216.189): PHẢI cleanup NGAY trong cùng session — không để dữ liệu rác qua đêm
 
 ✅ CHỈ ĐỌC bảng public.cong_chuc, public.don_vi, public.vai_tro (FK reference)
 ✅ CHỈ THÊM bảng mới vào schema riêng (lms.*, forum.*, legal.*, portal.*, common.*)

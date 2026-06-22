@@ -10,7 +10,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { kyThiApi } from '@/services/lms';
+import { useAuthStore } from '@/stores/useAuthStore';
 import type { IKyThi, IDgnlThongKe, IThiSinh, ILichSuThiSummary } from '@/types/lms';
+
+/** Chỉ admin (QT_DAO_TAO/SUPER_ADMIN) được quản lý/xem module ĐGNL. */
+function KhongCoQuyen() {
+  return (
+    <div className="max-w-3xl mx-auto p-8 text-center">
+      <div className="text-4xl mb-3">🔒</div>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Không có quyền truy cập</h2>
+      <p className="text-gray-600">Chỉ Quản trị đào tạo (QT_DAO_TAO) được xem module kỳ thi đánh giá năng lực.</p>
+    </div>
+  );
+}
 
 /**
  * Kết quả 1 lần thi cụ thể của thí sinh để hiển thị ở cột Điểm/Xếp loại.
@@ -39,6 +51,9 @@ function resolveKetQuaLan(
 export default function ThongKeKyThiPage() {
   const params = useParams();
   const kyThiId = params.id as string;
+  const { user } = useAuthStore();
+  const platformRoles: string[] = (user as any)?.platform_roles ?? [];
+  const isQT = user?.is_system_admin === true || platformRoles.includes('QT_DAO_TAO');
 
   const [kyThi, setKyThi] = useState<IKyThi | null>(null);
   const [thongKe, setThongKe] = useState<IDgnlThongKe | null>(null);
@@ -107,6 +122,8 @@ export default function ThongKeKyThiPage() {
     }
   };
 
+  if (!isQT) return <KhongCoQuyen />;
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center py-20">
@@ -134,6 +151,12 @@ export default function ThongKeKyThiPage() {
           <p className="text-sm text-gray-500">{kyThi?.ten_ky_thi} ({kyThi?.ma_ky_thi})</p>
         </div>
         <div className="flex gap-2">
+          <Link
+            href={`/dao-tao/ky-thi/${kyThiId}/giam-sat`}
+            className="px-4 py-2 text-sm bg-amber-500 text-white rounded-lg hover:bg-amber-600"
+          >
+            🖥️ Giám sát trực tiếp
+          </Link>
           <button
             onClick={handleExport}
             disabled={exporting}
@@ -284,6 +307,7 @@ export default function ThongKeKyThiPage() {
                   {viewLan === 'all' ? 'Điểm' : `Điểm (Lần ${viewLan})`}
                 </th>
                 <th className="py-2 px-3 text-center">Xếp loại</th>
+                <th className="py-2 px-3 text-center">Vi phạm</th>
                 <th className="py-2 px-3 text-center">Hành động</th>
               </tr>
             </thead>
@@ -386,6 +410,16 @@ function FragmentRow({
           )}
         </td>
         <td className="py-2 px-3 text-center">
+          {(ts.so_lan_vi_pham ?? 0) > 0 ? (
+            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-bold"
+              title="Số lần thoát toàn màn hình / chuyển tab khi thi">
+              {ts.so_lan_vi_pham}
+            </span>
+          ) : (
+            <span className="text-gray-300 text-xs">0</span>
+          )}
+        </td>
+        <td className="py-2 px-3 text-center">
           {kq.hasData && kq.hasChiTiet ? (
             <Link
               href={baiLamHref}
@@ -410,7 +444,7 @@ function FragmentRow({
       {isOpen && (
         <tr className="bg-gray-50/60 border-b">
           <td></td>
-          <td colSpan={10} className="py-3 px-4">
+          <td colSpan={11} className="py-3 px-4">
             <LichSuLanThiPanel ts={ts} kyThiId={kyThiId} lichSu={lichSu} />
           </td>
         </tr>

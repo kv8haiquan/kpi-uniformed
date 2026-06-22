@@ -414,15 +414,21 @@ export const kyThiApi = {
   xoaThiSinh: (id: string, ccId: string) => lmsApi.delete(`/ky-thi/${id}/thi-sinh/${ccId}`),
   // Lam thi
   batDau: (id: string) => lmsApi.post(`/ky-thi/${id}/bat-dau`),
-  nopBai: (id: string, data: any) => lmsApi.post(`/ky-thi/${id}/nop-bai`, data),
-  luuNhap: (id: string, data: { cau_tra_loi: any[]; so_lan_vi_pham: number }) =>
-    lmsApi.post(`/ky-thi/${id}/luu-nhap`, data),
+  /** Nộp bài. Gửi kèm token phiên (X-Phien-Thi) để chống dùng chung tài khoản. */
+  nopBai: (id: string, data: any, phienToken?: string) =>
+    lmsApi.post(`/ky-thi/${id}/nop-bai`, data,
+      phienToken ? { headers: { 'X-Phien-Thi': phienToken } } : undefined),
+  luuNhap: (id: string, data: { cau_tra_loi: any[]; so_lan_vi_pham: number }, phienToken?: string) =>
+    lmsApi.post(`/ky-thi/${id}/luu-nhap`, data,
+      phienToken ? { headers: { 'X-Phien-Thi': phienToken } } : undefined),
   ketQua: (id: string) => lmsApi.get(`/ky-thi/${id}/ket-qua`),
   ketQuaCBCC: (id: string, ccId: string) => lmsApi.get(`/ky-thi/${id}/ket-qua/${ccId}`),
-  /** Chi tiết bài làm 1 lần thi cụ thể (lan = 1, 2, 3...). QT_DAO_TAO/LD. */
+  /** Chi tiết bài làm 1 lần thi cụ thể (lan = 1, 2, 3...). Chỉ admin. */
   ketQuaLan: (id: string, ccId: string, lan: number) =>
     lmsApi.get(`/ky-thi/${id}/thi-sinh/${ccId}/ket-qua/${lan}`),
   exportExcel: (id: string) => lmsApi.get(`/ky-thi/${id}/export`, { responseType: 'blob' }),
+  /** Giám sát trực tiếp kỳ thi (tiến độ/vi phạm/online từng thí sinh). Chỉ admin. */
+  giamSat: (id: string) => lmsApi.get(`/ky-thi/${id}/giam-sat`),
 };
 
 // =============================================================================

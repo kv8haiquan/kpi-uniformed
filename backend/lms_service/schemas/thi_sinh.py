@@ -59,6 +59,7 @@ class ThiSinhResponse(BaseModel):
     so_cau_dung: Optional[int] = None
     so_cau_sai: Optional[int] = None
     tong_so_cau: Optional[int] = None
+    so_lan_vi_pham: Optional[int] = 0
     diem_theo_linh_vuc: Optional[dict] = None
     thoi_gian_bat_dau: Optional[datetime] = None
     thoi_gian_nop: Optional[datetime] = None
@@ -92,6 +93,37 @@ class LuuNhapRequest(BaseModel):
     """Body luu nhap (auto-save moi 30s)."""
     cau_tra_loi: list[CauTraLoi] = []
     so_lan_vi_pham: int = 0
+
+
+# ============================================================
+# Giam sat truc tiep (admin theo doi tung thi sinh realtime)
+# ============================================================
+
+class GiamSatThiSinh(BaseModel):
+    """1 dong giam sat truc tiep — tien do + vi pham + online cua 1 thi sinh."""
+    cong_chuc_id: UUID
+    ho_ten: Optional[str] = None
+    ma_cc: Optional[str] = None
+    don_vi_ten: Optional[str] = None
+    vi_tri_ten: Optional[str] = None
+    trang_thai: Optional[str] = "CHUA_THI"
+    lan_thi_hien_tai: Optional[int] = 0
+    so_cau_da_lam: int = 0
+    tong_so_cau: int = 0
+    so_lan_vi_pham: int = 0
+    thoi_gian_bat_dau: Optional[datetime] = None
+    thoi_gian_con_lai_giay: Optional[int] = None
+    diem_tong: Optional[Decimal] = None
+    xep_loai: Optional[str] = None
+    last_seen: Optional[datetime] = None
+    online: bool = False
+    thiet_bi: Optional[str] = None
+
+
+class GiamSatResponse(BaseModel):
+    """Response man hinh giam sat truc tiep mot ky thi."""
+    tong_quan: dict = {}
+    thi_sinh: list[GiamSatThiSinh] = []
 
 
 # ============================================================

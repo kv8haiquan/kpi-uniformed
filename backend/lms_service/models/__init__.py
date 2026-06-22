@@ -23,6 +23,7 @@ from lms_service.models.ky_thi import KyThi
 from lms_service.models.cau_truc_de import CauTrucDe
 from lms_service.models.thi_sinh import ThiSinh
 from lms_service.models.cau_hoi_dgnl import CauHoiDgnl
+from lms_service.models.phien_thi import PhienThi
 
 __all__ = [
     "Base",
@@ -44,4 +45,5 @@ __all__ = [
     "CauTrucDe",
     "ThiSinh",
     "CauHoiDgnl",
+    "PhienThi",
 ]

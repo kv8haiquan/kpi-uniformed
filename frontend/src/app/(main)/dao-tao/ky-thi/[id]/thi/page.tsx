@@ -37,12 +37,36 @@ export default function ThiDgnlPage() {
   const [submitting, setSubmitting] = useState(false);
   const [violations, setViolations] = useState(0);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  // Anti-cheat: ép toàn màn hình + cảnh báo khi thoát
+  const [fsWarning, setFsWarning] = useState(false);
+  // Khóa bài khi tài khoản bị dùng để thi ở thiết bị khác (single-session)
+  const [kicked, setKicked] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const handleNopBaiRef = useRef<(opts?: { retry?: number }) => Promise<void>>(async () => {});
   const traLoiRef = useRef(traLoi);
   const violationsRef = useRef(violations);
+  const phienTokenRef = useRef<string | null>(null);
+  const lastViolationAtRef = useRef(0);
   traLoiRef.current = traLoi;
   violationsRef.current = violations;
+
+  // Bật ép toàn màn hình cho kỳ thi này? (mặc định bật)
+  const yeuCauFullscreen = kyThi?.yeu_cau_toan_man_hinh !== false;
+
+  // Phát hiện 409 (PHIEN_001) -> khóa bài trên thiết bị này
+  const isPhienConflict = (err: any) =>
+    err?.response?.status === 409 || err?.response?.data?.detail?.error?.code === 'PHIEN_001';
+
+  const enterFullscreen = useCallback(async () => {
+    try {
+      const el: any = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        await el.requestFullscreen();
+      }
+    } catch {
+      /* trình duyệt từ chối — vẫn cho thi, chỉ ghi nhận vi phạm khi thoát */
+    }
+  }, []);
 
   // Load ky thi info
   useEffect(() => {
@@ -86,8 +110,12 @@ export default function ThiDgnlPage() {
         await kyThiApi.luuNhap(kyThiId, {
           cau_tra_loi: entries.map(([cau_hoi_id, tra_loi]) => ({ cau_hoi_id, tra_loi })),
           so_lan_vi_pham: violationsRef.current,
-        });
-      } catch { /* bo qua loi autosave de khong gay nhiu cho user */ }
+        }, phienTokenRef.current || undefined);
+      } catch (err: any) {
+        // Tài khoản bị dùng để thi ở thiết bị khác -> khóa bài tại đây
+        if (isPhienConflict(err)) setKicked(true);
+        /* các lỗi autosave khác bỏ qua để không gây nhiễu cho user */
+      }
     }, 30000);
     return () => clearInterval(interval);
   }, [state, kyThiId]);
@@ -104,17 +132,31 @@ export default function ThiDgnlPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [state]);
 
-  // Dem so lan thoat tab/visibility (anti-cheat)
+  // Gắn cờ khi thoát toàn màn hình / chuyển tab (anti-cheat, có hiển thị cảnh báo).
+  // Cooldown 2s tránh đếm trùng khi 1 hành động fire cả 2 event.
   useEffect(() => {
     if (state !== 'DANG_LAM') return;
-    const handleVisibility = () => {
-      if (document.hidden) {
-        setViolations(v => v + 1);
-      }
+    const COOLDOWN_MS = 2000;
+    const ghiNhanViPham = () => {
+      const now = Date.now();
+      if (now - lastViolationAtRef.current < COOLDOWN_MS) return;
+      lastViolationAtRef.current = now;
+      setViolations(v => v + 1);
+      setFsWarning(true);
     };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [state]);
+    const onFullscreenChange = () => {
+      if (yeuCauFullscreen && !document.fullscreenElement) ghiNhanViPham();
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) ghiNhanViPham();
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [state, yeuCauFullscreen]);
 
   // Bat dau thi
   const handleBatDau = async () => {
@@ -122,8 +164,14 @@ export default function ThiDgnlPage() {
       setLoading(true);
       const res = await kyThiApi.batDau(kyThiId);
       const data = res.data.data;
+      phienTokenRef.current = data.phien_token || null;
       setCauHoi(data.cau_hoi || []);
       setTimeLeft(data.thoi_gian_con_lai_giay);
+
+      // Ép toàn màn hình (cần user-gesture — đang trong onClick nên hợp lệ)
+      if (data.yeu_cau_toan_man_hinh !== false) {
+        await enterFullscreen();
+      }
 
       // Restore bai lam nhap neu dang tiep tuc (resume autosave)
       if (data.dang_tiep_tuc && Array.isArray(data.chi_tiet_nhap)) {
@@ -170,13 +218,20 @@ export default function ThiDgnlPage() {
         await new Promise(r => setTimeout(r, delays[attempt]));
       }
       try {
-        await kyThiApi.nopBai(kyThiId, { cau_tra_loi: cauTraLoi });
+        await kyThiApi.nopBai(kyThiId, { cau_tra_loi: cauTraLoi }, phienTokenRef.current || undefined);
+        if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch { /* ignore */ } }
         setState('DA_NOP');
         setError(null);
         setSubmitting(false);
         return;
       } catch (err: any) {
         const code = err?.response?.data?.detail?.error?.code;
+        // Tài khoản bị dùng để thi ở thiết bị khác -> khóa bài, dừng retry
+        if (isPhienConflict(err)) {
+          setKicked(true);
+          setSubmitting(false);
+          return;
+        }
         // Bug B fix: backend tra DGNL_033 nghia la bai da nop tu lan submit
         // truoc (commit DB thanh cong, response mat). Coi nhu nop thanh cong.
         if (code === 'DGNL_033') {
@@ -226,6 +281,29 @@ export default function ThiDgnlPage() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  // ===== BỊ KHÓA (tài khoản đang thi ở thiết bị khác) =====
+  if (kicked) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md text-center">
+          <div className="text-5xl mb-4">🔒</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Bài làm đã bị khóa</h2>
+          <p className="text-gray-600 mb-6">
+            Tài khoản của bạn đang được dùng để thi ở một thiết bị khác. Để đảm bảo
+            tính minh bạch, bài làm trên thiết bị này đã bị khóa. Vui lòng tiếp tục
+            trên thiết bị đang thi.
+          </p>
+          <button
+            onClick={() => router.push('/dao-tao/ky-thi')}
+            className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Quay lại
+          </button>
+        </div>
       </div>
     );
   }
@@ -359,6 +437,31 @@ export default function ThiDgnlPage() {
   // ===== DANG_LAM =====
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Cảnh báo vi phạm khi thoát toàn màn hình / chuyển tab */}
+      {fsWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md text-center">
+            <div className="text-4xl mb-3">⚠️</div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Phát hiện thoát màn hình thi</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              Bạn vừa thoát toàn màn hình hoặc chuyển sang cửa sổ khác. Hành vi này
+              đã được hệ thống ghi nhận.
+            </p>
+            <p className="text-sm font-semibold text-red-600 mb-4">
+              Số lần vi phạm: {violations}
+            </p>
+            <button
+              onClick={async () => {
+                if (yeuCauFullscreen) await enterFullscreen();
+                setFsWarning(false);
+              }}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+            >
+              {yeuCauFullscreen ? 'Quay lại toàn màn hình' : 'Tiếp tục làm bài'}
+            </button>
+          </div>
+        </div>
+      )}
       {/* Resume notice — hien 8 giay sau khi khoi phuc bai lam do */}
       {resumeNotice && (
         <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 text-sm text-amber-900 text-center font-medium">
@@ -375,6 +478,14 @@ export default function ThiDgnlPage() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            {violations > 0 && (
+              <div
+                className="flex items-center gap-1 px-2.5 py-1 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-full"
+                title="Số lần thoát toàn màn hình / chuyển tab đã ghi nhận"
+              >
+                ⚠️ Vi phạm: {violations}
+              </div>
+            )}
             <div className={`text-lg font-mono font-bold ${(timeLeft || 0) < 300 ? 'text-red-600' : 'text-gray-900'}`}>
               {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
             </div>

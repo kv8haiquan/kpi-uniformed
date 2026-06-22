@@ -47,6 +47,8 @@ class KyThi(Base):
     tron_dap_an: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("true"))
     hien_ket_qua: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("true"))
     hien_dap_an: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("false"))
+    # Ep toan man hinh + canh bao vi pham khi thi (anti-cheat)
+    yeu_cau_toan_man_hinh: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("true"))
 
     # Trang thai: NHAP, CHO_DUYET, DANG_MO, DA_DONG
     trang_thai: Mapped[Optional[str]] = mapped_column(String(50), server_default="NHAP")

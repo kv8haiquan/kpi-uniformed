@@ -19,6 +19,7 @@ from lms_service.models.base import CongChucRef, DonViRef
 from lms_service.models.ky_thi import KyThi
 from lms_service.models.cau_truc_de import CauTrucDe
 from lms_service.models.thi_sinh import ThiSinh
+from lms_service.models.phien_thi import PhienThi
 from lms_service.models.linh_vuc import LinhVuc
 from lms_service.models.vi_tri_viec_lam import ViTriViecLam
 from lms_service.models.cau_hoi import CauHoi
@@ -56,6 +57,71 @@ class ThiSinhService:
                 detail={"success": False, "error": {"code": "DGNL_010", "message": "Kỳ thi không tồn tại"}},
             )
         return kt
+
+    # ================================================================
+    # PHIEN THI — 1 phien/tai khoan (chong dung chung tai khoan)
+    # ================================================================
+
+    async def _upsert_phien(
+        self,
+        cc_id: uuid.UUID,
+        ky_thi_id: uuid.UUID,
+        thi_sinh_id: uuid.UUID,
+        thiet_bi: Optional[str],
+    ) -> str:
+        """Sinh phien_token moi cho cong_chuc_id va ghi de phien cu (1 dong/tai khoan).
+
+        Thiet bi nao goi bat_dau_thi gan nhat se so huu phien -> cac thiet bi
+        khac (token cu) bi tu choi o luu-nhap/nop-bai. Tra ve token moi.
+        """
+        token = uuid.uuid4().hex
+        now = datetime.utcnow()
+        r = await self.db.execute(
+            select(PhienThi).where(PhienThi.cong_chuc_id == cc_id)
+        )
+        phien = r.scalar_one_or_none()
+        if phien:
+            phien.phien_token = token
+            phien.ky_thi_id = ky_thi_id
+            phien.thi_sinh_id = thi_sinh_id
+            phien.thiet_bi = (thiet_bi or "")[:255]
+            phien.last_seen = now
+        else:
+            self.db.add(PhienThi(
+                cong_chuc_id=cc_id,
+                phien_token=token,
+                ky_thi_id=ky_thi_id,
+                thi_sinh_id=thi_sinh_id,
+                thiet_bi=(thiet_bi or "")[:255],
+                last_seen=now,
+            ))
+        return token
+
+    async def _validate_phien(self, cc_id: uuid.UUID, phien_token: Optional[str]) -> None:
+        """Kiem tra token phien con hop le va cap nhat last_seen (heartbeat).
+
+        - phien_token rong (client cu chua gui) -> bo qua enforce (tranh khoa
+          nguoi dung do cache JS cu trong luc trien khai).
+        - phien_token khac token dang luu -> 409: tai khoan dang thi o thiet bi khac.
+        """
+        if not phien_token:
+            return
+        r = await self.db.execute(
+            select(PhienThi).where(PhienThi.cong_chuc_id == cc_id)
+        )
+        phien = r.scalar_one_or_none()
+        if phien is None:
+            return
+        if phien.phien_token != phien_token:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"success": False, "error": {
+                    "code": "PHIEN_001",
+                    "message": "Tài khoản đang được dùng để thi ở thiết bị khác. "
+                               "Bài làm trên thiết bị này đã bị khóa.",
+                }},
+            )
+        phien.last_seen = datetime.utcnow()
 
     # ================================================================
     # GIAO THI SINH
@@ -171,15 +237,7 @@ class ThiSinhService:
         if trang_thai:
             base_where.append(ThiSinh.trang_thai == trang_thai)
 
-        # Lanh dao chi xem CBCC don vi minh
-        if self._is_lanh_dao(user) and not self._is_manager(user):
-            don_vi_id = getattr(user, "don_vi_id", None)
-            if don_vi_id:
-                base_where.append(
-                    ThiSinh.cong_chuc_id.in_(
-                        select(cc.c.id).where(cc.c.don_vi_id == uuid.UUID(don_vi_id))
-                    )
-                )
+        # Module DGNL chi admin (QT_DAO_TAO/SUPER_ADMIN) duoc xem -> khong scope don vi.
 
         count_stmt = select(func.count()).select_from(ThiSinh).where(*base_where)
         total = (await self.db.execute(count_stmt)).scalar() or 0
@@ -224,6 +282,115 @@ class ThiSinhService:
             },
         }
 
+    async def giam_sat(self, ky_thi_id: uuid.UUID, user: TokenPayload) -> dict:
+        """Giam sat truc tiep: tien do + vi pham + online cua tung thi sinh.
+
+        Dung cho man hinh admin theo doi realtime (FE poll ~7s). Chi tinh
+        thi sinh DANG_THI/DA_NOP/VANG (CHUA_THI khong co tien do).
+        """
+        kt = await self._get_ky_thi(ky_thi_id)
+
+        cc = CongChucRef.__table__.alias("cc")
+        dv = DonViRef.__table__.alias("dv")
+
+        stmt = (
+            select(
+                ThiSinh,
+                cc.c.ho_ten,
+                cc.c.ma_cc,
+                dv.c.ten_don_vi.label("don_vi_ten"),
+                ViTriViecLam.ten_vi_tri.label("vi_tri_ten"),
+            )
+            .outerjoin(cc, ThiSinh.cong_chuc_id == cc.c.id)
+            .outerjoin(dv, cc.c.don_vi_id == dv.c.id)
+            .outerjoin(ViTriViecLam, ThiSinh.vi_tri_id == ViTriViecLam.id)
+            .where(ThiSinh.ky_thi_id == ky_thi_id)
+            .order_by(cc.c.ho_ten.asc())
+        )
+        result = await self.db.execute(stmt)
+        rows = result.all()
+
+        # Map last_seen / thiet_bi theo cong_chuc_id (chi phien dang gan ky thi nay)
+        cc_ids = [ts.cong_chuc_id for ts, *_ in rows]
+        phien_map: dict[uuid.UUID, PhienThi] = {}
+        if cc_ids:
+            ph_r = await self.db.execute(
+                select(PhienThi).where(
+                    PhienThi.cong_chuc_id.in_(cc_ids),
+                    PhienThi.ky_thi_id == ky_thi_id,
+                )
+            )
+            phien_map = {p.cong_chuc_id: p for p in ph_r.scalars().all()}
+
+        now = datetime.utcnow()
+        thi_sinh = []
+        dang_thi = chua_thi = da_nop = vang = online_count = co_vi_pham = 0
+
+        for ts, ho_ten, ma_cc, dv_ten, vt_ten in rows:
+            if ts.trang_thai == "DANG_THI":
+                dang_thi += 1
+            elif ts.trang_thai == "DA_NOP":
+                da_nop += 1
+            elif ts.trang_thai == "VANG":
+                vang += 1
+            else:
+                chua_thi += 1
+
+            # So cau da lam: dang thi -> tu chi_tiet_nhap; da nop -> tong da tra loi
+            if ts.trang_thai == "DANG_THI":
+                so_cau_da_lam = len(ts.chi_tiet_nhap or [])
+            elif ts.trang_thai == "DA_NOP":
+                so_cau_da_lam = len(ts.chi_tiet_tra_loi or [])
+            else:
+                so_cau_da_lam = 0
+
+            tg_con = self._tinh_thoi_gian_con(ts, kt) if ts.trang_thai == "DANG_THI" else None
+
+            phien = phien_map.get(ts.cong_chuc_id)
+            last_seen = phien.last_seen if phien else None
+            online = bool(
+                ts.trang_thai == "DANG_THI"
+                and last_seen
+                and (now - last_seen).total_seconds() < 60
+            )
+            if online:
+                online_count += 1
+            if (ts.so_lan_vi_pham or 0) > 0:
+                co_vi_pham += 1
+
+            thi_sinh.append({
+                "cong_chuc_id": ts.cong_chuc_id,
+                "ho_ten": ho_ten,
+                "ma_cc": ma_cc,
+                "don_vi_ten": dv_ten,
+                "vi_tri_ten": vt_ten,
+                "trang_thai": ts.trang_thai,
+                "lan_thi_hien_tai": ts.lan_thi_hien_tai or 0,
+                "so_cau_da_lam": so_cau_da_lam,
+                "tong_so_cau": ts.tong_so_cau or len(ts.de_thi_ids or []),
+                "so_lan_vi_pham": ts.so_lan_vi_pham or 0,
+                "thoi_gian_bat_dau": ts.thoi_gian_bat_dau,
+                "thoi_gian_con_lai_giay": tg_con,
+                "diem_tong": ts.diem_tong,
+                "xep_loai": ts.xep_loai,
+                "last_seen": last_seen,
+                "online": online,
+                "thiet_bi": phien.thiet_bi if phien else None,
+            })
+
+        return {
+            "tong_quan": {
+                "tong_thi_sinh": len(rows),
+                "dang_thi": dang_thi,
+                "da_nop": da_nop,
+                "chua_thi": chua_thi,
+                "vang": vang,
+                "online": online_count,
+                "co_vi_pham": co_vi_pham,
+            },
+            "thi_sinh": thi_sinh,
+        }
+
     async def xoa_thi_sinh(
         self, ky_thi_id: uuid.UUID, cong_chuc_id: uuid.UUID, user: TokenPayload
     ) -> None:
@@ -252,7 +419,9 @@ class ThiSinhService:
     # BAT DAU THI — RANDOM DE
     # ================================================================
 
-    async def bat_dau_thi(self, ky_thi_id: uuid.UUID, user: TokenPayload) -> dict:
+    async def bat_dau_thi(
+        self, ky_thi_id: uuid.UUID, user: TokenPayload, thiet_bi: Optional[str] = None
+    ) -> dict:
         """Bat dau thi: random de thi cho thi sinh."""
         kt = await self._get_ky_thi(ky_thi_id)
 
@@ -292,7 +461,10 @@ class ThiSinhService:
 
         # Check thi lai
         if ts.trang_thai == "DANG_THI":
-            # Dang thi — tra lai de cu kem bai lam nhap (resume autosave)
+            # Dang thi — tra lai de cu kem bai lam nhap (resume autosave).
+            # Thiet bi nay gianh quyen so huu phien (token moi) -> thiet bi cu bi 409.
+            token = await self._upsert_phien(cc_id, ky_thi_id, ts.id, thiet_bi)
+            await self.db.commit()
             cau_hoi_list = await self._lay_de_thi_hien_tai(ts)
             return {
                 "thi_sinh_id": ts.id,
@@ -302,6 +474,8 @@ class ThiSinhService:
                 "dang_tiep_tuc": True,
                 "chi_tiet_nhap": ts.chi_tiet_nhap or [],
                 "so_lan_vi_pham": ts.so_lan_vi_pham or 0,
+                "yeu_cau_toan_man_hinh": bool(kt.yeu_cau_toan_man_hinh),
+                "phien_token": token,
             }
 
         if ts.trang_thai == "DA_NOP":
@@ -345,6 +519,9 @@ class ThiSinhService:
         ts.diem_theo_linh_vuc = {}
         ts.updated_at = datetime.utcnow()
 
+        # Sinh phien moi cho thiet bi nay (chong dung chung tai khoan)
+        token = await self._upsert_phien(cc_id, ky_thi_id, ts.id, thiet_bi)
+
         await self.db.commit()
         await self.db.refresh(ts)
 
@@ -359,6 +536,8 @@ class ThiSinhService:
             "dang_tiep_tuc": False,
             "chi_tiet_nhap": [],
             "so_lan_vi_pham": 0,
+            "yeu_cau_toan_man_hinh": bool(kt.yeu_cau_toan_man_hinh),
+            "phien_token": token,
         }
 
     async def _tao_de_thi(self, kt: KyThi, ts: ThiSinh) -> list[uuid.UUID]:
@@ -484,7 +663,8 @@ class ThiSinhService:
     # ================================================================
 
     async def nop_bai(
-        self, ky_thi_id: uuid.UUID, data: NopBaiRequest, user: TokenPayload
+        self, ky_thi_id: uuid.UUID, data: NopBaiRequest, user: TokenPayload,
+        phien_token: Optional[str] = None,
     ) -> KetQuaResponse:
         """Nop bai va cham diem tu dong."""
         kt = await self._get_ky_thi(ky_thi_id)
@@ -506,6 +686,9 @@ class ThiSinhService:
             return await self._build_ket_qua(ts, kt)
         if ts.trang_thai != "DANG_THI":
             raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "DGNL_033", "message": "Bạn chưa bắt đầu thi hoặc đã nộp bài"}})
+
+        # Chi thiet bi dang so huu phien moi duoc nop (chong dung chung tai khoan)
+        await self._validate_phien(cc_id, phien_token)
 
         # Cham diem
         cau_hoi_ids = [uuid.UUID(cid) for cid in (ts.de_thi_ids or [])]
@@ -610,6 +793,7 @@ class ThiSinhService:
         cau_tra_loi: list,
         so_lan_vi_pham: int,
         user: TokenPayload,
+        phien_token: Optional[str] = None,
     ) -> dict:
         """Luu bai lam nhap (auto-save moi 30s).
 
@@ -633,6 +817,10 @@ class ThiSinhService:
             # Da nop hoac chua bat dau -> bo qua autosave (idempotent, khong raise
             # de FE khong spam loi voi user).
             return {"saved": False, "trang_thai": ts.trang_thai}
+
+        # Chi thiet bi dang so huu phien moi duoc luu (chong dung chung tai khoan).
+        # Cap nhat last_seen luon -> feed man hinh giam sat truc tiep.
+        await self._validate_phien(cc_id, phien_token)
 
         # Chuan hoa payload
         nhap_data = [
@@ -981,14 +1169,7 @@ class ThiSinhService:
         dv = DonViRef.__table__.alias("dv")
 
         base_where = [ThiSinh.ky_thi_id == ky_thi_id]
-        if self._is_lanh_dao(user) and not self._is_manager(user):
-            don_vi_id = getattr(user, "don_vi_id", None)
-            if don_vi_id:
-                base_where.append(
-                    ThiSinh.cong_chuc_id.in_(
-                        select(cc.c.id).where(cc.c.don_vi_id == uuid.UUID(don_vi_id))
-                    )
-                )
+        # Module DGNL chi admin (QT_DAO_TAO/SUPER_ADMIN) duoc export -> khong scope don vi.
 
         stmt = (
             select(

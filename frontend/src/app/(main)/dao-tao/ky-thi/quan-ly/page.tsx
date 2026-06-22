@@ -10,6 +10,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { kyThiApi, linhVucApi, viTriApi, nganHangDgnlApi, cbccApi } from '@/services/lms';
+import { useAuthStore } from '@/stores/useAuthStore';
 import type { IKyThi, ILinhVuc, IViTriViecLam, ICauTrucDeByViTri, IDgnlValidateResponse, ICauHoiDgnl, IThongKeNganHang } from '@/types/lms';
 import DonViCongChucPicker from '@/components/lms/DonViCongChucPicker';
 
@@ -23,6 +24,9 @@ const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: strin
 type Tab = 'danh-sach' | 'ngan-hang' | 'linh-vuc' | 'tao-moi';
 
 export default function QuanLyKyThiPage() {
+  const { user } = useAuthStore();
+  const platformRoles: string[] = (user as any)?.platform_roles ?? [];
+  const isQT = user?.is_system_admin === true || platformRoles.includes('QT_DAO_TAO');
   const [tab, setTab] = useState<Tab>('danh-sach');
   const [kyThiList, setKyThiList] = useState<IKyThi[]>([]);
   const [linhVucList, setLinhVucList] = useState<ILinhVuc[]>([]);
@@ -146,6 +150,16 @@ export default function QuanLyKyThiPage() {
     }
   };
 
+  if (!isQT) {
+    return (
+      <div className="max-w-3xl mx-auto p-8 text-center">
+        <div className="text-4xl mb-3">🔒</div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Không có quyền truy cập</h2>
+        <p className="text-gray-600">Chỉ Quản trị đào tạo (QT_DAO_TAO) được quản lý kỳ thi đánh giá năng lực.</p>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center py-20">
@@ -263,7 +277,10 @@ export default function QuanLyKyThiPage() {
                             </>
                           )}
                           {kt.trang_thai === 'DANG_MO' && (
-                            <button onClick={() => handleChuyenTrangThai(kt, 'DA_DONG')} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">Đóng</button>
+                            <>
+                              <Link href={`/dao-tao/ky-thi/${kt.id}/giam-sat`} className="px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200">Giám sát</Link>
+                              <button onClick={() => handleChuyenTrangThai(kt, 'DA_DONG')} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">Đóng</button>
+                            </>
                           )}
                           {kt.trang_thai === 'DA_DONG' && (
                             <>

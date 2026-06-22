@@ -40,6 +40,7 @@ class KyThiCreate(BaseModel):
     tron_dap_an: bool = True
     hien_ket_qua: bool = True
     hien_dap_an: bool = False
+    yeu_cau_toan_man_hinh: bool = True
 
     @field_validator("ngay_ket_thuc")
     @classmethod
@@ -63,6 +64,7 @@ class KyThiUpdate(BaseModel):
     tron_dap_an: Optional[bool] = None
     hien_ket_qua: Optional[bool] = None
     hien_dap_an: Optional[bool] = None
+    yeu_cau_toan_man_hinh: Optional[bool] = None
 
 
 class KyThiTrangThaiUpdate(BaseModel):
@@ -94,6 +96,7 @@ class KyThiResponse(BaseModel):
     tron_dap_an: Optional[bool] = True
     hien_ket_qua: Optional[bool] = True
     hien_dap_an: Optional[bool] = False
+    yeu_cau_toan_man_hinh: Optional[bool] = True
     trang_thai: Optional[str] = "NHAP"
     nguoi_tao_id: UUID
     nguoi_duyet_id: Optional[UUID] = None

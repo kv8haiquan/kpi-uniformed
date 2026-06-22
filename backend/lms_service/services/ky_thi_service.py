@@ -235,6 +235,7 @@ class KyThiService:
             tron_dap_an=data.tron_dap_an,
             hien_ket_qua=data.hien_ket_qua,
             hien_dap_an=data.hien_dap_an,
+            yeu_cau_toan_man_hinh=data.yeu_cau_toan_man_hinh,
             trang_thai="NHAP",
             nguoi_tao_id=uuid.UUID(user.sub),
         )

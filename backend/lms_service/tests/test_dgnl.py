@@ -119,6 +119,22 @@ async def _setup_full_exam(client: AsyncClient, admin_user) -> dict:
         await client.put(f"{BASE}/cau-hoi/{ch['id']}", json={"linh_vuc_id": lv["id"]})
         cau_hoi_ids.append(ch["id"])
 
+    # Seed NGAN HANG DGNL (bang cau_hoi_dgnl) — KHAC voi cau_hoi khoa hoc o tren.
+    # bat_dau_thi()/validate random tu cau_hoi_dgnl, nen phai co du DE/TB/KHO cho lv nay.
+    def _ch_dgnl(noi_dung, do_kho, da_dung="A"):
+        return {
+            "linh_vuc_id": lv["id"], "do_kho": do_kho, "loai": "TRAC_NGHIEM_1",
+            "noi_dung": noi_dung,
+            "dap_an": {"lua_chon": [{"key": "A", "noi_dung": "Đáp A"}, {"key": "B", "noi_dung": "Đáp B"}], "dap_an_dung": da_dung},
+        }
+    for i in range(5):
+        r = await client.post(f"{BASE}/dgnl/ngan-hang", json=_ch_dgnl(f"DGNL DỄ {i+1}", "DE"))
+        assert r.status_code == 201, f"seed dgnl DE failed: {r.json()}"
+    for i in range(3):
+        await client.post(f"{BASE}/dgnl/ngan-hang", json=_ch_dgnl(f"DGNL TB {i+1}", "TRUNG_BINH", "B"))
+    for i in range(2):
+        await client.post(f"{BASE}/dgnl/ngan-hang", json=_ch_dgnl(f"DGNL KHÓ {i+1}", "KHO"))
+
     # Cau truc de: 2 DE + 1 TB + 1 KHO = 4 cau
     resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
         "vi_tri_id": vt["id"],
@@ -906,3 +922,192 @@ class TestUpsertLanThi:
         assert len(ts.lich_su_thi) == 2
         lans = sorted(e["lan"] for e in ts.lich_su_thi)
         assert lans == [1, 2]
+
+
+# =========================================================================
+# SINGLE-SESSION (phien_thi) + GIAM SAT + SIET QUYEN ADMIN-ONLY (22/06/2026)
+# =========================================================================
+
+from lms_service.main import app as _app
+from lms_service.dependencies import get_current_user as _get_current_user
+from shared.auth import TokenPayload as _TokenPayload
+
+
+def _override_current_user(user: _TokenPayload) -> None:
+    """Swap user dang dang nhap giua chung 1 test (multi-user scenario)."""
+    async def _o():
+        return user
+    _app.dependency_overrides[_get_current_user] = _o
+
+
+def _make_token(vai_tro: str, is_lanh_dao: bool = False, platform_roles=None, sub=None) -> _TokenPayload:
+    return _TokenPayload(
+        sub=sub or "01014af6-1505-495b-95ab-8c1503cfa061",
+        exp=int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
+        type="access",
+        ma_cc=f"TEST-{vai_tro[:5]}",
+        vai_tro=vai_tro,
+        don_vi_id="a0000000-0000-0000-0000-000000000001",
+        is_lanh_dao=is_lanh_dao,
+        platform_roles=platform_roles or [],
+    )
+
+
+async def _setup_open_exam(client: AsyncClient, examinee_cc_id: str) -> dict:
+    """Tao ky thi day du + giao 1 thi sinh + mo (DANG_MO). Tra ve {ky_thi, vi_tri}."""
+    data = await _setup_full_exam(client, None)
+    kt = data["ky_thi"]
+    vt = data["vi_tri"]
+    await client.post(f"{BASE}/ky-thi/{kt['id']}/thi-sinh", json={
+        "danh_sach": [{"cong_chuc_id": examinee_cc_id, "vi_tri_id": vt["id"]}],
+    })
+    await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "CHO_DUYET"})
+    await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "DANG_MO"})
+    return data
+
+
+class TestPhienThiSingleSession:
+    """Feature 1: 1 phien thi/tai khoan — thiet bi cu bi 409 khi co thiet bi moi."""
+
+    # admin_user idx=0 -> cc_id nay
+    _CC = "00327c43-c9a3-44d7-8306-7084e75cb2b5"
+
+    async def test_bat_dau_tra_ve_phien_token(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")
+        assert resp.status_code == 200
+        assert resp.json()["data"].get("phien_token")
+
+    async def test_nop_bai_token_cu_bi_409(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+
+        # Thiet bi 1 bat dau -> token1
+        r1 = await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")
+        token1 = r1.json()["data"]["phien_token"]
+        cau_hoi = r1.json()["data"]["cau_hoi"]
+
+        # Thiet bi 2 bat dau (resume cung ky thi) -> token2, ghi de token1
+        r2 = await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")
+        token2 = r2.json()["data"]["phien_token"]
+        assert token2 and token2 != token1
+
+        cau_tra_loi = [{"cau_hoi_id": ch["id"], "tra_loi": {"dap_an": "A"}} for ch in cau_hoi]
+
+        # Thiet bi 1 (token cu) nop -> 409
+        resp_cu = await client.post(
+            f"{BASE}/ky-thi/{kt['id']}/nop-bai",
+            json={"cau_tra_loi": cau_tra_loi},
+            headers={"X-Phien-Thi": token1},
+        )
+        assert resp_cu.status_code == 409
+        assert resp_cu.json()["detail"]["error"]["code"] == "PHIEN_001"
+
+        # Thiet bi 2 (token moi) nop -> 200
+        resp_moi = await client.post(
+            f"{BASE}/ky-thi/{kt['id']}/nop-bai",
+            json={"cau_tra_loi": cau_tra_loi},
+            headers={"X-Phien-Thi": token2},
+        )
+        assert resp_moi.status_code == 200
+
+    async def test_luu_nhap_token_cu_bi_409(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        r1 = await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")
+        token1 = r1.json()["data"]["phien_token"]
+        await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")  # token2 ghi de
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt['id']}/luu-nhap",
+            json={"cau_tra_loi": [], "so_lan_vi_pham": 1},
+            headers={"X-Phien-Thi": token1},
+        )
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["error"]["code"] == "PHIEN_001"
+
+    async def test_khong_co_token_van_chay(self, client, admin_user):
+        """Client cu khong gui token -> khong enforce (tranh khoa khi trien khai)."""
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        r = await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")
+        cau_hoi = r.json()["data"]["cau_hoi"]
+        cau_tra_loi = [{"cau_hoi_id": ch["id"], "tra_loi": {"dap_an": "A"}} for ch in cau_hoi]
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/nop-bai", json={"cau_tra_loi": cau_tra_loi})
+        assert resp.status_code == 200
+
+
+class TestGiamSat:
+    """Feature 3: man hinh giam sat truc tiep — chi admin."""
+
+    _CC = "00327c43-c9a3-44d7-8306-7084e75cb2b5"
+
+    async def test_giam_sat_admin_ok(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")
+
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/giam-sat")
+        assert resp.status_code == 200
+        body = resp.json()["data"]
+        assert body["tong_quan"]["tong_thi_sinh"] == 1
+        assert body["tong_quan"]["dang_thi"] == 1
+        assert len(body["thi_sinh"]) == 1
+        ts = body["thi_sinh"][0]
+        assert ts["trang_thai"] == "DANG_THI"
+        assert "so_lan_vi_pham" in ts and "online" in ts
+
+    async def test_giam_sat_cbcc_403(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        # Chuyen sang CBCC (khong co QT_DAO_TAO)
+        _override_current_user(_make_token("CHUYEN_VIEN"))
+        try:
+            resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/giam-sat")
+            assert resp.status_code == 403
+        finally:
+            _override_current_user(admin_user)
+
+    async def test_giam_sat_lanh_dao_403(self, client, admin_user):
+        """Feature 4: lanh dao (CCT) KHONG con quyen giam sat DGNL."""
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        _override_current_user(_make_token("CCT", is_lanh_dao=True))
+        try:
+            resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/giam-sat")
+            assert resp.status_code == 403
+        finally:
+            _override_current_user(admin_user)
+
+
+class TestSietQuyenAdminOnly:
+    """Feature 4: chi admin (QT_DAO_TAO/SUPER_ADMIN) xem thi sinh/thong ke DGNL."""
+
+    _CC = "00327c43-c9a3-44d7-8306-7084e75cb2b5"
+
+    async def test_lanh_dao_khong_xem_thi_sinh(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        _override_current_user(_make_token("CCT", is_lanh_dao=True))
+        try:
+            resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh")
+            assert resp.status_code == 403
+        finally:
+            _override_current_user(admin_user)
+
+    async def test_lanh_dao_khong_thong_ke(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        _override_current_user(_make_token("CCT", is_lanh_dao=True))
+        try:
+            resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thong-ke")
+            assert resp.status_code == 403
+        finally:
+            _override_current_user(admin_user)
+
+    async def test_admin_van_xem_thi_sinh_ok(self, client, admin_user):
+        data = await _setup_open_exam(client, self._CC)
+        kt = data["ky_thi"]
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh")
+        assert resp.status_code == 200

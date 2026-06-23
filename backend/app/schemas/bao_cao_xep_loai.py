@@ -94,9 +94,15 @@ class ChiTietXepLoaiResponse(BaseModel):
     # Điểm từ hệ thống
     diem_tieu_chi_chung: Decimal = Field(default=Decimal("0"), description="Điểm tiêu chí chung (0-30)")
     diem_kpi: Decimal = Field(default=Decimal("0"), description="Điểm KPI (0-70)")
-    diem_tong: Decimal = Field(default=Decimal("0"), description="Điểm tổng (0-100)")
+    diem_tong: Decimal = Field(default=Decimal("0"), description="Điểm tổng hệ thống (0-100)")
     xep_loai_he_thong: str = Field(description="Xếp loại hệ thống tự tính")
-    
+
+    # Điều chỉnh điểm của lãnh đạo (override snapshot)
+    diem_tong_dieu_chinh: Optional[Decimal] = Field(
+        default=None, description="Điểm tổng lãnh đạo sửa tay (None = dùng điểm hệ thống)"
+    )
+    ly_do_dieu_chinh_diem: Optional[str] = None
+
     # Đề xuất của Đội trưởng
     xep_loai_de_xuat: Optional[str] = None
     ly_do_dieu_chinh_dt: Optional[str] = None
@@ -133,6 +139,27 @@ class DeXuatXepLoaiRequest(BaseModel):
         default=None,
         max_length=1000,
         description="Ghi chú bổ sung"
+    )
+
+
+class DieuChinhDiemRequest(BaseModel):
+    """
+    Request điều chỉnh điểm tổng của lãnh đạo (độc lập với xếp loại).
+
+    Validation:
+    - 0 <= diem_tong <= 100 (None = bỏ điều chỉnh, về điểm hệ thống)
+    - Nếu diem_tong khác None → ly_do_dieu_chinh_diem BẮT BUỘC
+    """
+    diem_tong: Optional[Decimal] = Field(
+        default=None,
+        ge=0,
+        le=100,
+        description="Điểm tổng mới (0-100). None = bỏ điều chỉnh, về điểm hệ thống"
+    )
+    ly_do_dieu_chinh_diem: Optional[str] = Field(
+        default=None,
+        max_length=2000,
+        description="Lý do điều chỉnh điểm (bắt buộc khi đặt điểm)"
     )
 
 

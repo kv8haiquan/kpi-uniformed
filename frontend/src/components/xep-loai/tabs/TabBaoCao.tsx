@@ -50,6 +50,9 @@ interface IChiTietXepLoai {
   diem_tieu_chi_chung?: number;
   diem_kpi?: number;
   diem_tong?: number;
+  // Điều chỉnh điểm của lãnh đạo (null = chưa sửa, dùng diem_tong hệ thống)
+  diem_tong_dieu_chinh?: number | null;
+  ly_do_dieu_chinh_diem?: string | null;
   // Ngày công
   so_ngay_lam_viec?: number;
   so_ngay_nghi?: number;
@@ -296,6 +299,13 @@ const baoCaoApi = {
     ghi_chu?: string;
   }): Promise<void> {
     await apiClient.put(`/bao-cao-xep-loai/chi-tiet/${chiTietId}/de-xuat`, payload);
+  },
+
+  async dieuChinhDiem(chiTietId: string, payload: {
+    diem_tong: number | null;
+    ly_do_dieu_chinh_diem?: string;
+  }): Promise<void> {
+    await apiClient.put(`/bao-cao-xep-loai/chi-tiet/${chiTietId}/dieu-chinh-diem`, payload);
   },
 
   async guiDuyet(baoCaoId: string): Promise<void> {
@@ -1109,6 +1119,9 @@ function BaoCaoTableView({
   const [selectedChiTiet, setSelectedChiTiet] = useState<IChiTietXepLoai | null>(null);
   const [deXuatXepLoai, setDeXuatXepLoai] = useState('B');
   const [lyDoDeXuat, setLyDoDeXuat] = useState('');
+  // Điều chỉnh điểm (chuỗi để cho phép bỏ trống = gỡ điều chỉnh)
+  const [diemTong, setDiemTong] = useState('');
+  const [lyDoDiem, setLyDoDiem] = useState('');
   const [detailCongChuc, setDetailCongChuc] = useState<IChiTietXepLoai | null>(null);
 
   // Luôn sắp xếp theo điểm tổng giảm dần, tiebreaker: ưu tiên CV khó
@@ -1121,16 +1134,49 @@ function BaoCaoTableView({
     setSelectedChiTiet(ct);
     setDeXuatXepLoai(ct.xep_loai_de_xuat || ct.xep_loai_he_thong || ct.xep_loai_tu_dong || 'B');
     setLyDoDeXuat(ct.ly_do_dieu_chinh_dt || ct.ly_do_de_xuat || '');
+    // Khởi tạo điểm: ưu tiên điểm đã điều chỉnh, không thì điểm hệ thống
+    const diemHienTai = ct.diem_tong_dieu_chinh ?? ct.diem_tong;
+    setDiemTong(diemHienTai != null ? String(diemHienTai) : '');
+    setLyDoDiem(ct.ly_do_dieu_chinh_diem || '');
   };
 
   const handleDeXuatSubmit = async () => {
     if (!selectedChiTiet) return;
     setIsProcessing(true);
     try {
-      await baoCaoApi.deXuatXepLoai(selectedChiTiet.id, {
-        xep_loai_de_xuat: deXuatXepLoai,
-        ly_do_dieu_chinh: lyDoDeXuat || undefined,
-      });
+      // 1) Điều chỉnh điểm (độc lập) — chỉ gọi khi điểm thay đổi so với hiện trạng
+      const diemGoc = selectedChiTiet.diem_tong_dieu_chinh ?? null;
+      const diemMoi = diemTong.trim() === '' ? null : Number(diemTong);
+      const diemThayDoi =
+        (diemMoi === null && diemGoc !== null) ||
+        (diemMoi !== null && diemMoi !== Number(diemGoc));
+      if (diemThayDoi) {
+        if (diemMoi !== null && (Number.isNaN(diemMoi) || diemMoi < 0 || diemMoi > 100)) {
+          alert('Điểm tổng phải trong khoảng 0 - 100');
+          setIsProcessing(false);
+          return;
+        }
+        if (diemMoi !== null && lyDoDiem.trim() === '') {
+          alert('Phải nhập lý do khi điều chỉnh điểm');
+          setIsProcessing(false);
+          return;
+        }
+        await baoCaoApi.dieuChinhDiem(selectedChiTiet.id, {
+          diem_tong: diemMoi,
+          ly_do_dieu_chinh_diem: diemMoi !== null ? lyDoDiem : undefined,
+        });
+      }
+
+      // 2) Đề xuất xếp loại (như cũ) — chỉ gọi khi xếp loại/lý do thay đổi
+      const xepLoaiGoc = selectedChiTiet.xep_loai_de_xuat || selectedChiTiet.xep_loai_he_thong || selectedChiTiet.xep_loai_tu_dong;
+      const lyDoGoc = selectedChiTiet.ly_do_dieu_chinh_dt || selectedChiTiet.ly_do_de_xuat || '';
+      if (deXuatXepLoai !== xepLoaiGoc || lyDoDeXuat !== lyDoGoc) {
+        await baoCaoApi.deXuatXepLoai(selectedChiTiet.id, {
+          xep_loai_de_xuat: deXuatXepLoai,
+          ly_do_dieu_chinh: lyDoDeXuat || undefined,
+        });
+      }
+
       await onRefresh();
       setSelectedChiTiet(null);
     } catch (err) {
@@ -1270,9 +1316,23 @@ function BaoCaoTableView({
                       {formatScore(ct.diem_kpi) || '-'}
                     </td>
                     <td className="px-3 py-3 text-center">
-                      <span className="font-bold text-lg text-gray-900">
-                        {formatScore(ct.diem_tong) || '-'}
-                      </span>
+                      {ct.diem_tong_dieu_chinh != null ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className="font-bold text-lg text-blue-700">
+                            {formatScore(ct.diem_tong_dieu_chinh) || '-'}
+                          </span>
+                          <span
+                            className="text-[10px] text-amber-600"
+                            title={`Điểm hệ thống: ${formatScore(ct.diem_tong) || '-'}`}
+                          >
+                            Đã chỉnh điểm
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="font-bold text-lg text-gray-900">
+                          {formatScore(ct.diem_tong) || '-'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-center">
                       <XepLoaiBadge xepLoai={xepLoaiHeThong} />
@@ -1334,21 +1394,52 @@ function BaoCaoTableView({
       {selectedChiTiet && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Điều chỉnh xếp loại đề xuất</h3>
-            
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Điều chỉnh điểm &amp; xếp loại</h3>
+
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
               <p className="font-medium text-gray-900">{selectedChiTiet.cong_chuc?.ho_ten}</p>
               <p className="text-sm text-gray-600">{selectedChiTiet.cong_chuc?.ma_cc}</p>
               <div className="flex items-center gap-4 mt-2 text-sm">
                 <span className="text-gray-500">
-                  Điểm: <strong>{formatScore(selectedChiTiet.diem_tong)}</strong>
+                  Điểm hệ thống: <strong>{formatScore(selectedChiTiet.diem_tong)}</strong>
                 </span>
                 <span className="text-gray-500">
                   Tự động: <XepLoaiBadge xepLoai={selectedChiTiet.xep_loai_he_thong || selectedChiTiet.xep_loai_tu_dong} />
                 </span>
               </div>
             </div>
-            
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Điểm tổng (0 - 100)
+                {diemTong.trim() !== '' && (
+                  <span className="text-red-500 ml-1">*</span>
+                )}
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                value={diemTong}
+                onChange={(e) => setDiemTong(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Để trống = dùng điểm hệ thống"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Để trống ô điểm để gỡ điều chỉnh, quay về điểm hệ thống. Sửa điểm không tự đổi xếp loại.
+              </p>
+              {diemTong.trim() !== '' && (
+                <textarea
+                  value={lyDoDiem}
+                  onChange={(e) => setLyDoDiem(e.target.value)}
+                  rows={2}
+                  className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Lý do điều chỉnh điểm (bắt buộc)..."
+                />
+              )}
+            </div>
+
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Xếp loại đề xuất</label>
               <div className="grid grid-cols-4 gap-2">
@@ -1748,7 +1839,16 @@ function CCTView({ thang, nam, canApprove, onPendingCountChange }: CCTViewProps)
                         </td>
                         <td className="px-3 py-2 text-center">{formatScore(ct.diem_tieu_chi_chung) || '-'}</td>
                         <td className="px-3 py-2 text-center">{formatScore(ct.diem_kpi) || '-'}</td>
-                        <td className="px-3 py-2 text-center font-bold">{formatScore(ct.diem_tong) || '-'}</td>
+                        <td className="px-3 py-2 text-center font-bold">
+                          {ct.diem_tong_dieu_chinh != null ? (
+                            <span className="text-blue-700" title={`Điểm hệ thống: ${formatScore(ct.diem_tong) || '-'}`}>
+                              {formatScore(ct.diem_tong_dieu_chinh) || '-'}
+                              <span className="block text-[10px] font-normal text-amber-600">Đã chỉnh</span>
+                            </span>
+                          ) : (
+                            formatScore(ct.diem_tong) || '-'
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-center">
                           <XepLoaiBadge xepLoai={ct.xep_loai_he_thong || ct.xep_loai_tu_dong} />
                         </td>

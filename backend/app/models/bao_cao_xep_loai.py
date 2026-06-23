@@ -460,7 +460,25 @@ class ChiTietXepLoai(BaseModel):
         index=True,
         comment="Xếp loại hệ thống tự tính (A/B/C/D/E)"
     )
-    
+
+    # -------------------------------------------------------------------------
+    # ĐIỀU CHỈNH ĐIỂM CỦA LÃNH ĐẠO (override snapshot — độc lập với xếp loại)
+    # NULL = chưa điều chỉnh, hiển thị diem_tong hệ thống. Hàm tính lại điểm
+    # (cap_nhat_chi_tiet_tu_du_lieu) KHÔNG chạm cột này → override luôn được giữ.
+    # -------------------------------------------------------------------------
+
+    diem_tong_dieu_chinh: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+        comment="Điểm tổng lãnh đạo sửa tay (NULL = dùng diem_tong hệ thống)"
+    )
+
+    ly_do_dieu_chinh_diem: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Lý do lãnh đạo điều chỉnh điểm tổng"
+    )
+
     # -------------------------------------------------------------------------
     # ĐỀ XUẤT CỦA ĐỘI TRƯỞNG
     # -------------------------------------------------------------------------
@@ -578,6 +596,13 @@ class ChiTietXepLoai(BaseModel):
         Lấy xếp loại cuối cùng (ưu tiên quyết định > đề xuất > hệ thống).
         """
         return self.xep_loai_quyet_dinh or self.xep_loai_de_xuat or self.xep_loai_he_thong
+
+    @property
+    def diem_tong_hien_thi(self) -> Decimal:
+        """
+        Điểm tổng hiển thị: ưu tiên điểm lãnh đạo điều chỉnh, nếu không dùng điểm hệ thống.
+        """
+        return self.diem_tong_dieu_chinh if self.diem_tong_dieu_chinh is not None else self.diem_tong
     
     @property
     def da_dieu_chinh(self) -> bool:

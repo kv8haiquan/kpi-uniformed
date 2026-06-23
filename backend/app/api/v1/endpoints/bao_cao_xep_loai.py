@@ -41,7 +41,7 @@ from app.models.bao_cao_xep_loai import (
 )
 from app.schemas.common import success_response, error_response
 from app.schemas.bao_cao_xep_loai import (
-    DeXuatXepLoaiRequest, QuyetDinhXepLoaiRequest,
+    DeXuatXepLoaiRequest, QuyetDinhXepLoaiRequest, DieuChinhDiemRequest,
     PheDuyetBaoCaoRequest, get_trang_thai_ten
 )
 
@@ -894,6 +894,9 @@ def build_chi_tiet_response(ct: ChiTietXepLoai) -> dict:
         "diem_tieu_chi_chung": float(ct.diem_tieu_chi_chung) if ct.diem_tieu_chi_chung else 0,
         "diem_kpi": float(ct.diem_kpi) if ct.diem_kpi else 0,
         "diem_tong": float(ct.diem_tong) if ct.diem_tong else 0,
+        # Điều chỉnh điểm của lãnh đạo (None = chưa sửa, dùng diem_tong hệ thống)
+        "diem_tong_dieu_chinh": float(ct.diem_tong_dieu_chinh) if ct.diem_tong_dieu_chinh is not None else None,
+        "ly_do_dieu_chinh_diem": ct.ly_do_dieu_chinh_diem,
         # Xếp loại
         "xep_loai_he_thong": ct.xep_loai_he_thong,
         "xep_loai_de_xuat": ct.xep_loai_de_xuat,
@@ -1240,6 +1243,91 @@ async def de_xuat_xep_loai(
     return success_response(
         data=build_chi_tiet_response(chi_tiet),
         message="Cập nhật xếp loại đề xuất thành công"
+    )
+
+
+# =============================================================================
+# 2b. PUT /chi-tiet/{id}/dieu-chinh-diem - Lãnh đạo sửa điểm tổng (độc lập xếp loại)
+# =============================================================================
+
+@router.put("/chi-tiet/{chi_tiet_id}/dieu-chinh-diem")
+async def dieu_chinh_diem(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    chi_tiet_id: UUID,
+    payload: DieuChinhDiemRequest,
+) -> dict:
+    """
+    Lãnh đạo (TDV/CCT) điều chỉnh điểm tổng của 1 CC trong báo cáo xếp loại.
+
+    Điểm điều chỉnh chỉ lưu trong báo cáo (snapshot), KHÔNG đụng danh_gia_thang
+    và độc lập với xếp loại đề xuất.
+
+    Validation:
+    - 0 <= diem_tong <= 100 (đã kiểm ở schema). None = bỏ điều chỉnh.
+    - Nếu đặt điểm (diem_tong != None) → ly_do_dieu_chinh_diem BẮT BUỘC.
+    - Báo cáo phải ở trạng thái NHAP hoặc TU_CHOI.
+    """
+    # Lấy chi tiết kèm báo cáo
+    stmt = (
+        select(ChiTietXepLoai)
+        .options(
+            selectinload(ChiTietXepLoai.bao_cao),
+            selectinload(ChiTietXepLoai.cong_chuc),
+        )
+        .where(ChiTietXepLoai.id == chi_tiet_id)
+    )
+    result = await db.execute(stmt)
+    chi_tiet = result.scalar_one_or_none()
+
+    if not chi_tiet:
+        raise HTTPException(status_code=404, detail=error_response(
+            code="NOT_FOUND", message="Không tìm thấy chi tiết xếp loại"
+        ))
+
+    # Kiểm tra quyền: phải là Trưởng đơn vị hoặc CCT của đơn vị này
+    is_tdv = check_is_truong_don_vi(current_user)
+    is_cct = check_is_chi_cuc_truong(current_user)
+
+    if not (is_tdv or is_cct):
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_003", message="Chỉ Trưởng đơn vị hoặc CCT mới có quyền điều chỉnh điểm"
+        ))
+
+    if chi_tiet.bao_cao.don_vi_id != current_user.don_vi_id:
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_004", message="Bạn không có quyền điều chỉnh báo cáo của đơn vị khác"
+        ))
+
+    # Kiểm tra trạng thái báo cáo
+    if chi_tiet.bao_cao.trang_thai not in [TrangThaiBaoCao.NHAP.value, TrangThaiBaoCao.TU_CHOI.value]:
+        raise HTTPException(status_code=400, detail=error_response(
+            code="BIZ_001", message=f"Không thể điều chỉnh ở trạng thái {chi_tiet.bao_cao.trang_thai}"
+        ))
+
+    # Validation: đặt điểm thì bắt buộc lý do
+    if payload.diem_tong is not None:
+        if not payload.ly_do_dieu_chinh_diem or len(payload.ly_do_dieu_chinh_diem.strip()) == 0:
+            raise HTTPException(status_code=400, detail=error_response(
+                code="VAL_003", message="Phải nhập lý do khi điều chỉnh điểm"
+            ))
+
+    # Cập nhật (None = gỡ điều chỉnh, về điểm hệ thống)
+    if payload.diem_tong is not None:
+        chi_tiet.diem_tong_dieu_chinh = _truncate_2dp(payload.diem_tong)
+        chi_tiet.ly_do_dieu_chinh_diem = payload.ly_do_dieu_chinh_diem
+    else:
+        chi_tiet.diem_tong_dieu_chinh = None
+        chi_tiet.ly_do_dieu_chinh_diem = None
+    chi_tiet.bi_tu_choi = False  # Reset nếu đã sửa
+    chi_tiet.ly_do_tu_choi = None
+
+    await db.flush()
+    await db.refresh(chi_tiet)
+
+    return success_response(
+        data=build_chi_tiet_response(chi_tiet),
+        message="Cập nhật điểm thành công"
     )
 
 

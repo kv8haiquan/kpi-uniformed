@@ -42,6 +42,7 @@ from app.models.kpi_assessment import (
     TrangThaiDanhGia,
 )
 from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro
+from app.models.bao_cao_xep_loai import BaoCaoXepLoai, TrangThaiBaoCao
 from app.schemas.common import success_response, error_response
 from app.schemas.assessment import (
     TrangThaiTieuChiEnum,
@@ -49,6 +50,7 @@ from app.schemas.assessment import (
     TuDanhGiaTieuChiRequest,
     PheDuyetTieuChiRequest,
     PheDuyetTieuChiBulkRequest,
+    DieuChinhDanhGiaThangRequest,  # Lãnh đạo chỉnh điểm Đánh giá tháng ở giai đoạn báo cáo
     TuChoiTieuChiRequest,  # v3.5
     TieuChiItemResponse,
     TieuChiChungTongHop,
@@ -366,6 +368,7 @@ def build_tieu_chi_response(tc_dg: TieuChiChungDanhGia, dgt_id: Optional[UUID] =
         diem_phe_duyet=float(tc_dg.diem_phe_duyet) if tc_dg.diem_phe_duyet is not None else None,
         diem_pdv=diem_pdv,
         diem=diem,
+        diem_danh_gia_thang=float(tc_dg.diem_danh_gia_thang) if tc_dg.diem_danh_gia_thang is not None else None,
         trang_thai=TrangThaiTieuChiEnum(tc_dg.trang_thai.value),
         ghi_chu_cc=tc_dg.ghi_chu_cc,
         ghi_chu_ld=tc_dg.ghi_chu_ld,
@@ -2129,6 +2132,114 @@ async def get_tieu_chi_cong_chuc(
     )
     
     return success_response(data=response_data, message="Lấy tiêu chí chung thành công")
+
+
+@router.post("/{danh_gia_thang_id}/dieu-chinh-danh-gia-thang")
+async def dieu_chinh_danh_gia_thang(
+    danh_gia_thang_id: UUID,
+    payload: DieuChinhDanhGiaThangRequest,
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+) -> dict:
+    """
+    Lãnh đạo chỉnh điểm 'Đánh giá tháng' của tiêu chí chung ở giai đoạn báo cáo xếp loại.
+
+    - Lưu per-tiêu-chí vào tieu_chi_chung_danh_gia.diem_danh_gia_thang (NULL = về Trưởng duyệt).
+    - Recompute danh_gia_thang.diem_tieu_chi_chung = SUM(COALESCE(diem_danh_gia_thang, diem_phe_duyet, diem_tu_cham)).
+    - Điểm tổng + xếp loại trong báo cáo tự cập nhật khi báo cáo được tải lại (NHAP → cap_nhat_chi_tiet_tu_du_lieu).
+
+    Quyền: TDV/PDV cùng đơn vị, hoặc CCT/PCCT/Admin.
+    Chỉ cho phép khi báo cáo xếp loại tháng đó của đơn vị CHƯA chốt (NHAP/TU_CHOI hoặc chưa tạo).
+    """
+    # 1. Load đánh giá tháng + tiêu chí + công chức
+    stmt = select(DanhGiaThang).options(
+        selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi),
+    ).where(
+        DanhGiaThang.id == danh_gia_thang_id,
+        DanhGiaThang.is_deleted == False,
+    )
+    danh_gia = (await db.execute(stmt)).scalar_one_or_none()
+    if not danh_gia:
+        raise HTTPException(status_code=404, detail=error_response(
+            code="NOT_FOUND", message="Không tìm thấy đánh giá tháng"
+        ))
+
+    cong_chuc = (await db.execute(
+        select(CongChuc).where(CongChuc.id == danh_gia.cong_chuc_id)
+    )).scalar_one_or_none()
+    if not cong_chuc:
+        raise HTTPException(status_code=404, detail=error_response(
+            code="NOT_FOUND", message="Không tìm thấy công chức"
+        ))
+
+    # 2. Kiểm tra quyền (giống get_tieu_chi_cong_chuc)
+    is_admin = getattr(current_user.vai_tro, 'is_system_admin', False) if current_user.vai_tro else False
+    cap_bac = current_user.vai_tro.cap_bac if current_user.vai_tro else None
+    is_cct_or_pcct = cap_bac in [CapBacVaiTro.CHI_CUC_TRUONG, CapBacVaiTro.PHO_CHI_CUC_TRUONG]
+    is_lanh_dao_don_vi = cap_bac in [CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_DON_VI]
+
+    if not (is_admin or is_cct_or_pcct or is_lanh_dao_don_vi):
+        raise HTTPException(status_code=403, detail=error_response(
+            code="PERM_001", message="Chỉ Lãnh đạo hoặc Admin mới được điều chỉnh điểm Đánh giá tháng"
+        ))
+    if is_lanh_dao_don_vi and not is_admin and not is_cct_or_pcct:
+        if cong_chuc.don_vi_id != current_user.don_vi_id:
+            raise HTTPException(status_code=403, detail=error_response(
+                code="PERM_002", message="Lãnh đạo đơn vị chỉ được điều chỉnh CC cùng đơn vị"
+            ))
+
+    # 3. Guard: báo cáo xếp loại tháng đó của đơn vị chưa chốt
+    bc = (await db.execute(
+        select(BaoCaoXepLoai).where(
+            BaoCaoXepLoai.don_vi_id == cong_chuc.don_vi_id,
+            BaoCaoXepLoai.thang == danh_gia.thang,
+            BaoCaoXepLoai.nam == danh_gia.nam,
+            BaoCaoXepLoai.is_deleted == False,
+        )
+    )).scalar_one_or_none()
+    if bc and bc.trang_thai not in [TrangThaiBaoCao.NHAP.value, TrangThaiBaoCao.TU_CHOI.value]:
+        raise HTTPException(status_code=400, detail=error_response(
+            code="BIZ_001", message=f"Không thể điều chỉnh khi báo cáo đang ở trạng thái {bc.trang_thai}"
+        ))
+
+    # 4. Áp điểm Đánh giá tháng per-tiêu-chí
+    tc_map = {tc.tieu_chi.ma_tieu_chi: tc for tc in danh_gia.tieu_chi_chungs}
+    for item in payload.tieu_chi:
+        tc = tc_map.get(item.ma_tieu_chi)
+        if not tc:
+            raise HTTPException(status_code=400, detail=error_response(
+                code="VAL_003", message=f"Tiêu chí {item.ma_tieu_chi} không có trong đánh giá tháng này"
+            ))
+        if item.diem_danh_gia_thang is None:
+            tc.diem_danh_gia_thang = None
+        else:
+            tc.diem_danh_gia_thang = Decimal(str(item.diem_danh_gia_thang))
+
+    # 5. Recompute tổng điểm tiêu chí chung (0-30)
+    tong = Decimal("0")
+    for tc in danh_gia.tieu_chi_chungs:
+        if tc.diem_danh_gia_thang is not None:
+            diem = tc.diem_danh_gia_thang
+        elif tc.diem_phe_duyet is not None:
+            diem = tc.diem_phe_duyet
+        else:
+            diem = tc.diem_tu_cham
+        tong += diem
+    if tong < 0:
+        tong = Decimal("0")
+    if tong > 30:
+        tong = Decimal("30")
+    danh_gia.diem_tieu_chi_chung = tong
+
+    await db.flush()
+
+    return success_response(
+        data={
+            "danh_gia_thang_id": str(danh_gia.id),
+            "diem_tieu_chi_chung": float(tong),
+        },
+        message="Cập nhật điểm Đánh giá tháng thành công"
+    )
 
 
 @router.get("/kpi/thang/{thang}/nam/{nam}")

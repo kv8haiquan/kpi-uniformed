@@ -604,7 +604,16 @@ class TieuChiChungDanhGia(BaseModel):
         nullable=True,
         comment="Điểm LĐ = diem_toi_da if is_achieved_ld else 0"
     )
-    
+
+    # Điểm "Đánh giá tháng" — lãnh đạo điều chỉnh ở giai đoạn báo cáo xếp loại.
+    # NULL = chưa điều chỉnh → dùng diem_phe_duyet (Trưởng duyệt) làm mặc định.
+    # Giữ diem_phe_duyet nguyên vẹn để audit; tổng = SUM(COALESCE(diem_danh_gia_thang, diem_phe_duyet, diem_tu_cham)).
+    diem_danh_gia_thang: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(4, 2),
+        nullable=True,
+        comment="Điểm 'Đánh giá tháng' lãnh đạo chỉnh ở giai đoạn báo cáo xếp loại (NULL = dùng diem_phe_duyet)"
+    )
+
     # =========================================================================
     # LUỒNG PHÊ DUYỆT
     # =========================================================================

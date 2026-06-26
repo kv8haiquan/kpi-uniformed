@@ -265,6 +265,61 @@ class DieuChinhTieuChiItem(BaseModel):
         return self
 
 
+class DanhGiaThangItem(BaseModel):
+    """
+    Input cho MỘT tiêu chí khi lãnh đạo chỉnh điểm 'Đánh giá tháng'
+    ở giai đoạn báo cáo xếp loại.
+
+    diem_danh_gia_thang = None → gỡ điều chỉnh dòng đó (về điểm Trưởng duyệt).
+    """
+    ma_tieu_chi: str = Field(..., description="Mã tiêu chí")
+    diem_danh_gia_thang: Optional[float] = Field(
+        default=None,
+        ge=0,
+        description="Điểm Đánh giá tháng (0 → diem_toi_da, bội 0.5). None = gỡ điều chỉnh dòng này",
+    )
+
+    @model_validator(mode="after")
+    def _validate_diem(self) -> "DanhGiaThangItem":
+        if self.diem_danh_gia_thang is not None:
+            max_diem = TIEU_CHI_DIEM_TOI_DA.get(self.ma_tieu_chi)
+            if max_diem is None:
+                raise ValueError(f"Mã tiêu chí không hợp lệ: {self.ma_tieu_chi}")
+            if self.diem_danh_gia_thang > max_diem + 1e-9:
+                raise ValueError(
+                    f"Tiêu chí {self.ma_tieu_chi}: điểm {self.diem_danh_gia_thang} vượt mức tối đa {max_diem}"
+                )
+            doubled = round(self.diem_danh_gia_thang * 2)
+            if abs(self.diem_danh_gia_thang * 2 - doubled) > 1e-6:
+                raise ValueError(
+                    f"Tiêu chí {self.ma_tieu_chi}: điểm phải là bội số 0.5 (nhận {self.diem_danh_gia_thang})"
+                )
+        return self
+
+
+class DieuChinhDanhGiaThangRequest(BaseModel):
+    """
+    Request lãnh đạo chỉnh điểm 'Đánh giá tháng' của tiêu chí chung
+    ở giai đoạn báo cáo xếp loại.
+
+    Endpoint: POST /danh-gia/{danh_gia_thang_id}/dieu-chinh-danh-gia-thang
+    """
+    tieu_chi: List[DanhGiaThangItem] = Field(
+        ...,
+        min_length=1,
+        description="Danh sách điểm Đánh giá tháng theo từng tiêu chí"
+    )
+    ghi_chu: Optional[str] = Field(default=None, max_length=1000)
+
+    @field_validator("tieu_chi")
+    @classmethod
+    def validate_unique(cls, v):
+        ma_list = [tc.ma_tieu_chi for tc in v]
+        if len(ma_list) != len(set(ma_list)):
+            raise ValueError("Có tiêu chí bị trùng trong danh sách")
+        return v
+
+
 class PheDuyetTieuChiRequest(BaseModel):
     """
     Schema request để LĐ PHÊ DUYỆT tiêu chí chung.
@@ -417,7 +472,12 @@ class TieuChiItemResponse(BaseModel):
         ...,
         description="ĐIỂM CUỐI CÙNG: = diem_phe_duyet nếu đã duyệt, else diem_tu_cham"
     )
-    
+    diem_danh_gia_thang: Optional[float] = Field(
+        default=None,
+        description="Điểm 'Đánh giá tháng' lãnh đạo chỉnh ở giai đoạn báo cáo xếp loại "
+                    "(None = chưa chỉnh → mặc định dùng diem_phe_duyet/Trưởng duyệt)"
+    )
+
     # Trạng thái
     trang_thai: TrangThaiTieuChiEnum
     

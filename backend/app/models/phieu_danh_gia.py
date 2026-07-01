@@ -111,7 +111,38 @@ class PhieuDanhGiaQuy(BaseModel):
     y_kien_lanh_dao: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
-        comment="Mục 6: Ý kiến nhận xét của cấp có thẩm quyền",
+        comment="Mục 6 (tháng) / Mục III.1 (quý mẫu 02): Ý kiến nhận xét của "
+        "người trực tiếp sử dụng / cấp có thẩm quyền",
+    )
+
+    # -------------------------------------------------------------------------
+    # XẾP LOẠI (chỉ dùng cho mẫu 02A/02B theo QUÝ — Nghị định 335/2025/NĐ-CP)
+    #   Giá trị mã: HTXSNV | HTTNV | HTNV | KHTNV (None = chưa chọn)
+    # -------------------------------------------------------------------------
+
+    tu_de_xuat_xep_loai: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Mục 5: Cá nhân tự đề xuất mức xếp loại (CC nhập)",
+    )
+
+    de_xuat_xep_loai: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Mục III.2: Người trực tiếp sử dụng đề xuất mức xếp loại "
+        "(người duyệt nhập)",
+    )
+
+    quyet_dinh_xep_loai: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Mục IV.1: Quyết định mức xếp loại của cấp có thẩm quyền",
+    )
+
+    y_kien_cap_tham_quyen: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Mục IV.2: Ý kiến nhận xét của cấp có thẩm quyền (nếu có)",
     )
 
     # -------------------------------------------------------------------------

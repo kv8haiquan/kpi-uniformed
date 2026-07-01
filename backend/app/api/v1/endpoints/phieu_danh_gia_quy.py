@@ -146,6 +146,10 @@ def _serialize(phieu: PhieuDanhGiaQuy) -> dict:
         uu_diem=phieu.uu_diem,
         han_che=phieu.han_che,
         y_kien_lanh_dao=phieu.y_kien_lanh_dao,
+        tu_de_xuat_xep_loai=phieu.tu_de_xuat_xep_loai,
+        de_xuat_xep_loai=phieu.de_xuat_xep_loai,
+        quyet_dinh_xep_loai=phieu.quyet_dinh_xep_loai,
+        y_kien_cap_tham_quyen=phieu.y_kien_cap_tham_quyen,
         trang_thai=phieu.trang_thai,
         ngay_gui_duyet=phieu.ngay_gui_duyet,
         nguoi_phe_duyet_id=phieu.nguoi_phe_duyet_id,
@@ -202,6 +206,7 @@ async def upsert_phieu_nhap(
             nam=payload.nam,
             uu_diem=payload.uu_diem,
             han_che=payload.han_che,
+            tu_de_xuat_xep_loai=payload.tu_de_xuat_xep_loai,
             trang_thai=TrangThaiPhieuDanhGia.NHAP.value,
         )
         db.add(phieu)
@@ -220,6 +225,7 @@ async def upsert_phieu_nhap(
             )
         phieu.uu_diem = payload.uu_diem
         phieu.han_che = payload.han_che
+        phieu.tu_de_xuat_xep_loai = payload.tu_de_xuat_xep_loai
         # Nếu trước đó bị từ chối, khi sửa lại quay về NHAP và xóa ly do
         if phieu.trang_thai == TrangThaiPhieuDanhGia.BI_TU_CHOI.value:
             phieu.trang_thai = TrangThaiPhieuDanhGia.NHAP.value
@@ -442,6 +448,10 @@ async def list_phieu_cho_duyet(
                     uu_diem=p.uu_diem,
                     han_che=p.han_che,
                     y_kien_lanh_dao=p.y_kien_lanh_dao,
+                    tu_de_xuat_xep_loai=p.tu_de_xuat_xep_loai,
+                    de_xuat_xep_loai=p.de_xuat_xep_loai,
+                    quyet_dinh_xep_loai=p.quyet_dinh_xep_loai,
+                    y_kien_cap_tham_quyen=p.y_kien_cap_tham_quyen,
                 )
                 sort_ts = p.ngay_gui_duyet or p.updated_at
             raw_items.append((sort_ts, item))
@@ -532,6 +542,10 @@ async def list_phieu_cho_duyet(
                 uu_diem=p.uu_diem,
                 han_che=p.han_che,
                 y_kien_lanh_dao=p.y_kien_lanh_dao,
+                tu_de_xuat_xep_loai=p.tu_de_xuat_xep_loai,
+                de_xuat_xep_loai=p.de_xuat_xep_loai,
+                quyet_dinh_xep_loai=p.quyet_dinh_xep_loai,
+                y_kien_cap_tham_quyen=p.y_kien_cap_tham_quyen,
             ).model_dump(mode="json")
         )
 
@@ -555,7 +569,13 @@ async def phe_duyet_phieu(
     db: DatabaseDep,
     current_user: ActiveUserDep,
 ) -> dict:
-    """TDV/CCT chấp nhận phiếu + nhập ý kiến mục 6."""
+    """
+    TDV/CCT chấp nhận phiếu + nhập nhận xét.
+
+    - Mẫu tháng: chỉ `y_kien_lanh_dao` (mục 6).
+    - Mẫu quý 02A/02B: `y_kien_lanh_dao` = mục III.1; kèm mục III.2 (đề xuất),
+      mục IV.1 (quyết định) và mục IV.2 (ý kiến cấp có thẩm quyền).
+    """
     phieu = await _lay_phieu(db, phieu_id)
 
     if phieu.trang_thai != TrangThaiPhieuDanhGia.CHO_PHE_DUYET.value:
@@ -571,6 +591,9 @@ async def phe_duyet_phieu(
         )
 
     phieu.y_kien_lanh_dao = payload.y_kien_lanh_dao
+    phieu.de_xuat_xep_loai = payload.de_xuat_xep_loai
+    phieu.quyet_dinh_xep_loai = payload.quyet_dinh_xep_loai
+    phieu.y_kien_cap_tham_quyen = payload.y_kien_cap_tham_quyen
     phieu.trang_thai = TrangThaiPhieuDanhGia.DA_PHE_DUYET.value
     phieu.nguoi_phe_duyet_id = current_user.id
     phieu.ngay_phe_duyet = datetime.utcnow()
@@ -648,6 +671,10 @@ async def tra_lai_phieu(
 
     phieu.trang_thai = TrangThaiPhieuDanhGia.NHAP.value
     phieu.y_kien_lanh_dao = None
+    # Gỡ luôn phần nhận xét/xếp loại do người duyệt nhập (mục III.2 / IV)
+    phieu.de_xuat_xep_loai = None
+    phieu.quyet_dinh_xep_loai = None
+    phieu.y_kien_cap_tham_quyen = None
     phieu.ngay_gui_duyet = None
     phieu.nguoi_phe_duyet_id = None
     phieu.ngay_phe_duyet = None

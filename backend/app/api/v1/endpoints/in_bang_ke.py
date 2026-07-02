@@ -1642,19 +1642,31 @@ async def export_phieu_danh_gia_quy(
                 set_times_new_roman(new_run)
 
     # === Điền điểm tiêu chí chung vào bảng (Table 1 - bảng thứ 2) ===
-    # Logic quý: Nhóm I, II → MIN (vi phạm bất kỳ tháng nào → vi phạm quý)
-    #             Nhóm III → MAX (đạt bất kỳ tháng nào → đạt quý)
+    # Điểm TC chung quý mỗi tiêu chí = trung bình điểm phê duyệt các THÁNG THỰC TẾ
+    # làm việc. Mẫu số PHẢI là `so_thang_thuc_te` (loại tháng thai sản / chưa về
+    # Chi cục / nghỉ trọn tháng) để tổng bảng khớp dòng "1. Điểm tiêu chí chung"
+    # (= diem_tc_quy từ tinh_diem_quy — SINGLE SOURCE OF TRUTH). Trước đây chia
+    # cứng /3 → lệch tổng khi CC không đủ 3 tháng.
     if len(doc.tables) >= 2:
         table_tc = doc.tables[1]
 
-        # Query tiêu chí chung của 3 tháng
-        # Lấy tất cả DanhGiaThang trong quý
+        # Xác định các tháng thực tế (đồng bộ với tinh_diem_quy)
+        chi_tiet_thuc_te = ket_qua.get("chi_tiet_thuc_te") or []
+        thang_thuc_te = [
+            c["thang"] for c in chi_tiet_thuc_te if not c.get("ly_do_loai")
+        ]
+        if not thang_thuc_te:
+            # Fallback: dữ liệu cũ không có chi_tiet_thuc_te → dùng cả quý
+            thang_thuc_te = list(thang_list)
+        so_thang_tt = ket_qua.get("so_thang_thuc_te") or len(thang_thuc_te)
+
+        # Lấy DanhGiaThang CHỈ của các tháng thực tế trong quý
         stmt_dg_quy = (
             select(DanhGiaThang)
             .where(
                 and_(
                     DanhGiaThang.cong_chuc_id == cc.id,
-                    DanhGiaThang.thang.in_(thang_list),
+                    DanhGiaThang.thang.in_(thang_thuc_te),
                     DanhGiaThang.nam == nam,
                     DanhGiaThang.is_deleted == False,
                 )
@@ -1664,8 +1676,9 @@ async def export_phieu_danh_gia_quy(
         danh_gia_list = result_dg_quy.scalars().all()
         dg_ids = [dg.id for dg in danh_gia_list]
 
-        # Lấy tất cả TieuChiChungDanhGia của 3 tháng — CHỈ tiêu chí đã phê duyệt.
-        # Tháng nào thiếu tiêu chí đã duyệt sẽ tính 0 cho tháng đó (TB /3 vẫn chia 3).
+        # Lấy TieuChiChungDanhGia của các tháng thực tế — CHỈ tiêu chí đã phê duyệt.
+        # Tháng nào thiếu tiêu chí đã duyệt sẽ tính 0 cho tháng đó (mẫu số vẫn là
+        # so_thang_tt để nhất quán với diem_tc_quy).
         tc_quy_map = {}  # ma_tieu_chi → list of (diem, nhom, danh_gia_thang_id)
         if dg_ids:
             stmt_tc_quy = (
@@ -1687,11 +1700,12 @@ async def export_phieu_danh_gia_quy(
                         tc_quy_map[ma] = {"diem_values": [], "nhom": nhom, "diem_toi_da": diem_toi_da}
                     tc_quy_map[ma]["diem_values"].append(diem)
 
-        # Tính điểm quý cho mỗi tiêu chí: trung bình 3 tháng (luôn chia 3, thiếu tính 0)
+        # Điểm quý mỗi tiêu chí = trung bình theo số tháng thực tế (thiếu → tính 0)
+        mau_so = Decimal(str(so_thang_tt)) if so_thang_tt else Decimal("3")
         tc_quy_diem = {}  # ma_tieu_chi → Decimal (điểm quý)
         for ma, info in tc_quy_map.items():
             values = info["diem_values"]
-            tc_quy_diem[ma] = sum(values) / Decimal("3")
+            tc_quy_diem[ma] = sum(values) / mau_so
 
         # Điền vào bảng (logic giống endpoint tháng)
         ma_tieu_chi_list = [

@@ -214,6 +214,9 @@ function KeKhaiTab({
   const [hanChe, setHanChe] = useState('');
   // Mục 5 (chỉ mẫu quý 02A/02B): CC tự đề xuất mức xếp loại
   const [tuDeXuat, setTuDeXuat] = useState<MucXepLoai | ''>('');
+  // Kê khai lại tiêu chí đ cấp quý (chỉ LĐ)
+  const [ddQuyKeKhai, setDdQuyKeKhai] = useState<number | ''>('');
+  const [ddQuyGhiChu, setDdQuyGhiChu] = useState('');
   const [loadingPhieu, setLoadingPhieu] = useState(false);
   const [savingPhieu, setSavingPhieu] = useState(false);
 
@@ -245,6 +248,12 @@ function KeKhaiTab({
       setHanChe(p?.han_che || '');
       setTuDeXuat(
         p && 'tu_de_xuat_xep_loai' in p ? p.tu_de_xuat_xep_loai || '' : '',
+      );
+      setDdQuyKeKhai(
+        p && 'dd_quy_ke_khai' in p ? p.dd_quy_ke_khai ?? '' : '',
+      );
+      setDdQuyGhiChu(
+        p && 'dd_quy_ghi_chu' in p ? p.dd_quy_ghi_chu || '' : '',
       );
     } catch (err) {
       console.error('Load phiếu error:', err);
@@ -319,6 +328,8 @@ function KeKhaiTab({
               uu_diem: uuDiem.trim() || null,
               han_che: hanChe.trim() || null,
               tu_de_xuat_xep_loai: tuDeXuat || null,
+              dd_quy_ke_khai: ddQuyKeKhai === '' ? null : ddQuyKeKhai,
+              dd_quy_ghi_chu: ddQuyGhiChu.trim() || null,
             })
           : await phieuDanhGiaService.upsertNhapThang({
               thang,
@@ -346,6 +357,8 @@ function KeKhaiTab({
           uu_diem: uuDiem.trim() || null,
           han_che: hanChe.trim() || null,
           tu_de_xuat_xep_loai: tuDeXuat || null,
+          dd_quy_ke_khai: ddQuyKeKhai === '' ? null : ddQuyKeKhai,
+          dd_quy_ghi_chu: ddQuyGhiChu.trim() || null,
         });
         const sent = await phieuDanhGiaService.guiDuyet(saved.id);
         setPhieu(sent);
@@ -592,6 +605,11 @@ function KeKhaiTab({
           setHanChe={setHanChe}
           tuDeXuat={tuDeXuat}
           setTuDeXuat={setTuDeXuat}
+          isLanhDao={!!user?.is_lanh_dao}
+          ddQuyKeKhai={ddQuyKeKhai}
+          setDdQuyKeKhai={setDdQuyKeKhai}
+          ddQuyGhiChu={ddQuyGhiChu}
+          setDdQuyGhiChu={setDdQuyGhiChu}
           loading={loadingPhieu}
           saving={savingPhieu}
           canEdit={canEditPhieu}
@@ -662,6 +680,11 @@ interface PhieuTuNhapProps {
   setHanChe: (v: string) => void;
   tuDeXuat: MucXepLoai | '';
   setTuDeXuat: (v: MucXepLoai | '') => void;
+  isLanhDao: boolean;
+  ddQuyKeKhai: number | '';
+  setDdQuyKeKhai: (v: number | '') => void;
+  ddQuyGhiChu: string;
+  setDdQuyGhiChu: (v: string) => void;
   loading: boolean;
   saving: boolean;
   canEdit: boolean;
@@ -679,6 +702,11 @@ function PhieuTuNhapSection({
   setHanChe,
   tuDeXuat,
   setTuDeXuat,
+  isLanhDao,
+  ddQuyKeKhai,
+  setDdQuyKeKhai,
+  ddQuyGhiChu,
+  setDdQuyGhiChu,
   loading,
   saving,
   canEdit,
@@ -778,6 +806,42 @@ function PhieuTuNhapSection({
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {/* Kê khai lại tiêu chí đ cấp quý — chỉ Lãnh đạo */}
+            {isQuy && isLanhDao && (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+                <label className="block text-sm font-medium text-gray-800 mb-1">
+                  đ. Kê khai lại &quot;Tổ chức triển khai&quot; cấp quý
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Nếu hoàn thành chỉ tiêu quý dù có tháng chưa đạt, được kê khai lại
+                  mức đ cho cả quý (chỉ có tác dụng nâng ≥ mức thấp nhất các tháng, sau
+                  khi cấp trên duyệt).
+                </p>
+                <select
+                  value={ddQuyKeKhai}
+                  onChange={(e) =>
+                    setDdQuyKeKhai(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
+                >
+                  <option value="">— Không kê khai lại (dùng mức thấp nhất các tháng) —</option>
+                  <option value={100}>Đạt 100%</option>
+                  <option value={50}>Đạt 50%</option>
+                </select>
+                {ddQuyKeKhai !== '' && (
+                  <textarea
+                    value={ddQuyGhiChu}
+                    onChange={(e) => setDdQuyGhiChu(e.target.value)}
+                    disabled={!canEdit}
+                    rows={2}
+                    className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
+                    placeholder="Giải trình việc hoàn thành chỉ tiêu quý…"
+                  />
+                )}
               </div>
             )}
 
@@ -930,6 +994,9 @@ type PhieuItem = (PhieuChoPheDuyetItem | PhieuThangChoPheDuyetItem) & {
   de_xuat_xep_loai?: MucXepLoai | null;
   quyet_dinh_xep_loai?: MucXepLoai | null;
   y_kien_cap_tham_quyen?: string | null;
+  dd_quy_ke_khai?: number | null;
+  dd_quy_ghi_chu?: string | null;
+  dd_quy_phe_duyet?: number | null;
 };
 
 function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabProps) {
@@ -946,6 +1013,8 @@ function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabP
   const [deXuat, setDeXuat] = useState<MucXepLoai | ''>('');
   const [quyetDinh, setQuyetDinh] = useState<MucXepLoai | ''>('');
   const [yKienCTQ, setYKienCTQ] = useState('');
+  // đ quý người duyệt chốt (chỉ khi LĐ có kê khai lại)
+  const [ddQuyPD, setDdQuyPD] = useState<number | ''>('');
   const [lyDo, setLyDo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -1002,6 +1071,8 @@ function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabP
     setDeXuat('');
     setQuyetDinh('');
     setYKienCTQ('');
+    // Mặc định đ quý = mức LĐ kê khai lại (nếu có) để người duyệt xác nhận/điều chỉnh
+    setDdQuyPD(it.dd_quy_ke_khai ?? '');
     setLyDo('');
   };
 
@@ -1012,6 +1083,7 @@ function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabP
     setDeXuat('');
     setQuyetDinh('');
     setYKienCTQ('');
+    setDdQuyPD('');
     setLyDo('');
   };
 
@@ -1022,6 +1094,7 @@ function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabP
     setDeXuat('');
     setQuyetDinh('');
     setYKienCTQ('');
+    setDdQuyPD('');
     setLyDo('');
   };
 
@@ -1031,6 +1104,7 @@ function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabP
     setDeXuat('');
     setQuyetDinh('');
     setYKienCTQ('');
+    setDdQuyPD('');
     setLyDo('');
   };
 
@@ -1047,6 +1121,7 @@ function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabP
             de_xuat_xep_loai: deXuat || null,
             quyet_dinh_xep_loai: quyetDinh || null,
             y_kien_cap_tham_quyen: yKienCTQ.trim() || null,
+            dd_quy_phe_duyet: ddQuyPD === '' ? null : ddQuyPD,
           });
         } else {
           await phieuDanhGiaService.pheDuyetThang(phieuId, {
@@ -1454,6 +1529,38 @@ function PheDuyetTab({ thang, setThang, quy, setQuy, nam, setNam }: PheDuyetTabP
                     placeholder="Ý kiến của cấp có thẩm quyền…"
                   />
                 </div>
+
+                {/* đ quý LĐ kê khai lại — chỉ hiện khi có kê khai */}
+                {modalItem.dd_quy_ke_khai != null && (
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                    <p className="text-sm text-gray-700 mb-2">
+                      LĐ kê khai lại tiêu chí <b>đ</b> cấp quý:{' '}
+                      <b>{modalItem.dd_quy_ke_khai}%</b>
+                      {modalItem.dd_quy_ghi_chu && (
+                        <span className="block text-xs text-gray-500 mt-1 whitespace-pre-wrap">
+                          Giải trình: {modalItem.dd_quy_ghi_chu}
+                        </span>
+                      )}
+                    </p>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Chốt mức đ cấp quý
+                    </label>
+                    <select
+                      value={ddQuyPD}
+                      onChange={(e) =>
+                        setDdQuyPD(e.target.value === '' ? '' : Number(e.target.value))
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="">— Không áp dụng (dùng mức thấp nhất các tháng) —</option>
+                      <option value={100}>Đạt 100%</option>
+                      <option value={50}>Đạt 50%</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Chỉ có tác dụng nâng (≥ mức thấp nhất các tháng).
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

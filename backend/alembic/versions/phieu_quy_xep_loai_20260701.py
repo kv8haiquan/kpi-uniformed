@@ -61,9 +61,44 @@ def upgrade() -> None:
             comment="Mục IV.2: Ý kiến nhận xét của cấp có thẩm quyền (nếu có)",
         ),
     )
+    # Kê khai lại tiêu chí đ cấp quý (chỉ LĐ) — giá trị 50/100, NULL = không kê khai lại
+    op.add_column(
+        'phieu_danh_gia_quy',
+        sa.Column(
+            'dd_quy_ke_khai', sa.SmallInteger(), nullable=True,
+            comment="đ quý LĐ tự kê khai lại (50/100); NULL = không kê khai lại",
+        ),
+    )
+    op.add_column(
+        'phieu_danh_gia_quy',
+        sa.Column(
+            'dd_quy_ghi_chu', sa.Text(), nullable=True,
+            comment="Giải trình cho việc kê khai lại đ cấp quý",
+        ),
+    )
+    op.add_column(
+        'phieu_danh_gia_quy',
+        sa.Column(
+            'dd_quy_phe_duyet', sa.SmallInteger(), nullable=True,
+            comment="đ quý sau khi người duyệt chốt (50/100); NULL = giữ dd_quy_ke_khai",
+        ),
+    )
+    op.create_check_constraint(
+        'ck_phieu_quy_dd_ke_khai', 'phieu_danh_gia_quy',
+        'dd_quy_ke_khai IS NULL OR dd_quy_ke_khai IN (50, 100)',
+    )
+    op.create_check_constraint(
+        'ck_phieu_quy_dd_phe_duyet', 'phieu_danh_gia_quy',
+        'dd_quy_phe_duyet IS NULL OR dd_quy_phe_duyet IN (50, 100)',
+    )
 
 
 def downgrade() -> None:
+    op.drop_constraint('ck_phieu_quy_dd_phe_duyet', 'phieu_danh_gia_quy', type_='check')
+    op.drop_constraint('ck_phieu_quy_dd_ke_khai', 'phieu_danh_gia_quy', type_='check')
+    op.drop_column('phieu_danh_gia_quy', 'dd_quy_phe_duyet')
+    op.drop_column('phieu_danh_gia_quy', 'dd_quy_ghi_chu')
+    op.drop_column('phieu_danh_gia_quy', 'dd_quy_ke_khai')
     op.drop_column('phieu_danh_gia_quy', 'y_kien_cap_tham_quyen')
     op.drop_column('phieu_danh_gia_quy', 'quyet_dinh_xep_loai')
     op.drop_column('phieu_danh_gia_quy', 'de_xuat_xep_loai')

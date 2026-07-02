@@ -56,6 +56,7 @@ from app.models.leader_kpi import (
     TrangThaiKeKhaiLD,
 )
 from app.models.leave import DangKyNghi, LoaiNghi, TrangThaiNghi
+from app.models.phieu_danh_gia import PhieuDanhGiaQuy, TrangThaiPhieuDanhGia
 from app.models.user_org import CongChuc
 
 logger = logging.getLogger(__name__)
@@ -364,6 +365,48 @@ async def _lay_dde_thang(
     }
 
 
+async def _lay_dd_quy_ke_khai(
+    db: AsyncSession,
+    cong_chuc_id: UUID,
+    quy: int,
+    nam: int,
+    tam_tinh: bool,
+) -> Optional[float]:
+    """
+    Lấy giá trị đ (tổ chức triển khai) mà LĐ kê khai lại ở cấp QUÝ (scale 0-1).
+
+    Quy định: LĐ hoàn thành chỉ tiêu quý dù có tháng chưa hoàn thành → được kê
+    khai lại đ cấp quý (lưu trên PhieuDanhGiaQuy). Trả None nếu không kê khai lại
+    hoặc chưa đủ điều kiện áp dụng.
+
+    Điều kiện áp dụng theo trạng thái phiếu (đồng bộ ngữ nghĩa `tam_tinh`):
+      - tam_tinh=True  → chấp nhận CHO_PHE_DUYET hoặc DA_PHE_DUYET (xem trước).
+      - tam_tinh=False → chỉ DA_PHE_DUYET (điểm chính thức).
+    Ưu tiên `dd_quy_phe_duyet` (người duyệt chốt) nếu có, ngược lại `dd_quy_ke_khai`.
+    """
+    phieu = (
+        await db.execute(
+            select(PhieuDanhGiaQuy)
+            .where(PhieuDanhGiaQuy.cong_chuc_id == cong_chuc_id)
+            .where(PhieuDanhGiaQuy.quy == quy)
+            .where(PhieuDanhGiaQuy.nam == nam)
+        )
+    ).scalar_one_or_none()
+    if phieu is None:
+        return None
+
+    trang_thai_ok = {TrangThaiPhieuDanhGia.DA_PHE_DUYET.value}
+    if tam_tinh:
+        trang_thai_ok.add(TrangThaiPhieuDanhGia.CHO_PHE_DUYET.value)
+    if phieu.trang_thai not in trang_thai_ok:
+        return None
+
+    gia_tri = phieu.dd_quy_phe_duyet if phieu.dd_quy_phe_duyet is not None else phieu.dd_quy_ke_khai
+    if gia_tri is None:
+        return None
+    return float(gia_tri) / 100.0
+
+
 async def _lay_tc_chung_thang(
     db: AsyncSession,
     cong_chuc_id: UUID,
@@ -523,6 +566,13 @@ async def tinh_diem_quy(
         d_quy = min((v if v is not None else 1.0) for v in d_values) if d_values else 1.0
         dd_quy = min((v if v is not None else 1.0) for v in dd_values) if dd_values else 1.0
         e_quy = min((v if v is not None else 1.0) for v in e_values) if e_values else 1.0
+
+        # Quy định mới: LĐ được kê khai lại đ cấp quý khi hoàn thành chỉ tiêu quý
+        # dù có tháng chưa hoàn thành. Giá trị kê khai lại (đã duyệt) chỉ được
+        # NÂNG đ quý (≥ MIN), không hạ.
+        dd_quy_ke_khai = await _lay_dd_quy_ke_khai(db, cong_chuc_id, quy, nam, tam_tinh)
+        if dd_quy_ke_khai is not None:
+            dd_quy = max(dd_quy, dd_quy_ke_khai)
 
         kpi_quy_ratio = (a_quy + b_quy + c_quy + d_quy + dd_quy + e_quy) / 6
         diem_kpi_quy = min(70.0, kpi_quy_ratio * 70)

@@ -424,6 +424,38 @@ async def _lay_tc_chung_thang(
     return (await db.execute(stmt)).scalar() or Decimal("0")
 
 
+async def _co_cv_da_duyet(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> bool:
+    """CC thường: tháng có ít nhất 1 công việc ĐÃ PHÊ DUYỆT hay chưa."""
+    stmt = (
+        select(func.count())
+        .select_from(KeKhaiCongViec)
+        .where(KeKhaiCongViec.cong_chuc_id == cong_chuc_id)
+        .where(KeKhaiCongViec.thang == thang)
+        .where(KeKhaiCongViec.nam == nam)
+        .where(KeKhaiCongViec.is_deleted == False)  # noqa: E712
+        .where(KeKhaiCongViec.trang_thai == TrangThaiKeKhai.DA_PHE_DUYET)
+    )
+    return ((await db.execute(stmt)).scalar() or 0) > 0
+
+
+async def _co_cv_ld_da_duyet(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> bool:
+    """Lãnh đạo: tháng có ít nhất 1 công việc lãnh đạo ĐÃ PHÊ DUYỆT hay chưa."""
+    stmt = (
+        select(func.count())
+        .select_from(KeKhaiLanhDao)
+        .where(KeKhaiLanhDao.cong_chuc_id == cong_chuc_id)
+        .where(KeKhaiLanhDao.thang == thang)
+        .where(KeKhaiLanhDao.nam == nam)
+        .where(KeKhaiLanhDao.is_deleted == False)  # noqa: E712
+        .where(KeKhaiLanhDao.trang_thai == TrangThaiKeKhaiLD.DA_PHE_DUYET.value)
+    )
+    return ((await db.execute(stmt)).scalar() or 0) > 0
+
+
 # =============================================================================
 # MAIN ENTRY — tinh_diem_quy
 # =============================================================================
@@ -498,6 +530,9 @@ async def tinh_diem_quy(
     # 4. Lũy kế a/b/c qua các tháng thực tế
     cac_thang = []
     so_thang_co_du_lieu = 0
+    # Cờ: a/b/c quý đang chứa số liệu TẠM TÍNH (tháng chưa duyệt → fallback tạm tính)
+    abc_co_tam_tinh = False
+    thang_tam_tinh: List[int] = []
 
     if is_lanh_dao:
         tong_cv = 0
@@ -515,7 +550,17 @@ async def tinh_diem_quy(
                 cac_thang.append(_thang_placeholder(thang, info))
                 continue
 
-            cv_data = await _tinh_cv_lanh_dao_thang(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
+            # Ưu tiên số liệu ĐÃ PHÊ DUYỆT; tháng chưa có CV lãnh đạo duyệt → fallback
+            # tạm tính (nếu tam_tinh=True) và đánh dấu abc_co_tam_tinh.
+            if await _co_cv_ld_da_duyet(db, cong_chuc_id, thang, nam):
+                cv_data = await _tinh_cv_lanh_dao_thang(db, cong_chuc_id, thang, nam, tam_tinh=False)
+            elif tam_tinh:
+                cv_data = await _tinh_cv_lanh_dao_thang(db, cong_chuc_id, thang, nam, tam_tinh=True)
+                if cv_data["tong_cv"] > 0:
+                    abc_co_tam_tinh = True
+                    thang_tam_tinh.append(thang)
+            else:
+                cv_data = await _tinh_cv_lanh_dao_thang(db, cong_chuc_id, thang, nam, tam_tinh=False)
             tong_cv += cv_data["tong_cv"]
             tong_ht += cv_data["hoan_thanh"]
             tong_diem_td += cv_data["diem_tien_do"]
@@ -587,11 +632,17 @@ async def tinh_diem_quy(
         }
 
     else:
-        # CC thường — lũy kế SP
-        tong_sp_giao = Decimal("0")
-        tong_sp_ht = Decimal("0")
-        tong_sp_td = Decimal("0")
-        tong_sp_cl = Decimal("0")
+        # CC thường — LŨY KẾ theo ĐÚNG version từng tháng.
+        # Gọi lại tinh_diem_kpi_70 (đã tự phân nhánh V1=ngày×96 / V2=tổng SP kê khai)
+        # rồi cộng dồn tử số + mẫu số → quý = lũy kế của tháng, không lệch điểm tháng.
+        # Ưu tiên số liệu ĐÃ PHÊ DUYỆT; tháng chưa có công việc duyệt → fallback
+        # TẠM TÍNH (nếu tam_tinh=True) và đánh dấu abc_co_tam_tinh.
+        from app.api.v1.endpoints.xep_loai_moi import tinh_diem_kpi_70
+
+        tong_ht = 0.0      # tử số a (SP hoàn thành)
+        tong_td = 0.0      # tử số b (SP đạt tiến độ)
+        tong_cl = 0.0      # tử số c (SP đạt chất lượng)
+        tong_mau = 0.0     # mẫu số (sp_duoc_giao: V1=ngày×96, V2=tổng SP kê khai)
 
         for thang in thang_list:
             info = thang_info[thang]
@@ -599,25 +650,40 @@ async def tinh_diem_quy(
                 cac_thang.append(_thang_placeholder(thang, info))
                 continue
 
-            sp_giao_thang = Decimal(str(info["so_ngay_lam_viec"])) * Decimal(str(SP_PER_DAY))
-            sp_data = await _tinh_sp_cc_thuong_thang(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
+            has_approved = await _co_cv_da_duyet(db, cong_chuc_id, thang, nam)
+            thang_tam = False
+            if has_approved:
+                r = await tinh_diem_kpi_70(db, cong_chuc_id, thang, nam, tam_tinh=False)
+            elif tam_tinh:
+                r = await tinh_diem_kpi_70(db, cong_chuc_id, thang, nam, tam_tinh=True)
+                thang_tam = True
+            else:
+                r = None
 
-            tong_sp_giao += sp_giao_thang
-            tong_sp_ht += sp_data["tong_sp"]
-            tong_sp_td += sp_data["sp_tien_do"]
-            tong_sp_cl += sp_data["sp_chat_luong"]
+            mau_t = float(r["sp_duoc_giao"]) if r else 0.0
+            ht_t = float(r["tong_sp_hoan_thanh"]) if r else 0.0
+            # tinh_diem_kpi_70 trả về sp_chat_luong / sp_tien_do là SP THÔ (đúng tên),
+            # chỉ có key TỶ LỆ b_chat_luong/c_tien_do mới bị đảo. Ở đây dùng SP thô.
+            cl_t = float(r["sp_chat_luong"]) if r else 0.0
+            td_t = float(r["sp_tien_do"]) if r else 0.0
+
+            if mau_t > 0:
+                tong_mau += mau_t
+                tong_ht += ht_t
+                tong_td += td_t
+                tong_cl += cl_t
+                if thang_tam:
+                    abc_co_tam_tinh = True
+                    thang_tam_tinh.append(thang)
 
             diem_tc_thang = await _lay_tc_chung_thang(db, cong_chuc_id, thang, nam)
-            if sp_data["tong_sp"] > 0 or diem_tc_thang > 0:
+            if mau_t > 0 or diem_tc_thang > 0:
                 so_thang_co_du_lieu += 1
 
             # Chỉ số tháng (hiển thị)
-            if sp_giao_thang > 0:
-                a_t = min(1.0, float(sp_data["tong_sp"] / sp_giao_thang))
-                b_t = min(1.0, float(sp_data["sp_tien_do"] / sp_giao_thang))
-                c_t = min(1.0, float(sp_data["sp_chat_luong"] / sp_giao_thang))
-            else:
-                a_t = b_t = c_t = 0.0
+            a_t = min(1.0, ht_t / mau_t) if mau_t > 0 else 0.0
+            b_t = min(1.0, td_t / mau_t) if mau_t > 0 else 0.0
+            c_t = min(1.0, cl_t / mau_t) if mau_t > 0 else 0.0
             kpi_t = (a_t + b_t + c_t) / 3
             diem_70_t = min(70.0, kpi_t * 70)
             diem_tong_t = float(diem_tc_thang) + diem_70_t
@@ -628,17 +694,17 @@ async def tinh_diem_quy(
                 "diem_tc": float(diem_tc_thang),
                 "diem_tong": diem_tong_t,
                 "xep_loai_thang": xep_loai_kpi(diem_tong_t) if diem_70_t > 0 or diem_tc_thang > 0 else None,
-                "co_du_lieu": sp_data["tong_sp"] > 0,
-                "nguon": "real_time",
+                "co_du_lieu": mau_t > 0,
+                "nguon": "tam_tinh" if thang_tam else "da_duyet",
                 "a_so_luong": a_t,
                 "b_tien_do": b_t,
                 "c_chat_luong": c_t,
             })
 
-        if tong_sp_giao > 0:
-            a_quy = min(1.0, float(tong_sp_ht / tong_sp_giao))
-            b_quy = min(1.0, float(tong_sp_td / tong_sp_giao))
-            c_quy = min(1.0, float(tong_sp_cl / tong_sp_giao))
+        if tong_mau > 0:
+            a_quy = min(1.0, tong_ht / tong_mau)
+            b_quy = min(1.0, tong_td / tong_mau)
+            c_quy = min(1.0, tong_cl / tong_mau)
         else:
             a_quy = b_quy = c_quy = 0.0
 
@@ -707,6 +773,9 @@ async def tinh_diem_quy(
         "co_thai_san": co_thai_san,
         "thang_bi_loai": thang_bi_loai,
         "ghi_chu": ghi_chu,
+        # a/b/c đang chứa số liệu tạm tính (tháng chưa duyệt) → phiếu cần ghi chú
+        "abc_co_tam_tinh": abc_co_tam_tinh,
+        "thang_tam_tinh": thang_tam_tinh,
         "cac_thang": cac_thang,
         "tieu_chi_quy": {
             "diem_tc_quy": diem_tc_quy,
@@ -741,6 +810,8 @@ def _empty_result(
         "co_thai_san": co_thai_san,
         "thang_bi_loai": [c["thang"] for c in (chi_tiet_thuc_te or []) if c.get("ly_do_loai")],
         "ghi_chu": ghi_chu,
+        "abc_co_tam_tinh": False,
+        "thang_tam_tinh": [],
         "cac_thang": [],
         "tieu_chi_quy": {"diem_tc_quy": Decimal("0"), "chi_tiet_thang": []},
         "chi_tiet_thuc_te": chi_tiet_thuc_te or [],

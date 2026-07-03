@@ -1472,14 +1472,12 @@ async def export_phieu_danh_gia_quy(
 
     is_lanh_dao = cc.is_lanh_dao or False
 
-    # Điểm quý — mặc định lấy `tam_tinh=False` (chỉ DA_PHE_DUYET) cho phiếu chính thức.
-    # CHÍNH SÁCH (20/04/2026): với TDV và PCCT — luôn lấy điểm TẠM TÍNH (gộp cả
-    # CHO_PHE_DUYET) vì CCT là bottleneck duyệt kê khai của họ; bắt chờ CCT duyệt
-    # xong mới in phiếu sẽ làm điểm tụt giả tạo. CCT và CC thường giữ nguyên
-    # `tam_tinh=False`.
-    cap_bac = cc.vai_tro.cap_bac if cc.vai_tro else None
-    dung_tam_tinh = cap_bac in (CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG)
-    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam, tam_tinh=dung_tam_tinh)
+    # Điểm quý — BẬT FALLBACK (tam_tinh=True): `tinh_diem_quy` ưu tiên số liệu ĐÃ
+    # PHÊ DUYỆT từng tháng, tháng nào chưa duyệt mới lấy TẠM TÍNH và đặt cờ
+    # `abc_co_tam_tinh` để phiếu ghi chú. Nhờ per-month, tháng đã duyệt vẫn dùng
+    # số chính thức nên không bị "tụt điểm giả" (thay cho hack cap_bac cũ).
+    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam, tam_tinh=True)
+    abc_tam_tinh_suffix = " (tạm tính)" if ket_qua.get("abc_co_tam_tinh") else ""
 
     # Lấy 3 tháng trong quý
     thang_list = QUY_TO_THANG.get(quy, [])
@@ -1542,10 +1540,10 @@ async def export_phieu_danh_gia_quy(
         full_text = para.text
         replaced = False
 
-        # Điểm a (số lượng)
+        # Điểm a (số lượng) — kèm ghi chú (tạm tính) nếu có tháng chưa duyệt
         if "Điểm tỷ lệ % đánh giá về số lượng (a):" in full_text:
             if diem_a is not None:
-                full_text = full_text.replace("………..(%)", f"{diem_a:.2f}%")
+                full_text = full_text.replace("………..(%)", f"{diem_a:.2f}%{abc_tam_tinh_suffix}")
             else:
                 full_text = full_text.replace("………..(%)", "N/A")
             replaced = True
@@ -1553,7 +1551,7 @@ async def export_phieu_danh_gia_quy(
         # Điểm b (tiến độ)
         elif "Điểm tỷ lệ % đánh giá về tiến độ (b):" in full_text:
             if diem_b is not None:
-                full_text = full_text.replace("………..(%)", f"{diem_b:.2f}%")
+                full_text = full_text.replace("………..(%)", f"{diem_b:.2f}%{abc_tam_tinh_suffix}")
             else:
                 full_text = full_text.replace("………..(%)", "N/A")
             replaced = True
@@ -1561,7 +1559,7 @@ async def export_phieu_danh_gia_quy(
         # Điểm c (chất lượng)
         elif "Điểm tỷ lệ % đánh giá về chất lượng (c):" in full_text:
             if diem_c is not None:
-                full_text = full_text.replace("………..(%)", f"{diem_c:.2f}%")
+                full_text = full_text.replace("………..(%)", f"{diem_c:.2f}%{abc_tam_tinh_suffix}")
             else:
                 full_text = full_text.replace("………..(%)", "N/A")
             replaced = True

@@ -174,21 +174,22 @@ def _apply_dieu_chinh_ld(tc, dc, *, fallback: str = "cc") -> None:
         tc.ly_do_dieu_chinh = dc.ly_do_dieu_chinh
 
 # =============================================================================
-# NỚI HẠN TẠM THỜI (2026-04-21): Cho phép tự đánh giá + phê duyệt tiêu chí chung
-# cho mọi tháng từ 2026-01 trở đi, đến hết 2026-07-31 để CC bổ sung các tháng
-# còn thiếu. Sau deadline này, tự động quay về quy tắc gốc.
+# NỚI HẠN (2026-04-21): Cho phép tự đánh giá + phê duyệt tiêu chí chung cho mọi
+# tháng từ 2026-01 trở đi để CC bổ sung các tháng còn thiếu.
 # Xem thêm: CONFIRM với người dùng ngày 2026-04-21.
-# Gia hạn 2026-06-02: 2026-05-31 → 2026-07-31 (xử lý tồn đọng CC chuyển đơn vị
-# bị kẹt CHO_PHE_DUYET/is_khoa khi window cũ vừa hết hạn).
+# Gia hạn 2026-06-02: 2026-05-31 → 2026-07-31 (xử lý tồn đọng CC chuyển đơn vị).
+# Cập nhật 2026-07-04: mở VÔ THỜI HẠN (bỏ mốc hết hạn theo ngày) — user xác nhận.
+#   • Thời gian: mọi tháng ≥ 2026-01 luôn mở, KHÔNG còn auto-khóa theo ngày.
+#   • Vẫn TÔN TRỌNG khóa CCT (is_khoa): tháng đã duyệt báo cáo xếp loại vẫn khóa.
+#   • Muốn bật lại auto-khóa theo ngày: gán HAN_MO_RONG_TAM_THOI_DEN = date(...).
 # =============================================================================
-HAN_MO_RONG_TAM_THOI_DEN = date(2026, 7, 31)
+HAN_MO_RONG_TAM_THOI_DEN = None  # None = vô thời hạn; gán date(...) để bật lại hạn
 MO_RONG_TU_THANG_NAM = (2026, 1)  # (năm, tháng) — tuple để so sánh
 
 
 def _trong_han_mo_rong_tam_thoi(thang: int, nam: int) -> bool:
-    """True nếu hôm nay vẫn trong window nới và tháng/năm ≥ 2026-01."""
-    today = date.today()
-    if today > HAN_MO_RONG_TAM_THOI_DEN:
+    """True nếu tháng/năm ≥ 2026-01 và (nếu có mốc) vẫn trong hạn."""
+    if HAN_MO_RONG_TAM_THOI_DEN is not None and date.today() > HAN_MO_RONG_TAM_THOI_DEN:
         return False
     return (nam, thang) >= MO_RONG_TU_THANG_NAM
 
@@ -216,12 +217,13 @@ def kiem_tra_thoi_han_tu_danh_gia(thang: int, nam: int) -> bool:
 
 
 def _dang_bi_khoa(danh_gia: "DanhGiaThang") -> bool:
-    """Wrapper: bypass `is_khoa` trong window nới tạm thời (2026-01 → 2026-07-31)."""
-    if not danh_gia.is_khoa:
-        return False
-    if _trong_han_mo_rong_tam_thoi(danh_gia.thang, danh_gia.nam):
-        return False
-    return True
+    """TÔN TRỌNG khóa CCT: tháng đã duyệt báo cáo xếp loại (is_khoa) thì khóa.
+
+    Từ 2026-07-04 KHÔNG còn bypass is_khoa theo window nữa — mở vô thời hạn chỉ
+    áp cho giới hạn THỜI GIAN (xem `kiem_tra_thoi_han_tu_danh_gia`), còn khóa CCT
+    vẫn được tôn trọng để bảo toàn dữ liệu đã chốt.
+    """
+    return bool(danh_gia.is_khoa)
 
 
 def _co_the_duyet_tc(dg: "DanhGiaThang", current_user) -> bool:

@@ -49,6 +49,8 @@ import { kpiService } from '@/services/kpi.service';
 import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
 import { leaveService } from '@/services/leave.service';
 import { leaderKPIService } from '@/services/leader-kpi.service';
+import hdldService from '@/services/hdld.service';
+import type { IHdldDanhGia } from '@/types/hdld';
 import { isApiError } from '@/lib/axios';
 import { IKeKhaiMonthSummary } from '@/types/kpi';
 import { IKetQuaTieuChiChungResponse, TrangThaiTieuChiChung } from '@/types/tieu-chi-chung';
@@ -243,6 +245,9 @@ export default function DanhGiaPage() {
   const [thongKeLD, setThongKeLD] = useState<IThongKeKeKhaiLanhDao | null>(null);
   const [ddeData, setDdeData] = useState<IDanhGiaDDEResponse | null>(null);
 
+  // State cho HĐ 111 (VB714 — bảng hdld_danh_gia, 3 tiêu chí)
+  const [hdldDanhGia, setHdldDanhGia] = useState<IHdldDanhGia | null>(null);
+
   // State cho tab KPI (v2.7.0)
   const [kpiTab, setKpiTab] = useState<KPITab>('chinh_thuc');
 
@@ -282,12 +287,16 @@ export default function DanhGiaPage() {
         // LÃNH ĐẠO + HĐ 111: Load thống kê kê khai LĐ + Tiêu chí chung.
         // HĐ 111 không có d/đ/e (backend chặn) → bỏ qua DDE.
         // (Phase 3: LĐ thật + tháng ≥ 4/2026 đã được redirect sang /danh-gia-v2.)
-        const [thongKeResult, tcResult, ddeResult] = await Promise.allSettled([
+        const [thongKeResult, tcResult, ddeResult, hdldResult] = await Promise.allSettled([
           leaderKPIService.getThongKe(selectedThang, selectedNam),
           tieuChiChungService.getKetQuaThang(selectedThang, selectedNam),
           isHd111
             ? Promise.resolve(null)
             : leaderKPIService.getDanhGiaDDE(selectedThang, selectedNam),
+          // HĐ 111 (từ T1/2026): điểm KPI 70 lấy từ VB714 (hdld_danh_gia)
+          isHd111
+            ? hdldService.getDanhGia(selectedThang, selectedNam)
+            : Promise.resolve(null),
         ]);
 
         if (thongKeResult.status === 'fulfilled') setThongKeLD(thongKeResult.value);
@@ -295,6 +304,11 @@ export default function DanhGiaPage() {
         if (!isHd111 && ddeResult.status === 'fulfilled' && ddeResult.value) {
           setDdeData(ddeResult.value as IDanhGiaDDEResponse);
         }
+        setHdldDanhGia(
+          isHd111 && hdldResult.status === 'fulfilled'
+            ? (hdldResult.value as IHdldDanhGia | null)
+            : null,
+        );
       } else {
         // CÔNG CHỨC: Load kê khai SP + ngày nghỉ + tiêu chí chung
         const [keKhaiResult, nghiResult, tcResult] = await Promise.allSettled([
@@ -422,9 +436,35 @@ export default function DanhGiaPage() {
   const diemKPILD = (aLD + bLD + cLD + dLD + ddLD + eLD) / 6;
   const diemKPIQuyDoiLD = diemKPILD * 70;
 
-  // Điểm KPI HĐ 111 = (a + b + c) / 3 × 70 (cùng a/b/c như LĐ, bỏ d/đ/e)
-  const diemKPIHd111 = (aLD + bLD + cLD) / 3;
+  // Điểm KPI HĐ 111 (VB714 — từ T1/2026): a/b/c = điểm 3 tiêu chí / 100.
+  //   Chính thức → điểm cấp quản lý chấm (diem_ql); Tạm tính → điểm tự chấm (diem_tu).
+  // Nếu chưa có bản VB714 (hdldDanhGia = null) → fallback về form cũ (aLD/bLD/cLD).
+  const hdldTieuChiRatio = (soTt: number): number => {
+    const ct = hdldDanhGia?.chi_tiets?.find((c) => c.so_tt === soTt);
+    if (!ct) return 0;
+    const raw = kpiTab === 'chinh_thuc' ? ct.diem_ql : ct.diem_tu;
+    return raw != null ? Math.min(1, raw / 100) : 0;
+  };
+  const aHd111 = hdldDanhGia ? hdldTieuChiRatio(1) : aLD;
+  const bHd111 = hdldDanhGia ? hdldTieuChiRatio(2) : bLD;
+  const cHd111 = hdldDanhGia ? hdldTieuChiRatio(3) : cLD;
+  const diemKPIHd111 = (aHd111 + bHd111 + cHd111) / 3;
   const diemKPIQuyDoiHd111 = diemKPIHd111 * 70;
+
+  // 3 tiêu chí VB714 để hiển thị (nhãn a/b/c + điểm thô /100)
+  const hd111Metrics = [
+    { key: 'a', ratio: aHd111 },
+    { key: 'b', ratio: bHd111 },
+    { key: 'c', ratio: cHd111 },
+  ].map((m, i) => {
+    const ct = hdldDanhGia?.chi_tiets?.find((c) => c.so_tt === i + 1);
+    const raw = ct ? (kpiTab === 'chinh_thuc' ? ct.diem_ql : ct.diem_tu) : null;
+    return {
+      ...m,
+      label: `${m.key}. ${ct?.mo_ta_chi_tiet || `Tiêu chí ${i + 1}`}`,
+      raw,
+    };
+  });
 
   // =========================================================================
   // TỔNG ĐIỂM VÀ XẾP LOẠI
@@ -439,13 +479,21 @@ export default function DanhGiaPage() {
   const xepLoaiColor = getXepLoaiColor(xepLoai);
 
   // Kiểm tra dữ liệu mới
-  const isNewKPI = usesLeaderForm
-    ? (!thongKeLD || (thongKeLD.tong_da_duyet === 0 && thongKeLD.tong_cho_duyet === 0 && thongKeLD.tong_nhap === 0))
-    : (!keKhaiSummaryCC || (keKhaiSummaryCC.tong_da_duyet === 0 && keKhaiSummaryCC.tong_cho_duyet === 0 && keKhaiSummaryCC.tong_nhap === 0));
+  const isNewKPI = isHd111
+    ? !hdldDanhGia  // HĐ 111: có bản VB714 hay chưa
+    : usesLeaderForm
+      ? (!thongKeLD || (thongKeLD.tong_da_duyet === 0 && thongKeLD.tong_cho_duyet === 0 && thongKeLD.tong_nhap === 0))
+      : (!keKhaiSummaryCC || (keKhaiSummaryCC.tong_da_duyet === 0 && keKhaiSummaryCC.tong_cho_duyet === 0 && keKhaiSummaryCC.tong_nhap === 0));
   const isNewTC = !tieuChiChung || tieuChiChung.is_new_record;
 
   // Trạng thái kê khai
   const getTrangThaiKeKhai = () => {
+    if (isHd111) {
+      // HĐ 111: theo trạng thái bản đánh giá VB714
+      if (hdldDanhGia?.trang_thai === 'DA_DUYET') return 'DA_PHE_DUYET';
+      if (hdldDanhGia?.trang_thai === 'CHO_DUYET') return 'CHO_PHE_DUYET';
+      return 'NHAP';
+    }
     if (usesLeaderForm) {
       if (thongKeLD && thongKeLD.tong_da_duyet > 0) return 'DA_PHE_DUYET';
       if (thongKeLD && thongKeLD.tong_cho_duyet > 0) return 'CHO_PHE_DUYET';
@@ -967,7 +1015,7 @@ export default function DanhGiaPage() {
             {isHd111 && (
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="px-6 py-4 bg-gradient-to-r from-cyan-600 to-teal-600 flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-white">📊 Kê khai công việc - HĐ 111 (70 điểm)</h2>
+                  <h2 className="text-lg font-semibold text-white">📊 Đánh giá KPI - HĐ 111 / VB714 (70 điểm)</h2>
                   {trangThaiKeKhai === 'DA_PHE_DUYET' && (
                     <span className="px-3 py-1 bg-white/20 rounded-full text-xs font-medium text-white">Đã phê duyệt</span>
                   )}
@@ -991,64 +1039,36 @@ export default function DanhGiaPage() {
                     </div>
                   ) : (
                     <>
-                      {/* Thông tin cơ bản - 5 ô (giống lãnh đạo) */}
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                      {/* HĐ 111 chấm theo VB714: 3 tiêu chí (thang 0-100).
+                          Chính thức = điểm cấp quản lý; Tạm tính = điểm tự chấm. */}
+                      <div className="grid grid-cols-2 md:grid-cols-2 gap-3 mb-6">
                         <StatBox
-                          label="Tổng CV được giao"
-                          value={targetLDHienThi}
-                          bgColor="bg-cyan-50"
-                          textColor="text-cyan-600"
-                        />
-                        <StatBox
-                          label="CV hoàn thành"
-                          value={cvHoanThanhHienThi}
-                          bgColor="bg-green-50"
-                          textColor="text-green-600"
-                        />
-                        <StatBox
-                          label="Lỗi chất lượng"
-                          value={loiChatLuongHienThi}
-                          bgColor={loiChatLuongHienThi > 0 ? "bg-red-50" : "bg-blue-50"}
-                          textColor={loiChatLuongHienThi > 0 ? "text-red-600" : "text-blue-600"}
-                        />
-                        <StatBox
-                          label="Lỗi tiến độ"
-                          value={loiTienDoHienThi}
-                          bgColor={loiTienDoHienThi > 0 ? "bg-red-50" : "bg-amber-50"}
-                          textColor={loiTienDoHienThi > 0 ? "text-red-600" : "text-amber-600"}
-                        />
-                        <StatBox
-                          label="Điểm KPI"
+                          label={kpiTab === 'chinh_thuc' ? 'Điểm KPI (cấp QL chấm)' : 'Điểm KPI (tạm tính)'}
                           value={`${formatScore(diemKPIQuyDoiHd111)}/70`}
                           bgColor="bg-teal-50"
                           textColor="text-teal-600"
                         />
+                        <StatBox
+                          label="Điểm TB 3 tiêu chí"
+                          value={`${formatScore(diemKPIHd111 * 100)}/100`}
+                          bgColor="bg-cyan-50"
+                          textColor="text-cyan-600"
+                        />
                       </div>
 
-                      {/* 3 Chỉ số a, b, c (không có d, đ, e) */}
-                      <h3 className="text-sm font-medium text-gray-700 mb-4">Ba chỉ số (a, b, c)</h3>
+                      {/* 3 tiêu chí VB714 (map vào a, b, c) */}
+                      <h3 className="text-sm font-medium text-gray-700 mb-4">Ba tiêu chí (a, b, c) theo VB714</h3>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <MetricCard
-                          label="a. Tỷ lệ hoàn thành"
-                          value={formatPercent(aLD)}
-                          subValue={`${cvHoanThanhHienThi} / ${targetLDHienThi} CV`}
-                          color="indigo"
-                          percent={aLD * 100}
-                        />
-                        <MetricCard
-                          label="b. Tiến độ"
-                          value={formatPercent(bLD)}
-                          subValue={loiTienDoHienThi > 0 ? `${loiTienDoHienThi} lỗi (-${loiTienDoHienThi * 25}%)` : 'Không có lỗi'}
-                          color={loiTienDoHienThi > 0 ? "amber" : "emerald"}
-                          percent={bLD * 100}
-                        />
-                        <MetricCard
-                          label="c. Chất lượng"
-                          value={formatPercent(cLD)}
-                          subValue={loiChatLuongHienThi > 0 ? `${loiChatLuongHienThi} lỗi (-${loiChatLuongHienThi * 25}%)` : 'Không có lỗi'}
-                          color={loiChatLuongHienThi > 0 ? "amber" : "emerald"}
-                          percent={cLD * 100}
-                        />
+                        {hd111Metrics.map((m) => (
+                          <MetricCard
+                            key={m.key}
+                            label={m.label}
+                            value={formatPercent(m.ratio)}
+                            subValue={m.raw != null ? `${m.raw}/100 điểm` : 'Chưa chấm'}
+                            color="cyan"
+                            percent={m.ratio * 100}
+                          />
+                        ))}
                       </div>
 
                       {/* Công thức */}
@@ -1057,7 +1077,7 @@ export default function DanhGiaPage() {
                           <strong>Công thức:</strong> Điểm KPI = (a + b + c) / 3 × 70
                         </p>
                         <p className="text-sm text-teal-600 font-medium text-center mt-1">
-                          = ({formatPercent(aLD, 2)} + {formatPercent(bLD, 2)} + {formatPercent(cLD, 2)}) / 3 × 70
+                          = ({formatPercent(aHd111, 2)} + {formatPercent(bHd111, 2)} + {formatPercent(cHd111, 2)}) / 3 × 70
                           = <strong className="text-teal-700">{formatScore(diemKPIQuyDoiHd111)} điểm</strong>
                         </p>
                       </div>

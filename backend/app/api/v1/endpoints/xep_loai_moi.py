@@ -1213,8 +1213,18 @@ async def mo_khoa_du_lieu(
     )
     if filter_don_vi_id:
         # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để mở khóa đúng đơn vị lúc đánh giá
-        stmt_dg = stmt_dg.where(DanhGiaThang.don_vi_id_snapshot == filter_don_vi_id)
-    
+        # FIX v3.8 (07/07/2026): Mở khóa CẢ công chức chuyển đơn vị — khớp theo snapshot HOẶC
+        # đơn vị HIỆN TẠI của CC. Trước đây chỉ lọc snapshot → CC chuyển VÀO đơn vị sau kỳ đánh
+        # giá (bản ghi snapshot còn trỏ đơn vị cũ) không được mở khóa khi LĐ đơn vị mới mở khóa
+        # → kẹt duyệt tiêu chí chung (BIZ_002 "Dữ liệu đã bị khóa"). Đồng bộ hướng v3.7 (luồng
+        # duyệt đã route theo đơn vị hiện tại).
+        stmt_dg = stmt_dg.join(CongChuc, CongChuc.id == DanhGiaThang.cong_chuc_id).where(
+            or_(
+                DanhGiaThang.don_vi_id_snapshot == filter_don_vi_id,
+                CongChuc.don_vi_id == filter_don_vi_id,
+            )
+        )
+
     result_dg = await db.execute(stmt_dg)
     dg_list = result_dg.scalars().all()
     
@@ -1232,8 +1242,15 @@ async def mo_khoa_du_lieu(
     )
     if filter_don_vi_id:
         # FIX v2.8.0 (27/02/2026): Dùng don_vi_id_snapshot để mở khóa đúng đơn vị lúc kê khai
-        stmt_kk = stmt_kk.where(KeKhaiCongViec.don_vi_id_snapshot == filter_don_vi_id)
-    
+        # FIX v3.8 (07/07/2026): Mở khóa cả CC chuyển đơn vị — snapshot HOẶC đơn vị hiện tại
+        # (xem giải thích ở phần mở khóa DanhGiaThang).
+        stmt_kk = stmt_kk.join(CongChuc, CongChuc.id == KeKhaiCongViec.cong_chuc_id).where(
+            or_(
+                KeKhaiCongViec.don_vi_id_snapshot == filter_don_vi_id,
+                CongChuc.don_vi_id == filter_don_vi_id,
+            )
+        )
+
     result_kk = await db.execute(stmt_kk)
     kk_list = result_kk.scalars().all()
     

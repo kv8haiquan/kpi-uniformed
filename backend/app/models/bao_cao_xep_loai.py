@@ -58,7 +58,7 @@ class XepLoaiChatLuong(str, enum.Enum):
     B = "B"  # Hoàn thành tốt (70-89 điểm)
     C = "C"  # Hoàn thành (50-69 điểm)
     D = "D"  # Không hoàn thành (< 50 điểm)
-    E = "E"  # Trường hợp đặc biệt (kỷ luật, v.v.)
+    E = "E"  # Không đánh giá (nghỉ thai sản/thôi việc/chuyển ĐV — không phân loại)
 
 
 # =============================================================================

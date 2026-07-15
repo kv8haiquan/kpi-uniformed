@@ -43,6 +43,10 @@ from app.models.user_org import CongChuc, DonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, TrangThaiHoanThanh
 from app.models.kpi_assessment import DanhGiaThang, TieuChiChung, TieuChiChungDanhGia
+from app.api.v1.endpoints.bao_cao_xep_loai import (
+    cap_nhat_chi_tiet_tu_du_lieu,
+    cap_nhat_thong_ke_bao_cao,
+)
 from app.models.bao_cao_xep_loai import (
     BaoCaoXepLoai, ChiTietXepLoai, TrangThaiBaoCao
 )
@@ -323,6 +327,68 @@ async def _get_all_bao_cao(
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+# Trạng thái CHO PHÉP tính lại snapshot — khớp hệt BƯỚC 2 của GET /don-vi.
+# DA_PHE_DUYET bị loại → giữ nguyên hành vi ĐÓNG BĂNG tháng đã chốt (số đã ký không đổi).
+_TRANG_THAI_CHO_REFRESH = [
+    TrangThaiBaoCao.NHAP.value, "CHO_PHE_DUYET", "TRA_LAI", "TU_CHOI",
+]
+
+
+async def _refresh_bao_caos_chua_khoa(
+    db: AsyncSession, thang: int, nam: int, current_user: CongChuc
+) -> int:
+    """
+    Làm tươi snapshot (chi_tiet_xep_loai) cho MỌI đơn vị CHƯA duyệt trước khi xuất
+    báo cáo tổng hợp chi cục.
+
+    Lý do: route xuất Mẫu 04 đọc thẳng snapshot đã lưu; snapshot chỉ được tính lại khi
+    ĐƠN VỊ mở trang báo cáo của họ (GET /don-vi, BƯỚC 2). Nếu đơn vị chưa mở lại sau khi
+    tiêu chí chung/KPI thay đổi trong danh_gia_thang → snapshot stale. Hàm này chạy lại
+    đúng 2 hàm sẵn có cho các đơn vị chưa khóa, giữ nguyên đề xuất/quyết định thủ công.
+
+    Trả về số đơn vị đã được tính lại.
+    """
+    stmt = select(BaoCaoXepLoai).where(
+        BaoCaoXepLoai.thang == thang,
+        BaoCaoXepLoai.nam == nam,
+        BaoCaoXepLoai.is_deleted == False,
+        BaoCaoXepLoai.trang_thai.in_(_TRANG_THAI_CHO_REFRESH),
+    )
+    bao_caos = list((await db.execute(stmt)).scalars().all())
+    for bc in bao_caos:
+        await cap_nhat_chi_tiet_tu_du_lieu(db, bc, current_user)
+        await cap_nhat_thong_ke_bao_cao(db, bc)
+    if bao_caos:
+        await db.commit()
+    return len(bao_caos)
+
+
+async def _refresh_bao_cao_don_vi(
+    db: AsyncSession, don_vi_id, thang: int, nam: int, current_user: CongChuc
+) -> bool:
+    """
+    Làm tươi snapshot cho MỘT đơn vị (dùng cho xuất cá nhân / đơn vị lẻ) — chỉ khi
+    báo cáo đơn vị đó CHƯA duyệt. Tránh việc một CC thường xuất báo cáo của mình lại
+    kích hoạt tính lại toàn chi cục. Trả về True nếu có tính lại.
+    """
+    if don_vi_id is None:
+        return False
+    stmt = select(BaoCaoXepLoai).where(
+        BaoCaoXepLoai.don_vi_id == don_vi_id,
+        BaoCaoXepLoai.thang == thang,
+        BaoCaoXepLoai.nam == nam,
+        BaoCaoXepLoai.is_deleted == False,
+        BaoCaoXepLoai.trang_thai.in_(_TRANG_THAI_CHO_REFRESH),
+    )
+    bc = (await db.execute(stmt)).scalars().first()
+    if bc is None:
+        return False
+    await cap_nhat_chi_tiet_tu_du_lieu(db, bc, current_user)
+    await cap_nhat_thong_ke_bao_cao(db, bc)
+    await db.commit()
+    return True
 
 
 async def _get_bao_cao_don_vi_quy(
@@ -856,7 +922,9 @@ def _build_mau04_data(
                     "don_vi": don_vi_ten,
                     "diem_tong": float(ct.diem_tong or 0),
                     "xep_loai": xep_loai_cuoi,
-                    "ghi_chu": ct.ghi_chu or "",
+                    # Ghi chú: ưu tiên ghi chú sẵn có → lý do CCT chỉnh → lý do đội trưởng chỉnh
+                    # (để lý do "Không đánh giá"/điều chỉnh hiện ra bản in Mẫu 04)
+                    "ghi_chu": ct.ghi_chu or ct.ly_do_dieu_chinh_cct or ct.ly_do_dieu_chinh_dt or "",
                     # Sort keys
                     "_don_vi_sort": don_vi_sort_key,
                     "_cap_bac_sort": sort_order,
@@ -1124,6 +1192,9 @@ async def export_ca_nhan(
         result = await db.execute(stmt)
         target_user = result.scalar_one_or_none() or current_user
     
+    # Làm tươi snapshot đơn vị của target (nếu chưa duyệt) trước khi đọc chi tiết xếp loại
+    await _refresh_bao_cao_don_vi(db, target_user.don_vi_id, thang, nam, current_user)
+
     # Lấy dữ liệu
     danh_gia = await _get_danh_gia_thang(db, target_user.id, thang, nam)
     chi_tiet_xl = await _find_chi_tiet_xep_loai(db, target_user.id, thang, nam)
@@ -1217,6 +1288,9 @@ async def export_don_vi(
             "PERM_004", "Bạn chỉ được xuất báo cáo đơn vị mình"
         ))
     
+    # Làm tươi snapshot đơn vị (nếu chưa duyệt) trước khi đọc
+    await _refresh_bao_cao_don_vi(db, target_don_vi_id, thang, nam, current_user)
+
     # Lấy báo cáo
     bao_cao = await _get_bao_cao_don_vi(db, target_don_vi_id, thang, nam)
     if not bao_cao:
@@ -1272,12 +1346,19 @@ async def export_tong_hop(
             "PERM_003", "Chỉ CCT và Phó CCT mới được xuất báo cáo tổng hợp toàn Chi cục"
         ))
     
-    bao_caos = await _get_all_bao_cao(db, thang, nam)
+    # Làm tươi snapshot các đơn vị CHƯA duyệt trước khi build (đơn vị DA_PHE_DUYET giữ nguyên).
+    # → khắc phục stale: snapshot vốn chỉ được tính lại khi đơn vị mở trang của họ.
+    so_dv_refresh = await _refresh_bao_caos_chua_khoa(db, thang, nam, current_user)
+    logger.info(
+        f"[export Mau04 {thang:02d}/{nam}] đã tính lại {so_dv_refresh} đơn vị chưa duyệt trước khi xuất"
+    )
+
+    bao_caos = await _get_all_bao_cao(db, thang, nam)   # reload sau khi commit
     if not bao_caos:
         raise HTTPException(404, detail=error_response(
             "BIZ_003", f"Chưa có báo cáo xếp loại tháng {thang}/{nam}"
         ))
-    
+
     # Sử dụng Mẫu 04 thay vì Mẫu 03
     mau04_data = _build_mau04_data(bao_caos, thang, nam)
     
@@ -1312,13 +1393,16 @@ async def export_don_vi_tong_hop(
         raise HTTPException(403, detail=error_response(
             "PERM_003", "Chỉ CCT và Phó CCT mới được xuất báo cáo tổng hợp"
         ))
-    
+
+    # Làm tươi snapshot các đơn vị chưa duyệt trước khi build
+    await _refresh_bao_caos_chua_khoa(db, thang, nam, current_user)
+
     bao_caos = await _get_all_bao_cao(db, thang, nam)
     if not bao_caos:
         raise HTTPException(404, detail=error_response(
             "BIZ_003", f"Chưa có báo cáo xếp loại tháng {thang}/{nam}"
         ))
-    
+
     # Build data cho từng đơn vị
     don_vi_list = []
     for bc in bao_caos:
@@ -1621,6 +1705,10 @@ async def export_bao_cao_tong_hop(
         raise HTTPException(403, detail=error_response(
             "PERM_003", "Chỉ CCT và Phó CCT mới được xuất báo cáo tổng hợp"
         ))
+
+    # Làm tươi snapshot các đơn vị chưa duyệt trước khi build
+    # (7 báo cáo thống kê đọc điểm KPI/lãnh đạo từ chi_tiet_xep_loai)
+    await _refresh_bao_caos_chua_khoa(db, thang, nam, current_user)
 
     try:
         # Generate all 7 Excel files

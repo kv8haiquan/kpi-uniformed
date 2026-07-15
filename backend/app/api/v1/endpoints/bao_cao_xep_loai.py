@@ -549,8 +549,43 @@ async def tinh_diem_lanh_dao(
     )
 
 
+# Ghi chú tự động cho ca nghỉ thai sản trọn tháng (nhận diện được để tự xóa khi hết nghỉ).
+GHI_CHU_THAI_SAN = "Nghỉ thai sản (không đánh giá)"
+
+
+async def _la_thai_san_tron_thang(
+    db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
+) -> bool:
+    """
+    True nếu CC có đơn nghỉ THAI_SAN (ĐÃ PHÊ DUYỆT) mà KHOẢNG NGÀY phủ TRỌN tháng
+    → tự xếp 'E' (Không đánh giá).
+
+    Dùng phủ theo khoảng (tu_ngay ≤ ngày đầu tháng VÀ den_ngay ≥ ngày cuối tháng) vì:
+    - Nghỉ thai sản thật nhập theo KHOẢNG liên tục (thường vài tháng) → 1 đơn phủ trọn
+      từng tháng nó bao trùm, bền với cách tính ngày công/cuối tuần.
+    - Loại THAI_SAN còn dùng cho nghỉ vợ sinh (bố, vài ngày lẻ giữa tháng) → không đơn
+      nào phủ trọn tháng → KHÔNG bị auto-E.
+    - Thai sản nửa tháng cũng không phủ trọn → không auto (để đội trưởng tự quyết).
+    """
+    import calendar
+    from datetime import date as _date
+    from app.models.leave import DangKyNghi, LoaiNghi, TrangThaiNghi
+
+    ngay_dau = _date(nam, thang, 1)
+    ngay_cuoi = _date(nam, thang, calendar.monthrange(nam, thang)[1])
+    stmt = select(func.count(DangKyNghi.id)).where(
+        DangKyNghi.cong_chuc_id == cong_chuc_id,
+        DangKyNghi.loai_nghi == LoaiNghi.THAI_SAN,
+        DangKyNghi.trang_thai == TrangThaiNghi.DA_PHE_DUYET,
+        DangKyNghi.is_deleted == False,
+        DangKyNghi.tu_ngay <= ngay_dau,
+        DangKyNghi.den_ngay >= ngay_cuoi,
+    )
+    return (await db.execute(stmt)).scalar() > 0
+
+
 async def cap_nhat_chi_tiet_tu_du_lieu(
-    db: AsyncSession, 
+    db: AsyncSession,
     bao_cao: BaoCaoXepLoai,
     current_user: CongChuc
 ) -> None:
@@ -647,6 +682,12 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
         else:
             ket_qua = await tinh_diem_cong_chuc(db, cc.id, thang, nam)
 
+        # AUTO-E: nghỉ thai sản ĐÃ DUYỆT phủ trọn tháng → 'E' (Không đánh giá).
+        # Áp vào xep_loai_he_thong → tự bền qua mỗi lần refresh; đội trưởng/CCT vẫn
+        # có thể đề xuất/quyết định khác để override.
+        la_thai_san = await _la_thai_san_tron_thang(db, cc.id, thang, nam)
+        xep_loai_ht = "E" if la_thai_san else ket_qua.xep_loai
+
         # Cập nhật hoặc tạo chi tiết
         if cc.id in existing_map:
             ct = existing_map[cc.id]
@@ -656,7 +697,7 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
             ct.diem_tong = _truncate_2dp(ket_qua.diem_tong)
             # Lưu xep_loai_he_thong cũ để so sánh
             old_xep_loai_he_thong = ct.xep_loai_he_thong
-            ct.xep_loai_he_thong = ket_qua.xep_loai
+            ct.xep_loai_he_thong = xep_loai_ht
             ct.so_ngay_lam_viec = ket_qua.so_ngay_lam_viec  # v1.1
             ct.so_ngay_nghi = ket_qua.so_ngay_nghi          # v1.1
             # FIX v1.2: Cập nhật xep_loai_de_xuat nếu:
@@ -664,7 +705,12 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
             # - Đội trưởng chưa chủ động điều chỉnh (de_xuat == he_thong cũ)
             # Điều này đảm bảo khi điểm thay đổi, xếp loại đề xuất cũng cập nhật theo
             if not ct.xep_loai_de_xuat or ct.xep_loai_de_xuat == old_xep_loai_he_thong:
-                ct.xep_loai_de_xuat = ket_qua.xep_loai
+                ct.xep_loai_de_xuat = xep_loai_ht
+            # Ghi chú thai sản: tự set khi thai sản, tự xóa khi hết (chỉ động vào note tự động)
+            if la_thai_san:
+                ct.ghi_chu = GHI_CHU_THAI_SAN
+            elif ct.ghi_chu == GHI_CHU_THAI_SAN:
+                ct.ghi_chu = None
         else:
             ct = ChiTietXepLoai(
                 bao_cao_id=bao_cao.id,
@@ -673,15 +719,16 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
                 diem_tieu_chi_chung=_truncate_2dp(ket_qua.diem_tieu_chi_chung),
                 diem_kpi=_truncate_2dp(ket_qua.diem_kpi),
                 diem_tong=_truncate_2dp(ket_qua.diem_tong),
-                xep_loai_he_thong=ket_qua.xep_loai,
-                xep_loai_de_xuat=ket_qua.xep_loai,
+                xep_loai_he_thong=xep_loai_ht,
+                xep_loai_de_xuat=xep_loai_ht,
                 so_ngay_lam_viec=ket_qua.so_ngay_lam_viec,  # v1.1
                 so_ngay_nghi=ket_qua.so_ngay_nghi,          # v1.1
+                ghi_chu=GHI_CHU_THAI_SAN if la_thai_san else None,
             )
             db.add(ct)
-        
+
         # Đếm thống kê
-        final_xep_loai = ct.xep_loai_de_xuat or ket_qua.xep_loai
+        final_xep_loai = ct.xep_loai_de_xuat or xep_loai_ht
         if final_xep_loai in stats:
             stats[final_xep_loai] += 1
     

@@ -922,7 +922,9 @@ def _build_mau04_data(
                     "don_vi": don_vi_ten,
                     "diem_tong": float(ct.diem_tong or 0),
                     "xep_loai": xep_loai_cuoi,
-                    "ghi_chu": ct.ghi_chu or "",
+                    # Ghi chú: ưu tiên ghi chú sẵn có → lý do CCT chỉnh → lý do đội trưởng chỉnh
+                    # (để lý do "Không đánh giá"/điều chỉnh hiện ra bản in Mẫu 04)
+                    "ghi_chu": ct.ghi_chu or ct.ly_do_dieu_chinh_cct or ct.ly_do_dieu_chinh_dt or "",
                     # Sort keys
                     "_don_vi_sort": don_vi_sort_key,
                     "_cap_bac_sort": sort_order,

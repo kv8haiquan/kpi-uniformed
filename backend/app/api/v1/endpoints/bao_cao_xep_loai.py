@@ -669,7 +669,12 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
         # Xác định loại CC (lãnh đạo hay thường)
         is_lanh_dao = cc.vai_tro and cc.vai_tro.cap_bac in [
             CapBacVaiTro.TRUONG_DON_VI,
-            CapBacVaiTro.PHO_DON_VI
+            CapBacVaiTro.PHO_DON_VI,
+            # FIX: CCT/PCCT cũng là lãnh đạo → tính theo V2 (cộng SP đơn vị phụ trách).
+            # Trước đây bị loại → rơi sang tinh_diem_cong_chuc (đọc kê khai của chính họ =
+            # không có) → KPI=0 → xếp D oan.
+            CapBacVaiTro.CHI_CUC_TRUONG,
+            CapBacVaiTro.PHO_CHI_CUC_TRUONG,
         ]
         # Phase 3 (29/04/2026): HĐ 111 dùng form LĐ → công thức 3 chỉ số.
         is_hd_111 = cc.is_hd_111
@@ -832,7 +837,12 @@ async def tao_bao_cao_xep_loai(
         # Xác định loại CC (lãnh đạo hay thường) - nhất quán với cap_nhat_chi_tiet
         is_lanh_dao = cc.vai_tro and cc.vai_tro.cap_bac in [
             CapBacVaiTro.TRUONG_DON_VI,
-            CapBacVaiTro.PHO_DON_VI
+            CapBacVaiTro.PHO_DON_VI,
+            # FIX: CCT/PCCT cũng là lãnh đạo → tính theo V2 (cộng SP đơn vị phụ trách).
+            # Trước đây bị loại → rơi sang tinh_diem_cong_chuc (đọc kê khai của chính họ =
+            # không có) → KPI=0 → xếp D oan.
+            CapBacVaiTro.CHI_CUC_TRUONG,
+            CapBacVaiTro.PHO_CHI_CUC_TRUONG,
         ]
         # Phase 3 (29/04/2026): HĐ 111 dùng form LĐ → công thức 3 chỉ số.
         is_hd_111 = cc.is_hd_111

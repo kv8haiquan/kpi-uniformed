@@ -26,7 +26,7 @@ from typing import Optional, List, Tuple, NamedTuple
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -625,7 +625,17 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
         .where(
             CongChuc.don_vi_id == don_vi_id,
             CongChuc.is_deleted == False,
-            CongChuc.is_active == True,
+            # GIỮ CC đã inactive (nghỉ/chuyển giữa tháng) NẾU đã được đánh giá tháng này
+            # → không bị rớt khỏi báo cáo tháng họ thực sự làm việc + được chấm điểm.
+            or_(
+                CongChuc.is_active == True,
+                exists().where(and_(
+                    DanhGiaThang.cong_chuc_id == CongChuc.id,
+                    DanhGiaThang.thang == thang,
+                    DanhGiaThang.nam == nam,
+                    DanhGiaThang.is_deleted == False,
+                )),
+            ),
             or_(
                 CongChuc.vai_tro_id == None,
                 ~VaiTro.cap_bac.in_(_excluded_roles),
@@ -801,8 +811,17 @@ async def tao_bao_cao_xep_loai(
         .options(selectinload(CongChuc.vai_tro))
         .where(
             CongChuc.don_vi_id == don_vi_id,
-            CongChuc.is_active == True,
             CongChuc.is_deleted == False,
+            # GIỮ CC đã inactive nếu đã được đánh giá tháng này (nhất quán cap_nhat_chi_tiet)
+            or_(
+                CongChuc.is_active == True,
+                exists().where(and_(
+                    DanhGiaThang.cong_chuc_id == CongChuc.id,
+                    DanhGiaThang.thang == thang,
+                    DanhGiaThang.nam == nam,
+                    DanhGiaThang.is_deleted == False,
+                )),
+            ),
             or_(
                 CongChuc.vai_tro_id == None,
                 ~VaiTro.cap_bac.in_(_excluded),

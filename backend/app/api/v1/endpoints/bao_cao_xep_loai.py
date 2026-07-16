@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.user_org import CongChuc, DonVi, LoaiDonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_assessment import DanhGiaThang
+from app.models.admin import LichSuDieuChuyen
 from app.models.kpi_submission import KeKhaiCongViec
 from app.models.leave import DangKyNghi
 from app.models.leader_kpi import KeKhaiLanhDao, DanhGiaDDE, TrangThaiKeKhaiLD, TrangThaiDDE
@@ -553,6 +554,36 @@ async def tinh_diem_lanh_dao(
 GHI_CHU_THAI_SAN = "Nghỉ thai sản (không đánh giá)"
 
 
+def _don_vi_tai_thang_expr(thang: int, nam: int):
+    """
+    Biểu thức SQL: đơn vị của CC "tại tháng thang/nam" để GÁN vào báo cáo tháng đó.
+
+    Mặc định = cong_chuc.don_vi_id (hồ sơ hiện tại — đúng cho đại đa số). NHƯNG nếu CC
+    được điều chuyển ĐẾN đơn vị hồ sơ hiện tại bằng một quyết định hiệu lực SAU mốc chốt
+    của tháng (cuối tháng M+1), thì "cuộn ngược" về đơn vị NGUỒN của quyết định đó — vì
+    tháng M họ vẫn thuộc đơn vị cũ (điều chuyển xảy ra sau khi tháng đã khép).
+
+    Chỉ xét quyết định có don_vi_moi == hồ sơ hiện tại → bỏ qua bản ghi rác/khứ hồi
+    trong lich_su_dieu_chuyen (VD VP→VP, hoặc A→B và B→A cùng ngày).
+    """
+    import calendar
+    from datetime import date as _date
+    y, m = (nam + 1, 1) if thang >= 12 else (nam, thang + 1)
+    mocchot = _date(y, m, calendar.monthrange(y, m)[1])
+    roll = (
+        select(LichSuDieuChuyen.don_vi_cu_id)
+        .where(
+            LichSuDieuChuyen.cong_chuc_id == CongChuc.id,
+            LichSuDieuChuyen.don_vi_moi_id == CongChuc.don_vi_id,
+            LichSuDieuChuyen.ngay_hieu_luc > mocchot,
+        )
+        .order_by(LichSuDieuChuyen.ngay_hieu_luc.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    return func.coalesce(roll, CongChuc.don_vi_id)
+
+
 async def _la_thai_san_tron_thang(
     db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
 ) -> bool:
@@ -623,7 +654,9 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(selectinload(CongChuc.vai_tro))
         .where(
-            CongChuc.don_vi_id == don_vi_id,
+            # Gán theo ĐƠN VỊ-TẠI-THÁNG (cuộn ngược điều chuyển hiệu lực sau khi tháng khép),
+            # không phải hồ sơ hiện tại — để CC chuyển ĐV ở tháng sau không bị kéo khỏi báo cáo cũ.
+            _don_vi_tai_thang_expr(thang, nam) == don_vi_id,
             CongChuc.is_deleted == False,
             # GIỮ CC đã inactive (nghỉ/chuyển giữa tháng) NẾU đã được đánh giá tháng này
             # → không bị rớt khỏi báo cáo tháng họ thực sự làm việc + được chấm điểm.
@@ -810,7 +843,8 @@ async def tao_bao_cao_xep_loai(
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(selectinload(CongChuc.vai_tro))
         .where(
-            CongChuc.don_vi_id == don_vi_id,
+            # Gán theo đơn vị-tại-tháng (nhất quán cap_nhat_chi_tiet)
+            _don_vi_tai_thang_expr(thang, nam) == don_vi_id,
             CongChuc.is_deleted == False,
             # GIỮ CC đã inactive nếu đã được đánh giá tháng này (nhất quán cap_nhat_chi_tiet)
             or_(

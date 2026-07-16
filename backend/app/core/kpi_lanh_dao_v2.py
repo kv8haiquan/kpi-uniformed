@@ -43,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import DanhGiaDDE
 from app.models.phan_cong_phu_trach import PhanCongPhuTrach
-from app.models.user_org import CapBacVaiTro, CongChuc
+from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
 
 
 # =============================================================================
@@ -135,6 +135,40 @@ async def get_don_vi_phu_trach(
     )
     rows = (await db.execute(stmt)).scalars().all()
     return list(rows)
+
+
+async def get_don_vi_scope_cct(
+    db: AsyncSession,
+    cct_id: UUID,
+    ngay: date,
+) -> list[UUID]:
+    """
+    Scope đơn vị của CCT = HỢP (union) đơn vị của TẤT CẢ PCCT đang hiệu lực tại `ngay`
+    + đơn vị CCT tự phụ trách trực tiếp (nếu có). Trả về list don_vi_id (distinct).
+
+    Lý do: CCT lấy toàn bộ điểm cấp dưới toàn chi cục (docstring module) — bám tự động
+    theo phân công của các PCCT, không cần gán tay riêng cho CCT.
+    """
+    stmt = (
+        select(PhanCongPhuTrach.don_vi_id)
+        .join(CongChuc, CongChuc.id == PhanCongPhuTrach.lanh_dao_id)
+        .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+        .where(
+            PhanCongPhuTrach.is_deleted == False,  # noqa: E712
+            PhanCongPhuTrach.hieu_luc_tu <= ngay,
+            or_(
+                PhanCongPhuTrach.hieu_luc_den.is_(None),
+                PhanCongPhuTrach.hieu_luc_den >= ngay,
+            ),
+            or_(
+                VaiTro.cap_bac == CapBacVaiTro.PHO_CHI_CUC_TRUONG,
+                PhanCongPhuTrach.lanh_dao_id == cct_id,
+            ),
+        )
+        .distinct()
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return list(set(rows))
 
 
 def _ngay_chot_cua_thang(thang: int, nam: int) -> date:
@@ -549,9 +583,16 @@ async def calc_kpi_lanh_dao_v2(
         scope_total = await _sp_trong_don_vi(
             db, [user.don_vi_id], thang, nam, tam_tinh=tam_tinh
         )
-    else:  # PCCT / CCT
+    elif cap_bac == CapBacVaiTro.PHO_CHI_CUC_TRUONG:
         ngay_chot = _ngay_chot_cua_thang(thang, nam)
         don_vi_ids = await get_don_vi_phu_trach(db, user.id, ngay_chot)
+        has_phan_cong = len(don_vi_ids) > 0
+        scope_total = await _sp_trong_don_vi(
+            db, don_vi_ids, thang, nam, tam_tinh=tam_tinh
+        )
+    else:  # CCT — gộp đơn vị của TẤT CẢ PCCT + đơn vị CCT tự phụ trách trực tiếp
+        ngay_chot = _ngay_chot_cua_thang(thang, nam)
+        don_vi_ids = await get_don_vi_scope_cct(db, user.id, ngay_chot)
         has_phan_cong = len(don_vi_ids) > 0
         scope_total = await _sp_trong_don_vi(
             db, don_vi_ids, thang, nam, tam_tinh=tam_tinh

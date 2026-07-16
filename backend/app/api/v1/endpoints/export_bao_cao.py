@@ -887,7 +887,11 @@ def _build_mau04_data(
                 # Filter: bỏ qua user đã bị vô hiệu hóa hoặc đã xóa
                 if not ct.cong_chuc:
                     continue
-                if hasattr(ct.cong_chuc, 'is_active') and ct.cong_chuc.is_active == False:
+                # Giữ CC đã inactive NẾU có điểm đánh giá trong tháng (làm việc/được chấm
+                # rồi nghỉ/chuyển giữa tháng) — nhất quán với recompute; chỉ bỏ khi vừa
+                # inactive vừa không có điểm (thực sự đã rời, không được đánh giá).
+                if (hasattr(ct.cong_chuc, 'is_active') and ct.cong_chuc.is_active == False
+                        and float(ct.diem_tong or 0) <= 0):
                     continue
                 if hasattr(ct.cong_chuc, 'deleted_at') and ct.cong_chuc.deleted_at is not None:
                     continue

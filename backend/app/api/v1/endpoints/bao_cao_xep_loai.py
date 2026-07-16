@@ -26,13 +26,14 @@ from typing import Optional, List, Tuple, NamedTuple
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status, Query
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, exists, case
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, aliased
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.user_org import CongChuc, DonVi, LoaiDonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_assessment import DanhGiaThang
+from app.models.admin import LichSuDieuChuyen
 from app.models.kpi_submission import KeKhaiCongViec
 from app.models.leave import DangKyNghi
 from app.models.leader_kpi import KeKhaiLanhDao, DanhGiaDDE, TrangThaiKeKhaiLD, TrangThaiDDE
@@ -553,6 +554,93 @@ async def tinh_diem_lanh_dao(
 GHI_CHU_THAI_SAN = "Nghỉ thai sản (không đánh giá)"
 
 
+def _don_vi_tai_thang_expr(thang: int, nam: int):
+    """
+    Biểu thức SQL: đơn vị của CC "tại tháng thang/nam" để GÁN vào báo cáo tháng đó.
+
+    v2.0 (16/07/2026) — BIỂU QUYẾT ĐA SỐ 3 NGUỒN (giải bài toán "đơn vị theo kỳ"):
+      (1) Kê-khai:  đơn vị snapshot của bản KÊ KHAI CÔNG VIỆC muộn nhất trong tháng
+                    (chụp ngay lúc kê khai → nơi CC thực làm việc). Có thể NULL nếu không kê khai.
+      (2) Người-duyệt: đơn vị của người phê duyệt TCC (ưu tiên cấp 2, else cấp 1) NẾU người đó
+                    là TDV/PDV VÀ khác đơn vị hồ sơ → lấy đơn vị người duyệt; ngược lại = hồ sơ.
+                    (Loại CCT/PCCT vì họ duyệt chéo toàn cục, đơn vị của họ vô nghĩa.)
+      (3) Heuristic: cuộn ngược điều chuyển hiệu lực SAU mốc chốt (cuối tháng M+1) — như cũ.
+
+    Ba nguồn sai ở các ca KHÁC NHAU và rời nhau → lấy ĐA SỐ (≥2 phiếu) khử được "kẻ lạc loài"
+    của từng nguồn. Kiểm chứng T4+T5/2026: 100% khớp phụ lục, 0 ca phải phá hòa.
+    Không đa số (rất hiếm) → ưu tiên kê-khai → người-duyệt → heuristic.
+    """
+    import calendar
+    from datetime import date as _date
+    y, m = (nam + 1, 1) if thang >= 12 else (nam, thang + 1)
+    mocchot = _date(y, m, calendar.monthrange(y, m)[1])
+
+    # (3) Heuristic điều chuyển: chỉ cuộn ngược quyết định có don_vi_moi == hồ sơ hiện tại
+    #     và hiệu lực SAU mốc chốt → bỏ qua bản ghi rác/khứ hồi trong lich_su_dieu_chuyen.
+    roll = (
+        select(LichSuDieuChuyen.don_vi_cu_id)
+        .where(
+            LichSuDieuChuyen.cong_chuc_id == CongChuc.id,
+            LichSuDieuChuyen.don_vi_moi_id == CongChuc.don_vi_id,
+            LichSuDieuChuyen.ngay_hieu_luc > mocchot,
+        )
+        .order_by(LichSuDieuChuyen.ngay_hieu_luc.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    v_he = func.coalesce(roll, CongChuc.don_vi_id)
+
+    # (1) Kê-khai công việc muộn nhất trong tháng (theo created_at)
+    v_kk = (
+        select(KeKhaiCongViec.don_vi_id_snapshot)
+        .where(
+            KeKhaiCongViec.cong_chuc_id == CongChuc.id,
+            KeKhaiCongViec.thang == thang,
+            KeKhaiCongViec.nam == nam,
+            KeKhaiCongViec.is_deleted == False,
+            KeKhaiCongViec.don_vi_id_snapshot.isnot(None),
+        )
+        .order_by(KeKhaiCongViec.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+
+    # (2) Đơn vị người phê duyệt TCC — chỉ tin khi là TDV/PDV và khác đơn vị hồ sơ
+    NguoiDuyet = aliased(CongChuc)
+    VaiTroDuyet = aliased(VaiTro)
+    approver_dv = (
+        select(NguoiDuyet.don_vi_id)
+        .select_from(DanhGiaThang)
+        .join(
+            NguoiDuyet,
+            NguoiDuyet.id == func.coalesce(
+                DanhGiaThang.nguoi_phe_duyet_tc_cap2_id,
+                DanhGiaThang.nguoi_phe_duyet_tc_cap1_id,
+            ),
+        )
+        .join(VaiTroDuyet, VaiTroDuyet.id == NguoiDuyet.vai_tro_id)
+        .where(
+            DanhGiaThang.cong_chuc_id == CongChuc.id,
+            DanhGiaThang.thang == thang,
+            DanhGiaThang.nam == nam,
+            DanhGiaThang.is_deleted == False,
+            VaiTroDuyet.ma_vai_tro.in_(("TDV", "PDV")),
+            NguoiDuyet.don_vi_id != CongChuc.don_vi_id,
+        )
+        .limit(1)
+        .scalar_subquery()
+    )
+    v_ap = func.coalesce(approver_dv, CongChuc.don_vi_id)
+
+    # Biểu quyết đa số: kẻ nào được ≥2 phiếu thì thắng; hết hòa → kê-khai > người-duyệt > heuristic
+    return case(
+        (and_(v_kk.isnot(None), v_kk == v_ap), v_kk),
+        (and_(v_kk.isnot(None), v_kk == v_he), v_kk),
+        (v_ap == v_he, v_ap),
+        else_=func.coalesce(v_kk, v_ap, v_he),
+    )
+
+
 async def _la_thai_san_tron_thang(
     db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
 ) -> bool:
@@ -623,9 +711,21 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(selectinload(CongChuc.vai_tro))
         .where(
-            CongChuc.don_vi_id == don_vi_id,
+            # Gán theo ĐƠN VỊ-TẠI-THÁNG (cuộn ngược điều chuyển hiệu lực sau khi tháng khép),
+            # không phải hồ sơ hiện tại — để CC chuyển ĐV ở tháng sau không bị kéo khỏi báo cáo cũ.
+            _don_vi_tai_thang_expr(thang, nam) == don_vi_id,
             CongChuc.is_deleted == False,
-            CongChuc.is_active == True,
+            # GIỮ CC đã inactive (nghỉ/chuyển giữa tháng) NẾU đã được đánh giá tháng này
+            # → không bị rớt khỏi báo cáo tháng họ thực sự làm việc + được chấm điểm.
+            or_(
+                CongChuc.is_active == True,
+                exists().where(and_(
+                    DanhGiaThang.cong_chuc_id == CongChuc.id,
+                    DanhGiaThang.thang == thang,
+                    DanhGiaThang.nam == nam,
+                    DanhGiaThang.is_deleted == False,
+                )),
+            ),
             or_(
                 CongChuc.vai_tro_id == None,
                 ~VaiTro.cap_bac.in_(_excluded_roles),
@@ -800,9 +900,19 @@ async def tao_bao_cao_xep_loai(
         .join(VaiTro, CongChuc.vai_tro_id == VaiTro.id, isouter=True)
         .options(selectinload(CongChuc.vai_tro))
         .where(
-            CongChuc.don_vi_id == don_vi_id,
-            CongChuc.is_active == True,
+            # Gán theo đơn vị-tại-tháng (nhất quán cap_nhat_chi_tiet)
+            _don_vi_tai_thang_expr(thang, nam) == don_vi_id,
             CongChuc.is_deleted == False,
+            # GIỮ CC đã inactive nếu đã được đánh giá tháng này (nhất quán cap_nhat_chi_tiet)
+            or_(
+                CongChuc.is_active == True,
+                exists().where(and_(
+                    DanhGiaThang.cong_chuc_id == CongChuc.id,
+                    DanhGiaThang.thang == thang,
+                    DanhGiaThang.nam == nam,
+                    DanhGiaThang.is_deleted == False,
+                )),
+            ),
             or_(
                 CongChuc.vai_tro_id == None,
                 ~VaiTro.cap_bac.in_(_excluded),

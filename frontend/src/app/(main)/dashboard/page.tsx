@@ -28,6 +28,7 @@ import {
 } from '@/types/tieu-chi-chung';
 import { IAdminStats } from '@/types/admin';
 import WidgetPhanCongPhuTrach from '@/components/dashboard/WidgetPhanCongPhuTrach';
+import RecentTransfersWidget from '@/components/dashboard/RecentTransfersWidget';
 import hdldService from '@/services/hdld.service';
 import { isHdldVb714Active } from '@/types/hdld';
 import VinhDanhWidget from '@/components/dashboard/VinhDanhWidget';
@@ -569,6 +570,12 @@ export default function DashboardPage() {
               <QuickActionCard icon="🔑" title="Reset mật khẩu" description="Đặt lại mật khẩu người dùng" href="/admin/users" color="red" size="large" />
               <QuickActionCard icon="🏆" title="Vinh danh tháng" description="Quản lý công chức tiêu biểu hàng tháng" href="/admin/vinh-danh" color="indigo" size="large" />
             </div>
+          </div>
+
+          {/* Điều chuyển & trạng thái gần đây */}
+          <div className="mb-8">
+            <SectionHeader icon="🔄" title="Điều chuyển & trạng thái gần đây" subtitle="Hoạt động điều chuyển, vô hiệu hóa, kích hoạt mới nhất toàn cơ quan" />
+            <RecentTransfersWidget />
           </div>
 
           {/* System Info */}

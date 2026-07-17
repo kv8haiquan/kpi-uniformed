@@ -315,6 +315,9 @@ export default function AdminUsersPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<IUserResponse | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Ngày hiệu lực + lý do cho thao tác đổi trạng thái (ảnh hưởng báo cáo theo tháng)
+  const [statusNgayHieuLuc, setStatusNgayHieuLuc] = useState('');
+  const [statusLyDo, setStatusLyDo] = useState('');
 
   // Load danh sách đơn vị và vai trò
   useEffect(() => {
@@ -413,6 +416,8 @@ export default function AdminUsersPage() {
       return;
     }
     setSelectedUser(user);
+    setStatusNgayHieuLuc(new Date().toISOString().slice(0, 10));
+    setStatusLyDo('');
     setShowStatusModal(true);
   };
 
@@ -450,8 +455,10 @@ export default function AdminUsersPage() {
     
     setIsSubmitting(true);
     try {
-      await adminService.updateUserStatus(selectedUser.id, { 
-        is_active: !selectedUser.is_active 
+      await adminService.updateUserStatus(selectedUser.id, {
+        is_active: !selectedUser.is_active,
+        ngay_hieu_luc: statusNgayHieuLuc || undefined,
+        ly_do: statusLyDo.trim() || undefined,
       });
       loadUsers(false);
       setShowStatusModal(false);
@@ -675,6 +682,30 @@ export default function AdminUsersPage() {
             <p className="text-gray-600 mb-4">
               Bạn có chắc muốn {selectedUser.is_active ? 'vô hiệu hóa' : 'kích hoạt'} tài khoản <strong>{selectedUser.ho_ten}</strong> ({selectedUser.ma_cc})?
             </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Ngày hiệu lực <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={statusNgayHieuLuc}
+                onChange={(e) => setStatusNgayHieuLuc(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Ảnh hưởng báo cáo thống kê: CC được tính trong báo cáo đến hết tháng có ngày hiệu lực.
+              </p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Lý do (tùy chọn)</label>
+              <textarea
+                value={statusLyDo}
+                onChange={(e) => setStatusLyDo(e.target.value)}
+                rows={2}
+                placeholder="VD: Nghỉ hưu theo QĐ số 123/QĐ-HQKV8 ngày..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => { setShowStatusModal(false); setSelectedUser(null); }}

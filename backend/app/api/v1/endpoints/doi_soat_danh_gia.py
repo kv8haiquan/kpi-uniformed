@@ -87,14 +87,12 @@ NHOM_META = [
     },
     {
         "key": "diem_bat_thuong",
-        "ten": "Điểm bất thường trên báo cáo (thành phần = 0)",
+        "ten": "Điểm 0 chưa rõ nguyên nhân (lưới an toàn)",
         "mo_ta": (
-            "Lưới an toàn: mọi công chức ĐÃ lên báo cáo nhưng có thành phần điểm = 0 "
-            "(KPI = 0, hoặc tiêu chí chung = 0, hoặc điểm tổng = 0). Quét đúng triệu chứng "
-            "đã kiểm chứng nên KHÔNG bỏ sót. Nguyên nhân mỗi người MỘT KHÁC — xem cột "
-            "\"Chi tiết\" (vd HĐ111 VB714 chờ duyệt, lãnh đạo chưa có bản tiêu chí chung, "
-            "TCC còn nháp, thai sản/nghỉ, hoặc đã kê khai nhưng KPI=0). Phần lớn trùng với "
-            "các nhóm trên; giá trị riêng là bắt ca \"đã kê khai nhưng KPI=0\"."
+            "Các ca CÒN LẠI có thành phần điểm = 0 trên báo cáo (KPI = 0 / tiêu chí chung = 0 "
+            "/ tổng = 0) nhưng KHÔNG thuộc nhóm hành động nào ở trên. Điển hình: đã kê khai "
+            "công việc nhưng KPI = 0 (SP chưa đạt/chưa duyệt). Lưới an toàn để không bỏ sót — "
+            "đơn vị xem lại/xác nhận."
         ),
         "muc_do": "trung_binh",
         "nguoi_xu_ly": "Đơn vị xác nhận / xem lại",
@@ -109,6 +107,19 @@ NHOM_META = [
 def _ev(x) -> Optional[str]:
     """Trả về giá trị chuỗi của enum (hoặc chính chuỗi/None)."""
     return x.value if hasattr(x, "value") else x
+
+
+# Thứ tự ưu tiên khi 1 người có NHIỀU vấn đề → chỉ xếp vào nhóm ĐẦU TIÊN khớp
+# (chống trùng lặp: mỗi công chức chỉ xuất hiện ở đúng 1 nhóm). "diem_bat_thuong"
+# nằm cuối = lưới an toàn cho các ca điểm 0 KHÔNG thuộc nhóm hành động nào ở trên.
+_PRIORITY = [
+    "hd111_chua_ke_khai",
+    "hd111_cho_duyet",
+    "cc_chua_ke_khai_cv",
+    "tcc_cho_duyet",
+    "tcc_chua_ke_khai",
+    "diem_bat_thuong",
+]
 
 
 def _check_quyen_doi_soat(user: CongChuc) -> bool:
@@ -294,105 +305,88 @@ async def _thu_thap_doi_soat(
         is_hd111 = r.ma_vai_tro == "HD_111"
         is_ld = bool(r.is_lanh_dao) or (r.cap_bac in LANH_DAO_CAP)
 
-        # 4.1 — KPI kê khai
+        dg = map_dgt.get(r.id)
+        ct = map_ct.get(r.id)
+
+        # Gom TẤT CẢ vấn đề của người này: nhom_key -> (mô tả, người xử lý).
+        # Sau đó chỉ xếp vào 1 nhóm ưu tiên cao nhất → KHÔNG trùng lặp giữa các nhóm.
+        van_de: dict = {}
+
+        # --- KPI ---
         if is_hd111:
             st = map_hdld.get(r.id)  # None | NHAP | CHO_DUYET | DA_DUYET
             if st is None and r.id not in set_kkld:
-                item = _base(r)
-                item["chi_tiet"] = "Chưa kê khai VB714"
-                item["nguoi_xu_ly"] = None
-                nhom["hd111_chua_ke_khai"].append(item)
+                van_de["hd111_chua_ke_khai"] = ("Chưa kê khai VB714", None)
             elif st is not None and st != "DA_DUYET":
-                item = _base(r)
-                nhan = "Nháp, chưa gửi" if st == "NHAP" else "Đã gửi, chờ Đội trưởng duyệt"
-                item["chi_tiet"] = f"VB714: {nhan}"
-                item["nguoi_xu_ly"] = "Đội trưởng đơn vị"
-                nhom["hd111_cho_duyet"].append(item)
+                nhan = "nháp, chưa gửi" if st == "NHAP" else "đã gửi, chờ Đội trưởng duyệt"
+                van_de["hd111_cho_duyet"] = (f"VB714: {nhan}", "Đội trưởng đơn vị")
         elif not is_ld:
-            # Công chức thường → cần kê khai công việc
             if r.id not in set_kk_cv:
-                item = _base(r)
-                item["chi_tiet"] = "Chưa kê khai công việc"
-                item["nguoi_xu_ly"] = None
-                nhom["cc_chua_ke_khai_cv"].append(item)
-        # Lãnh đạo: KPI tính tự động từ SP cấp dưới (V2) → không cờ ở đây.
+                van_de["cc_chua_ke_khai_cv"] = ("Chưa kê khai công việc", None)
+        # Lãnh đạo: KPI tính tự động từ SP cấp dưới (V2) → không cờ "chưa kê khai".
 
-        # 4.2 — Tiêu chí chung
-        dg = map_dgt.get(r.id)
+        # --- Tiêu chí chung ---
         if dg is None:
-            item = _base(r)
-            item["chi_tiet"] = "Chưa có bản đánh giá tiêu chí chung"
-            item["nguoi_xu_ly"] = None
-            nhom["tcc_chua_ke_khai"].append(item)
+            nhan = "Chưa có bản tiêu chí chung" + (" (lãnh đạo)" if is_ld else "")
+            van_de["tcc_chua_ke_khai"] = (nhan, None)
         else:
             tt = _ev(dg.trang_thai_tc)
             if tt in ("NHAP", "TU_CHOI", None):
-                item = _base(r)
-                nhan = "Nháp, chưa gửi" if tt in ("NHAP", None) else "Bị trả lại"
-                item["chi_tiet"] = f"Tiêu chí chung: {nhan}"
-                item["nguoi_xu_ly"] = None
-                nhom["tcc_chua_ke_khai"].append(item)
+                nhan = "nháp, chưa gửi" if tt in ("NHAP", None) else "bị trả lại"
+                van_de["tcc_chua_ke_khai"] = (f"Tiêu chí chung: {nhan}", None)
             elif tt in ("CHO_PHE_DUYET", "CHO_CAP2"):
-                item = _base(r)
                 cap = "Phó ĐT (cấp 1)" if tt == "CHO_PHE_DUYET" else "Đội trưởng (cấp 2)"
-                item["chi_tiet"] = f"Tiêu chí chung: chờ {cap} duyệt"
                 nid = dg.nguoi_phe_duyet_tc_cap2_id or dg.nguoi_phe_duyet_tc_cap1_id
-                item["nguoi_xu_ly"] = map_nguoi.get(nid) if nid else None
-                nhom["tcc_cho_duyet"].append(item)
+                nguoi = map_nguoi.get(nid) if nid else None
+                van_de["tcc_cho_duyet"] = (f"Tiêu chí chung: chờ {cap} duyệt", nguoi)
             # DA_PHE_DUYET → hoàn tất
 
-        # 4.3 — Điểm bất thường trên báo cáo: lưới an toàn quét ĐÚNG triệu chứng đã kiểm
-        #        chứng (KPI=0 HOẶC chung=0 HOẶC tổng=0). Bắt được cả ca "đã kê khai nhưng
-        #        KPI=0" (vd 0042: kê khai 9 CV, KPI=0, chung=19.5, tổng≠0) mà các nhóm
-        #        "chưa kê khai" ở trên bỏ sót.
-        ct = map_ct.get(r.id)
+        # --- Điểm 0 trên báo cáo: CHỈ dùng làm RESIDUAL nếu không thuộc nhóm nào ở trên.
+        #     Điển hình residual: 0042 đã kê khai 9 CV nhưng KPI=0 (SP chưa đạt/chưa duyệt).
+        diem_0 = None  # (mô tả, kpi, chung, tong)
         if ct is not None:
             kpi = float(ct.diem_kpi or 0)
             chung = float(ct.diem_tieu_chi_chung or 0)
             tong = float(ct.diem_tong or 0)
             if kpi == 0 or chung == 0 or tong == 0:
-                # Chẩn đoán nguyên nhân THỰC từng người từ tín hiệu nguồn (không đoán chung).
-                ly_do = []
+                ld = []
                 if kpi == 0:
                     if is_hd111:
-                        st = map_hdld.get(r.id)
-                        if st is None and r.id not in set_kkld:
-                            ly_do.append("KPI=0: HĐ111 chưa kê khai VB714")
-                        elif st == "NHAP":
-                            ly_do.append("KPI=0: VB714 còn nháp, chưa gửi")
-                        elif st == "CHO_DUYET":
-                            ly_do.append("KPI=0: VB714 chờ Đội trưởng duyệt")
-                        else:
-                            ly_do.append("KPI=0: HĐ111 (VB714)")
+                        ld.append("KPI=0 (VB714)")
                     elif is_ld:
-                        ly_do.append("KPI=0: lãnh đạo (KPI tính tự động từ SP cấp dưới)")
+                        ld.append("KPI=0: lãnh đạo (tính tự động)")
                     elif r.id in set_kk_cv:
-                        ly_do.append("KPI=0: đã kê khai nhưng SP chưa đạt/chưa duyệt")
+                        ld.append("KPI=0: đã kê khai nhưng SP chưa đạt/chưa duyệt")
                     else:
-                        ly_do.append("KPI=0: chưa kê khai công việc")
+                        ld.append("KPI=0")
                 if chung == 0:
-                    if dg is None:
-                        if is_ld:
-                            ly_do.append("chung=0: lãnh đạo chưa có bản tiêu chí chung")
-                        else:
-                            ly_do.append("chung=0: chưa có bản tiêu chí chung")
-                    else:
-                        ttv = _ev(dg.trang_thai_tc)
-                        if ttv in ("NHAP", None):
-                            ly_do.append("chung=0: tiêu chí chung còn nháp, chưa gửi")
-                        elif ttv == "TU_CHOI":
-                            ly_do.append("chung=0: tiêu chí chung bị trả lại")
-                        else:
-                            ly_do.append("chung=0: tiêu chí chung chưa được cộng")
-                if not ly_do:
-                    ly_do.append("điểm tổng = 0")
-                item = _base(r)
-                item["chi_tiet"] = (
-                    "; ".join(ly_do)
-                    + f" (KPI={kpi:.1f}, chung={chung:.1f}, tổng={tong:.1f})"
-                )
-                item["nguoi_xu_ly"] = "Đơn vị xác nhận / xem lại"
-                nhom["diem_bat_thuong"].append(item)
+                    ld.append("tiêu chí chung=0")
+                if not ld:
+                    ld.append("điểm tổng=0")
+                diem_0 = ("; ".join(ld), kpi, chung, tong)
+
+        # --- Chọn NHÓM CHÍNH theo ưu tiên → mỗi người chỉ vào đúng 1 nhóm ---
+        primary = next((k for k in _PRIORITY if k in van_de), None)
+        if primary is None:
+            if diem_0 is None:
+                continue  # người này ổn
+            primary = "diem_bat_thuong"
+
+        item = _base(r)
+        if primary == "diem_bat_thuong":
+            mo_ta, kpi, chung, tong = diem_0
+            item["chi_tiet"] = f"{mo_ta} (KPI={kpi:.1f}, chung={chung:.1f}, tổng={tong:.1f})"
+            item["nguoi_xu_ly"] = "Đơn vị xác nhận / xem lại"
+        else:
+            # Gộp mọi vấn đề vào chi_tiet (theo thứ tự ưu tiên) để không mất thông tin.
+            frags = [van_de[k][0] for k in _PRIORITY if k in van_de]
+            chi_tiet = "; ".join(frags)
+            if diem_0 is not None:
+                _, kpi, chung, tong = diem_0
+                chi_tiet += f" — điểm: KPI={kpi:.1f}, chung={chung:.1f}, tổng={tong:.1f}"
+            item["chi_tiet"] = chi_tiet
+            item["nguoi_xu_ly"] = van_de[primary][1]
+        nhom[primary].append(item)
 
     # Sắp xếp mỗi nhóm theo đơn vị rồi mã CC cho dễ đọc
     for k in nhom:

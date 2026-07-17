@@ -145,8 +145,8 @@ export default function DoiSoatPage() {
           {/* Tổng hợp */}
           <div className="mb-4 text-sm text-gray-600">
             Tháng {data.thang}/{data.nam}:{' '}
-            <span className="font-semibold text-gray-900">{data.tong_so_ca}</span> trường hợp cần xử lý.{' '}
-            <span className="text-gray-400">(Một người có thể xuất hiện ở nhiều nhóm.)</span>
+            <span className="font-semibold text-gray-900">{data.tong_so_ca}</span> công chức cần xử lý.{' '}
+            <span className="text-gray-400">(Mỗi người chỉ xuất hiện một lần, ở nhóm cần xử lý chính.)</span>
           </div>
 
           {/* Thẻ tóm tắt mỗi nhóm */}

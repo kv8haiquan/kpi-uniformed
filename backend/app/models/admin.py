@@ -54,7 +54,20 @@ class LichSuDieuChuyen(BaseModel):
     """
     
     __tablename__ = "lich_su_dieu_chuyen"
-    
+
+    # -------------------------------------------------------------------------
+    # LOẠI BẢN GHI (timeline hợp nhất: điều chuyển + thay đổi trạng thái)
+    # -------------------------------------------------------------------------
+    # DIEU_CHUYEN  : điều chuyển đơn vị/vai trò/chức vụ
+    # VO_HIEU_HOA  : sự kiện vô hiệu hóa tài khoản (kèm ngay_hieu_luc)
+    # KICH_HOAT    : sự kiện kích hoạt lại tài khoản
+    loai: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default="DIEU_CHUYEN",
+        comment="Loại bản ghi: DIEU_CHUYEN | VO_HIEU_HOA | KICH_HOAT"
+    )
+
     # -------------------------------------------------------------------------
     # CÔNG CHỨC ĐƯỢC ĐIỀU CHUYỂN
     # -------------------------------------------------------------------------

@@ -18,7 +18,16 @@ import {
   IDonViOption, 
   IVaiTroOption,
   ILichSuDieuChuyenResponse,
+  ILichSuDieuChuyenUpdateRequest,
+  LoaiLichSuDieuChuyen,
 } from '@/types/admin';
+
+// Nhãn hiển thị theo loại bản ghi lịch sử
+const LOAI_LABEL: Record<LoaiLichSuDieuChuyen, string> = {
+  DIEU_CHUYEN: 'Điều chuyển',
+  VO_HIEU_HOA: 'Vô hiệu hóa',
+  KICH_HOAT: 'Kích hoạt',
+};
 
 // =============================================================================
 // USER CREATE MODAL
@@ -420,7 +429,11 @@ export function UserTransferModal({ user, donViList, vaiTroList, onSuccess, onCl
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState<ILichSuDieuChuyenResponse[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
-  
+
+  // Chỉnh sửa lịch sử: id bản ghi đang sửa + dữ liệu form sửa
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<ILichSuDieuChuyenUpdateRequest>({});
+
   const [formData, setFormData] = useState<IUserTransferRequest>({
     don_vi_id_moi: '',
     vai_tro_id_moi: '',
@@ -431,19 +444,78 @@ export function UserTransferModal({ user, donViList, vaiTroList, onSuccess, onCl
   });
 
   // Load lịch sử điều chuyển
+  const reloadHistory = async () => {
+    try {
+      const data = await adminService.getTransferHistory(user.id);
+      setHistory(data);
+    } catch (err) {
+      console.error('Error loading history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   useEffect(() => {
-    const loadHistory = async () => {
-      try {
-        const data = await adminService.getTransferHistory(user.id);
-        setHistory(data);
-      } catch (err) {
-        console.error('Error loading history:', err);
-      } finally {
-        setLoadingHistory(false);
-      }
-    };
-    loadHistory();
+    reloadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.id]);
+
+  // Bản ghi mới nhất (theo created_at) — chỉ bản này mới cho phép "đồng bộ hiện tại"
+  const latestId = history.length > 0
+    ? history.reduce((a, b) => (a.created_at >= b.created_at ? a : b)).id
+    : null;
+
+  const batDauSua = (h: ILichSuDieuChuyenResponse) => {
+    setEditingId(h.id);
+    setEditForm({
+      loai: h.loai,
+      don_vi_cu_id: h.don_vi_cu_id,
+      don_vi_moi_id: h.don_vi_moi_id,
+      vai_tro_cu_id: h.vai_tro_cu_id,
+      vai_tro_moi_id: h.vai_tro_moi_id,
+      chuc_vu_cu: h.chuc_vu_cu,
+      chuc_vu_moi: h.chuc_vu_moi,
+      ngay_hieu_luc: h.ngay_hieu_luc,
+      ly_do: h.ly_do,
+      dong_bo_hien_tai: false,
+    });
+  };
+
+  const luuSua = async (historyId: string) => {
+    setIsSubmitting(true);
+    try {
+      await adminService.updateTransferHistory(user.id, historyId, editForm);
+      setEditingId(null);
+      await reloadHistory();
+      if (editForm.dong_bo_hien_tai) onSuccess();
+    } catch (err) {
+      alert(isApiError(err) ? err.message : 'Có lỗi xảy ra khi sửa lịch sử');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const xoaLichSu = async (historyId: string, laMoiNhat: boolean) => {
+    let dongBo = false;
+    if (laMoiNhat) {
+      dongBo = window.confirm(
+        'Đồng bộ lại hồ sơ hiện tại của công chức về trạng thái TRƯỚC bản ghi này?\n\n' +
+        'OK = có đồng bộ (hoàn tác đơn vị/trạng thái) • Cancel = chỉ xóa bản ghi'
+      );
+    } else if (!window.confirm('Xác nhận xóa bản ghi lịch sử này?')) {
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await adminService.deleteTransferHistory(user.id, historyId, dongBo);
+      await reloadHistory();
+      if (dongBo) onSuccess();
+    } catch (err) {
+      alert(isApiError(err) ? err.message : 'Có lỗi xảy ra khi xóa lịch sử');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -559,21 +631,128 @@ export function UserTransferModal({ user, donViList, vaiTroList, onSuccess, onCl
             />
           </div>
 
-          {/* Lịch sử điều chuyển */}
-          {history.length > 0 && (
+          {/* Lịch sử điều chuyển & trạng thái (sửa được để khắc phục sai sót) */}
+          {loadingHistory && (
+            <p className="text-sm text-gray-400 border-t pt-4">Đang tải lịch sử...</p>
+          )}
+          {!loadingHistory && history.length > 0 && (
             <div className="border-t pt-4">
-              <h4 className="font-medium text-gray-900 mb-3">📜 Lịch sử điều chuyển</h4>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <h4 className="font-medium text-gray-900 mb-3">📜 Lịch sử điều chuyển &amp; trạng thái</h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
                 {history.map((h) => (
                   <div key={h.id} className="bg-gray-50 rounded-lg p-3 text-sm">
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <span>{new Date(h.created_at).toLocaleDateString('vi-VN')}</span>
-                      <span>•</span>
-                      <span>{h.don_vi_cu_ten || '?'}</span>
-                      <span>→</span>
-                      <span className="text-blue-600 font-medium">{h.don_vi_moi_ten || '?'}</span>
-                    </div>
-                    {h.ly_do && <p className="text-gray-500 mt-1">{h.ly_do}</p>}
+                    {editingId === h.id ? (
+                      /* ---- Form sửa inline ---- */
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Loại</label>
+                            <select
+                              value={editForm.loai || 'DIEU_CHUYEN'}
+                              onChange={(e) => setEditForm({ ...editForm, loai: e.target.value as LoaiLichSuDieuChuyen })}
+                              className="w-full px-2 py-1 border border-gray-300 rounded"
+                            >
+                              <option value="DIEU_CHUYEN">Điều chuyển</option>
+                              <option value="VO_HIEU_HOA">Vô hiệu hóa</option>
+                              <option value="KICH_HOAT">Kích hoạt</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Ngày hiệu lực</label>
+                            <input
+                              type="date"
+                              value={editForm.ngay_hieu_luc || ''}
+                              onChange={(e) => setEditForm({ ...editForm, ngay_hieu_luc: e.target.value })}
+                              className="w-full px-2 py-1 border border-gray-300 rounded"
+                            />
+                          </div>
+                        </div>
+                        {editForm.loai === 'DIEU_CHUYEN' && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Đơn vị cũ</label>
+                              <select
+                                value={editForm.don_vi_cu_id || ''}
+                                onChange={(e) => setEditForm({ ...editForm, don_vi_cu_id: e.target.value || null })}
+                                className="w-full px-2 py-1 border border-gray-300 rounded"
+                              >
+                                <option value="">-- Không --</option>
+                                {donViList.map((dv) => (
+                                  <option key={dv.id} value={dv.id}>{dv.ten_don_vi}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Đơn vị mới</label>
+                              <select
+                                value={editForm.don_vi_moi_id || ''}
+                                onChange={(e) => setEditForm({ ...editForm, don_vi_moi_id: e.target.value || null })}
+                                className="w-full px-2 py-1 border border-gray-300 rounded"
+                              >
+                                <option value="">-- Không --</option>
+                                {donViList.map((dv) => (
+                                  <option key={dv.id} value={dv.id}>{dv.ten_don_vi}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Lý do</label>
+                          <input
+                            type="text"
+                            value={editForm.ly_do || ''}
+                            onChange={(e) => setEditForm({ ...editForm, ly_do: e.target.value })}
+                            className="w-full px-2 py-1 border border-gray-300 rounded"
+                          />
+                        </div>
+                        {h.id === latestId && (
+                          <label className="flex items-center gap-2 text-xs text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={editForm.dong_bo_hien_tai || false}
+                              onChange={(e) => setEditForm({ ...editForm, dong_bo_hien_tai: e.target.checked })}
+                            />
+                            Đồng bộ lại đơn vị/vai trò/trạng thái hiện tại của CC theo bản ghi này
+                          </label>
+                        )}
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button type="button" onClick={() => setEditingId(null)} disabled={isSubmitting}
+                            className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100">Hủy</button>
+                          <button type="button" onClick={() => luuSua(h.id)} disabled={isSubmitting}
+                            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Lưu</button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ---- Dòng hiển thị ---- */
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 text-gray-600">
+                            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                              h.loai === 'VO_HIEU_HOA' ? 'bg-red-100 text-red-700'
+                              : h.loai === 'KICH_HOAT' ? 'bg-green-100 text-green-700'
+                              : 'bg-blue-100 text-blue-700'
+                            }`}>{LOAI_LABEL[h.loai]}</span>
+                            <span>{h.ngay_hieu_luc ? new Date(h.ngay_hieu_luc).toLocaleDateString('vi-VN') : new Date(h.created_at).toLocaleDateString('vi-VN')}</span>
+                            {h.loai === 'DIEU_CHUYEN' && (
+                              <>
+                                <span>•</span>
+                                <span>{h.don_vi_cu_ten || '?'}</span>
+                                <span>→</span>
+                                <span className="text-blue-600 font-medium">{h.don_vi_moi_ten || '?'}</span>
+                              </>
+                            )}
+                          </div>
+                          {h.ly_do && <p className="text-gray-500 mt-1">{h.ly_do}</p>}
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button type="button" onClick={() => batDauSua(h)} disabled={isSubmitting}
+                            className="px-2 py-1 text-blue-600 hover:bg-blue-50 rounded">Sửa</button>
+                          <button type="button" onClick={() => xoaLichSu(h.id, h.id === latestId)} disabled={isSubmitting}
+                            className="px-2 py-1 text-red-600 hover:bg-red-50 rounded">Xóa</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -49,6 +49,7 @@ from app.schemas.admin import (
     UserCreateRequest,
     UserUpdateRequest,
     UserStatusRequest,
+    LichSuDieuChuyenUpdateRequest,
     UserTransferRequest,
     UserResponse,
     LichSuDieuChuyenResponse,
@@ -130,6 +131,9 @@ def lich_su_to_response(ls: LichSuDieuChuyen) -> dict:
     return {
         "id": ls.id,
         "cong_chuc_id": ls.cong_chuc_id,
+        "cong_chuc_ho_ten": ls.cong_chuc.ho_ten if ls.cong_chuc else None,
+        "cong_chuc_ma_cc": ls.cong_chuc.ma_cc if ls.cong_chuc else None,
+        "loai": ls.loai,
         "don_vi_cu_id": ls.don_vi_cu_id,
         "don_vi_cu_ten": ls.don_vi_cu.ten_don_vi if ls.don_vi_cu else None,
         "don_vi_moi_id": ls.don_vi_moi_id,
@@ -579,8 +583,24 @@ async def update_user_status(
             detail=error_response(code="ADMIN_002", message="Không thể thao tác với tài khoản ADMIN-001")
         )
     
+    # Chỉ ghi lịch sử khi trạng thái thực sự đổi (tránh bản ghi trùng vô nghĩa)
+    trang_thai_doi = user.is_active != payload.is_active
     user.is_active = payload.is_active
-    
+
+    if trang_thai_doi:
+        # Ghi sự kiện trạng thái vào timeline hợp nhất lich_su_dieu_chuyen.
+        # Sự kiện trạng thái KHÔNG đổi đơn vị → giữ nguyên đơn vị ở cả cũ/mới.
+        lich_su = LichSuDieuChuyen(
+            loai="KICH_HOAT" if payload.is_active else "VO_HIEU_HOA",
+            cong_chuc_id=user.id,
+            don_vi_cu_id=user.don_vi_id,
+            don_vi_moi_id=user.don_vi_id,
+            ly_do=payload.ly_do,
+            ngay_hieu_luc=payload.ngay_hieu_luc or date.today(),
+            nguoi_thuc_hien_id=admin.id,
+        )
+        db.add(lich_su)
+
     try:
         await db.flush()
         await db.refresh(user, ["don_vi", "vai_tro"])
@@ -590,7 +610,7 @@ async def update_user_status(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code="DB_ERROR", message=f"Lỗi: {str(e)}")
         )
-    
+
     action = "kích hoạt" if payload.is_active else "vô hiệu hóa"
     return success_response(data=user_to_response(user), message=f"Đã {action} tài khoản")
 
@@ -975,6 +995,7 @@ async def transfer_user(
 
     # Tạo bản ghi lịch sử điều chuyển
     lich_su = LichSuDieuChuyen(
+        loai="DIEU_CHUYEN",
         cong_chuc_id=user_id,
         don_vi_cu_id=don_vi_cu_id,
         don_vi_moi_id=user.don_vi_id,
@@ -1053,6 +1074,236 @@ async def get_transfer_history(
         data=data,
         message=f"Có {len(data)} lần điều chuyển"
     )
+
+
+# =============================================================================
+# USER MANAGEMENT - ĐIỀU CHỈNH LỊCH SỬ ĐIỀU CHUYỂN (sửa sai sót)
+# =============================================================================
+
+async def _lay_lich_su_can_sua(
+    db: DatabaseDep, user_id: UUID, history_id: UUID
+) -> tuple[CongChuc, LichSuDieuChuyen]:
+    """Lấy công chức + bản ghi lịch sử, kèm các kiểm tra hợp lệ dùng chung."""
+    user = (await db.execute(
+        select(CongChuc)
+        .options(selectinload(CongChuc.don_vi), selectinload(CongChuc.vai_tro))
+        .where(CongChuc.id == user_id, CongChuc.is_deleted == False)
+    )).scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="ADMIN_007", message="User không tồn tại")
+        )
+    if user.ma_cc == PROTECTED_ADMIN_MA_CC:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(code="ADMIN_002", message="Không thể thao tác với tài khoản ADMIN-001")
+        )
+    ls = (await db.execute(
+        select(LichSuDieuChuyen).where(LichSuDieuChuyen.id == history_id)
+    )).scalar_one_or_none()
+    if not ls or ls.cong_chuc_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code="ADMIN_010", message="Bản ghi lịch sử không tồn tại")
+        )
+    return user, ls
+
+
+async def _la_ban_ghi_moi_nhat(
+    db: DatabaseDep, user_id: UUID, history_id: UUID
+) -> bool:
+    """Bản ghi có phải là mới nhất (theo created_at) của công chức không —
+    tức bản ghi đang chi phối trạng thái sống hiện tại của hồ sơ."""
+    latest_id = (await db.execute(
+        select(LichSuDieuChuyen.id)
+        .where(LichSuDieuChuyen.cong_chuc_id == user_id)
+        .order_by(LichSuDieuChuyen.created_at.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    return latest_id == history_id
+
+
+async def _dong_bo_vai_tro(db: DatabaseDep, user: CongChuc, vai_tro_id: Optional[UUID]) -> None:
+    """Đặt vai trò cho user và cập nhật is_lanh_dao theo vai trò đó."""
+    if not vai_tro_id:
+        return
+    vt = (await db.execute(select(VaiTro).where(VaiTro.id == vai_tro_id))).scalar_one_or_none()
+    if vt:
+        user.vai_tro_id = vai_tro_id
+        user.is_lanh_dao = vt.is_lanh_dao
+
+
+@router.put(
+    "/users/{user_id}/transfer-history/{history_id}",
+    summary="Điều chỉnh một bản ghi lịch sử điều chuyển/trạng thái",
+    response_model=DataResponse[LichSuDieuChuyenResponse],
+)
+async def update_transfer_history(
+    user_id: UUID,
+    history_id: UUID,
+    payload: LichSuDieuChuyenUpdateRequest,
+    db: DatabaseDep,
+    admin: AdminUserDep,
+) -> dict:
+    """
+    Sửa một bản ghi lịch sử (đơn vị/vai trò/ngày hiệu lực/lý do/loại) để khắc
+    phục sai sót nhập liệu. Nếu `dong_bo_hien_tai=True` VÀ đây là bản ghi mới
+    nhất thì đồng bộ lại đơn vị/vai trò/trạng thái hiện tại của công chức.
+    """
+    user, ls = await _lay_lich_su_can_sua(db, user_id, history_id)
+
+    # Áp các trường được gửi (chỉ ghi đè trường có mặt trong payload)
+    fields = payload.model_dump(exclude_unset=True)
+    for field in (
+        "loai", "don_vi_cu_id", "don_vi_moi_id", "vai_tro_cu_id",
+        "vai_tro_moi_id", "chuc_vu_cu", "chuc_vu_moi", "ngay_hieu_luc", "ly_do",
+    ):
+        if field in fields:
+            setattr(ls, field, fields[field])
+
+    # Đồng bộ trạng thái hiện tại — chỉ khi là bản ghi mới nhất
+    if payload.dong_bo_hien_tai:
+        if not await _la_ban_ghi_moi_nhat(db, user_id, history_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_response(
+                    code="ADMIN_011",
+                    message="Chỉ đồng bộ được khi đây là bản ghi mới nhất của công chức"
+                )
+            )
+        if ls.loai == "DIEU_CHUYEN":
+            if ls.don_vi_moi_id:
+                user.don_vi_id = ls.don_vi_moi_id
+            await _dong_bo_vai_tro(db, user, ls.vai_tro_moi_id)
+            if ls.chuc_vu_moi is not None:
+                user.chuc_vu = ls.chuc_vu_moi
+        elif ls.loai == "VO_HIEU_HOA":
+            user.is_active = False
+        elif ls.loai == "KICH_HOAT":
+            user.is_active = True
+
+    try:
+        await db.flush()
+        for rel in ("don_vi_cu", "don_vi_moi", "vai_tro_cu", "vai_tro_moi", "nguoi_thuc_hien"):
+            await db.refresh(ls, [rel])
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code="DB_ERROR", message=f"Lỗi cập nhật lịch sử: {str(e)}")
+        )
+
+    return success_response(data=lich_su_to_response(ls), message="Đã cập nhật lịch sử")
+
+
+@router.delete(
+    "/users/{user_id}/transfer-history/{history_id}",
+    summary="Xóa một bản ghi lịch sử điều chuyển/trạng thái",
+    response_model=DataResponse[dict],
+)
+async def delete_transfer_history(
+    user_id: UUID,
+    history_id: UUID,
+    db: DatabaseDep,
+    admin: AdminUserDep,
+    dong_bo_hien_tai: bool = False,
+) -> dict:
+    """
+    Xóa một bản ghi lịch sử nhập sai. Nếu `dong_bo_hien_tai=True` VÀ đây là
+    bản ghi mới nhất thì hoàn tác trạng thái hiện tại của công chức về giá trị
+    CŨ mà bản ghi này đã ghi (don_vi_cu/vai_tro_cu, hoặc đảo trạng thái).
+    """
+    user, ls = await _lay_lich_su_can_sua(db, user_id, history_id)
+
+    if dong_bo_hien_tai:
+        if not await _la_ban_ghi_moi_nhat(db, user_id, history_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_response(
+                    code="ADMIN_011",
+                    message="Chỉ đồng bộ được khi đây là bản ghi mới nhất của công chức"
+                )
+            )
+        # Hoàn tác: khôi phục giá trị trước khi bản ghi này áp dụng
+        if ls.loai == "DIEU_CHUYEN":
+            if ls.don_vi_cu_id:
+                user.don_vi_id = ls.don_vi_cu_id
+            await _dong_bo_vai_tro(db, user, ls.vai_tro_cu_id)
+            if ls.chuc_vu_cu is not None:
+                user.chuc_vu = ls.chuc_vu_cu
+        elif ls.loai == "VO_HIEU_HOA":
+            user.is_active = True
+        elif ls.loai == "KICH_HOAT":
+            user.is_active = False
+
+    try:
+        await db.delete(ls)
+        await db.flush()
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code="DB_ERROR", message=f"Lỗi xóa lịch sử: {str(e)}")
+        )
+
+    return success_response(data={"id": str(history_id)}, message="Đã xóa bản ghi lịch sử")
+
+
+@router.get(
+    "/lich-su-dieu-chuyen",
+    summary="Lịch sử điều chuyển & thay đổi trạng thái toàn cơ quan (phân trang)",
+    response_model=PaginatedResponse[LichSuDieuChuyenResponse],
+)
+async def list_lich_su_dieu_chuyen(
+    db: DatabaseDep,
+    admin: AdminUserDep,
+    page: int = Query(default=1, ge=1, description="Trang hiện tại"),
+    page_size: int = Query(default=20, ge=1, le=100, description="Số item/trang"),
+    loai: Optional[str] = Query(default=None, description="Lọc theo loại: DIEU_CHUYEN | VO_HIEU_HOA | KICH_HOAT"),
+    search: Optional[str] = Query(default=None, description="Tìm theo mã CC hoặc họ tên"),
+) -> dict:
+    """
+    Danh sách lịch sử điều chuyển + thay đổi trạng thái của TOÀN BỘ công chức có
+    lịch sử (bao gồm cả CC đã bị vô hiệu hóa — join lich_su, không lọc is_active).
+    Phục vụ cả trang xem đầy đủ lẫn widget dashboard (gọi với page_size nhỏ).
+    """
+    stmt = (
+        select(LichSuDieuChuyen)
+        .options(
+            selectinload(LichSuDieuChuyen.don_vi_cu),
+            selectinload(LichSuDieuChuyen.don_vi_moi),
+            selectinload(LichSuDieuChuyen.vai_tro_cu),
+            selectinload(LichSuDieuChuyen.vai_tro_moi),
+            selectinload(LichSuDieuChuyen.nguoi_thuc_hien),
+        )
+    )
+    if loai:
+        stmt = stmt.where(LichSuDieuChuyen.loai == loai)
+    if search:
+        pattern = f"%{search}%"
+        stmt = stmt.join(CongChuc, CongChuc.id == LichSuDieuChuyen.cong_chuc_id).where(
+            or_(CongChuc.ma_cc.ilike(pattern), CongChuc.ho_ten.ilike(pattern))
+        )
+
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+
+    offset = (page - 1) * page_size
+    stmt = stmt.order_by(LichSuDieuChuyen.created_at.desc()).offset(offset).limit(page_size)
+    histories = (await db.execute(stmt)).scalars().all()
+    data = [lich_su_to_response(ls) for ls in histories]
+
+    return {
+        "success": True,
+        "data": data,
+        "pagination": Pagination(
+            page=page,
+            page_size=page_size,
+            total_items=total,
+            total_pages=(total + page_size - 1) // page_size,
+        ).model_dump(),
+        "message": f"Có {total} bản ghi lịch sử",
+    }
 
 
 # =============================================================================

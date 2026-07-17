@@ -583,6 +583,9 @@ def _don_vi_tai_thang_expr(thang: int, nam: int):
             LichSuDieuChuyen.cong_chuc_id == CongChuc.id,
             LichSuDieuChuyen.don_vi_moi_id == CongChuc.don_vi_id,
             LichSuDieuChuyen.ngay_hieu_luc > mocchot,
+            # CHỈ xét bản ghi ĐIỀU CHUYỂN — bỏ qua sự kiện trạng thái
+            # (VO_HIEU_HOA/KICH_HOAT) để không làm lệch phép suy đơn vị-tại-tháng.
+            LichSuDieuChuyen.loai == "DIEU_CHUYEN",
         )
         .order_by(LichSuDieuChuyen.ngay_hieu_luc.desc())
         .limit(1)
@@ -638,6 +641,46 @@ def _don_vi_tai_thang_expr(thang: int, nam: int):
         (and_(v_kk.isnot(None), v_kk == v_he), v_kk),
         (v_ap == v_he, v_ap),
         else_=func.coalesce(v_kk, v_ap, v_he),
+    )
+
+
+def _active_tai_thang_expr(thang: int, nam: int):
+    """
+    Biểu thức SQL boolean: công chức có ĐANG HOẠT ĐỘNG tại tháng thang/nam không.
+
+    Suy từ timeline trạng thái trong lich_su_dieu_chuyen (loai VO_HIEU_HOA/KICH_HOAT):
+    lấy sự kiện trạng thái mới nhất có ngày hiệu lực <= cuối tháng thang/nam.
+      - KICH_HOAT  → True  (đang hoạt động)
+      - VO_HIEU_HOA → False (đã vô hiệu tính đến tháng đó)
+      - Không có sự kiện nào → fallback CongChuc.is_active (hành vi cũ, an toàn cho
+        các CC/đơn vị chưa dùng tính năng ngày hiệu lực).
+
+    Nhờ vậy báo cáo tháng CŨ vẫn giữ CC còn hoạt động tại tháng đó dù nay đã vô hiệu,
+    và loại đúng CC đã nghỉ ở các tháng SAU ngày hiệu lực.
+    """
+    import calendar
+    from datetime import date as _date
+    cuoi_thang = _date(nam, thang, calendar.monthrange(nam, thang)[1])
+
+    loai_moi_nhat = (
+        select(LichSuDieuChuyen.loai)
+        .where(
+            LichSuDieuChuyen.cong_chuc_id == CongChuc.id,
+            LichSuDieuChuyen.loai.in_(("VO_HIEU_HOA", "KICH_HOAT")),
+            LichSuDieuChuyen.ngay_hieu_luc <= cuoi_thang,
+        )
+        .order_by(
+            LichSuDieuChuyen.ngay_hieu_luc.desc(),
+            LichSuDieuChuyen.created_at.desc(),
+        )
+        .limit(1)
+        .scalar_subquery()
+    )
+
+    return case(
+        (loai_moi_nhat == "KICH_HOAT", True),
+        (loai_moi_nhat == "VO_HIEU_HOA", False),
+        else_=(CongChuc.is_active == True),
     )
 
 
@@ -717,8 +760,9 @@ async def cap_nhat_chi_tiet_tu_du_lieu(
             CongChuc.is_deleted == False,
             # GIỮ CC đã inactive (nghỉ/chuyển giữa tháng) NẾU đã được đánh giá tháng này
             # → không bị rớt khỏi báo cáo tháng họ thực sự làm việc + được chấm điểm.
+            # active-tại-tháng: tôn trọng ngày hiệu lực vô hiệu hóa (không dùng is_active hiện tại).
             or_(
-                CongChuc.is_active == True,
+                _active_tai_thang_expr(thang, nam),
                 exists().where(and_(
                     DanhGiaThang.cong_chuc_id == CongChuc.id,
                     DanhGiaThang.thang == thang,
@@ -904,8 +948,9 @@ async def tao_bao_cao_xep_loai(
             _don_vi_tai_thang_expr(thang, nam) == don_vi_id,
             CongChuc.is_deleted == False,
             # GIỮ CC đã inactive nếu đã được đánh giá tháng này (nhất quán cap_nhat_chi_tiet)
+            # active-tại-tháng: tôn trọng ngày hiệu lực vô hiệu hóa (không dùng is_active hiện tại).
             or_(
-                CongChuc.is_active == True,
+                _active_tai_thang_expr(thang, nam),
                 exists().where(and_(
                     DanhGiaThang.cong_chuc_id == CongChuc.id,
                     DanhGiaThang.thang == thang,

@@ -64,6 +64,7 @@ export interface IUserUpdateRequest {
 export interface IUserStatusRequest {
   is_active: boolean;
   ly_do?: string;
+  ngay_hieu_luc?: string;
 }
 
 export interface IUserTransferRequest {
@@ -79,9 +80,14 @@ export interface IUserTransferRequest {
 // TRANSFER HISTORY
 // =============================================================================
 
+export type LoaiLichSuDieuChuyen = 'DIEU_CHUYEN' | 'VO_HIEU_HOA' | 'KICH_HOAT';
+
 export interface ILichSuDieuChuyenResponse {
   id: string;
   cong_chuc_id: string;
+  cong_chuc_ho_ten?: string | null;
+  cong_chuc_ma_cc?: string | null;
+  loai: LoaiLichSuDieuChuyen;
   don_vi_cu_id: string | null;
   don_vi_cu_ten: string | null;
   don_vi_moi_id: string | null;
@@ -97,6 +103,19 @@ export interface ILichSuDieuChuyenResponse {
   nguoi_thuc_hien_id: string | null;
   nguoi_thuc_hien_ten: string | null;
   created_at: string;
+}
+
+export interface ILichSuDieuChuyenUpdateRequest {
+  loai?: LoaiLichSuDieuChuyen;
+  don_vi_cu_id?: string | null;
+  don_vi_moi_id?: string | null;
+  vai_tro_cu_id?: string | null;
+  vai_tro_moi_id?: string | null;
+  chuc_vu_cu?: string | null;
+  chuc_vu_moi?: string | null;
+  ngay_hieu_luc?: string | null;
+  ly_do?: string | null;
+  dong_bo_hien_tai?: boolean;
 }
 
 // =============================================================================

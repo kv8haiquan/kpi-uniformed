@@ -33,6 +33,7 @@ from app.api.v1.endpoints import (
     kpi_lanh_dao_v2,      # KPI LĐ mới (05/05/2026): Công thức v2 từ tháng 4/2026
     dieu_chinh_kqcv,      # Yêu cầu 2 (06/05/2026): LĐ điều chỉnh KQCV
     hdld_danh_gia,        # HĐLĐ 111 (01/06/2026): Bộ tiêu chí VB714 từ T5/2026
+    doi_soat_danh_gia,    # Đối soát hoàn thành đánh giá tháng (17/07/2026): TCCB tự phục vụ
 )
 
 # =============================================================================
@@ -157,6 +158,13 @@ api_router.include_router(
     bao_cao_xep_loai_quy.router,
     prefix="/bao-cao-xep-loai-quy",
     tags=["Báo cáo Xếp loại quý"]
+)
+
+# Đối soát hoàn thành đánh giá tháng (17/07/2026) — TCCB tự phục vụ, chỉ đọc
+api_router.include_router(
+    doi_soat_danh_gia.router,
+    prefix="/doi-soat-danh-gia",
+    tags=["Đối soát đánh giá tháng"]
 )
 
 

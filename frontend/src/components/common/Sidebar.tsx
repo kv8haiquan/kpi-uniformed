@@ -36,6 +36,7 @@ import {
   ChevronLeft,
   CalendarCheck,
   Target,
+  ClipboardCheck,
   ChevronRight,
   Menu,
   X,
@@ -121,6 +122,12 @@ function useMenuSections(): MenuSection[] {
     { label: 'Phê duyệt', href: '/phe-duyet', icon: CheckSquare },
     { label: danhGiaLabel, href: danhGiaHref, icon: BarChart3 },
     { label: 'Xếp loại', href: '/xep-loai', icon: Trophy },
+    // Đối soát hoàn thành đánh giá tháng (17/07/2026) — TCCB / LĐ Chi cục / can_view_all_units
+    ...(user?.is_system_admin === true ||
+    user?.can_view_all_units === true ||
+    ['CCT', 'PCCT', 'TCCB'].includes(maVaiTro ?? '')
+      ? [{ label: 'Đối soát đánh giá', href: '/doi-soat', icon: ClipboardCheck }]
+      : []),
     { label: 'Nghỉ phép', href: '/nghi-phep', icon: CalendarDays },
     // Yêu cầu 2 (06/05/2026): điều chỉnh KQCV — chỉ LĐ thật (không phải HĐ 111)
     ...(user?.is_lanh_dao && !user?.is_hd_111

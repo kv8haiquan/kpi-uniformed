@@ -2143,6 +2143,66 @@ async def get_tieu_chi_cong_chuc(
     return success_response(data=response_data, message="Lấy tiêu chí chung thành công")
 
 
+async def _dong_bo_chi_tiet_bao_cao_chot(
+    db, bc, cong_chuc, thang: int, nam: int
+) -> Optional[str]:
+    """
+    CCT/admin sửa điểm tiêu chí chung trên báo cáo ĐÃ CHỐT → cập nhật snapshot
+    chi_tiet_xep_loai của công chức đó (điểm TC chung, điểm KPI, điểm tổng, xếp loại)
+    và tính lại thống kê A/B/C/D/E của báo cáo, để báo cáo chính thức phản ánh điểm mới.
+
+    Theo lựa chọn "tính lại xếp loại cuối": ghi đè xếp loại đề xuất + quyết định theo
+    điểm tổng mới. Trả về mã xếp loại mới (None nếu CC không có chi_tiet trong báo cáo).
+    """
+    from app.api.v1.endpoints.bao_cao_xep_loai import (
+        tinh_diem_cong_chuc, tinh_diem_lanh_dao, _la_thai_san_tron_thang, _truncate_2dp,
+    )
+    from app.models.bao_cao_xep_loai import ChiTietXepLoai
+
+    ct = (await db.execute(
+        select(ChiTietXepLoai).where(
+            ChiTietXepLoai.bao_cao_id == bc.id,
+            ChiTietXepLoai.cong_chuc_id == cong_chuc.id,
+        )
+    )).scalar_one_or_none()
+    if not ct:
+        return None
+
+    # Tính lại điểm đúng theo loại công chức (giống cap_nhat_chi_tiet_tu_du_lieu)
+    if cong_chuc.is_lanh_dao:
+        ket_qua = await tinh_diem_lanh_dao(db, cong_chuc.id, thang, nam)
+    elif cong_chuc.is_hd_111:
+        ket_qua = await tinh_diem_lanh_dao(db, cong_chuc.id, thang, nam, is_hd_111=True)
+    else:
+        ket_qua = await tinh_diem_cong_chuc(db, cong_chuc.id, thang, nam)
+
+    # AUTO-E: nghỉ thai sản trọn tháng → 'E' (giống luồng refresh chuẩn)
+    la_thai_san = await _la_thai_san_tron_thang(db, cong_chuc.id, thang, nam)
+    xep_loai_ht = "E" if la_thai_san else ket_qua.xep_loai
+
+    ct.diem_tieu_chi_chung = _truncate_2dp(ket_qua.diem_tieu_chi_chung)
+    ct.diem_kpi = _truncate_2dp(ket_qua.diem_kpi)
+    ct.diem_tong = _truncate_2dp(ket_qua.diem_tong)
+    ct.xep_loai_he_thong = xep_loai_ht
+    # "Tính lại xếp loại cuối": ghi đè đề xuất + quyết định theo điểm mới.
+    ct.xep_loai_de_xuat = xep_loai_ht
+    ct.xep_loai_quyet_dinh = xep_loai_ht
+
+    # Tính lại thống kê A/B/C/D/E của báo cáo theo xếp loại cuối cùng.
+    cts = (await db.execute(
+        select(ChiTietXepLoai).where(ChiTietXepLoai.bao_cao_id == bc.id)
+    )).scalars().all()
+    dem = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0}
+    for c in cts:
+        fx = c.xep_loai_quyet_dinh or c.xep_loai_de_xuat or c.xep_loai_he_thong
+        if fx in dem:
+            dem[fx] += 1
+    bc.so_loai_a, bc.so_loai_b = dem["A"], dem["B"]
+    bc.so_loai_c, bc.so_loai_d, bc.so_loai_e = dem["C"], dem["D"], dem["E"]
+
+    return xep_loai_ht
+
+
 @router.post("/{danh_gia_thang_id}/dieu-chinh-danh-gia-thang")
 async def dieu_chinh_danh_gia_thang(
     danh_gia_thang_id: UUID,
@@ -2197,7 +2257,12 @@ async def dieu_chinh_danh_gia_thang(
                 code="PERM_002", message="Lãnh đạo đơn vị chỉ được điều chỉnh CC cùng đơn vị"
             ))
 
-    # 3. Guard: báo cáo xếp loại tháng đó của đơn vị chưa chốt
+    # 3. Guard theo trạng thái báo cáo xếp loại tháng đó của đơn vị.
+    #    CCT (và admin) được sửa BẤT KỂ trạng thái — kể cả báo cáo ĐÃ DUYỆT — khi đó
+    #    bước 6 sẽ tự đồng bộ snapshot + xếp loại + thống kê của báo cáo chính thức.
+    #    PCCT/TDV/PDV vẫn chỉ được sửa khi báo cáo CHƯA chốt (NHAP/TU_CHOI).
+    is_cct = cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
+    duoc_sua_da_chot = is_admin or is_cct
     bc = (await db.execute(
         select(BaoCaoXepLoai).where(
             BaoCaoXepLoai.don_vi_id == cong_chuc.don_vi_id,
@@ -2206,7 +2271,10 @@ async def dieu_chinh_danh_gia_thang(
             BaoCaoXepLoai.is_deleted == False,
         )
     )).scalar_one_or_none()
-    if bc and bc.trang_thai not in [TrangThaiBaoCao.NHAP.value, TrangThaiBaoCao.TU_CHOI.value]:
+    bao_cao_da_chot = bool(
+        bc and bc.trang_thai not in [TrangThaiBaoCao.NHAP.value, TrangThaiBaoCao.TU_CHOI.value]
+    )
+    if bao_cao_da_chot and not duoc_sua_da_chot:
         raise HTTPException(status_code=400, detail=error_response(
             code="BIZ_001", message=f"Không thể điều chỉnh khi báo cáo đang ở trạng thái {bc.trang_thai}"
         ))
@@ -2242,10 +2310,21 @@ async def dieu_chinh_danh_gia_thang(
 
     await db.flush()
 
+    # 6. Báo cáo ĐÃ CHỐT (CCT/admin sửa) → đồng bộ snapshot chi_tiet + xếp loại + thống kê
+    #    để báo cáo chính thức phản ánh điểm mới. Báo cáo chưa chốt tự refresh khi tải lại.
+    xep_loai_moi = None
+    if bc and bao_cao_da_chot:
+        xep_loai_moi = await _dong_bo_chi_tiet_bao_cao_chot(
+            db, bc, cong_chuc, danh_gia.thang, danh_gia.nam
+        )
+        await db.flush()
+
     return success_response(
         data={
             "danh_gia_thang_id": str(danh_gia.id),
             "diem_tieu_chi_chung": float(tong),
+            "bao_cao_da_chot": bao_cao_da_chot,
+            "xep_loai_moi": xep_loai_moi,
         },
         message="Cập nhật điểm Đánh giá tháng thành công"
     )

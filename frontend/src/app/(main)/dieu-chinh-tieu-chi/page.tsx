@@ -70,9 +70,16 @@ export default function DieuChinhTieuChiPage() {
 
   useEffect(() => { loadDetail(selectedBaoCaoId); }, [selectedBaoCaoId, loadDetail]);
 
+  // CCT (và admin) được sửa BẤT KỂ trạng thái — kể cả báo cáo đã duyệt.
+  const isCctOrAdmin = user?.is_system_admin === true || maVaiTro === 'CCT';
   const editable = useMemo(
-    () => !!baoCao && TRANG_THAI_SUA_DUOC.includes(String(baoCao.trang_thai)),
-    [baoCao]
+    () => !!baoCao && (isCctOrAdmin || TRANG_THAI_SUA_DUOC.includes(String(baoCao.trang_thai))),
+    [baoCao, isCctOrAdmin]
+  );
+  // Đang sửa một báo cáo ĐÃ chốt (chỉ xảy ra với CCT/admin).
+  const suaBaoCaoDaChot = useMemo(
+    () => editable && !!baoCao && !TRANG_THAI_SUA_DUOC.includes(String(baoCao.trang_thai)),
+    [editable, baoCao]
   );
 
   const chiTietList = useMemo(() => {
@@ -161,7 +168,11 @@ export default function DieuChinhTieuChiPage() {
       {/* Trạng thái báo cáo */}
       {baoCao && (
         <div className="mb-3 text-sm">
-          {editable ? (
+          {suaBaoCaoDaChot ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
+              ● Báo cáo đã duyệt — CCT vẫn sửa được; điểm &amp; xếp loại trên báo cáo chính thức sẽ được tính lại
+            </span>
+          ) : editable ? (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">
               ● Báo cáo chưa chốt — sửa điểm được
             </span>

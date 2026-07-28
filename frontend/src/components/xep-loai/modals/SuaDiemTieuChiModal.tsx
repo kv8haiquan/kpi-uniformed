@@ -56,7 +56,16 @@ export default function SuaDiemTieuChiModal({
       setLoading(true);
       const res = ccId ? await baoCaoXepLoaiService.getTieuChiChung(ccId, thang, nam) : null;
       if (!active) return;
-      const list = res?.tieu_chi || [];
+      // Sắp xếp theo mã tiêu chí (nhóm.thứ-tự: 1.1, 1.2, 2.1, ..., 3.4) — API có thể trả lộn xộn.
+      const parseMa = (ma: string): [number, number] => {
+        const [a, b] = String(ma ?? '').split('.').map((x) => parseInt(x, 10) || 0);
+        return [a || 0, b || 0];
+      };
+      const list = [...(res?.tieu_chi || [])].sort((x, y) => {
+        const [xa, xb] = parseMa(x.ma_tieu_chi);
+        const [ya, yb] = parseMa(y.ma_tieu_chi);
+        return xa - ya || xb - yb;
+      });
       setDanhGiaThangId(res?.danh_gia_thang_id || null);
       setTieuChi(list);
       const init: Record<string, string> = {};

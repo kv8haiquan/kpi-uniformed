@@ -1126,6 +1126,10 @@ function BaoCaoTableView({
 
   const trangThaiInfo = TRANG_THAI_MAP[baoCao.trang_thai] || TRANG_THAI_MAP.NHAP;
   const canGuiDuyet = canEdit && (baoCao.trang_thai === 'NHAP' || baoCao.trang_thai === 'TRA_LAI' || baoCao.trang_thai === 'TU_CHOI');
+  // CCT (và admin) được sửa điểm tiêu chí chung BẤT KỂ trạng thái (kể cả báo cáo đã chốt).
+  const currentUser = useAuthStore((state) => state.user);
+  const isCctUser = currentUser?.is_system_admin === true || currentUser?.vai_tro?.ma_vai_tro === 'CCT';
+  const showActions = (canEdit && canGuiDuyet) || isCctUser;
 
   const handleDeXuat = (ct: IChiTietXepLoai) => {
     setSelectedChiTiet(ct);
@@ -1243,7 +1247,7 @@ function BaoCaoTableView({
                 </th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700 w-20">ĐG Tự động</th>
                 <th className="px-3 py-3 text-center font-semibold text-gray-700 w-20">ĐG Đề xuất</th>
-                {canEdit && canGuiDuyet && (
+                {showActions && (
                   <th className="px-3 py-3 text-center font-semibold text-gray-700 w-20">Thao tác</th>
                 )}
               </tr>
@@ -1297,15 +1301,17 @@ function BaoCaoTableView({
                         <XepLoaiBadge xepLoai={ct.xep_loai_de_xuat || xepLoaiHeThong} />
                       )}
                     </td>
-                    {canEdit && canGuiDuyet && (
+                    {showActions && (
                       <td className="px-3 py-3 text-center">
                         <div className="flex flex-col items-stretch gap-1">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeXuat(ct); }}
-                            className="px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded border border-blue-200 transition-colors"
-                          >
-                            Sửa xếp loại
-                          </button>
+                          {canEdit && canGuiDuyet && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeXuat(ct); }}
+                              className="px-2.5 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded border border-blue-200 transition-colors"
+                            >
+                              Sửa xếp loại
+                            </button>
+                          )}
                           <button
                             onClick={(e) => { e.stopPropagation(); setSuaTieuChiCC(ct); }}
                             className="px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-50 rounded border border-emerald-200 transition-colors whitespace-nowrap"

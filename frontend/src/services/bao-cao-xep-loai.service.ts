@@ -17,6 +17,7 @@ import {
   IGuiDuyetResponse,
   IPheDuyetResponse,
   IThongKeXepLoai,
+  ITieuChiChungBrief,
 } from '@/types/bao-cao-xep-loai';
 
 // =============================================================================
@@ -214,6 +215,68 @@ class BaoCaoXepLoaiService {
       console.error('[BaoCaoXepLoai] Error getting thong ke:', error);
       return null;
     }
+  }
+
+  // ===========================================================================
+  // ĐIỂM TIÊU CHÍ CHUNG — Điều chỉnh "Đánh giá tháng" (CCT/LĐ)
+  // ===========================================================================
+
+  /**
+   * Lấy danh sách báo cáo xếp loại toàn Chi cục theo tháng/năm.
+   *
+   * API: GET /bao-cao-xep-loai/danh-sach/thang/{thang}/nam/{nam}?trang_thai=
+   * Quyền: CCT/PCCT/can_view_all_units
+   */
+  async getDanhSach(thang: number, nam: number, trangThai?: string): Promise<IBaoCaoXepLoai[]> {
+    try {
+      const params: Record<string, string> = {};
+      if (trangThai) params.trang_thai = trangThai;
+      const response = await apiClient.get(`${BASE_URL}/danh-sach/thang/${thang}/nam/${nam}`, { params });
+      const d = response.data;
+      if (Array.isArray(d)) return d;
+      if (d?.data?.danh_sach && Array.isArray(d.data.danh_sach)) return d.data.danh_sach;
+      if (d?.data && Array.isArray(d.data)) return d.data;
+      if (d?.danh_sach && Array.isArray(d.danh_sach)) return d.danh_sach;
+      return [];
+    } catch (error) {
+      console.error('[BaoCaoXepLoai] Error getting danh sach:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Lấy chi tiết tiêu chí chung của 1 công chức trong tháng (để sửa điểm).
+   *
+   * API: GET /danh-gia/tieu-chi/cong-chuc/{congChucId}/thang/{thang}/nam/{nam}
+   * Quyền: CCT/PCCT xem mọi CC; LĐ đơn vị xem CC cùng đơn vị.
+   */
+  async getTieuChiChung(
+    congChucId: string,
+    thang: number,
+    nam: number
+  ): Promise<ITieuChiChungBrief | null> {
+    try {
+      const response = await apiClient.get(
+        `/danh-gia/tieu-chi/cong-chuc/${congChucId}/thang/${thang}/nam/${nam}`
+      );
+      return response.data?.data || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Điều chỉnh điểm "Đánh giá tháng" (override) theo từng tiêu chí.
+   * diem_danh_gia_thang = null → gỡ điều chỉnh dòng đó (về điểm Trưởng duyệt).
+   *
+   * API: POST /danh-gia/{danhGiaThangId}/dieu-chinh-danh-gia-thang
+   * Quyền: CCT/PCCT (mọi ĐV), TDV/PDV (cùng ĐV). Chỉ khi báo cáo chưa chốt.
+   */
+  async dieuChinhDanhGiaThang(
+    danhGiaThangId: string,
+    tieuChi: { ma_tieu_chi: string; diem_danh_gia_thang: number | null }[]
+  ): Promise<void> {
+    await apiClient.post(`/danh-gia/${danhGiaThangId}/dieu-chinh-danh-gia-thang`, { tieu_chi: tieuChi });
   }
 
   // ===========================================================================

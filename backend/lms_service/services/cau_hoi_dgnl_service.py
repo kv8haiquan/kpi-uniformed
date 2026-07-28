@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lms_service.models.base import CongChucRef
 from lms_service.models.cau_hoi_dgnl import CauHoiDgnl
 from lms_service.models.linh_vuc import LinhVuc
-from lms_service.schemas.cau_hoi_dgnl import CauHoiDgnlCreate, CauHoiDgnlUpdate, ThongKeNganHang
+from lms_service.schemas.cau_hoi_dgnl import (
+    CauHoiDgnlCreate,
+    CauHoiDgnlUpdate,
+    CauHoiDgnlXoaNhieu,
+    ThongKeNganHang,
+)
 from shared.auth import TokenPayload
 
 LOAI_CAU_HOI = ["TRAC_NGHIEM_1", "TRAC_NGHIEM_NHIEU", "DUNG_SAI", "TU_LUAN"]
@@ -146,6 +151,60 @@ class CauHoiDgnlService:
         ch.is_active = False
         ch.updated_at = datetime.utcnow()
         await self.db.commit()
+
+    async def xoa_nhieu(self, payload: "CauHoiDgnlXoaNhieu", user: TokenPayload) -> int:
+        """Xoa mem nhieu cau hoi cung luc. Tra ve so cau da xoa.
+
+        Chi QT_DAO_TAO (hoac SUPER_ADMIN) moi duoc xoa hang loat.
+        Xoa mem (is_active=False) — giu nguyen id de cac bai thi cu
+        (thi_sinh.de_thi_ids) van tham chieu duoc lich su.
+        """
+        if not self._is_manager(user):
+            raise HTTPException(status_code=403, detail={
+                "success": False,
+                "error": {"code": "DGNL_045", "message": "Chỉ Quản trị đào tạo được xóa hàng loạt"},
+            })
+
+        from sqlalchemy import update
+
+        conds = [CauHoiDgnl.is_active == True]
+
+        if payload.tat_ca_theo_bo_loc:
+            # Xoa toan bo theo bo loc — BAT BUOC co it nhat 1 dieu kien loc
+            # de tranh xoa nham toan bo ngan hang.
+            loc = []
+            if payload.linh_vuc_id:
+                loc.append(CauHoiDgnl.linh_vuc_id == payload.linh_vuc_id)
+            if payload.do_kho:
+                loc.append(CauHoiDgnl.do_kho == payload.do_kho)
+            if payload.loai:
+                loc.append(CauHoiDgnl.loai == payload.loai)
+            if payload.search:
+                loc.append(CauHoiDgnl.noi_dung.ilike(f"%{payload.search}%"))
+            if not loc:
+                raise HTTPException(status_code=400, detail={
+                    "success": False,
+                    "error": {"code": "DGNL_046",
+                              "message": "Phải chọn ít nhất một bộ lọc (lĩnh vực/độ khó/loại/tìm kiếm) khi xóa tất cả"},
+                })
+            conds.extend(loc)
+        else:
+            if not payload.ids:
+                raise HTTPException(status_code=400, detail={
+                    "success": False,
+                    "error": {"code": "DGNL_047", "message": "Chưa chọn câu hỏi nào để xóa"},
+                })
+            conds.append(CauHoiDgnl.id.in_(payload.ids))
+
+        stmt = (
+            update(CauHoiDgnl)
+            .where(*conds)
+            .values(is_active=False, updated_at=datetime.utcnow())
+            .execution_options(synchronize_session=False)
+        )
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+        return result.rowcount or 0
 
     # ================================================================
     # THONG KE

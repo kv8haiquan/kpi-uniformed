@@ -603,9 +603,10 @@ async def export_phieu_danh_gia(
         result_tc = await db.execute(stmt_tc)
         tieu_chi_list = result_tc.scalars().all()
 
-        # Tính điểm tiêu chí chung — chỉ dùng diem_phe_duyet (đã lọc DA_PHE_DUYET)
+        # Tính điểm tiêu chí chung — ưu tiên điểm "Đánh giá tháng" (LĐ chỉnh ở báo cáo
+        # xếp loại) nếu có, mới đến diem_phe_duyet (đã lọc DA_PHE_DUYET).
         diem_tieu_chi = sum([
-            float(tc.diem_phe_duyet or 0)
+            float((tc.diem_danh_gia_thang if tc.diem_danh_gia_thang is not None else tc.diem_phe_duyet) or 0)
             for tc in tieu_chi_list
         ])
 
@@ -904,8 +905,8 @@ async def export_phieu_danh_gia(
                         diem = Decimal(0)
                         if ma_tc in tc_map:
                             tc_data = tc_map[ma_tc]
-                            # Chỉ dùng điểm phê duyệt chính thức
-                            diem = tc_data.diem_phe_duyet or Decimal(0)
+                            # Ưu tiên điểm "Đánh giá tháng" (override LĐ) nếu có.
+                            diem = (tc_data.diem_danh_gia_thang if tc_data.diem_danh_gia_thang is not None else tc_data.diem_phe_duyet) or Decimal(0)
                             row.cells[3].text = f"{float(diem):.2f}"
                         else:
                             # Tiêu chí chưa được phê duyệt hoặc chưa có dữ liệu
@@ -1691,7 +1692,8 @@ async def export_phieu_danh_gia_quy(
             for tc in all_tc:
                 if tc.tieu_chi:
                     ma = tc.tieu_chi.ma_tieu_chi
-                    diem = tc.diem_phe_duyet or Decimal(0)
+                    # Ưu tiên điểm "Đánh giá tháng" (override LĐ) nếu có.
+                    diem = (tc.diem_danh_gia_thang if tc.diem_danh_gia_thang is not None else tc.diem_phe_duyet) or Decimal(0)
                     nhom = tc.tieu_chi.nhom_tieu_chi  # 1, 2, 3
                     diem_toi_da = tc.tieu_chi.diem_toi_da or Decimal(0)
                     if ma not in tc_quy_map:

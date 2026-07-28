@@ -456,11 +456,13 @@ def _build_mau01_data(
     if danh_gia and hasattr(danh_gia, 'tieu_chi_chungs') and danh_gia.tieu_chi_chungs:
         for tc_dg in danh_gia.tieu_chi_chungs:
             tc = tc_dg.tieu_chi  # TieuChiChung master record
+            # Ưu tiên điểm "Đánh giá tháng" (override LĐ ở báo cáo xếp loại) nếu có.
+            _diem_ld = tc_dg.diem_danh_gia_thang if tc_dg.diem_danh_gia_thang is not None else tc_dg.diem_phe_duyet
             tieu_chi_items.append({
                 "ten": tc.ten_tieu_chi if tc else "",
                 "diem_toi_da": float(tc.diem_toi_da) if tc else 0,
                 "diem_tu_cham": float(tc_dg.diem_tu_cham) if tc_dg.diem_tu_cham else 0,
-                "diem_lanh_dao": float(tc_dg.diem_phe_duyet) if tc_dg.diem_phe_duyet else 0,
+                "diem_lanh_dao": float(_diem_ld) if _diem_ld else 0,
             })
     
     diem_tcc = float(chi_tiet_xep_loai.diem_tieu_chi_chung) if chi_tiet_xep_loai else 0
@@ -1053,7 +1055,8 @@ async def _build_mau05_data(
             is_achieved_cc = tcdg.is_achieved_cc if tcdg else False
             is_achieved_ld = tcdg.is_achieved_ld if tcdg else None
             diem_cc = float(tcdg.diem_tu_cham) if tcdg and tcdg.diem_tu_cham else 0
-            diem_ld = float(tcdg.diem_phe_duyet) if tcdg and tcdg.diem_phe_duyet is not None else None
+            _diem_ld_eff = tcdg.diem_danh_gia_thang if tcdg and tcdg.diem_danh_gia_thang is not None else (tcdg.diem_phe_duyet if tcdg else None)
+            diem_ld = float(_diem_ld_eff) if _diem_ld_eff is not None else None
             ghi_chu = tcdg.ghi_chu_cc if tcdg else ""
             
             # Tính điểm
@@ -2150,7 +2153,8 @@ async def _get_data_01_tieu_chi_chung(db: AsyncSession, thang: int, nam: int) ->
             is_achieved_cc = tcdg.is_achieved_cc if tcdg else False
             final_achieved = is_achieved_ld if is_achieved_ld is not None else is_achieved_cc
 
-            diem_ld = float(tcdg.diem_phe_duyet) if tcdg and tcdg.diem_phe_duyet is not None else None
+            _diem_ld_eff = tcdg.diem_danh_gia_thang if tcdg and tcdg.diem_danh_gia_thang is not None else (tcdg.diem_phe_duyet if tcdg else None)
+            diem_ld = float(_diem_ld_eff) if _diem_ld_eff is not None else None
             diem_cc = float(tcdg.diem_tu_cham) if tcdg and tcdg.diem_tu_cham else 0
             diem = diem_ld if diem_ld is not None else diem_cc
 

@@ -51,6 +51,30 @@ export interface ICongChucBrief {
 }
 
 // =============================================================================
+// TIÊU CHÍ CHUNG — điểm "Đánh giá tháng" (override của LĐ/CCT)
+// Dùng chung cho modal SuaDiemTieuChiModal + trang Điều chỉnh tiêu chí chung.
+// =============================================================================
+
+export interface ITieuChiChungItemDgt {
+  ma_tieu_chi: string;
+  ten_tieu_chi: string;
+  nhom_tieu_chi?: number;
+  diem_toi_da: number;
+  diem_tu_cham?: number | null;
+  diem_phe_duyet?: number | null;
+  // Điểm "Đánh giá tháng" — LĐ/CCT chỉnh ở giai đoạn báo cáo xếp loại.
+  diem_danh_gia_thang?: number | null;
+  diem?: number;
+  trang_thai?: string;
+}
+
+export interface ITieuChiChungBrief {
+  danh_gia_thang_id?: string | null;
+  trang_thai?: string;
+  tieu_chi?: ITieuChiChungItemDgt[];
+}
+
+// =============================================================================
 // CHI TIẾT XẾP LOẠI
 // =============================================================================
 

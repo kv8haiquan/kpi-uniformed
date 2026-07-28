@@ -441,6 +441,16 @@ export const nganHangDgnlApi = {
   taoMoi: (data: any) => lmsApi.post('/dgnl/ngan-hang', data),
   capNhat: (id: string, data: any) => lmsApi.put(`/dgnl/ngan-hang/${id}`, data),
   xoa: (id: string) => lmsApi.delete(`/dgnl/ngan-hang/${id}`),
+  /** Xóa mềm nhiều câu hỏi cùng lúc — POST /dgnl/ngan-hang/xoa-nhieu (QT_DAO_TAO).
+   *  payload: { ids?: string[] } hoặc { tat_ca_theo_bo_loc: true, linh_vuc_id?, do_kho?, loai?, search? } */
+  xoaNhieu: (payload: {
+    ids?: string[];
+    tat_ca_theo_bo_loc?: boolean;
+    linh_vuc_id?: string;
+    do_kho?: string;
+    loai?: string;
+    search?: string;
+  }) => lmsApi.post('/dgnl/ngan-hang/xoa-nhieu', payload),
   thongKe: () => lmsApi.get('/dgnl/ngan-hang/thong-ke'),
   downloadMau: () => lmsApi.get('/dgnl/ngan-hang/import/mau', { responseType: 'blob' }),
   importFile: (file: File) => {

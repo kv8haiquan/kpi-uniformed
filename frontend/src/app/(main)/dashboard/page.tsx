@@ -714,6 +714,9 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <QuickActionCard icon="📑" title="Báo cáo tất cả đơn vị" description="Xem báo cáo xếp loại tất cả đơn vị" href="/xep-loai?tab=bao-cao" color="purple" size="large" viewOnly={!isCCT} />
               <QuickActionCard icon="📈" title="Thống kê Chi cục" description="Biểu đồ & thống kê toàn Chi cục" href="/xep-loai/thong-ke" color="pink" size="large" viewOnly={!isCCT} />
+              {(isCCT || isPhoCCT) && (
+                <QuickActionCard icon="✏️" title="Điều chỉnh điểm tiêu chí chung" description="Sửa trực tiếp điểm TC chung của công chức" href="/dieu-chinh-tieu-chi" color="green" size="large" />
+              )}
             </div>
           </div>
         )}

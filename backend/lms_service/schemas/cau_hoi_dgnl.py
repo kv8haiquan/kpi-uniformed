@@ -66,6 +66,23 @@ class CauHoiDgnlUpdate(BaseModel):
         return v
 
 
+class CauHoiDgnlXoaNhieu(BaseModel):
+    """Schema xoa nhieu cau hoi DGNL (soft delete).
+
+    Hai che do:
+      - Truyen danh sach `ids`     -> xoa dung cac cau hoi da chon.
+      - `tat_ca_theo_bo_loc=True`  -> xoa TOAN BO cau hoi khop bo loc
+                                      (linh_vuc_id / do_kho / loai / search).
+                                      Dung de clear ca mot linh vuc.
+    """
+    ids: Optional[list[UUID]] = None
+    tat_ca_theo_bo_loc: bool = False
+    linh_vuc_id: Optional[UUID] = None
+    do_kho: Optional[str] = None
+    loai: Optional[str] = None
+    search: Optional[str] = None
+
+
 class CauHoiDgnlResponse(BaseModel):
     """Schema response cau hoi DGNL."""
     model_config = ConfigDict(from_attributes=True)

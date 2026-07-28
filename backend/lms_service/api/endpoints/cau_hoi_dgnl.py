@@ -20,7 +20,12 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.dependencies import get_db, require_platform_role
-from lms_service.schemas.cau_hoi_dgnl import CauHoiDgnlCreate, CauHoiDgnlUpdate, CauHoiDgnlResponse
+from lms_service.schemas.cau_hoi_dgnl import (
+    CauHoiDgnlCreate,
+    CauHoiDgnlUpdate,
+    CauHoiDgnlResponse,
+    CauHoiDgnlXoaNhieu,
+)
 from lms_service.services.cau_hoi_dgnl_service import CauHoiDgnlService
 from shared.auth import TokenPayload
 
@@ -105,6 +110,22 @@ async def import_cau_hoi(
         "success": True,
         "data": result,
         "message": f"Import hoàn tất: {result['thanh_cong']}/{result['tong']} câu thành công",
+    }
+
+
+@router.post("/xoa-nhieu")
+async def xoa_nhieu(
+    payload: CauHoiDgnlXoaNhieu,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
+):
+    """Xoa mem nhieu cau hoi DGNL cung luc (theo danh sach id hoac theo bo loc)."""
+    service = CauHoiDgnlService(db)
+    so_xoa = await service.xoa_nhieu(payload, user)
+    return {
+        "success": True,
+        "data": {"so_xoa": so_xoa},
+        "message": f"Đã xóa {so_xoa} câu hỏi",
     }
 
 

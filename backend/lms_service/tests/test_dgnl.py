@@ -906,3 +906,67 @@ class TestUpsertLanThi:
         assert len(ts.lich_su_thi) == 2
         lans = sorted(e["lan"] for e in ts.lich_su_thi)
         assert lans == [1, 2]
+
+
+# =========================================================================
+# XOA NHIEU CAU HOI DGNL (bulk soft-delete) — POST /dgnl/ngan-hang/xoa-nhieu
+# =========================================================================
+
+async def _tao_ch_dgnl(client, lv_id, noi_dung, do_kho="DE", da="A"):
+    """Helper tao 1 cau hoi DGNL, tra ve id."""
+    body = {
+        "linh_vuc_id": lv_id, "do_kho": do_kho, "loai": "TRAC_NGHIEM_1",
+        "noi_dung": noi_dung,
+        "dap_an": {"lua_chon": [{"key": "A", "noi_dung": "A"}, {"key": "B", "noi_dung": "B"}],
+                   "dap_an_dung": da},
+    }
+    r = await client.post(f"{BASE}/dgnl/ngan-hang", json=body)
+    assert r.status_code == 201, r.json()
+    return r.json()["data"]["id"]
+
+
+class TestXoaNhieuCauHoiDgnl:
+    async def test_xoa_theo_ids(self, client, admin_user):
+        lv = await _create_linh_vuc(client, f"LV-BULK-{uuid.uuid4().hex[:6]}")
+        ids = [await _tao_ch_dgnl(client, lv["id"], f"Câu {i}") for i in range(3)]
+
+        resp = await client.post(f"{BASE}/dgnl/ngan-hang/xoa-nhieu", json={"ids": ids[:2]})
+        assert resp.status_code == 200, resp.json()
+        assert resp.json()["data"]["so_xoa"] == 2
+
+        # Con lai 1 cau active trong linh vuc nay
+        lst = await client.get(f"{BASE}/dgnl/ngan-hang", params={"linh_vuc_id": lv["id"]})
+        assert lst.json()["pagination"]["total_items"] == 1
+
+    async def test_xoa_tat_ca_theo_bo_loc(self, client, admin_user):
+        lv = await _create_linh_vuc(client, f"LV-BULK2-{uuid.uuid4().hex[:6]}")
+        for i in range(4):
+            await _tao_ch_dgnl(client, lv["id"], f"Câu {i}", do_kho="DE")
+        await _tao_ch_dgnl(client, lv["id"], "Câu khó", do_kho="KHO")
+
+        # Xoa tat ca do_kho=DE trong linh vuc nay
+        resp = await client.post(f"{BASE}/dgnl/ngan-hang/xoa-nhieu", json={
+            "tat_ca_theo_bo_loc": True, "linh_vuc_id": lv["id"], "do_kho": "DE",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["data"]["so_xoa"] == 4
+
+        lst = await client.get(f"{BASE}/dgnl/ngan-hang", params={"linh_vuc_id": lv["id"]})
+        assert lst.json()["pagination"]["total_items"] == 1  # con lai cau KHO
+
+    async def test_xoa_tat_ca_khong_bo_loc_bi_chan(self, client, admin_user):
+        # tat_ca_theo_bo_loc nhung khong co dieu kien loc -> 400 (chan xoa toan bo)
+        resp = await client.post(f"{BASE}/dgnl/ngan-hang/xoa-nhieu", json={
+            "tat_ca_theo_bo_loc": True,
+        })
+        assert resp.status_code == 400
+
+    async def test_xoa_khong_co_ids_bi_chan(self, client, admin_user):
+        resp = await client.post(f"{BASE}/dgnl/ngan-hang/xoa-nhieu", json={"ids": []})
+        assert resp.status_code == 400
+
+    async def test_giang_vien_khong_duoc_xoa_nhieu(self, client, giang_vien_user):
+        # GIANG_VIEN khong phai QT_DAO_TAO -> bi tu choi (403 do require_platform_role)
+        resp = await client.post(f"{BASE}/dgnl/ngan-hang/xoa-nhieu",
+                                 json={"ids": [str(uuid.uuid4())]})
+        assert resp.status_code == 403

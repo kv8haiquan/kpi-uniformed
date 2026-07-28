@@ -1165,8 +1165,13 @@ function NganHangDeTab({ linhVucList }: { linhVucList: ILinhVuc[] }) {
   const [filterDK, setFilterDK] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Chon nhieu cau hoi de xoa hang loat
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Form tao cau hoi
   const [showForm, setShowForm] = useState(false);
@@ -1186,6 +1191,8 @@ function NganHangDeTab({ linhVucList }: { linhVucList: ILinhVuc[] }) {
       setThongKe(tkRes.data.data || []);
       setCauHoiList(chRes.data.data || []);
       setTotalPages(chRes.data.pagination?.total_pages || 0);
+      setTotalItems(chRes.data.pagination?.total_items || 0);
+      setSelectedIds(new Set()); // reset lua chon moi khi tai lai danh sach
     } catch { /* ignore */ } finally {
       setLoading(false);
     }
@@ -1238,6 +1245,66 @@ function NganHangDeTab({ linhVucList }: { linhVucList: ILinhVuc[] }) {
       await nganHangDgnlApi.xoa(id);
       await loadData();
     } catch (err: any) { setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa'); }
+  };
+
+  // --- Chon nhieu ---
+  const toggleOne = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const allPageSelected = cauHoiList.length > 0 && cauHoiList.every(ch => selectedIds.has(ch.id));
+
+  const toggleAllPage = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        cauHoiList.forEach(ch => next.delete(ch.id));
+      } else {
+        cauHoiList.forEach(ch => next.add(ch.id));
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Xóa ${selectedIds.size} câu hỏi đã chọn?`)) return;
+    setBulkDeleting(true); setError(null);
+    try {
+      const res = await nganHangDgnlApi.xoaNhieu({ ids: Array.from(selectedIds) });
+      setSuccess(`Đã xóa ${res.data.data?.so_xoa ?? selectedIds.size} câu hỏi`);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa hàng loạt');
+    } finally { setBulkDeleting(false); }
+  };
+
+  const handleDeleteAllMatching = async () => {
+    if (!filterLV && !filterDK) {
+      setError('Vui lòng chọn Lĩnh vực hoặc Độ khó trước khi xóa tất cả câu khớp bộ lọc');
+      return;
+    }
+    const tenLV = linhVucList.find(lv => lv.id === filterLV)?.ten_linh_vuc;
+    const mota = [tenLV && `lĩnh vực "${tenLV}"`, filterDK && `độ khó ${DO_KHO_LABEL[filterDK]}`]
+      .filter(Boolean).join(', ');
+    if (!confirm(`Xóa TẤT CẢ ${totalItems} câu hỏi thuộc ${mota} (toàn bộ các trang)?\n\nThao tác này xóa mềm — không ảnh hưởng các bài thi đã diễn ra.`)) return;
+    setBulkDeleting(true); setError(null);
+    try {
+      const res = await nganHangDgnlApi.xoaNhieu({
+        tat_ca_theo_bo_loc: true,
+        linh_vuc_id: filterLV || undefined,
+        do_kho: filterDK || undefined,
+      });
+      setSuccess(`Đã xóa ${res.data.data?.so_xoa ?? 0} câu hỏi`);
+      setPage(1);
+      await loadData();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa hàng loạt');
+    } finally { setBulkDeleting(false); }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1340,11 +1407,46 @@ function NganHangDeTab({ linhVucList }: { linhVucList: ILinhVuc[] }) {
         </div>
       </div>
 
+      {/* Thanh thao tac hang loat */}
+      {(selectedIds.size > 0 || ((filterLV || filterDK) && totalItems > 0)) && (
+        <div className="flex items-center justify-between mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex-wrap gap-2">
+          <span className="text-sm text-amber-800">
+            {selectedIds.size > 0
+              ? <>Đã chọn <b>{selectedIds.size}</b> câu hỏi</>
+              : <>Đang lọc: <b>{totalItems}</b> câu hỏi khớp bộ lọc</>}
+          </span>
+          <div className="flex gap-2">
+            {selectedIds.size > 0 && (
+              <button onClick={handleDeleteSelected} disabled={bulkDeleting}
+                className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+                {bulkDeleting ? 'Đang xóa...' : `Xóa ${selectedIds.size} câu đã chọn`}
+              </button>
+            )}
+            {(filterLV || filterDK) && totalItems > 0 && (
+              <button onClick={handleDeleteAllMatching} disabled={bulkDeleting}
+                className="px-3 py-1.5 text-xs border border-red-500 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50">
+                Xóa tất cả {totalItems} câu khớp bộ lọc
+              </button>
+            )}
+            {selectedIds.size > 0 && (
+              <button onClick={() => setSelectedIds(new Set())} disabled={bulkDeleting}
+                className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+                Bỏ chọn
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Danh sach cau hoi */}
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b text-left text-gray-500">
+              <th className="py-2 px-3 w-8 text-center">
+                <input type="checkbox" checked={allPageSelected} onChange={toggleAllPage}
+                  title="Chọn tất cả câu hỏi trong trang" className="cursor-pointer" />
+              </th>
               <th className="py-2 px-3 w-8">STT</th>
               <th className="py-2 px-3">Nội dung</th>
               <th className="py-2 px-3">Lĩnh vực</th>
@@ -1355,9 +1457,13 @@ function NganHangDeTab({ linhVucList }: { linhVucList: ILinhVuc[] }) {
           </thead>
           <tbody>
             {cauHoiList.length === 0 ? (
-              <tr><td colSpan={6} className="py-8 text-center text-gray-400">Chưa có câu hỏi nào</td></tr>
+              <tr><td colSpan={7} className="py-8 text-center text-gray-400">Chưa có câu hỏi nào</td></tr>
             ) : cauHoiList.map((ch, idx) => (
-              <tr key={ch.id} className="border-b hover:bg-gray-50">
+              <tr key={ch.id} className={`border-b hover:bg-gray-50 ${selectedIds.has(ch.id) ? 'bg-amber-50' : ''}`}>
+                <td className="py-2 px-3 text-center">
+                  <input type="checkbox" checked={selectedIds.has(ch.id)} onChange={() => toggleOne(ch.id)}
+                    className="cursor-pointer" />
+                </td>
                 <td className="py-2 px-3 text-gray-400">{(page - 1) * 20 + idx + 1}</td>
                 <td className="py-2 px-3 max-w-xs truncate" dangerouslySetInnerHTML={{ __html: ch.noi_dung }} />
                 <td className="py-2 px-3 text-xs">{ch.linh_vuc_ten}</td>

@@ -330,7 +330,14 @@ async def tinh_tong_diem_tieu_chi_chung(
     
     for tc_dg in tieu_chi_list:
         tc = tc_dg.tieu_chi
-        diem = tc_dg.diem_phe_duyet if use_ld and tc_dg.diem_phe_duyet is not None else tc_dg.diem_tu_cham
+        # Ưu tiên điểm "Đánh giá tháng" (LĐ chỉnh ở báo cáo xếp loại) nếu có,
+        # rồi mới đến điểm phê duyệt, cuối cùng là điểm CC tự chấm.
+        if use_ld and tc_dg.diem_danh_gia_thang is not None:
+            diem = tc_dg.diem_danh_gia_thang
+        elif use_ld and tc_dg.diem_phe_duyet is not None:
+            diem = tc_dg.diem_phe_duyet
+        else:
+            diem = tc_dg.diem_tu_cham
         if tc.nhom_tieu_chi == 1:
             nhom_1 += diem
         elif tc.nhom_tieu_chi == 2:

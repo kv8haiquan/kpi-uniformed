@@ -956,7 +956,13 @@ async def get_chi_tiet_xep_loai(
     if danh_gia and danh_gia.tieu_chi_chungs:
         for tc_dg in danh_gia.tieu_chi_chungs:
             tc = tc_dg.tieu_chi
-            diem = float(tc_dg.diem_phe_duyet) if tc_dg.diem_phe_duyet else float(tc_dg.diem_tu_cham)
+            # Ưu tiên điểm "Đánh giá tháng" (override của LĐ) nếu có.
+            if tc_dg.diem_danh_gia_thang is not None:
+                diem = float(tc_dg.diem_danh_gia_thang)
+            elif tc_dg.diem_phe_duyet:
+                diem = float(tc_dg.diem_phe_duyet)
+            else:
+                diem = float(tc_dg.diem_tu_cham)
             diem_30 += diem
             
             tieu_chi_list.append({

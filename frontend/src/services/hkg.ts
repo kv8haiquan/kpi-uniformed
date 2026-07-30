@@ -442,21 +442,33 @@ export const presentationApi = {
 /**
  * Build URL WebSocket cho presentation channel.
  *
- * BE mount router tại `/api/v1/hop-khong-giay/ws/cuoc-hop/{id}/presentation`.
+ * BE mount router WS tại prefix RIÊNG `/ws/hop-khong-giay` (xem
+ * `meeting_service/main.py`), KHÔNG nằm dưới `/api/v1/hop-khong-giay`.
+ * Path đầy đủ: `/ws/hop-khong-giay/cuoc-hop/{id}/presentation`.
+ *
+ * Fix 30/07/2026: trước đây build sai thành
+ * `/api/v1/hop-khong-giay/ws/cuoc-hop/{id}/presentation` → uvicorn trả 404,
+ * FE reconnect mỗi 1–2s và đồng bộ trang trình chiếu không hoạt động.
+ *
  * Token đi qua query string vì FastAPI WebSocket không hỗ trợ
  * Authorization header reliable cross-browser.
  */
+const HKG_WS_PREFIX = '/ws/hop-khong-giay';
+
 export function buildPresentationWsUrl(
   cuoc_hop_id: string,
   ws_token: string,
 ): string {
   if (typeof window === 'undefined') return '';
-  const httpBase = HKG_API_URL.startsWith('http')
-    ? HKG_API_URL
-    : `${window.location.origin}${HKG_API_URL}`;
-  // http://host/api/v1/hop-khong-giay → ws://host/api/v1/hop-khong-giay
-  const wsBase = httpBase.replace(/^http/, 'ws');
-  return `${wsBase}/ws/cuoc-hop/${cuoc_hop_id}/presentation?token=${encodeURIComponent(ws_token)}`;
+  // Origin của HKG service: nếu NEXT_PUBLIC_HKG_API_URL là absolute (dev trỏ
+  // thẳng cổng 8006) thì lấy origin của nó, ngược lại dùng origin hiện tại
+  // (production đi qua nginx).
+  const origin = HKG_API_URL.startsWith('http')
+    ? new URL(HKG_API_URL).origin
+    : window.location.origin;
+  // http://host → ws://host, https://host → wss://host
+  const wsOrigin = origin.replace(/^http/, 'ws');
+  return `${wsOrigin}${HKG_WS_PREFIX}/cuoc-hop/${cuoc_hop_id}/presentation?token=${encodeURIComponent(ws_token)}`;
 }
 
 // ════════════════════════════════════════════════════════════

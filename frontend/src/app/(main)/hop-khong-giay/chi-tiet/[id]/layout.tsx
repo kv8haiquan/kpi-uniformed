@@ -10,8 +10,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
-import { AlertOctagon, ArrowLeft, Lock } from 'lucide-react';
+import { AlertOctagon, ArrowLeft, Lock, ShieldOff } from 'lucide-react';
 import { cuocHopApi } from '@/services/hkg';
+import { errStatus } from '@/lib/hkg-error';
 import type { ICuocHop, TrangThaiCuocHop } from '@/types/hkg';
 import { MeetingProvider } from '@/components/hkg/MeetingContext';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -38,13 +39,22 @@ export default function ChiTietLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const { user } = useAuthStore();
   const [ch, setCh] = useState<ICuocHop | null>(null);
+  // Fix 30/07/2026: trước đây catch rỗng → 403/404 bị ăn im, trang vẫn render
+  // đủ tabs + nút "Xác nhận tham dự" nên user bấm mãi không hiểu vì sao lỗi.
+  const [loadErr, setLoadErr] = useState<'forbidden' | 'notfound' | 'other' | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
       const data = await cuocHopApi.chiTiet(id);
       setCh(data);
-    } catch {
+      setLoadErr(null);
+    } catch (e: unknown) {
       setCh(null);
+      const st = errStatus(e);
+      setLoadErr(st === 403 ? 'forbidden' : st === 404 ? 'notfound' : 'other');
+    } finally {
+      setLoading(false);
     }
   }, [id]);
 
@@ -76,6 +86,56 @@ export default function ChiTietLayout({ children }: { children: React.ReactNode 
     if (ch.chu_toa_id === user.id || ch.thu_ky_id === user.id) return true;
     return false;
   }, [ch, user]);
+
+  // Không xem được cuộc họp → chặn hẳn tabs + children để các tab con không
+  // bắn tiếp request chắc chắn cùng lỗi (tài liệu, điểm danh, biên bản...).
+  if (!loading && loadErr && loadErr !== 'other') {
+    const isForbidden = loadErr === 'forbidden';
+    return (
+      <div>
+        <div className="mb-3">
+          <Link
+            href="/hop-khong-giay"
+            className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-blue-700"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Quay lại danh sách họp
+          </Link>
+        </div>
+
+        <div className="bg-white border rounded p-6 flex items-start gap-4">
+          <ShieldOff className="w-8 h-8 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {isForbidden
+                ? 'Bạn không có quyền xem cuộc họp này'
+                : 'Không tìm thấy cuộc họp'}
+            </h2>
+            {isForbidden ? (
+              <div className="text-sm text-gray-600 mt-2 space-y-1">
+                <p>
+                  Bạn không nằm trong thành phần được mời của cuộc họp này, và cũng không phải
+                  chủ tọa, thư ký hay lãnh đạo đơn vị tổ chức.
+                </p>
+                <p>
+                  Nếu bạn cần dự họp, vui lòng liên hệ thư ký cuộc họp hoặc Văn phòng để được
+                  thêm vào thành phần.
+                </p>
+                <p className="text-gray-500">
+                  Nếu vừa đăng nhập bằng tài khoản khác trên máy này, hãy quay lại danh sách họp
+                  thay vì mở lại đường dẫn cũ.
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 mt-2">
+                Cuộc họp không tồn tại hoặc đã bị xoá.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <MeetingProvider value={{ ch, isCancelled, isLocked, canEdit, currentUserId, refresh }}>
@@ -131,6 +191,10 @@ export default function ChiTietLayout({ children }: { children: React.ReactNode 
                 <span>Khối: {ch.khoi}</span>
               </div>
             </>
+          ) : loadErr === 'other' ? (
+            <div className="text-red-600 text-sm">
+              Không tải được thông tin cuộc họp. Vui lòng thử lại.
+            </div>
           ) : (
             <div className="text-gray-500">Đang tải...</div>
           )}

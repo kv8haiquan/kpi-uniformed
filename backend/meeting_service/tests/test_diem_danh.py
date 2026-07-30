@@ -230,3 +230,45 @@ async def test_summary_count(
     assert s["co_mat"] == 1
     assert s["vang_khong_phep"] == 1
     assert s["chua_diem_danh"] == 1
+
+
+@pytest.mark.asyncio
+async def test_diem_danh_cua_toi_not_invited_403(
+    client: AsyncClient, chu_toa_user, seed_test_users,
+):
+    """Fix 30/07/2026: /diem-danh-cua-toi phải chặn user ngoài cuộc họp.
+
+    Trước fix endpoint này không có require_can_view_meeting nên trả 200 cho
+    mọi user đăng nhập, lệch với các endpoint cùng trang (đều 403).
+    """
+    from datetime import datetime, timedelta, timezone
+    from shared.auth import TokenPayload
+
+    outsider = TokenPayload(
+        sub="aaaaaaaa-0004-0000-0000-000000000004",
+        ma_cc="TEST-G3-004", ho_ten="Outsider",
+        vai_tro="CC",
+        don_vi_id=str(seed_test_users["don_vi_b"]),
+        platform_roles=[],
+        exp=int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        type="access",
+    )
+
+    create = await client.post(BASE_CH + "/", json=_create_meeting_payload(
+        seed_test_users["don_vi_a"], chu_toa_user.sub, thanh_phan=[],
+    ))
+    ch_id = create.json()["data"]["id"]
+
+    # Chủ tọa vẫn xem được trạng thái của mình
+    resp_ct = await client.get(f"{BASE_CH}/{ch_id}/diem-danh-cua-toi")
+    assert resp_ct.status_code == 200
+
+    from meeting_service.dependencies import get_current_user
+    from meeting_service.main import app as fastapi_app
+    async def _override():
+        return outsider
+    fastapi_app.dependency_overrides[get_current_user] = _override
+
+    resp = await client.get(f"{BASE_CH}/{ch_id}/diem-danh-cua-toi")
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"]["code"] == "NO_PERMISSION"

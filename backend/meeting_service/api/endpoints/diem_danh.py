@@ -142,8 +142,14 @@ async def diem_danh_cua_toi(
     cuoc_hop_id: UUID,
     db: DatabaseDep,
     user: CurrentUserDep,
+    ch: CuocHop = Depends(require_can_view_meeting),
 ):
-    """FE dùng để biết hiển thị nút 'Tôi có mặt' hay 'Đã điểm danh'."""
+    """FE dùng để biết hiển thị nút 'Tôi có mặt' hay 'Đã điểm danh'.
+
+    Fix 30/07/2026: bổ sung require_can_view_meeting — trước đây endpoint này
+    không kiểm tra quyền nên user không thuộc cuộc họp vẫn gọi được (trả 200
+    trong khi các endpoint cùng trang trả 403, gây log khó đọc).
+    """
     service = DiemDanhService(db)
     return {"success": True, "data": await service.my_status(cuoc_hop_id, user)}
 

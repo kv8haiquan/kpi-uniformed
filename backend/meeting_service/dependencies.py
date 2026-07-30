@@ -7,6 +7,7 @@ Reuse: shared.auth.decode_jwt + shared.database.create_db_engine.
 KHÔNG tự implement JWT logic.
 """
 
+import logging
 import os
 import sys
 from typing import Annotated
@@ -26,6 +27,9 @@ from shared.database import create_db_engine, create_session_factory, get_db_ses
 from meeting_service.config import settings
 from meeting_service.models.cuoc_hop import CuocHop
 from meeting_service.models.thanh_phan import ThanhPhan
+
+
+logger = logging.getLogger("hkg.authz")
 
 
 # OAuth2 — token lấy từ KPI login (port 8000)
@@ -188,6 +192,29 @@ async def _can_view_cuoc_hop(
     return False
 
 
+def log_tu_choi_cuoc_hop(hanh_dong: str, user: TokenPayload, cuoc_hop: CuocHop) -> None:
+    """Log định danh mỗi khi từ chối truy cập cuộc họp (403).
+
+    Thêm 30/07/2026: trước đây log chỉ có IP nên muốn biết ai bị 403 phải dựng
+    fingerprint từ kích thước response trong nginx log (IP là NAT dùng chung cho
+    gần như mọi đơn vị nên không định danh được). Nay tra bằng:
+        grep 'DENY' /root/.pm2/logs/meeting-backend-out.log
+    """
+    logger.warning(
+        "DENY %s ma_cc=%s ho_ten=%s vai_tro=%s lanh_dao=%s don_vi=%s "
+        "platform_roles=%s cuoc_hop=%s dv_to_chuc=%s",
+        hanh_dong,
+        user.ma_cc or "?",
+        user.ho_ten or "?",
+        user.vai_tro or "-",
+        user.is_lanh_dao,
+        user.don_vi_id or "-",
+        ",".join(user.platform_roles or []) or "-",
+        cuoc_hop.id,
+        cuoc_hop.don_vi_to_chuc_id,
+    )
+
+
 async def require_can_view_meeting(
     cuoc_hop_id: Annotated[UUID, Path(...)],
     user: CurrentUserDep,
@@ -208,6 +235,7 @@ async def require_can_view_meeting(
                     "message": "Không tìm thấy cuộc họp"}},
         )
     if not await _can_view_cuoc_hop(ch, user, db):
+        log_tu_choi_cuoc_hop("VIEW", user, ch)
         raise HTTPException(
             status_code=403,
             detail={"success": False, "error": {"code": "NO_PERMISSION",
@@ -256,6 +284,7 @@ async def require_can_edit_meeting(
     if ch.chu_toa_id == user_id or ch.thu_ky_id == user_id:
         return ch
 
+    log_tu_choi_cuoc_hop("EDIT", user, ch)
     raise HTTPException(
         status_code=403,
         detail={"success": False, "error": {"code": "NO_PERMISSION",

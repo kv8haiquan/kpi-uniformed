@@ -8,6 +8,7 @@ LƯU Ý: G2/G3a chạy INTERNAL ONLY (host=127.0.0.1). Không expose ra Nginx pu
 cho tới khi G4 done + UAT pass.
 """
 
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -24,6 +25,21 @@ from shared.auth import decode_jwt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from meeting_service.config import settings
+
+# ─── Logging cho namespace "hkg.*" ──────────────────────────────────────────
+# Thêm 30/07/2026: uvicorn chỉ cấu hình logger của chính nó, không có handler ở
+# root, nên mọi logger hkg.* (hkg.authz, hkg.ws, hkg.broadcast, hkg.presentation)
+# trước đây KHÔNG in ra dòng nào trong log pm2. Gắn handler stdout để pm2 bắt được.
+_hkg_logger = logging.getLogger("hkg")
+if not _hkg_logger.handlers:
+    _hkg_handler = logging.StreamHandler(sys.stdout)
+    _hkg_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    )
+    _hkg_logger.addHandler(_hkg_handler)
+    _hkg_logger.setLevel(logging.INFO)
+    _hkg_logger.propagate = False  # tránh in trùng qua logging.lastResort
+
 from meeting_service.services.rate_limit import limiter
 from meeting_service.api.endpoints.cuoc_hop import router as cuoc_hop_router
 from meeting_service.api.endpoints.tai_lieu import (

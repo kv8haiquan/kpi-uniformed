@@ -28,6 +28,7 @@ from lms_service.api.endpoints.linh_vuc import router as linh_vuc_router
 from lms_service.api.endpoints.vi_tri_viec_lam import router as vi_tri_viec_lam_router
 from lms_service.api.endpoints.ky_thi import router as ky_thi_router
 from lms_service.api.endpoints.thi_sinh import router as thi_sinh_router
+from lms_service.api.endpoints.cau_truc_de_template import router as cau_truc_de_template_router
 from lms_service.api.endpoints.cau_hoi_dgnl import router as cau_hoi_dgnl_router
 
 # Tao thu muc uploads truoc khi mount StaticFiles (tranh loi khoi dong)
@@ -80,6 +81,7 @@ app.include_router(linh_vuc_router, prefix="/api/v1/lms")
 app.include_router(vi_tri_viec_lam_router, prefix="/api/v1/lms")
 app.include_router(ky_thi_router, prefix="/api/v1/lms")
 app.include_router(thi_sinh_router, prefix="/api/v1/lms")
+app.include_router(cau_truc_de_template_router, prefix="/api/v1/lms")
 app.include_router(cau_hoi_dgnl_router, prefix="/api/v1/lms")
 
 

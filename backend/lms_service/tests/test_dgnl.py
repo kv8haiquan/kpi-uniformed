@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from lms_service.core.timezone import now_vn
 
 pytestmark = pytest.mark.asyncio
 
@@ -52,7 +53,7 @@ async def _create_vi_tri(client: AsyncClient, ma: str = None, ten: str = None) -
 
 async def _create_ky_thi(client: AsyncClient, ma: str = None) -> dict:
     ma = ma or f"KT-{uuid.uuid4().hex[:6]}"
-    now = datetime.utcnow()
+    now = now_vn()
     resp = await client.post(f"{BASE}/ky-thi", json={
         "ma_ky_thi": ma,
         "ten_ky_thi": f"Kỳ thi {ma}",
@@ -260,7 +261,7 @@ class TestKyThiCRUD:
     async def test_tao_ky_thi_trung_ma(self, client, admin_user):
         ma = f"KT-DUP-{uuid.uuid4().hex[:4]}"
         await _create_ky_thi(client, ma)
-        now = datetime.utcnow()
+        now = now_vn()
         resp = await client.post(f"{BASE}/ky-thi", json={
             "ma_ky_thi": ma,
             "ten_ky_thi": "Trùng mã",
@@ -730,12 +731,429 @@ class TestLichSuLanThi:
 
 
 # =========================================================================
+# XAC NHAN CA THI + DIEM CAO NHAT (B3 - 30/07/2026)
+# =========================================================================
+
+class TestXacNhanCaThi:
+    """Xac nhan ca thi (chot ket qua), auto-confirm 10 phut, diem cao nhat."""
+
+    # Tai dung helpers cua TestLichSuLanThi (khong ke thua de khoi re-run tests)
+    _setup_dgnl_exam = TestLichSuLanThi._setup_dgnl_exam
+    _open_with_dap_an = TestLichSuLanThi._open_with_dap_an
+    _thi_va_nop = TestLichSuLanThi._thi_va_nop
+
+    async def _thi_va_nop_dap_an(self, client, kt_id: str, dap_an: str):
+        """Bat dau + nop bai, chon cung 1 dap an cho tat ca cau."""
+        start = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert start.status_code == 200, start.json()
+        cau_hoi = start.json()["data"]["cau_hoi"]
+        cau_tra_loi = [{"cau_hoi_id": c["id"], "tra_loi": {"dap_an": dap_an}} for c in cau_hoi]
+        nop = await client.post(f"{BASE}/ky-thi/{kt_id}/nop-bai", json={"cau_tra_loi": cau_tra_loi})
+        assert nop.status_code == 200, nop.json()
+        return nop.json()["data"]
+
+    async def test_ket_qua_sau_nop_co_han_xac_nhan(self, client, admin_user):
+        """Sau khi nop: da_xac_nhan=False, co han_xac_nhan (nop + 10'), so_lan_thi_toi_da."""
+        data, _cc_id = await self._open_with_dap_an(client, admin_user)
+        kq = await self._thi_va_nop_dap_an(client, data["ky_thi"]["id"], "A")
+        assert kq["ket_qua"]["da_xac_nhan"] is False
+        assert kq["ket_qua"]["han_xac_nhan"] is not None
+        assert kq["ket_qua"]["so_lan_thi_toi_da"] == 2
+        assert kq["ket_qua"]["thoi_gian_nop"] is not None
+
+    async def test_xac_nhan_chan_thi_lai(self, client, admin_user):
+        """Xac nhan xong -> bat-dau lai bi 400 DGNL_048 du con luot."""
+        data, _cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)  # lan 1 (con luot lan 2)
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt_id}/xac-nhan")
+        assert resp.status_code == 200, resp.json()
+        assert resp.json()["data"]["da_xac_nhan"] is True
+
+        # Idempotent
+        resp2 = await client.post(f"{BASE}/ky-thi/{kt_id}/xac-nhan")
+        assert resp2.status_code == 200
+
+        # Thi lai bi chan
+        start = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert start.status_code == 400
+        assert start.json()["detail"]["error"]["code"] == "DGNL_048"
+
+        # Ket qua hien da_xac_nhan, khong con han
+        kq = await client.get(f"{BASE}/ky-thi/{kt_id}/ket-qua")
+        assert kq.json()["data"]["ket_qua"]["da_xac_nhan"] is True
+        assert kq.json()["data"]["ket_qua"]["han_xac_nhan"] is None
+
+    async def test_xac_nhan_chua_nop_400(self, client, admin_user):
+        """Chua nop bai -> xac nhan bi 400 DGNL_047."""
+        data, _cc_id = await self._open_with_dap_an(client, admin_user)
+        resp = await client.post(f"{BASE}/ky-thi/{data['ky_thi']['id']}/xac-nhan")
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_047"
+
+    async def test_auto_xac_nhan_qua_10_phut(self, client, admin_user, db_session):
+        """Qua 10 phut khong xac nhan -> thi lai bi 400 DGNL_049 + tu dong chot."""
+        from sqlalchemy import text as sa_text
+
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+
+        # Gia lap da nop 11 phut truoc
+        await db_session.execute(sa_text(
+            "UPDATE lms.thi_sinh SET thoi_gian_nop = thoi_gian_nop - INTERVAL '11 minutes' "
+            "WHERE ky_thi_id = :kt AND cong_chuc_id = :cc"
+        ), {"kt": kt_id, "cc": cc_id})
+        await db_session.commit()
+        # Service dung chung session voi test -> expire de doc lai tu DB
+        db_session.expire_all()
+
+        start = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert start.status_code == 400
+        assert start.json()["detail"]["error"]["code"] == "DGNL_049"
+
+        # Lan sau bi chan voi ly do "da xac nhan" (flag da persist)
+        start2 = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert start2.status_code == 400
+        assert start2.json()["detail"]["error"]["code"] == "DGNL_048"
+
+    async def test_diem_cao_nhat_giua_cac_lan(self, client, admin_user):
+        """Lan 1 diem cao, lan 2 diem thap -> diem chinh thuc giu lan 1 (cao nhat)."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+
+        kq1 = await self._thi_va_nop_dap_an(client, kt_id, "A")  # dung het -> 100
+        assert kq1["ket_qua"]["diem_tong"] == 100.0
+
+        kq2 = await self._thi_va_nop_dap_an(client, kt_id, "B")  # sai het -> 0
+        # Diem chinh thuc = cao nhat (lan 1), khong bi lan 2 ghi de
+        assert kq2["ket_qua"]["diem_tong"] == 100.0
+        assert kq2["ket_qua"]["xep_loai"] == "DAT"
+        assert kq2["ket_qua"]["lan_tot_nhat"] == 1
+        assert kq2["ket_qua"]["lan_thi"] == 2
+
+        # Lich su van du 2 lan voi diem tung lan
+        kq = await client.get(f"{BASE}/ky-thi/{kt_id}/ket-qua")
+        lich_su = {e["lan"]: e["diem"] for e in kq.json()["data"]["lich_su_thi"]}
+        assert lich_su[1] == 100.0
+        assert lich_su[2] == 0
+
+        # Drill-down lan 2 van xem duoc bai lam diem 0
+        r = await client.get(f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/ket-qua/2")
+        assert r.status_code == 200
+        assert r.json()["data"]["ket_qua"]["diem_tong"] == 0
+
+
+# =========================================================================
+# MAU CAU TRUC DE (B4 - 30/07/2026)
+# =========================================================================
+
+class TestCauTrucDeTemplate:
+    """Luu cau truc de lam mau + ap dung mau vao ky thi khac."""
+
+    async def _setup(self, client) -> dict:
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-TPL-{uid}")
+        vt = await _create_vi_tri(client, f"VT-TPL-{uid}")
+        return {"lv": lv, "vt": vt, "uid": uid}
+
+    async def test_tao_va_danh_sach_template(self, client, admin_user):
+        data = await self._setup(client)
+        resp = await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu chuẩn {data['uid']}",
+            "mo_ta": "Mẫu test",
+            "cau_truc": [{
+                "vi_tri_id": data["vt"]["id"], "linh_vuc_id": data["lv"]["id"],
+                "so_cau_de": 2, "so_cau_trung_binh": 1, "so_cau_kho": 1,
+            }],
+        })
+        assert resp.status_code == 201, resp.json()
+        tpl = resp.json()["data"]
+        assert tpl["ten_template"] == f"Mẫu chuẩn {data['uid']}"
+        assert len(tpl["cau_truc"]) == 1
+
+        ds = await client.get(f"{BASE}/cau-truc-de-template")
+        assert ds.status_code == 200
+        assert any(t["id"] == tpl["id"] for t in ds.json()["data"])
+
+    async def test_ap_dung_template_vao_ky_thi(self, client, admin_user):
+        """Lay cau_truc tu template roi upsert vao ky thi qua endpoint san co."""
+        data = await self._setup(client)
+        kt = await _create_ky_thi(client, f"KT-TPL-{data['uid']}")
+
+        tpl_resp = await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu áp dụng {data['uid']}",
+            "cau_truc": [{
+                "vi_tri_id": data["vt"]["id"], "linh_vuc_id": data["lv"]["id"],
+                "so_cau_de": 3, "so_cau_trung_binh": 2, "so_cau_kho": 1,
+            }],
+        })
+        tpl = tpl_resp.json()["data"]
+
+        # FE flow: lay chi tiet template -> upsert cau-truc-de theo vi_tri
+        chi_tiet = await client.get(f"{BASE}/cau-truc-de-template/{tpl['id']}")
+        cau_truc = chi_tiet.json()["data"]["cau_truc"]
+        upsert = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": cau_truc[0]["vi_tri_id"],
+            "cau_truc": [{
+                "linh_vuc_id": c["linh_vuc_id"],
+                "so_cau_de": c["so_cau_de"],
+                "so_cau_trung_binh": c["so_cau_trung_binh"],
+                "so_cau_kho": c["so_cau_kho"],
+            } for c in cau_truc],
+        })
+        assert upsert.status_code == 201, upsert.json()
+
+        ctd = await client.get(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de")
+        assert ctd.status_code == 200
+
+    async def test_xoa_mem_template(self, client, admin_user):
+        data = await self._setup(client)
+        tpl_resp = await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu xóa {data['uid']}",
+            "cau_truc": [{
+                "vi_tri_id": data["vt"]["id"], "linh_vuc_id": data["lv"]["id"],
+                "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0,
+            }],
+        })
+        tpl_id = tpl_resp.json()["data"]["id"]
+
+        del_resp = await client.delete(f"{BASE}/cau-truc-de-template/{tpl_id}")
+        assert del_resp.status_code == 200
+
+        # Da xoa mem -> chi tiet 404, khong con trong danh sach
+        chi_tiet = await client.get(f"{BASE}/cau-truc-de-template/{tpl_id}")
+        assert chi_tiet.status_code == 404
+        ds = await client.get(f"{BASE}/cau-truc-de-template")
+        assert not any(t["id"] == tpl_id for t in ds.json()["data"])
+
+    async def test_cbcc_khong_duoc_xem_template(self, client, cbcc_user):
+        resp = await client.get(f"{BASE}/cau-truc-de-template")
+        assert resp.status_code == 403
+
+
+# =========================================================================
+# IMPORT THI SINH TU EXCEL (B1 - 30/07/2026)
+# =========================================================================
+
+def _build_xlsx(ma_cc_list: list, header: str = "ma_cc") -> bytes:
+    """Build file xlsx in-memory: 1 cot header + danh sach ma_cc."""
+    import io as _io
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.cell(row=1, column=1, value=header)
+    for i, ma in enumerate(ma_cc_list, start=2):
+        ws.cell(row=i, column=1, value=ma)
+    out = _io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+class TestImportThiSinh:
+    """Import ma cong chuc tu Excel + tai file mau."""
+
+    async def _setup_ky_thi_vi_tri(self, client) -> tuple[dict, dict]:
+        uid = uuid.uuid4().hex[:6]
+        vt = await _create_vi_tri(client, f"VT-IMP-{uid}")
+        kt = await _create_ky_thi(client, f"KT-IMP-{uid}")
+        return kt, vt
+
+    async def _lay_ma_cc_that(self, db_session, n: int = 2) -> list[str]:
+        """Lay n ma_cc that (is_active) tu public.cong_chuc de import."""
+        from sqlalchemy import text as sa_text
+        r = await db_session.execute(sa_text(
+            "SELECT ma_cc FROM public.cong_chuc WHERE is_active = true ORDER BY ma_cc LIMIT :n"
+        ), {"n": n})
+        return [row[0] for row in r.all()]
+
+    async def test_download_file_mau(self, client, admin_user):
+        kt, _vt = await self._setup_ky_thi_vi_tri(client)
+        resp = await client.get(f"{BASE}/ky-thi/{kt['id']}/thi-sinh/import/mau")
+        assert resp.status_code == 200
+        assert "spreadsheetml" in resp.headers["content-type"]
+
+        import io as _io
+        from openpyxl import load_workbook
+        wb = load_workbook(_io.BytesIO(resp.content))
+        ws = wb.active
+        # File mau: dong 1 huong dan, dong 2 header ma_cc
+        assert ws.cell(row=2, column=1).value == "ma_cc"
+
+    async def test_import_thanh_cong(self, client, admin_user, db_session):
+        kt, vt = await self._setup_ky_thi_vi_tri(client)
+        ma_list = await self._lay_ma_cc_that(db_session, 2)
+        content = _build_xlsx(ma_list)
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt['id']}/thi-sinh/import-excel?vi_tri_id={vt['id']}",
+            files={"file": ("ds.xlsx", content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert resp.status_code == 201, resp.json()
+        data = resp.json()["data"]
+        assert data["thanh_cong"] == 2
+        assert data["that_bai"] == 0
+
+        # Import lai cung file -> tat ca bao trung
+        resp2 = await client.post(
+            f"{BASE}/ky-thi/{kt['id']}/thi-sinh/import-excel?vi_tri_id={vt['id']}",
+            files={"file": ("ds.xlsx", content, "application/octet-stream")},
+        )
+        data2 = resp2.json()["data"]
+        assert data2["thanh_cong"] == 0
+        assert data2["that_bai"] == 2
+        assert all("Đã được giao thi" in e["loi"] for e in data2["loi_chi_tiet"])
+
+    async def test_import_loi_tung_dong(self, client, admin_user, db_session):
+        """Ma khong ton tai + trung trong file -> loi per dong, dong hop le van vao."""
+        kt, vt = await self._setup_ky_thi_vi_tri(client)
+        ma_list = await self._lay_ma_cc_that(db_session, 1)
+        content = _build_xlsx([ma_list[0], "MA-KHONG-TON-TAI", ma_list[0]])
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt['id']}/thi-sinh/import-excel?vi_tri_id={vt['id']}",
+            files={"file": ("ds.xlsx", content, "application/octet-stream")},
+        )
+        assert resp.status_code == 201, resp.json()
+        data = resp.json()["data"]
+        assert data["thanh_cong"] == 1
+        assert data["that_bai"] == 2
+        loi_map = {e["ma_cc"]: e["loi"] for e in data["loi_chi_tiet"]}
+        assert "không tồn tại" in loi_map["MA-KHONG-TON-TAI"]
+        assert "Trùng lặp trong file" in loi_map[ma_list[0]]
+
+    async def test_import_thieu_cot_ma_cc(self, client, admin_user):
+        kt, vt = await self._setup_ky_thi_vi_tri(client)
+        content = _build_xlsx(["X1"], header="ten_cot_sai")
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt['id']}/thi-sinh/import-excel?vi_tri_id={vt['id']}",
+            files={"file": ("ds.xlsx", content, "application/octet-stream")},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_061"
+
+
+# =========================================================================
+# VI PHAM — LOG CHI TIET (B5 - 30/07/2026)
+# =========================================================================
+
+class TestViPham:
+    """Log vi pham chi tiet: ghi ngay kem gio, ly do giai trinh, xem danh sach."""
+
+    _setup_dgnl_exam = TestLichSuLanThi._setup_dgnl_exam
+    _open_with_dap_an = TestLichSuLanThi._open_with_dap_an
+
+    async def _bat_dau(self, client, kt_id: str) -> dict:
+        start = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert start.status_code == 200, start.json()
+        return start.json()["data"]
+
+    async def test_ghi_vi_pham_tang_counter_va_co_gio(self, client, admin_user):
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._bat_dau(client, kt_id)
+
+        r1 = await client.post(f"{BASE}/ky-thi/{kt_id}/vi-pham", json={"loai_vi_pham": "EXIT_FULLSCREEN"})
+        assert r1.status_code == 201, r1.json()
+        assert r1.json()["data"]["so_lan_vi_pham"] == 1
+        assert r1.json()["data"]["thoi_gian"] is not None
+        vp_id = r1.json()["data"]["id"]
+
+        r2 = await client.post(f"{BASE}/ky-thi/{kt_id}/vi-pham", json={"loai_vi_pham": "SWITCH_TAB"})
+        assert r2.status_code == 201
+        assert r2.json()["data"]["so_lan_vi_pham"] == 2
+
+        # Admin xem danh sach chi tiet
+        ds = await client.get(f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/vi-pham")
+        assert ds.status_code == 200
+        items = ds.json()["data"]
+        assert len(items) == 2
+        assert items[0]["id"] == vp_id
+        assert items[0]["loai_vi_pham"] == "EXIT_FULLSCREEN"
+        assert items[1]["loai_vi_pham"] == "SWITCH_TAB"
+        assert all(i["thoi_gian"] for i in items)
+        assert all(i["lan_thi"] == 1 for i in items)
+
+    async def test_ghi_vi_pham_loai_khong_hop_le(self, client, admin_user):
+        data, _cc = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._bat_dau(client, kt_id)
+        r = await client.post(f"{BASE}/ky-thi/{kt_id}/vi-pham", json={"loai_vi_pham": "HACK"})
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"]["code"] == "DGNL_050"
+
+    async def test_ghi_vi_pham_khi_chua_thi(self, client, admin_user):
+        data, _cc = await self._open_with_dap_an(client, admin_user)
+        r = await client.post(f"{BASE}/ky-thi/{data['ky_thi']['id']}/vi-pham", json={"loai_vi_pham": "SWITCH_TAB"})
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"]["code"] == "DGNL_051"
+
+    async def test_cap_nhat_ly_do_giai_trinh(self, client, admin_user):
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._bat_dau(client, kt_id)
+        r = await client.post(f"{BASE}/ky-thi/{kt_id}/vi-pham", json={"loai_vi_pham": "EXIT_FULLSCREEN"})
+        vp_id = r.json()["data"]["id"]
+
+        patch = await client.patch(
+            f"{BASE}/ky-thi/{kt_id}/vi-pham/{vp_id}/ly-do",
+            json={"ly_do": "Mất điện đột ngột, máy thoát fullscreen"},
+        )
+        assert patch.status_code == 200, patch.json()
+
+        ds = await client.get(f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/vi-pham")
+        assert ds.json()["data"][0]["ly_do"] == "Mất điện đột ngột, máy thoát fullscreen"
+
+    async def test_luu_nhap_khong_ha_counter(self, client, admin_user):
+        """luu-nhap gui so_lan_vi_pham thap hon -> counter server khong bi ha."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        start = await self._bat_dau(client, kt_id)
+
+        await client.post(f"{BASE}/ky-thi/{kt_id}/vi-pham", json={"loai_vi_pham": "SWITCH_TAB"})
+        await client.post(f"{BASE}/ky-thi/{kt_id}/vi-pham", json={"loai_vi_pham": "SWITCH_TAB"})
+
+        # Autosave voi counter cu (0) — khong duoc ghi de xuong
+        cau_tra_loi = [{"cau_hoi_id": c["id"], "tra_loi": {"dap_an": "A"}} for c in start["cau_hoi"]]
+        save = await client.post(f"{BASE}/ky-thi/{kt_id}/luu-nhap", json={
+            "cau_tra_loi": cau_tra_loi, "so_lan_vi_pham": 0,
+        })
+        assert save.status_code == 200
+
+        ds = await client.get(f"{BASE}/ky-thi/{kt_id}/thi-sinh")
+        ts = next(i for i in ds.json()["data"] if i["cong_chuc_id"] == cc_id)
+        assert ts["so_lan_vi_pham"] == 2
+
+    async def test_export_excel_co_sheet_vi_pham(self, client, admin_user):
+        import io as _io
+        from openpyxl import load_workbook
+
+        data, _cc = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._bat_dau(client, kt_id)
+        await client.post(f"{BASE}/ky-thi/{kt_id}/vi-pham", json={"loai_vi_pham": "EXIT_FULLSCREEN"})
+
+        resp = await client.get(f"{BASE}/ky-thi/{kt_id}/export")
+        assert resp.status_code == 200
+        wb = load_workbook(_io.BytesIO(resp.content), read_only=True)
+        assert "Vi phạm chi tiết" in wb.sheetnames
+        ws = wb["Vi phạm chi tiết"]
+        rows = list(ws.iter_rows(min_row=4, values_only=True))
+        assert len(rows) >= 1
+        # Cot 6 = loai, cot 7 = thoi gian (dd/mm/yyyy HH:MM:SS)
+        assert rows[0][5] == "Thoát toàn màn hình"
+        assert rows[0][6] and "/" in str(rows[0][6])
+
+
+# =========================================================================
 # PHAN QUYEN
 # =========================================================================
 
 class TestPhanQuyen:
     async def test_cbcc_khong_tao_ky_thi(self, client, cbcc_user):
-        now = datetime.utcnow()
+        now = now_vn()
         resp = await client.post(f"{BASE}/ky-thi", json={
             "ma_ky_thi": "KT-NOAUTH",
             "ten_ky_thi": "Test no auth",
@@ -779,7 +1197,7 @@ class TestPhanQuyenXemBaiLam:
         from shared.auth import TokenPayload
         return TokenPayload(
             sub="00000000-0000-0000-0000-000000000001",
-            exp=int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
+            exp=int((now_vn() + timedelta(hours=1)).timestamp()),
             type="access",
             ma_cc="TEST",
             vai_tro=vai_tro,
@@ -943,7 +1361,7 @@ def _override_current_user(user: _TokenPayload) -> None:
 def _make_token(vai_tro: str, is_lanh_dao: bool = False, platform_roles=None, sub=None) -> _TokenPayload:
     return _TokenPayload(
         sub=sub or "01014af6-1505-495b-95ab-8c1503cfa061",
-        exp=int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
+        exp=int((now_vn() + timedelta(hours=1)).timestamp()),
         type="access",
         ma_cc=f"TEST-{vai_tro[:5]}",
         vai_tro=vai_tro,

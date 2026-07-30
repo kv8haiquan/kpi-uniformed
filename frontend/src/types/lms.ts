@@ -474,6 +474,24 @@ export interface ICauTrucDeByViTri {
   chi_tiet: ICauTrucDeResponse[];
 }
 
+/** Mẫu cấu trúc đề — lưu lại để áp dụng nhanh cho kỳ thi sau. */
+export interface ICauTrucDeTemplate {
+  id: string;
+  ten_template: string;
+  mo_ta: string | null;
+  nguoi_tao_id: string;
+  nguoi_tao_ho_ten: string | null;
+  cau_truc: {
+    vi_tri_id: string;
+    linh_vuc_id: string;
+    so_cau_de: number;
+    so_cau_trung_binh: number;
+    so_cau_kho: number;
+  }[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 // =============================================================================
 // ĐGNL — THÍ SINH
 // =============================================================================

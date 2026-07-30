@@ -18,6 +18,7 @@ from lms_service.models.dang_ky_khoa_hoc import DangKyKhoaHoc
 from lms_service.schemas.dang_ky import GiaoBaiRequest
 from lms_service.services.thong_bao_helper import gui_thong_bao_bulk
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 
 class DangKyService:
@@ -499,7 +500,7 @@ class DangKyService:
             )
 
         dk.nguoi_phe_duyet_id = user_uuid
-        dk.ngay_phe_duyet = datetime.utcnow()
+        dk.ngay_phe_duyet = now_vn()
 
         if phe_duyet:
             dk.trang_thai = "CHUA_BAT_DAU"
@@ -563,7 +564,7 @@ class DangKyService:
         dk.trang_thai = "BI_LOAI"
         dk.ly_do_tu_choi = ly_do
         dk.nguoi_phe_duyet_id = user_uuid
-        dk.ngay_phe_duyet = datetime.utcnow()
+        dk.ngay_phe_duyet = now_vn()
         await self.db.flush()
 
         await gui_thong_bao(

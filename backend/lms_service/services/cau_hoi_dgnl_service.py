@@ -26,6 +26,7 @@ from lms_service.schemas.cau_hoi_dgnl import (
     ThongKeNganHang,
 )
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 LOAI_CAU_HOI = ["TRAC_NGHIEM_1", "TRAC_NGHIEM_NHIEU", "DUNG_SAI", "TU_LUAN"]
 DO_KHO_VALUES = ["DE", "TRUNG_BINH", "KHO"]
@@ -141,7 +142,7 @@ class CauHoiDgnlService:
             })
         for field, value in data.model_dump(exclude_unset=True).items():
             setattr(ch, field, value)
-        ch.updated_at = datetime.utcnow()
+        ch.updated_at = now_vn()
         await self.db.commit()
         await self.db.refresh(ch)
         return ch
@@ -149,7 +150,7 @@ class CauHoiDgnlService:
     async def xoa(self, id: uuid.UUID, user: TokenPayload) -> None:
         ch = await self.chi_tiet(id)
         ch.is_active = False
-        ch.updated_at = datetime.utcnow()
+        ch.updated_at = now_vn()
         await self.db.commit()
 
     async def xoa_nhieu(self, payload: "CauHoiDgnlXoaNhieu", user: TokenPayload) -> int:
@@ -199,7 +200,7 @@ class CauHoiDgnlService:
         stmt = (
             update(CauHoiDgnl)
             .where(*conds)
-            .values(is_active=False, updated_at=datetime.utcnow())
+            .values(is_active=False, updated_at=now_vn())
             .execution_options(synchronize_session=False)
         )
         result = await self.db.execute(stmt)

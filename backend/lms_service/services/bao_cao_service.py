@@ -25,6 +25,7 @@ from lms_service.schemas.chung_chi import tinh_xep_loai
 from shared.auth import TokenPayload
 
 from lms_service.services.thong_bao_helper import gui_thong_bao
+from lms_service.core.timezone import now_vn
 
 
 class BaoCaoService:
@@ -260,7 +261,7 @@ class BaoCaoService:
     async def dashboard_summary(self, user: TokenPayload) -> dict:
         """Dashboard summary cho widget frontend."""
         user_uuid = uuid.UUID(user.sub)
-        now = datetime.utcnow()
+        now = now_vn()
 
         # Khoa dang hoc
         dh_r = await self.db.execute(

@@ -9,6 +9,7 @@ API endpoints thi sinh DGNL: giao, danh sach, xoa, bat dau, nop bai, ket qua, ex
   DELETE /ky-thi/{id}/thi-sinh/{cong_chuc_id}   Xoa thi sinh
   POST   /ky-thi/{id}/bat-dau                   Bat dau thi -> random de
   POST   /ky-thi/{id}/nop-bai                   Nop bai -> cham diem
+  POST   /ky-thi/{id}/xac-nhan                  Xac nhan ca thi (chot ket qua)
   GET    /ky-thi/{id}/ket-qua                   Ket qua ca nhan
   GET    /ky-thi/{id}/ket-qua/{cong_chuc_id}    Ket qua CBCC cu the
   GET    /ky-thi/{id}/export                     Export Excel
@@ -17,7 +18,7 @@ API endpoints thi sinh DGNL: giao, danh sach, xoa, bat dau, nop bai, ket qua, ex
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.dependencies import get_db, get_current_user, require_platform_role
@@ -25,6 +26,7 @@ from lms_service.schemas.thi_sinh import (
     ThiSinhBatchCreate, ThiSinhResponse,
     NopBaiRequest, KetQuaResponse,
     LuuNhapRequest, GiamSatResponse,
+    ViPhamCreate, ViPhamLyDoUpdate,
 )
 from lms_service.services.thi_sinh_service import ThiSinhService
 from shared.auth import TokenPayload
@@ -69,6 +71,39 @@ async def danh_sach_thi_sinh(
         "success": True,
         "data": [ThiSinhResponse(**item).model_dump(mode="json") for item in result["items"]],
         "pagination": result["pagination"],
+    }
+
+
+@router.get("/{ky_thi_id}/thi-sinh/import/mau")
+async def download_mau_import_thi_sinh(
+    ky_thi_id: UUID,
+    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
+):
+    """Tai file Excel mau import thi sinh (chi 1 cot ma_cc)."""
+    xlsx_bytes = ThiSinhService.generate_template_import_thi_sinh()
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=mau_import_thi_sinh.xlsx"},
+    )
+
+
+@router.post("/{ky_thi_id}/thi-sinh/import-excel", status_code=201)
+async def import_thi_sinh_excel(
+    ky_thi_id: UUID,
+    vi_tri_id: UUID = Query(..., description="Vị trí việc làm áp dụng chung cho cả file"),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
+):
+    """Import thi sinh tu file Excel (cot ma_cc). Loi tung dong tra ve loi_chi_tiet."""
+    content = await file.read()
+    service = ThiSinhService(db)
+    result = await service.import_thi_sinh_excel(ky_thi_id, vi_tri_id, content, user)
+    return {
+        "success": True,
+        "data": result,
+        "message": f"Import hoàn tất: {result['thanh_cong']}/{result['tong']} thí sinh",
     }
 
 
@@ -123,6 +158,18 @@ async def nop_bai(
     }
 
 
+@router.post("/{ky_thi_id}/xac-nhan")
+async def xac_nhan_ca_thi(
+    ky_thi_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Xac nhan ca thi — chot ket qua, khong duoc thi lai du con luot. Idempotent."""
+    service = ThiSinhService(db)
+    result = await service.xac_nhan_ca_thi(ky_thi_id, user)
+    return {"success": True, "data": result, "message": "Xác nhận ca thi thành công"}
+
+
 @router.post("/{ky_thi_id}/luu-nhap")
 async def luu_nhap(
     ky_thi_id: UUID,
@@ -136,6 +183,47 @@ async def luu_nhap(
     result = await service.luu_nhap(
         ky_thi_id, data.cau_tra_loi, data.so_lan_vi_pham, user, phien_token=x_phien_thi
     )
+    return {"success": True, "data": result}
+
+
+@router.post("/{ky_thi_id}/vi-pham", status_code=201)
+async def ghi_vi_pham(
+    ky_thi_id: UUID,
+    data: ViPhamCreate,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+    x_phien_thi: Optional[str] = Header(None, alias="X-Phien-Thi"),
+):
+    """Ghi nhan 1 lan vi pham ngay khi xay ra (kem thoi gian). Tra ve id de nhap ly do."""
+    service = ThiSinhService(db)
+    result = await service.ghi_vi_pham(ky_thi_id, data.loai_vi_pham, user, phien_token=x_phien_thi)
+    return {"success": True, "data": result}
+
+
+@router.patch("/{ky_thi_id}/vi-pham/{vp_id}/ly-do")
+async def cap_nhat_ly_do_vi_pham(
+    ky_thi_id: UUID,
+    vp_id: UUID,
+    data: ViPhamLyDoUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+):
+    """Thi sinh nhap ly do giai trinh cho vi pham cua chinh minh (khong bat buoc)."""
+    service = ThiSinhService(db)
+    await service.cap_nhat_ly_do_vi_pham(ky_thi_id, vp_id, data.ly_do, user)
+    return {"success": True, "message": "Đã lưu lý do giải trình"}
+
+
+@router.get("/{ky_thi_id}/thi-sinh/{cong_chuc_id}/vi-pham")
+async def danh_sach_vi_pham(
+    ky_thi_id: UUID,
+    cong_chuc_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
+):
+    """Danh sach vi pham chi tiet cua 1 thi sinh (gio + loai + ly do). Chi admin."""
+    service = ThiSinhService(db)
+    result = await service.danh_sach_vi_pham(ky_thi_id, cong_chuc_id)
     return {"success": True, "data": result}
 
 

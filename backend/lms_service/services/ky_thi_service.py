@@ -28,6 +28,7 @@ from lms_service.schemas.ky_thi import (
 )
 from lms_service.services.thong_bao_helper import gui_thong_bao_bulk
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 
 class KyThiService:
@@ -193,7 +194,7 @@ class KyThiService:
         # Trang thai thi sinh cua user hien tai — FE dung de quyet dinh
         # "Bat dau" vs "Tiep tuc" vs "Thi lai".
         ts_r = await self.db.execute(
-            select(ThiSinh.trang_thai, ThiSinh.lan_thi_hien_tai).where(
+            select(ThiSinh.trang_thai, ThiSinh.lan_thi_hien_tai, ThiSinh.da_xac_nhan).where(
                 ThiSinh.ky_thi_id == kt.id,
                 ThiSinh.cong_chuc_id == uuid.UUID(user.sub),
             )
@@ -208,6 +209,7 @@ class KyThiService:
             "so_vi_tri": vt_count.scalar() or 0,
             "trang_thai_thi_sinh": ts_row.trang_thai if ts_row else None,
             "lan_thi_hien_tai": (ts_row.lan_thi_hien_tai or 0) if ts_row else 0,
+            "da_xac_nhan": bool(ts_row.da_xac_nhan) if ts_row else False,
         }
 
     async def tao_moi(self, data: KyThiCreate, user: TokenPayload) -> KyThi:
@@ -272,7 +274,7 @@ class KyThiService:
 
         for key, value in update_data.items():
             setattr(kt, key, value)
-        kt.updated_at = datetime.utcnow()
+        kt.updated_at = now_vn()
 
         await self.db.commit()
         await self.db.refresh(kt)
@@ -308,7 +310,7 @@ class KyThiService:
                     detail={"success": False, "error": {"code": "DGNL_015", "message": "Chỉ lãnh đạo mới được phê duyệt kỳ thi"}},
                 )
             kt.nguoi_duyet_id = uuid.UUID(user.sub)
-            kt.ngay_duyet = datetime.utcnow()
+            kt.ngay_duyet = now_vn()
 
         # NHAP -> CHO_DUYET: validate co cau truc de
         if kt.trang_thai == "NHAP" and trang_thai_moi == "CHO_DUYET":
@@ -322,7 +324,7 @@ class KyThiService:
                 )
 
         kt.trang_thai = trang_thai_moi
-        kt.updated_at = datetime.utcnow()
+        kt.updated_at = now_vn()
 
         await self.db.commit()
         await self.db.refresh(kt)
@@ -351,7 +353,7 @@ class KyThiService:
             )
 
         kt.is_active = False
-        kt.updated_at = datetime.utcnow()
+        kt.updated_at = now_vn()
         await self.db.commit()
 
     async def _gui_thong_bao_trang_thai(self, kt: KyThi, trang_thai_moi: str) -> None:

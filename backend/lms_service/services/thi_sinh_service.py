@@ -7,7 +7,7 @@ xem ket qua, export Excel.
 
 import random
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -20,6 +20,7 @@ from lms_service.models.ky_thi import KyThi
 from lms_service.models.cau_truc_de import CauTrucDe
 from lms_service.models.thi_sinh import ThiSinh
 from lms_service.models.phien_thi import PhienThi
+from lms_service.models.vi_pham_thi import ViPhamThi
 from lms_service.models.linh_vuc import LinhVuc
 from lms_service.models.vi_tri_viec_lam import ViTriViecLam
 from lms_service.models.cau_hoi import CauHoi
@@ -30,6 +31,10 @@ from lms_service.schemas.thi_sinh import (
 )
 from lms_service.services.thong_bao_helper import gui_thong_bao_bulk
 from shared.auth import TokenPayload
+from lms_service.core.timezone import fmt_vn, now_vn
+
+# So phut ke tu thoi_gian_nop de tu dong xac nhan ca thi (khong cho thi lai)
+XAC_NHAN_TIMEOUT_PHUT = 10
 
 
 class ThiSinhService:
@@ -75,7 +80,7 @@ class ThiSinhService:
         khac (token cu) bi tu choi o luu-nhap/nop-bai. Tra ve token moi.
         """
         token = uuid.uuid4().hex
-        now = datetime.utcnow()
+        now = now_vn()
         r = await self.db.execute(
             select(PhienThi).where(PhienThi.cong_chuc_id == cc_id)
         )
@@ -121,7 +126,7 @@ class ThiSinhService:
                                "Bài làm trên thiết bị này đã bị khóa.",
                 }},
             )
-        phien.last_seen = datetime.utcnow()
+        phien.last_seen = now_vn()
 
     # ================================================================
     # GIAO THI SINH
@@ -220,6 +225,181 @@ class ThiSinhService:
             "bo_qua": bo_qua,
             "loi": loi,
             "tong": len(items_to_add),
+        }
+
+    # ================================================================
+    # IMPORT THI SINH TU EXCEL (file mau chi co cot ma_cc)
+    # ================================================================
+
+    @staticmethod
+    def generate_template_import_thi_sinh() -> bytes:
+        """Sinh file Excel mau import thi sinh — 1 cot ma_cc + huong dan."""
+        import io
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Danh sách thí sinh"
+
+        # Huong dan
+        ws.merge_cells("A1:C1")
+        hd = ws.cell(row=1, column=1, value="HƯỚNG DẪN: Nhập mã công chức vào cột ma_cc (mỗi dòng 1 người). "
+                                            "Vị trí việc làm được chọn chung trên form khi upload. "
+                                            "Không đổi tên cột. Xóa các dòng ví dụ trước khi import.")
+        hd.font = Font(italic=True, size=10, color="808080")
+        hd.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[1].height = 45
+
+        # Header
+        cell = ws.cell(row=2, column=1, value="ma_cc")
+        cell.font = Font(bold=True, color="FFFFFF", size=11)
+        cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions["A"].width = 20
+
+        # Vi du
+        ws.cell(row=3, column=1, value="20ZZ-0224")
+        ws.cell(row=4, column=1, value="20ZZ-0225")
+
+        output = io.BytesIO()
+        wb.save(output)
+        return output.getvalue()
+
+    async def import_thi_sinh_excel(
+        self, ky_thi_id: uuid.UUID, vi_tri_id: uuid.UUID,
+        file_content: bytes, user: TokenPayload,
+    ) -> dict:
+        """Import thi sinh tu file Excel (cot ma_cc). Vi tri chon chung tren form.
+
+        Loi tung dong (ma khong ton tai / ngung hoat dong / trung) KHONG chan
+        cac dong hop le — tra ve loi_chi_tiet de FE hien bang ket qua.
+        """
+        import io
+        from openpyxl import load_workbook
+
+        kt = await self._get_ky_thi(ky_thi_id)
+        if kt.trang_thai not in ("NHAP", "CHO_DUYET", "DANG_MO"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_021", "message": "Không thể giao thí sinh khi kỳ thi đã đóng"}},
+            )
+
+        vt_r = await self.db.execute(
+            select(ViTriViecLam.id).where(ViTriViecLam.id == vi_tri_id, ViTriViecLam.is_active == True)
+        )
+        if not vt_r.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_022", "message": "Vị trí việc làm không tồn tại hoặc đã ngừng hoạt động"}},
+            )
+
+        try:
+            wb = load_workbook(io.BytesIO(file_content), read_only=True, data_only=True)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_060", "message": "File không đúng định dạng Excel (.xlsx)"}},
+            )
+        ws = wb.active
+
+        # Tim cot ma_cc trong 2 dong dau (file mau co dong huong dan o dong 1)
+        header_row = None
+        ma_cc_idx = None
+        for row_idx in (1, 2):
+            values = [str(c.value or "").strip().lower() for c in (ws[row_idx] if ws.max_row >= row_idx else [])]
+            if "ma_cc" in values:
+                header_row = row_idx
+                ma_cc_idx = values.index("ma_cc")
+                break
+        if ma_cc_idx is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_061", "message": "File thiếu cột 'ma_cc' — hãy dùng file mẫu"}},
+            )
+
+        # Doc danh sach (dong, ma_cc)
+        ma_cc_rows: list[tuple[int, str]] = []
+        for row_idx, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
+            ma = str(row[ma_cc_idx] or "").strip() if len(row) > ma_cc_idx else ""
+            if not ma:
+                continue
+            ma_cc_rows.append((row_idx, ma))
+
+        if not ma_cc_rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_062", "message": "File không có dữ liệu mã công chức"}},
+            )
+
+        # Resolve ma_cc -> cong_chuc (READONLY public.cong_chuc), match khong phan biet hoa/thuong
+        cc_table = CongChucRef.__table__
+        ma_upper_list = list({ma.upper() for _, ma in ma_cc_rows})
+        r = await self.db.execute(
+            select(cc_table.c.id, cc_table.c.ma_cc, cc_table.c.is_active).where(
+                func.upper(cc_table.c.ma_cc).in_(ma_upper_list)
+            )
+        )
+        cc_map = {row.ma_cc.upper(): (row.id, row.is_active) for row in r.all()}
+
+        # Danh sach da duoc giao san
+        existing_r = await self.db.execute(
+            select(ThiSinh.cong_chuc_id).where(ThiSinh.ky_thi_id == ky_thi_id)
+        )
+        existing_cc_ids = set(existing_r.scalars().all())
+
+        thanh_cong = 0
+        loi_chi_tiet: list[dict] = []
+        da_gap_trong_file: set[str] = set()
+        new_cc_ids: list[uuid.UUID] = []
+
+        for row_idx, ma in ma_cc_rows:
+            key = ma.upper()
+            if key in da_gap_trong_file:
+                loi_chi_tiet.append({"dong": row_idx, "ma_cc": ma, "loi": "Trùng lặp trong file"})
+                continue
+            da_gap_trong_file.add(key)
+
+            if key not in cc_map:
+                loi_chi_tiet.append({"dong": row_idx, "ma_cc": ma, "loi": "Mã công chức không tồn tại"})
+                continue
+            cc_id, is_active = cc_map[key]
+            if not is_active:
+                loi_chi_tiet.append({"dong": row_idx, "ma_cc": ma, "loi": "Công chức đã ngừng hoạt động"})
+                continue
+            if cc_id in existing_cc_ids:
+                loi_chi_tiet.append({"dong": row_idx, "ma_cc": ma, "loi": "Đã được giao thi kỳ thi này"})
+                continue
+
+            self.db.add(ThiSinh(
+                ky_thi_id=ky_thi_id,
+                cong_chuc_id=cc_id,
+                vi_tri_id=vi_tri_id,
+                trang_thai="CHUA_THI",
+            ))
+            existing_cc_ids.add(cc_id)
+            new_cc_ids.append(cc_id)
+            thanh_cong += 1
+
+        await self.db.commit()
+
+        # Thong bao cho cac thi sinh vua duoc giao
+        if new_cc_ids:
+            await gui_thong_bao_bulk(
+                nguoi_nhan_ids=new_cc_ids,
+                tieu_de=f"Bạn được giao thi: {kt.ten_ky_thi}",
+                noi_dung=f"Kỳ thi \"{kt.ten_ky_thi}\" ({kt.ma_ky_thi}). Vui lòng vào mục Đào tạo → Kỳ thi ĐGNL để xem chi tiết.",
+                muc_do="QUAN_TRONG",
+                link_url="/dao-tao/ky-thi",
+                doi_tuong_type="KY_THI",
+                doi_tuong_id=ky_thi_id,
+            )
+
+        return {
+            "tong": len(ma_cc_rows),
+            "thanh_cong": thanh_cong,
+            "that_bai": len(loi_chi_tiet),
+            "loi_chi_tiet": loi_chi_tiet,
         }
 
     async def danh_sach_thi_sinh(
@@ -322,7 +502,7 @@ class ThiSinhService:
             )
             phien_map = {p.cong_chuc_id: p for p in ph_r.scalars().all()}
 
-        now = datetime.utcnow()
+        now = now_vn()
         thi_sinh = []
         dang_thi = chua_thi = da_nop = vang = online_count = co_vi_pham = 0
 
@@ -433,7 +613,7 @@ class ThiSinhService:
             )
 
         # Validate thoi gian
-        now = datetime.utcnow()
+        now = now_vn()
         if now < kt.ngay_bat_dau:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -479,6 +659,23 @@ class ThiSinhService:
             }
 
         if ts.trang_thai == "DA_NOP":
+            # Da xac nhan ca thi -> chot ket qua, khong duoc thi lai du con luot
+            if ts.da_xac_nhan:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"success": False, "error": {"code": "DGNL_048", "message": "Bạn đã xác nhận ca thi, không thể thi lại"}},
+                )
+            # Qua 10 phut ke tu khi nop ma khong xac nhan -> tu dong xac nhan
+            # (lazy: enforce tai thoi diem xin thi lai, khong can background job)
+            if ts.thoi_gian_nop and now > ts.thoi_gian_nop + timedelta(minutes=XAC_NHAN_TIMEOUT_PHUT):
+                ts.da_xac_nhan = True
+                ts.thoi_gian_xac_nhan = ts.thoi_gian_nop + timedelta(minutes=XAC_NHAN_TIMEOUT_PHUT)
+                ts.updated_at = now
+                await self.db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"success": False, "error": {"code": "DGNL_049", "message": f"Đã quá {XAC_NHAN_TIMEOUT_PHUT} phút kể từ khi nộp bài, ca thi đã tự động được xác nhận — không thể thi lại"}},
+                )
             # Check con luot thi lai khong
             if ts.lan_thi_hien_tai >= (kt.so_lan_thi_toi_da or 1):
                 raise HTTPException(
@@ -508,7 +705,7 @@ class ThiSinhService:
         ts.so_lan_vi_pham = 0
         ts.trang_thai = "DANG_THI"
         ts.lan_thi_hien_tai = (ts.lan_thi_hien_tai or 0) + 1
-        ts.thoi_gian_bat_dau = datetime.utcnow()
+        ts.thoi_gian_bat_dau = now_vn()
         ts.thoi_gian_nop = None
         ts.thoi_gian_lam_giay = None
         ts.tong_so_cau = len(de_thi_ids)
@@ -517,7 +714,7 @@ class ThiSinhService:
         ts.so_cau_dung = None
         ts.so_cau_sai = None
         ts.diem_theo_linh_vuc = {}
-        ts.updated_at = datetime.utcnow()
+        ts.updated_at = now_vn()
 
         # Sinh phien moi cho thiet bi nay (chong dung chung tai khoan)
         token = await self._upsert_phien(cc_id, ky_thi_id, ts.id, thiet_bi)
@@ -559,6 +756,10 @@ class ThiSinhService:
         de_thi: list[uuid.UUID] = []
 
         for ct in cau_trucs:
+            # Cau hoi cua TUNG linh vuc gom thanh 1 block lien tuc — de FE danh
+            # so cau 1..N tuan tu theo nhom linh vuc (fix 30/07/2026: shuffle
+            # toan cuc lam so cau trong sidebar nhay lung tung).
+            block: list[uuid.UUID] = []
             for do_kho, so_cau in [
                 ("DE", ct.so_cau_de or 0),
                 ("TRUNG_BINH", ct.so_cau_trung_binh or 0),
@@ -596,11 +797,12 @@ class ThiSinhService:
                             },
                         },
                     )
-                de_thi.extend(ids)
+                block.extend(ids)
 
-        # Xao tron toan bo
-        if kt.tron_cau_hoi:
-            random.shuffle(de_thi)
+            # Tron cau hoi TRONG pham vi linh vuc (khong tron xuyen linh vuc)
+            if kt.tron_cau_hoi:
+                random.shuffle(block)
+            de_thi.extend(block)
 
         return de_thi
 
@@ -652,7 +854,7 @@ class ThiSinhService:
         """Tinh so giay con lai."""
         if not ts.thoi_gian_bat_dau:
             return kt.thoi_gian_lam_bai_phut * 60
-        now = datetime.utcnow()
+        now = now_vn()
         bd = ts.thoi_gian_bat_dau
         elapsed = (now - bd).total_seconds()
         remaining = (kt.thoi_gian_lam_bai_phut * 60) - elapsed
@@ -749,15 +951,15 @@ class ThiSinhService:
                 diem_theo_lv[ma] = {"dung": stats["dung"], "tong": stats["tong"], "phan_tram": phan_tram}
 
         # Thoi gian lam bai
-        now = datetime.utcnow()
+        now = now_vn()
         thoi_gian_lam = 0
         if ts.thoi_gian_bat_dau:
             bd = ts.thoi_gian_bat_dau
             thoi_gian_lam = int((now - bd).total_seconds())
 
-        # Cap nhat 27/05/2026: luon ghi diem lan hien tai (latest-score). De biet
-        # diem cao nhat -> tra cuu trong lich_su_thi. Ly do: tranh nham lan giua
-        # DANG_THI va "diem cu" lan truoc.
+        # Ghi ket qua lan vua thi truoc, snapshot vao lich su, roi ap dung
+        # "diem chinh thuc = diem CAO NHAT giua cac lan" (quyet dinh 30/07/2026,
+        # thay latest-score cu).
         ts.diem_tong = diem_tong
         ts.xep_loai = xep_loai
         ts.so_cau_dung = tong_dung
@@ -778,10 +980,72 @@ class ThiSinhService:
         # rong va trang thong-ke khong drill-down duoc lan duy nhat.
         self._upsert_lan_thi(ts, self._snapshot_lan_thi(ts))
 
+        # Cot chinh = ket qua lan tot nhat (lich_su_thi da bao gom lan vua nop).
+        # thoi_gian_bat_dau/nop/lam_giay + chi_tiet_tra_loi van la lan cuoi
+        # (dung cho han xac nhan + drill-down tung lan qua lich_su_thi).
+        self._ap_dung_diem_cao_nhat(ts)
+
         await self.db.commit()
         await self.db.refresh(ts)
 
         return await self._build_ket_qua(ts, kt)
+
+    @staticmethod
+    def _ap_dung_diem_cao_nhat(ts: ThiSinh) -> None:
+        """Ghi cot ket qua chinh cua thi_sinh = ket qua lan thi co diem cao nhat.
+
+        Neu nhieu lan bang diem -> lay lan som nhat dat diem do.
+        """
+        entries = [e for e in (ts.lich_su_thi or []) if e and e.get("lan") is not None]
+        if not entries:
+            return
+        best = max(entries, key=lambda e: ((e.get("diem") or 0), -(e.get("lan") or 0)))
+        ts.diem_tong = Decimal(str(best.get("diem") or 0))
+        ts.xep_loai = best.get("xep_loai")
+        ts.so_cau_dung = best.get("so_cau_dung")
+        ts.so_cau_sai = best.get("so_cau_sai")
+        ts.tong_so_cau = best.get("tong_so_cau")
+        ts.diem_theo_linh_vuc = dict(best.get("diem_theo_linh_vuc") or {})
+
+    # ================================================================
+    # XAC NHAN CA THI
+    # ================================================================
+
+    async def xac_nhan_ca_thi(self, ky_thi_id: uuid.UUID, user: TokenPayload) -> dict:
+        """Thi sinh xac nhan ca thi — chot ket qua, khong duoc thi lai du con luot.
+
+        Idempotent: da xac nhan roi thi tra lai trang thai hien tai.
+        """
+        cc_id = uuid.UUID(user.sub)
+        stmt = select(ThiSinh).where(
+            ThiSinh.ky_thi_id == ky_thi_id,
+            ThiSinh.cong_chuc_id == cc_id,
+        )
+        result = await self.db.execute(stmt)
+        ts = result.scalar_one_or_none()
+
+        if not ts:
+            raise HTTPException(
+                status_code=404,
+                detail={"success": False, "error": {"code": "DGNL_028", "message": "Bạn không có trong kỳ thi này"}},
+            )
+        if ts.trang_thai != "DA_NOP":
+            raise HTTPException(
+                status_code=400,
+                detail={"success": False, "error": {"code": "DGNL_047", "message": "Chưa nộp bài, không thể xác nhận ca thi"}},
+            )
+
+        if not ts.da_xac_nhan:
+            ts.da_xac_nhan = True
+            ts.thoi_gian_xac_nhan = now_vn()
+            ts.updated_at = now_vn()
+            await self.db.commit()
+            await self.db.refresh(ts)
+
+        return {
+            "da_xac_nhan": True,
+            "thoi_gian_xac_nhan": ts.thoi_gian_xac_nhan.isoformat() if ts.thoi_gian_xac_nhan else None,
+        }
 
     # ================================================================
     # LUU NHAP — AUTO-SAVE 30s/lan
@@ -828,10 +1092,122 @@ class ThiSinhService:
             for tl in cau_tra_loi
         ]
         ts.chi_tiet_nhap = nhap_data
-        ts.so_lan_vi_pham = so_lan_vi_pham
-        ts.updated_at = datetime.utcnow()
+        # Fallback: counter chinh do server tang khi ghi_vi_pham (30/07/2026).
+        # Chi nang len theo gia tri FE gui (phong client offline luc POST vi-pham
+        # that bai), KHONG bao gio ha xuong.
+        ts.so_lan_vi_pham = max(ts.so_lan_vi_pham or 0, so_lan_vi_pham or 0)
+        ts.updated_at = now_vn()
         await self.db.commit()
         return {"saved": True, "so_cau_da_luu": len(nhap_data)}
+
+    # ================================================================
+    # VI PHAM — LOG CHI TIET (gio + ly do giai trinh)
+    # ================================================================
+
+    VI_PHAM_LOAI_HOP_LE = {"EXIT_FULLSCREEN", "SWITCH_TAB"}
+
+    async def ghi_vi_pham(
+        self, ky_thi_id: uuid.UUID, loai_vi_pham: str, user: TokenPayload,
+        phien_token: Optional[str] = None,
+    ) -> dict:
+        """Ghi nhan 1 lan vi pham NGAY khi xay ra (khong doi auto-save 30s).
+
+        Server tu tang counter so_lan_vi_pham -> counter va log luon khop nhau.
+        """
+        if loai_vi_pham not in self.VI_PHAM_LOAI_HOP_LE:
+            raise HTTPException(
+                status_code=400,
+                detail={"success": False, "error": {"code": "DGNL_050", "message": "Loại vi phạm không hợp lệ"}},
+            )
+
+        cc_id = uuid.UUID(user.sub)
+        stmt = select(ThiSinh).where(
+            ThiSinh.ky_thi_id == ky_thi_id,
+            ThiSinh.cong_chuc_id == cc_id,
+        )
+        result = await self.db.execute(stmt)
+        ts = result.scalar_one_or_none()
+        if not ts:
+            raise HTTPException(
+                status_code=404,
+                detail={"success": False, "error": {"code": "DGNL_028", "message": "Bạn không có trong kỳ thi này"}},
+            )
+        if ts.trang_thai != "DANG_THI":
+            raise HTTPException(
+                status_code=400,
+                detail={"success": False, "error": {"code": "DGNL_051", "message": "Không ở trạng thái đang thi"}},
+            )
+
+        # Chi thiet bi dang so huu phien moi duoc ghi (thiet bi cu bi kick -> 409)
+        await self._validate_phien(cc_id, phien_token)
+
+        vp = ViPhamThi(
+            thi_sinh_id=ts.id,
+            ky_thi_id=ky_thi_id,
+            lan_thi=ts.lan_thi_hien_tai or 0,
+            loai_vi_pham=loai_vi_pham,
+            thoi_gian=now_vn(),
+        )
+        self.db.add(vp)
+        ts.so_lan_vi_pham = (ts.so_lan_vi_pham or 0) + 1
+        ts.updated_at = now_vn()
+        await self.db.commit()
+        await self.db.refresh(vp)
+
+        return {
+            "id": str(vp.id),
+            "thoi_gian": vp.thoi_gian.isoformat() if vp.thoi_gian else None,
+            "so_lan_vi_pham": ts.so_lan_vi_pham,
+        }
+
+    async def cap_nhat_ly_do_vi_pham(
+        self, ky_thi_id: uuid.UUID, vp_id: uuid.UUID, ly_do: str, user: TokenPayload
+    ) -> None:
+        """Thi sinh nhap ly do giai trinh cho 1 lan vi pham cua chinh minh."""
+        cc_id = uuid.UUID(user.sub)
+        stmt = (
+            select(ViPhamThi)
+            .join(ThiSinh, ViPhamThi.thi_sinh_id == ThiSinh.id)
+            .where(
+                ViPhamThi.id == vp_id,
+                ViPhamThi.ky_thi_id == ky_thi_id,
+                ThiSinh.cong_chuc_id == cc_id,
+            )
+        )
+        result = await self.db.execute(stmt)
+        vp = result.scalar_one_or_none()
+        if not vp:
+            raise HTTPException(
+                status_code=404,
+                detail={"success": False, "error": {"code": "DGNL_052", "message": "Không tìm thấy vi phạm"}},
+            )
+        vp.ly_do = (ly_do or "").strip() or None
+        await self.db.commit()
+
+    async def danh_sach_vi_pham(
+        self, ky_thi_id: uuid.UUID, cong_chuc_id: uuid.UUID
+    ) -> list[dict]:
+        """Danh sach vi pham chi tiet cua 1 thi sinh (admin/TCCB xem)."""
+        stmt = (
+            select(ViPhamThi)
+            .join(ThiSinh, ViPhamThi.thi_sinh_id == ThiSinh.id)
+            .where(
+                ViPhamThi.ky_thi_id == ky_thi_id,
+                ThiSinh.cong_chuc_id == cong_chuc_id,
+            )
+            .order_by(ViPhamThi.thoi_gian.asc())
+        )
+        result = await self.db.execute(stmt)
+        return [
+            {
+                "id": str(vp.id),
+                "lan_thi": vp.lan_thi,
+                "loai_vi_pham": vp.loai_vi_pham,
+                "thoi_gian": vp.thoi_gian.isoformat() if vp.thoi_gian else None,
+                "ly_do": vp.ly_do,
+            }
+            for vp in result.scalars().all()
+        ]
 
     @staticmethod
     def _project_lich_su_summary(lich_su: Optional[list]) -> Optional[list[dict]]:
@@ -991,8 +1367,9 @@ class ThiSinhService:
     ) -> KetQuaResponse:
         """Xem ket qua 1 lan thi cu the (QT/LD).
 
-        - lan == lan_thi_hien_tai -> tra ve state hien tai (giong ket_qua_cbcc).
-        - lan < lan_thi_hien_tai -> tim entry trong lich_su_thi.
+        Uu tien doc tu lich_su_thi (tu 30/07/2026 cot chinh mang ket qua lan
+        TOT NHAT, khong con dai dien cho lan hien tai). Fallback ve state hien
+        tai cho data cu chua co snapshot lan hien tai trong lich_su_thi.
         - Entry cu khong co chi_tiet_tra_loi (data truoc 30/05/2026) -> tra ve
           response nhung chi_tiet=None, FE hien "Chi tiet khong kha dung".
         """
@@ -1004,28 +1381,40 @@ class ThiSinhService:
         if not ts:
             raise HTTPException(status_code=404, detail={"success": False, "error": {"code": "DGNL_023", "message": "Thí sinh không tồn tại trong kỳ thi này"}})
 
-        # Lan hien tai -> dung _build_ket_qua nhu cu
-        if lan == (ts.lan_thi_hien_tai or 0):
-            return await self._build_ket_qua(ts, kt)
-
-        # Tim trong lich su
+        # Tim trong lich su (nop_bai luon snapshot ca lan hien tai)
         entry = next(
             (e for e in (ts.lich_su_thi or []) if (e or {}).get("lan") == lan),
             None,
         )
-        if not entry:
-            raise HTTPException(
-                status_code=404,
-                detail={"success": False, "error": {"code": "DGNL_035", "message": f"Không tìm thấy lần thi {lan}"}},
-            )
+        if entry:
+            return await self._build_ket_qua_lan(ts, kt, entry)
 
-        return await self._build_ket_qua_lan(ts, kt, entry)
+        # Backward compat: data cu chua snapshot lan hien tai vao lich_su_thi
+        if lan == (ts.lan_thi_hien_tai or 0):
+            return await self._build_ket_qua(ts, kt)
+
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": {"code": "DGNL_035", "message": f"Không tìm thấy lần thi {lan}"}},
+        )
 
     async def _build_ket_qua(self, ts: ThiSinh, kt: KyThi) -> KetQuaResponse:
         """Build response ket qua tu state hien tai cua thi sinh (lan moi nhat)."""
         cc_info = await self._lay_thi_sinh_info(ts)
         diem_lv_list = await self._build_diem_lv_list(ts.diem_theo_linh_vuc)
         chi_tiet = await self._enrich_chi_tiet(ts.chi_tiet_tra_loi) if kt.hien_dap_an else None
+
+        # Lan dat diem cao nhat (cot chinh dang mang ket qua lan nay)
+        entries = [e for e in (ts.lich_su_thi or []) if e and e.get("lan") is not None]
+        lan_tot_nhat = None
+        if entries:
+            best = max(entries, key=lambda e: ((e.get("diem") or 0), -(e.get("lan") or 0)))
+            lan_tot_nhat = best.get("lan")
+
+        # Han tu dong xac nhan ca thi (chi khi vua nop, chua xac nhan)
+        han_xac_nhan = None
+        if ts.trang_thai == "DA_NOP" and not ts.da_xac_nhan and ts.thoi_gian_nop:
+            han_xac_nhan = (ts.thoi_gian_nop + timedelta(minutes=XAC_NHAN_TIMEOUT_PHUT)).isoformat()
 
         return KetQuaResponse(
             ky_thi={"id": str(kt.id), "ten_ky_thi": kt.ten_ky_thi, "diem_dat": float(kt.diem_dat) if kt.diem_dat else 50},
@@ -1038,6 +1427,11 @@ class ThiSinhService:
                 "tong_so_cau": ts.tong_so_cau or 0,
                 "thoi_gian_lam_giay": ts.thoi_gian_lam_giay or 0,
                 "lan_thi": ts.lan_thi_hien_tai or 0,
+                "lan_tot_nhat": lan_tot_nhat,
+                "so_lan_thi_toi_da": kt.so_lan_thi_toi_da or 1,
+                "da_xac_nhan": bool(ts.da_xac_nhan),
+                "thoi_gian_nop": ts.thoi_gian_nop.isoformat() if ts.thoi_gian_nop else None,
+                "han_xac_nhan": han_xac_nhan,
             },
             diem_theo_linh_vuc=diem_lv_list,
             chi_tiet=chi_tiet,
@@ -1460,9 +1854,8 @@ class ThiSinhService:
                 tg_nop_str = ""
                 if e.get("thoi_gian_nop"):
                     try:
-                        tg_nop_str = datetime.fromisoformat(
-                            str(e["thoi_gian_nop"]).replace("Z", "")
-                        ).strftime("%d/%m/%Y %H:%M")
+                        # fmt_vn: chuoi cu khong offset coi la UTC, chuoi moi co +07:00
+                        tg_nop_str = fmt_vn(e["thoi_gian_nop"])
                     except (ValueError, TypeError):
                         tg_nop_str = str(e["thoi_gian_nop"])
 
@@ -1501,6 +1894,66 @@ class ThiSinhService:
             ws_ls.freeze_panes = "A5"
 
         auto_width(ws_ls, ls_n_cols, from_row=4)
+
+        # ============================================================
+        # SHEET 4: VI PHAM CHI TIET (gio VN + ly do giai trinh)
+        # ============================================================
+        ws_vp = wb.create_sheet("Vi phạm chi tiết")
+        vp_headers = ["STT", "Mã CC", "Họ tên", "Đơn vị", "Lần thi", "Loại vi phạm", "Thời gian", "Lý do giải trình"]
+        vp_n_cols = len(vp_headers)
+
+        ws_vp.merge_cells(start_row=1, start_column=1, end_row=1, end_column=vp_n_cols)
+        tieu_de_vp = ws_vp.cell(row=1, column=1, value=f"VI PHẠM CHI TIẾT — {kt.ten_ky_thi}")
+        tieu_de_vp.font = Font(bold=True, size=13)
+        tieu_de_vp.alignment = center
+
+        for col_idx, h in enumerate(vp_headers, 1):
+            cell = ws_vp.cell(row=3, column=col_idx, value=h)
+            cell.font = header_font_white
+            cell.fill = header_fill
+            cell.alignment = center
+            cell.border = thin_border
+
+        vp_stmt = (
+            select(
+                ViPhamThi,
+                cc.c.ho_ten, cc.c.ma_cc,
+                dv.c.ten_don_vi.label("don_vi_ten"),
+            )
+            .join(ThiSinh, ViPhamThi.thi_sinh_id == ThiSinh.id)
+            .outerjoin(cc, ThiSinh.cong_chuc_id == cc.c.id)
+            .outerjoin(dv, cc.c.don_vi_id == dv.c.id)
+            .where(ViPhamThi.ky_thi_id == ky_thi_id)
+            .order_by(cc.c.ho_ten.asc(), ViPhamThi.thoi_gian.asc())
+        )
+        vp_result = await self.db.execute(vp_stmt)
+        vp_rows = vp_result.all()
+
+        LOAI_VP_LABEL = {"EXIT_FULLSCREEN": "Thoát toàn màn hình", "SWITCH_TAB": "Chuyển tab/cửa sổ"}
+        vp_row_idx = 4
+        for idx, (vp, ho_ten, ma_cc, don_vi_ten) in enumerate(vp_rows, 1):
+            row_data = [
+                idx, ma_cc, ho_ten, don_vi_ten,
+                vp.lan_thi,
+                LOAI_VP_LABEL.get(vp.loai_vi_pham, vp.loai_vi_pham),
+                fmt_vn(vp.thoi_gian, "%d/%m/%Y %H:%M:%S"),
+                vp.ly_do or "",
+            ]
+            for col_idx, val in enumerate(row_data, 1):
+                cell = ws_vp.cell(row=vp_row_idx, column=col_idx, value=val)
+                cell.border = thin_border
+                if col_idx != 8:  # ly do canh trai
+                    cell.alignment = center
+            vp_row_idx += 1
+
+        if not vp_rows:
+            ws_vp.merge_cells(start_row=4, start_column=1, end_row=4, end_column=vp_n_cols)
+            ws_vp.cell(row=4, column=1, value="Không có vi phạm nào được ghi nhận.").alignment = center
+            ws_vp.cell(row=4, column=1).font = Font(italic=True, color="888888")
+        else:
+            ws_vp.auto_filter.ref = f"A3:{get_column_letter(vp_n_cols)}{vp_row_idx - 1}"
+            ws_vp.freeze_panes = "A4"
+        auto_width(ws_vp, vp_n_cols, from_row=3)
 
         output = io.BytesIO()
         wb.save(output)

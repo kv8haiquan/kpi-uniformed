@@ -46,8 +46,8 @@ class PhienThi(Base):
     )
     thiet_bi: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     last_seen: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
     created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )

@@ -11,6 +11,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { kyThiApi } from '@/services/lms';
 import { useAuthStore } from '@/stores/useAuthStore';
+import ViPhamDetailModal from '@/components/lms/ViPhamDetailModal';
 import type { IKyThi, IDgnlThongKe, IThiSinh, ILichSuThiSummary } from '@/types/lms';
 
 /** Chỉ admin (QT_DAO_TAO/SUPER_ADMIN) được quản lý/xem module ĐGNL. */
@@ -65,6 +66,8 @@ export default function ThongKeKyThiPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Filter "xem theo lan": 'all' = lan moi nhat, hoac so lan cu the (1,2,3...)
   const [viewLan, setViewLan] = useState<number | 'all'>('all');
+  // Thí sinh đang xem chi tiết vi phạm (modal)
+  const [viPhamTarget, setViPhamTarget] = useState<{ ccId: string; hoTen?: string } | null>(null);
 
   // So lan thi toi da trong ky -> dung de render options dropdown
   const maxLan = useMemo(() => {
@@ -331,6 +334,7 @@ export default function ThongKeKyThiPage() {
                     isOpen={isOpen}
                     onToggle={() => toggleExpand(ts.id)}
                     viewLan={viewLan}
+                    onShowViPham={() => setViPhamTarget({ ccId: ts.cong_chuc_id, hoTen: ts.ho_ten || undefined })}
                   />
                 );
               })}
@@ -338,12 +342,21 @@ export default function ThongKeKyThiPage() {
           </table>
         </div>
       </div>
+
+      {viPhamTarget && (
+        <ViPhamDetailModal
+          kyThiId={kyThiId}
+          congChucId={viPhamTarget.ccId}
+          hoTen={viPhamTarget.hoTen}
+          onClose={() => setViPhamTarget(null)}
+        />
+      )}
     </div>
   );
 }
 
 function FragmentRow({
-  ts, idx, kyThiId, lichSu, soLan, coTheExpand, isOpen, onToggle, viewLan,
+  ts, idx, kyThiId, lichSu, soLan, coTheExpand, isOpen, onToggle, viewLan, onShowViPham,
 }: {
   ts: IThiSinh;
   idx: number;
@@ -354,6 +367,7 @@ function FragmentRow({
   isOpen: boolean;
   onToggle: () => void;
   viewLan: number | 'all';
+  onShowViPham: () => void;
 }) {
   // Ket qua hien thi theo lan da chon (hoac lan moi nhat)
   const kq = resolveKetQuaLan(ts, viewLan);
@@ -411,10 +425,14 @@ function FragmentRow({
         </td>
         <td className="py-2 px-3 text-center">
           {(ts.so_lan_vi_pham ?? 0) > 0 ? (
-            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-bold"
-              title="Số lần thoát toàn màn hình / chuyển tab khi thi">
+            <button
+              type="button"
+              onClick={onShowViPham}
+              className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-bold hover:bg-red-200 hover:underline cursor-pointer"
+              title="Bấm để xem chi tiết: giờ vi phạm + lý do giải trình"
+            >
               {ts.so_lan_vi_pham}
-            </span>
+            </button>
           ) : (
             <span className="text-gray-300 text-xs">0</span>
           )}

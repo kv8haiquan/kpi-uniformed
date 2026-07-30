@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.models.vi_tri_viec_lam import ViTriViecLam
 from lms_service.schemas.vi_tri_viec_lam import ViTriViecLamCreate, ViTriViecLamUpdate
+from lms_service.core.timezone import now_vn
 
 
 class ViTriViecLamService:
@@ -105,7 +106,7 @@ class ViTriViecLamService:
 
         for key, value in update_data.items():
             setattr(vt, key, value)
-        vt.updated_at = datetime.utcnow()
+        vt.updated_at = now_vn()
 
         await self.db.commit()
         await self.db.refresh(vt)
@@ -115,5 +116,5 @@ class ViTriViecLamService:
         """Soft delete vi tri viec lam."""
         vt = await self.chi_tiet(vi_tri_id)
         vt.is_active = False
-        vt.updated_at = datetime.utcnow()
+        vt.updated_at = now_vn()
         await self.db.commit()

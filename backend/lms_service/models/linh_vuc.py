@@ -32,8 +32,8 @@ class LinhVuc(Base):
     thu_tu: Mapped[Optional[int]] = mapped_column(Integer, server_default="0")
     is_active: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("true"))
     created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )

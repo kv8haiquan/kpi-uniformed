@@ -9,9 +9,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { kyThiApi, linhVucApi, viTriApi, nganHangDgnlApi, cbccApi } from '@/services/lms';
+import { kyThiApi, linhVucApi, viTriApi, nganHangDgnlApi, cbccApi, cauTrucDeTemplateApi } from '@/services/lms';
 import { useAuthStore } from '@/stores/useAuthStore';
-import type { IKyThi, ILinhVuc, IViTriViecLam, ICauTrucDeByViTri, IDgnlValidateResponse, ICauHoiDgnl, IThongKeNganHang } from '@/types/lms';
+import type { IKyThi, ILinhVuc, IViTriViecLam, ICauTrucDeByViTri, IDgnlValidateResponse, ICauHoiDgnl, IThongKeNganHang, ICauTrucDeTemplate } from '@/types/lms';
 import DonViCongChucPicker from '@/components/lms/DonViCongChucPicker';
 
 const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
@@ -485,6 +485,78 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
   const [items, setItems] = useState<{ linh_vuc_id: string; so_cau_de: number; so_cau_trung_binh: number; so_cau_kho: number }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Mẫu cấu trúc đề: danh sách mẫu + thao tác lưu/áp dụng
+  const [templates, setTemplates] = useState<ICauTrucDeTemplate[]>([]);
+  const [selectedTpl, setSelectedTpl] = useState('');
+  const [tenMau, setTenMau] = useState('');
+  const [tplBusy, setTplBusy] = useState(false);
+  const [tplMsg, setTplMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    cauTrucDeTemplateApi.danhSach()
+      .then(res => setTemplates(res.data.data || []))
+      .catch(() => { /* khong co quyen / loi mang — an phan mau */ });
+  }, []);
+
+  // Luu toan bo cau truc hien tai (moi vi tri x linh vuc) thanh mau
+  const handleLuuThanhMau = async () => {
+    if (!tenMau.trim() || data.length === 0) return;
+    setTplBusy(true); setTplMsg(null); setError(null);
+    try {
+      const cauTruc = data.flatMap(vt => vt.chi_tiet.map(ct => ({
+        vi_tri_id: vt.vi_tri_id,
+        linh_vuc_id: ct.linh_vuc_id,
+        so_cau_de: ct.so_cau_de,
+        so_cau_trung_binh: ct.so_cau_trung_binh,
+        so_cau_kho: ct.so_cau_kho,
+      })));
+      await cauTrucDeTemplateApi.taoMoi({
+        ten_template: tenMau.trim(),
+        mo_ta: `Lưu từ kỳ thi ${kyThi.ma_ky_thi}`,
+        cau_truc: cauTruc,
+      });
+      setTenMau('');
+      setTplMsg('✅ Đã lưu cấu trúc hiện tại thành mẫu');
+      const res = await cauTrucDeTemplateApi.danhSach();
+      setTemplates(res.data.data || []);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi lưu mẫu');
+    } finally { setTplBusy(false); }
+  };
+
+  // Ap dung mau: upsert cau truc theo tung vi tri (endpoint san co)
+  const handleApDungMau = async () => {
+    const tpl = templates.find(t => t.id === selectedTpl);
+    if (!tpl) return;
+    if (!confirm(`Áp dụng mẫu "${tpl.ten_template}"? Cấu trúc của các vị trí trong mẫu sẽ được GHI ĐÈ.`)) return;
+    setTplBusy(true); setTplMsg(null); setError(null);
+    try {
+      // Nhom cau_truc theo vi_tri_id (endpoint upsert nhan 1 vi tri / lan goi)
+      const byViTri = new Map<string, typeof tpl.cau_truc>();
+      for (const row of tpl.cau_truc) {
+        if (!byViTri.has(row.vi_tri_id)) byViTri.set(row.vi_tri_id, []);
+        byViTri.get(row.vi_tri_id)!.push(row);
+      }
+      let lastData: ICauTrucDeByViTri[] | null = null;
+      for (const [viTriId, rows] of byViTri) {
+        const res = await kyThiApi.upsertCauTrucDe(kyThi.id, {
+          vi_tri_id: viTriId,
+          cau_truc: rows.map(r => ({
+            linh_vuc_id: r.linh_vuc_id,
+            so_cau_de: r.so_cau_de,
+            so_cau_trung_binh: r.so_cau_trung_binh,
+            so_cau_kho: r.so_cau_kho,
+          })),
+        });
+        lastData = res.data.data || null;
+      }
+      if (lastData) setData(lastData);
+      setTplMsg(`✅ Đã áp dụng mẫu "${tpl.ten_template}" (${byViTri.size} vị trí)`);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message
+        || 'Lỗi áp dụng mẫu (vị trí/lĩnh vực trong mẫu có thể đã bị xóa)');
+    } finally { setTplBusy(false); }
+  };
 
   const handleAddLinhVuc = () => {
     setItems([...items, { linh_vuc_id: '', so_cau_de: 0, so_cau_trung_binh: 0, so_cau_kho: 0 }]);
@@ -535,6 +607,64 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
         </div>
 
         {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
+        {tplMsg && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{tplMsg}</div>}
+
+        {/* Mau cau truc de: ap dung mau co san / luu cau truc hien tai thanh mau */}
+        <div className="mb-4 p-3 bg-indigo-50/60 border border-indigo-100 rounded-lg">
+          <div className="text-xs font-semibold text-gray-600 mb-2">📋 Mẫu cấu trúc đề</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={selectedTpl}
+              onChange={e => setSelectedTpl(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-sm min-w-[220px]"
+            >
+              <option value="">-- Chọn mẫu có sẵn --</option>
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>
+                  {t.ten_template} ({t.cau_truc.length} dòng)
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleApDungMau}
+              disabled={!selectedTpl || tplBusy}
+              className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {tplBusy ? 'Đang xử lý...' : 'Áp dụng mẫu'}
+            </button>
+            {selectedTpl && (
+              <button
+                onClick={async () => {
+                  const tpl = templates.find(t => t.id === selectedTpl);
+                  if (!tpl || !confirm(`Xóa mẫu "${tpl.ten_template}"?`)) return;
+                  try {
+                    await cauTrucDeTemplateApi.xoa(selectedTpl);
+                    setTemplates(templates.filter(t => t.id !== selectedTpl));
+                    setSelectedTpl('');
+                  } catch { setError('Lỗi xóa mẫu'); }
+                }}
+                className="px-2 py-1.5 text-xs text-red-600 hover:underline"
+              >
+                Xóa mẫu
+              </button>
+            )}
+            <span className="mx-1 text-gray-300">|</span>
+            <input
+              value={tenMau}
+              onChange={e => setTenMau(e.target.value)}
+              placeholder="Tên mẫu mới..."
+              className="border rounded-lg px-2 py-1.5 text-sm w-44"
+            />
+            <button
+              onClick={handleLuuThanhMau}
+              disabled={!tenMau.trim() || data.length === 0 || tplBusy}
+              className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              title={data.length === 0 ? 'Kỳ thi chưa có cấu trúc đề để lưu' : 'Lưu cấu trúc hiện tại thành mẫu'}
+            >
+              💾 Lưu thành mẫu
+            </button>
+          </div>
+        </div>
 
         {/* Cau truc hien tai */}
         {data.length > 0 && (
@@ -908,7 +1038,10 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
   viTriList: IViTriViecLam[];
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<'don-vi' | 'ca-nhan'>('don-vi');
+  const [mode, setMode] = useState<'don-vi' | 'ca-nhan' | 'import-excel'>('don-vi');
+  // Mode "Import Excel": file + ket qua import (loi tung dong)
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<any>(null);
   const [donViList, setDonViList] = useState<{ id: string; ten_don_vi: string }[]>([]);
   // Mode "Theo đơn vị": cong_chuc_ids cuối cùng (đã trừ người bỏ chọn) do picker tính.
   const [donViCongChucIds, setDonViCongChucIds] = useState<string[]>([]);
@@ -966,9 +1099,39 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
     setDanhSach(danhSach.filter(d => d.cong_chuc_id !== ccId));
   };
 
-  const handleSubmit = async () => {
-    setSaving(true); setError(null); setResult(null);
+  // Tai file Excel mau import thi sinh
+  const handleDownloadMauImport = async () => {
     try {
+      const res = await kyThiApi.downloadMauImportThiSinh(kyThi.id);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mau_import_thi_sinh.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError('Lỗi tải file mẫu');
+    }
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true); setError(null); setResult(null); setImportResult(null);
+    try {
+      // Mode Import Excel: upload file, vi tri chon chung tren form
+      if (mode === 'import-excel') {
+        if (!selectedViTri) { setError('Vui lòng chọn vị trí thi'); setSaving(false); return; }
+        if (!importFile) { setError('Vui lòng chọn file Excel (.xlsx)'); setSaving(false); return; }
+        const res = await kyThiApi.importThiSinhExcel(kyThi.id, selectedViTri, importFile);
+        setImportResult(res.data.data);
+        setImportFile(null);
+        try {
+          const tsAll = await kyThiApi.danhSachThiSinhTatCa(kyThi.id);
+          setExistingTS(tsAll);
+        } catch { /* reload fail khong anh huong */ }
+        setSaving(false);
+        return;
+      }
+
       let body: any;
       if (mode === 'don-vi') {
         if (!selectedViTri || donViCongChucIds.length === 0) {
@@ -1081,6 +1244,10 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
             className={`px-4 py-2 text-sm rounded-lg ${mode === 'ca-nhan' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
             Giao từng người
           </button>
+          <button onClick={() => setMode('import-excel')}
+            className={`px-4 py-2 text-sm rounded-lg ${mode === 'import-excel' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            📥 Import Excel
+          </button>
         </div>
 
         {/* Vi tri chung */}
@@ -1152,11 +1319,69 @@ function GiaoThiSinhModal({ kyThi, viTriList, onClose }: {
           </div>
         )}
 
+        {/* Mode: import Excel (file chi co cot ma_cc, vi tri chon chung o tren) */}
+        {mode === 'import-excel' && (
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-gray-600">
+                File Excel danh sách mã công chức (cột <code className="bg-gray-100 px-1 rounded">ma_cc</code>)
+              </label>
+              <button type="button" onClick={handleDownloadMauImport}
+                className="text-xs text-blue-600 hover:underline">
+                ⬇️ Tải file mẫu
+              </button>
+            </div>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={e => { setImportFile(e.target.files?.[0] || null); setImportResult(null); }}
+              className="w-full border rounded-lg px-3 py-2 text-sm file:mr-3 file:px-3 file:py-1 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Tất cả mã CC trong file sẽ được giao vào vị trí thi chọn ở trên. Muốn giao nhiều
+              vị trí khác nhau, hãy import nhiều lần (mỗi lần 1 vị trí).
+            </p>
+
+            {importResult && (
+              <div className="mt-3">
+                <div className={`p-2 rounded text-sm border ${importResult.that_bai > 0
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-green-50 border-green-200 text-green-700'}`}>
+                  Import xong: thành công <strong>{importResult.thanh_cong}</strong>/{importResult.tong}
+                  {importResult.that_bai > 0 && <> — lỗi <strong>{importResult.that_bai}</strong> dòng</>}
+                </div>
+                {(importResult.loi_chi_tiet || []).length > 0 && (
+                  <div className="mt-2 max-h-40 overflow-y-auto border rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr className="text-gray-500">
+                          <th className="py-1 px-2 text-left">Dòng</th>
+                          <th className="py-1 px-2 text-left">Mã CC</th>
+                          <th className="py-1 px-2 text-left">Lỗi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {importResult.loi_chi_tiet.map((e: any, i: number) => (
+                          <tr key={i} className="border-t">
+                            <td className="py-1 px-2 text-gray-400">{e.dong}</td>
+                            <td className="py-1 px-2 font-mono">{e.ma_cc}</td>
+                            <td className="py-1 px-2 text-red-600">{e.loi}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex gap-2 pt-2 border-t">
           <button onClick={handleSubmit} disabled={saving}
             className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 text-sm">
-            {saving ? 'Đang giao...' : 'Giao thí sinh'}
+            {saving ? 'Đang xử lý...' : mode === 'import-excel' ? 'Import thí sinh' : 'Giao thí sinh'}
           </button>
           <button onClick={onClose} className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
             Đóng

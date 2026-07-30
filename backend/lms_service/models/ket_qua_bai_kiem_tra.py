@@ -70,7 +70,7 @@ class KetQuaBaiKiemTra(Base):
     bai_nop_ten_file: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     bai_nop_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     bai_nop_content_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    ngay_nop: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ngay_nop: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Cham tay
     nguoi_cham_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -83,11 +83,11 @@ class KetQuaBaiKiemTra(Base):
         nullable=True,
         comment="CHO_CHAM | DA_CHAM (NULL khi BKT trac nghiem)",
     )
-    ngay_cham: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ngay_cham: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Timestamps
     ngay_lam: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships noi bo

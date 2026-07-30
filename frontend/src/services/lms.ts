@@ -412,6 +412,17 @@ export const kyThiApi = {
     return all;
   },
   xoaThiSinh: (id: string, ccId: string) => lmsApi.delete(`/ky-thi/${id}/thi-sinh/${ccId}`),
+  /** Tải file Excel mẫu import thí sinh (chỉ 1 cột ma_cc). */
+  downloadMauImportThiSinh: (id: string) =>
+    lmsApi.get(`/ky-thi/${id}/thi-sinh/import/mau`, { responseType: 'blob' }),
+  /** Import thí sinh từ Excel — vị trí việc làm áp dụng chung cho cả file. */
+  importThiSinhExcel: (id: string, viTriId: string, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return lmsApi.post(`/ky-thi/${id}/thi-sinh/import-excel?vi_tri_id=${viTriId}`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   // Lam thi
   batDau: (id: string) => lmsApi.post(`/ky-thi/${id}/bat-dau`),
   /** Nộp bài. Gửi kèm token phiên (X-Phien-Thi) để chống dùng chung tài khoản. */
@@ -421,6 +432,18 @@ export const kyThiApi = {
   luuNhap: (id: string, data: { cau_tra_loi: any[]; so_lan_vi_pham: number }, phienToken?: string) =>
     lmsApi.post(`/ky-thi/${id}/luu-nhap`, data,
       phienToken ? { headers: { 'X-Phien-Thi': phienToken } } : undefined),
+  /** Xác nhận ca thi — chốt kết quả, không được thi lại dù còn lượt. */
+  xacNhanCaThi: (id: string) => lmsApi.post(`/ky-thi/${id}/xac-nhan`),
+  /** Ghi nhận 1 lần vi phạm ngay khi xảy ra (kèm giờ). Trả về id để nhập lý do. */
+  ghiViPham: (id: string, data: { loai_vi_pham: string }, phienToken?: string) =>
+    lmsApi.post(`/ky-thi/${id}/vi-pham`, data,
+      phienToken ? { headers: { 'X-Phien-Thi': phienToken } } : undefined),
+  /** Thí sinh nhập lý do giải trình cho 1 lần vi phạm (không bắt buộc). */
+  capNhatLyDoViPham: (id: string, vpId: string, lyDo: string) =>
+    lmsApi.patch(`/ky-thi/${id}/vi-pham/${vpId}/ly-do`, { ly_do: lyDo }),
+  /** Danh sách vi phạm chi tiết của 1 thí sinh (giờ + loại + lý do). Chỉ admin. */
+  danhSachViPham: (id: string, ccId: string) =>
+    lmsApi.get(`/ky-thi/${id}/thi-sinh/${ccId}/vi-pham`),
   ketQua: (id: string) => lmsApi.get(`/ky-thi/${id}/ket-qua`),
   ketQuaCBCC: (id: string, ccId: string) => lmsApi.get(`/ky-thi/${id}/ket-qua/${ccId}`),
   /** Chi tiết bài làm 1 lần thi cụ thể (lan = 1, 2, 3...). Chỉ admin. */
@@ -429,6 +452,18 @@ export const kyThiApi = {
   exportExcel: (id: string) => lmsApi.get(`/ky-thi/${id}/export`, { responseType: 'blob' }),
   /** Giám sát trực tiếp kỳ thi (tiến độ/vi phạm/online từng thí sinh). Chỉ admin. */
   giamSat: (id: string) => lmsApi.get(`/ky-thi/${id}/giam-sat`),
+};
+
+// =============================================================================
+// ĐGNL — MẪU CẤU TRÚC ĐỀ
+// =============================================================================
+
+export const cauTrucDeTemplateApi = {
+  danhSach: (params?: any) => lmsApi.get('/cau-truc-de-template', { params }),
+  chiTiet: (id: string) => lmsApi.get(`/cau-truc-de-template/${id}`),
+  taoMoi: (data: { ten_template: string; mo_ta?: string; cau_truc: any[] }) =>
+    lmsApi.post('/cau-truc-de-template', data),
+  xoa: (id: string) => lmsApi.delete(`/cau-truc-de-template/${id}`),
 };
 
 // =============================================================================

@@ -64,6 +64,8 @@ class ThiSinhResponse(BaseModel):
     thoi_gian_bat_dau: Optional[datetime] = None
     thoi_gian_nop: Optional[datetime] = None
     thoi_gian_lam_giay: Optional[int] = None
+    da_xac_nhan: Optional[bool] = False
+    thoi_gian_xac_nhan: Optional[datetime] = None
     created_at: Optional[datetime] = None
     # JOIN fields
     ho_ten: Optional[str] = None
@@ -93,6 +95,16 @@ class LuuNhapRequest(BaseModel):
     """Body luu nhap (auto-save moi 30s)."""
     cau_tra_loi: list[CauTraLoi] = []
     so_lan_vi_pham: int = 0
+
+
+class ViPhamCreate(BaseModel):
+    """Body ghi nhan 1 lan vi pham (FE goi ngay khi phat hien)."""
+    loai_vi_pham: str  # EXIT_FULLSCREEN | SWITCH_TAB
+
+
+class ViPhamLyDoUpdate(BaseModel):
+    """Body cap nhat ly do giai trinh vi pham."""
+    ly_do: str = Field(..., max_length=1000)
 
 
 # ============================================================

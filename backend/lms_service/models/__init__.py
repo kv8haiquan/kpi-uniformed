@@ -24,6 +24,8 @@ from lms_service.models.cau_truc_de import CauTrucDe
 from lms_service.models.thi_sinh import ThiSinh
 from lms_service.models.cau_hoi_dgnl import CauHoiDgnl
 from lms_service.models.phien_thi import PhienThi
+from lms_service.models.vi_pham_thi import ViPhamThi
+from lms_service.models.cau_truc_de_template import CauTrucDeTemplate
 
 __all__ = [
     "Base",
@@ -46,4 +48,6 @@ __all__ = [
     "ThiSinh",
     "CauHoiDgnl",
     "PhienThi",
+    "ViPhamThi",
+    "CauTrucDeTemplate",
 ]

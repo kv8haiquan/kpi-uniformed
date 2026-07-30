@@ -49,7 +49,7 @@ class CauTrucDe(Base):
     so_cau_kho: Mapped[Optional[int]] = mapped_column(Integer, server_default="0")
 
     created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships

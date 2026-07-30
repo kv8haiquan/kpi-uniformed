@@ -12,6 +12,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { kyThiApi } from '@/services/lms';
 import { useAuthStore } from '@/stores/useAuthStore';
+import ViPhamDetailModal from '@/components/lms/ViPhamDetailModal';
 import type { IKyThi, IGiamSatResponse, IGiamSatThiSinh } from '@/types/lms';
 
 const POLL_MS = 7000;
@@ -49,6 +50,8 @@ export default function GiamSatKyThiPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('ALL');
   const [lastUpdate, setLastUpdate] = useState<string>('');
+  // Thí sinh đang xem chi tiết vi phạm (modal)
+  const [viPhamTarget, setViPhamTarget] = useState<{ ccId: string; hoTen?: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -205,7 +208,14 @@ export default function GiamSatKyThiPage() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       {t.so_lan_vi_pham > 0 ? (
-                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-bold">{t.so_lan_vi_pham}</span>
+                        <button
+                          type="button"
+                          onClick={() => setViPhamTarget({ ccId: t.cong_chuc_id, hoTen: t.ho_ten || undefined })}
+                          className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-bold hover:bg-red-200 hover:underline cursor-pointer"
+                          title="Bấm để xem chi tiết: giờ vi phạm + lý do giải trình"
+                        >
+                          {t.so_lan_vi_pham}
+                        </button>
                       ) : <span className="text-gray-300">0</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -235,6 +245,15 @@ export default function GiamSatKyThiPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {viPhamTarget && (
+        <ViPhamDetailModal
+          kyThiId={kyThiId}
+          congChucId={viPhamTarget.ccId}
+          hoTen={viPhamTarget.hoTen}
+          onClose={() => setViPhamTarget(null)}
+        />
       )}
     </div>
   );

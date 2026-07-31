@@ -19,7 +19,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 COMMON_INTERNAL_URL = os.getenv("COMMON_INTERNAL_URL", "http://localhost:8005/internal/v1")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "kv08-internal-secret-key")
+from app.config import settings as _settings
+
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY") or _settings.internal_api_key
 
 
 async def gui_thong_bao(

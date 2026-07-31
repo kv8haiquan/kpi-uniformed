@@ -38,8 +38,9 @@ app = FastAPI(
     description="Module Portal — CMS tin tức nội bộ & Tài liệu — Chi cục Hải quan KV8",
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    openapi_url="/openapi.json" if settings.debug else None,
 )
 
 # ---------------------------------------------------------------------------

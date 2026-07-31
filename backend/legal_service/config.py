@@ -20,13 +20,16 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Debug — đọc DEBUG từ backend/.env (production=false → ẩn /docs, /openapi.json)
+    debug: bool = False
+
     # Database — cung database voi KPI, dung schema rieng (legal.*)
     # Doc tu .env chung tai backend/.env (cung cwd voi KPI)
     db_host: str = "localhost"
     db_port: int = 5432
     db_name: str = "kpi_haiquan"
     db_user: str = "kpi_user"
-    db_password: str = "KpiHaiQuan2026!"
+    db_password: str = ""  # BẮT BUỘC đặt qua .env (DB_PASSWORD) — không hardcode
 
     @property
     def database_url(self) -> str:
@@ -55,7 +58,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # Internal API key — dung de cac service goi nhau
-    internal_api_key: str = "internal-secret-key-legal-2024"
+    internal_api_key: str = ""  # BẮT BUỘC đặt qua .env (INTERNAL_API_KEY)
 
     # Upload file — luu tren local filesystem (tuong tu LMS)
     upload_dir: str = "uploads/legal"

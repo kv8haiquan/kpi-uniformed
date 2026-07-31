@@ -12,6 +12,10 @@ from collections import defaultdict
 
 import asyncpg
 import httpx
+from dotenv import load_dotenv
+
+# Load backend/.env de lay DB_PASSWORD + INTERNAL_API_KEY (khong hardcode secret)
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -21,10 +25,10 @@ DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "kpi_haiquan")
 DB_USER = os.getenv("DB_USER", "kpi_user")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "KpiHaiQuan2026!")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
 COMMON_INTERNAL_URL = os.getenv("COMMON_INTERNAL_URL", "http://localhost:8005/internal/v1")
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "kv08-internal-secret-key")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
 QUERY = """
 SELECT

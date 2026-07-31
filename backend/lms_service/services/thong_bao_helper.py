@@ -16,7 +16,7 @@ from lms_service.config import settings
 logger = logging.getLogger(__name__)
 
 COMMON_INTERNAL_URL = getattr(settings, 'common_internal_url', 'http://localhost:8005/internal/v1')
-INTERNAL_API_KEY = getattr(settings, 'internal_api_key', 'kv08-internal-secret-key')
+INTERNAL_API_KEY = getattr(settings, 'internal_api_key', '')
 
 
 async def gui_thong_bao_bulk(

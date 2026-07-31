@@ -21,12 +21,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    # Debug — đọc DEBUG từ backend/.env (production=false → ẩn /docs, /openapi.json)
+    debug: bool = False
+
     # Database — cung database voi KPI, schema rieng (chi_tieu.*)
     db_host: str = "localhost"
     db_port: int = 5432
     db_name: str = "kpi_haiquan"
     db_user: str = "kpi_user"
-    db_password: str = "KpiHaiQuan2026!"
+    db_password: str = ""  # BẮT BUỘC đặt qua .env (DB_PASSWORD) — không hardcode
 
     @property
     def database_url(self) -> str:
@@ -53,7 +56,7 @@ class Settings(BaseSettings):
 
     # Common service internal API (gui thong bao)
     common_internal_url: str = "http://localhost:8005/internal/v1"
-    internal_api_key: str = "kv08-internal-secret-key"
+    internal_api_key: str = ""  # BẮT BUỘC đặt qua .env (INTERNAL_API_KEY)
 
     # Moc thoi gian mac dinh (co the override qua platform_config)
     han_dang_ky_ngay: int = 5    # han dang ky trong thang

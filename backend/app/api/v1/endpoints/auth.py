@@ -12,7 +12,7 @@ Endpoints:
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,14 @@ from app.api.deps import (
 from pydantic import BaseModel, Field
 
 from app.core.security import verify_password, hash_password, create_access_token
+from app.core.login_protection import (
+    LOGIN_RATE_LIMIT,
+    get_client_ip,
+    limiter,
+    record_failed_login,
+    reset_failed_login,
+    seconds_until_unlock,
+)
 from app.core.hdld_vb714 import HDLD_VB714_FROM_NAM, HDLD_VB714_FROM_THANG
 from app.models.user_org import CongChuc
 from app.schemas.token import Token
@@ -92,7 +100,9 @@ router = APIRouter()
         }
     }
 )
+@limiter.limit(LOGIN_RATE_LIMIT)
 async def login_access_token(
+    request: Request,
     db: DatabaseDep,
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> Token:
@@ -114,7 +124,26 @@ async def login_access_token(
     # Chuẩn hóa username về lowercase để hỗ trợ đăng nhập không phân biệt hoa/thường
     # VD: "20zz-0224", "20Zz-0224", "20ZZ-0224" đều hợp lệ
     input_username = form_data.username.strip().lower()
-    
+    client_ip = get_client_ip(request)
+
+    # Chống brute-force (31/07/2026): tài khoản đang bị khóa tạm do sai nhiều lần
+    khoa_con_lai = seconds_until_unlock(input_username)
+    if khoa_con_lai > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "success": False,
+                "error": {
+                    "code": "AUTH_006",
+                    "message": (
+                        "Tài khoản tạm khóa do nhập sai mật khẩu quá nhiều lần. "
+                        f"Vui lòng thử lại sau {max(khoa_con_lai // 60, 1)} phút."
+                    ),
+                },
+            },
+            headers={"Retry-After": str(khoa_con_lai)},
+        )
+
     # Tìm user theo username hoặc ma_cc (case-insensitive)
     stmt = (
         select(CongChuc)
@@ -135,6 +164,7 @@ async def login_access_token(
     
     # Kiểm tra user tồn tại
     if user is None:
+        record_failed_login(input_username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
@@ -162,6 +192,7 @@ async def login_access_token(
         )
     
     if not verify_password(form_data.password, user.password_hash):
+        record_failed_login(input_username, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
@@ -187,6 +218,9 @@ async def login_access_token(
             },
         )
     
+    # Đăng nhập thành công — reset bộ đếm sai mật khẩu
+    reset_failed_login(input_username)
+
     # Chuẩn bị claims bổ sung cho token
     additional_claims = {}
     

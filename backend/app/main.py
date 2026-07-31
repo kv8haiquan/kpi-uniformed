@@ -18,8 +18,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from slowapi.errors import RateLimitExceeded
+
 from app.config import settings
 from app.api.v1.api import api_router
+from app.core.login_protection import limiter as login_limiter
+
+
+def _login_rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Trả 429 theo format response chuẩn khi vượt rate limit đăng nhập."""
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={
+            "success": False,
+            "error": {
+                "code": "AUTH_005",
+                "message": "Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.",
+            },
+        },
+    )
 
 
 # =============================================================================
@@ -95,11 +112,18 @@ def create_application() -> FastAPI:
 - Quy chế KPI Chi cục HQKV8
         """,
         version="0.4.0-alpha",
-        openapi_url=f"{settings.api_v1_prefix}/openapi.json",
+        # Ẩn toàn bộ docs + openapi schema trong production (đợt vá bảo mật 31/07/2026)
+        openapi_url=f"{settings.api_v1_prefix}/openapi.json" if settings.debug else None,
         docs_url="/docs" if settings.debug else None,  # Ẩn docs trong production
         redoc_url="/redoc" if settings.debug else None,
         lifespan=lifespan,
     )
+
+    # -------------------------------------------------------------------------
+    # RATE LIMIT (đợt vá bảo mật 31/07/2026) — chống brute-force login
+    # -------------------------------------------------------------------------
+    application.state.limiter = login_limiter
+    application.add_exception_handler(RateLimitExceeded, _login_rate_limit_handler)
     
     # -------------------------------------------------------------------------
     # CORS MIDDLEWARE

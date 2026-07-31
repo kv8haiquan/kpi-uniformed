@@ -32,7 +32,7 @@ def verify_internal_key(x_internal_key: str = Header(...)):
     Xac thuc internal API key tu Header X-Internal-Key.
     Chi cac module trusted moi biet key nay.
     """
-    if x_internal_key != settings.internal_api_key:
+    if not settings.internal_api_key or x_internal_key != settings.internal_api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

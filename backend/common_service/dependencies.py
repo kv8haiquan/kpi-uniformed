@@ -111,7 +111,8 @@ def require_platform_role(*allowed_roles: str):
 # Internal API authentication
 # ---------------------------------------------------------------------------
 
-INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "kv08-internal-secret-key")
+# Đọc qua settings (pydantic load .env) — os.environ không có sẵn key khi chạy PM2
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY") or settings.internal_api_key
 
 
 async def verify_internal_key(
@@ -120,9 +121,9 @@ async def verify_internal_key(
     """Xac thuc Internal API key — chi module noi bo goi.
 
     Cac module khac (LMS, Forum, Legal, Portal) gui header:
-        X-Internal-Key: kv08-internal-secret-key
+        X-Internal-Key: <INTERNAL_API_KEY trong .env>
     """
-    if x_internal_key != INTERNAL_API_KEY:
+    if not INTERNAL_API_KEY or x_internal_key != INTERNAL_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={

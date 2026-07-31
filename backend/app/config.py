@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     db_port: int = 5432
     db_name: str = "haiquan_kv8"
     db_user: str = "postgres"
-    db_password: str = "postgres123"
+    db_password: str = ""  # BẮT BUỘC đặt qua .env (DB_PASSWORD)
     
     @property
     def database_url(self) -> str:
@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # SECURITY
     # -------------------------------------------------------------------------
     secret_key: str = "CHANGE_THIS_IN_PRODUCTION_MUST_BE_AT_LEAST_32_CHARS"
+
+    # Internal API key — gọi API nội bộ common_service (BẮT BUỘC đặt qua .env)
+    internal_api_key: str = ""
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480  # 8 tiếng làm việc
     

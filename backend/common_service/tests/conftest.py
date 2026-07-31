@@ -46,7 +46,7 @@ _REAL_CC_IDS = [
 _LANH_DAO_DON_VI_ID = "a0000000-0000-0000-0000-000000000001"
 
 # Internal API key (mac dinh tu dependencies.py)
-INTERNAL_KEY = os.getenv("INTERNAL_API_KEY", "kv08-internal-secret-key")
+INTERNAL_KEY = os.getenv("INTERNAL_API_KEY") or settings.internal_api_key
 
 
 def _now():

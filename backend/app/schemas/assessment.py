@@ -944,16 +944,16 @@ TIEU_CHI_NHOM = {
 }
 
 TIEU_CHI_TEN = {
-    "1.1": "Phẩm chất chính trị, đạo đức",
-    "1.2": "Văn hóa công vụ, trách nhiệm kỷ luật",
-    "2.1": "Kiến thức chuyên môn, nghiệp vụ",
-    "2.2": "Kỹ năng nghiệp vụ",
-    "2.3": "Sử dụng công nghệ thông tin",
-    "2.4": "Sử dụng ngoại ngữ",
-    "3.1": "Có sáng kiến, cải tiến trong công tác",
-    "3.2": "Sẵn sàng tham gia nhiệm vụ chính trị đột xuất",
-    "3.3": "Tích cực nghiên cứu, học tập nâng cao trình độ",
-    "3.4": "Đóng góp ý kiến cải tiến quy trình, quy định",
+    "1.1": "Phẩm chất chính trị, phẩm chất đạo đức, văn hóa thực thi công vụ",
+    "1.2": "Ý thức kỷ luật, kỷ cương trong thực thi công vụ",
+    "2.1": "Năng lực chuyên môn, nghiệp vụ theo yêu cầu của vị trí việc làm",
+    "2.2": "Khả năng đáp ứng yêu cầu thực thi nhiệm vụ được giao",
+    "2.3": "Tinh thần trách nhiệm trong thực thi công vụ",
+    "2.4": "Thái độ phục vụ Nhân dân, doanh nghiệp và khả năng phối hợp",
+    "3.1": "Có sản phẩm, giải pháp đột phá, sáng tạo đem lại giá trị thiết thực",
+    "3.2": "Sẵn sàng tham gia nhiệm vụ chính trị đặc biệt quan trọng",
+    "3.3": "Có tinh thần chịu trách nhiệm trước kết quả công việc",
+    "3.4": "Chủ động đưa ra quyết định trong phạm vi thẩm quyền",
 }
 
 

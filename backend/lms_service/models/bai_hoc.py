@@ -64,7 +64,7 @@ class BaiHoc(Base):
 
     # Timestamps
     created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships noi bo

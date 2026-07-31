@@ -2,7 +2,7 @@
  * src/app/(main)/dao-tao/ky-thi/[id]/thi-sinh/[ccId]/bai-lam/page.tsx
  * ====================================================================
  * Trang admin xem bai lam chi tiet cua 1 thi sinh trong ky thi DGNL.
- * Yeu cau quyen: SUPER_ADMIN / QT_DAO_TAO / CCT / PCCT.
+ * Yeu cau quyen: SUPER_ADMIN / QT_DAO_TAO (chi admin quan ly module DGNL).
  */
 
 'use client';
@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { kyThiApi } from '@/services/lms';
+import { useAuthStore } from '@/stores/useAuthStore';
 import type { IDgnlKetQua } from '@/types/lms';
 import DgnlKetQuaDetail from '@/components/lms/DgnlKetQuaDetail';
 
@@ -20,6 +21,9 @@ export default function BaiLamThiSinhPage() {
   const searchParams = useSearchParams();
   const kyThiId = params.id as string;
   const ccId = params.ccId as string;
+  const { user } = useAuthStore();
+  const platformRoles: string[] = (user as any)?.platform_roles ?? [];
+  const isQT = user?.is_system_admin === true || platformRoles.includes('QT_DAO_TAO');
   // Optional ?lan=N -> drill-down 1 lan thi cu the. Khong co thi mac dinh lan hien tai.
   const lanParam = searchParams.get('lan');
   const lan = lanParam ? Number(lanParam) : null;
@@ -60,6 +64,16 @@ export default function BaiLamThiSinhPage() {
   }, [kyThiId, ccId, lan]);
 
   const backHref = `/dao-tao/ky-thi/${kyThiId}/thong-ke`;
+
+  if (!isQT) {
+    return (
+      <div className="max-w-3xl mx-auto p-8 text-center">
+        <div className="text-4xl mb-3">🔒</div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Không có quyền truy cập</h2>
+        <p className="text-gray-600">Chỉ Quản trị đào tạo (QT_DAO_TAO) được xem bài làm thí sinh.</p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

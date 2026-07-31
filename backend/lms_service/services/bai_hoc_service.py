@@ -19,6 +19,7 @@ from lms_service.models.tien_do_bai_hoc import TienDoBaiHoc
 from lms_service.models.dang_ky_khoa_hoc import DangKyKhoaHoc
 from lms_service.schemas.bai_hoc import BaiHocCreate, BaiHocUpdate, SapXepItem, TienDoUpdate
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 
 class BaiHocService:
@@ -282,7 +283,7 @@ class BaiHocService:
                 detail={"success": False, "error": {"code": "LMS_ERR_011", "message": f"Không thể truy cập bài học. Đăng ký {status_labels.get(dk.trang_thai, dk.trang_thai)}."}},
             )
 
-        now = datetime.utcnow()
+        now = now_vn()
 
         # Side effect: lan dau xem bai → chuyen dang_ky sang DANG_HOC
         if dk.trang_thai == "CHUA_BAT_DAU":
@@ -404,7 +405,7 @@ class BaiHocService:
         tat_ca_bkt_dat = (tong_bkt == 0 or bkt_dat >= tong_bkt)
         if tat_ca_bai_xong and tat_ca_bkt_dat:
             dk.trang_thai = "HOAN_THANH"
-            dk.ngay_hoan_thanh = datetime.utcnow()
+            dk.ngay_hoan_thanh = now_vn()
             await self.db.flush()
             # Tu dong cap chung chi
             from lms_service.services.chung_chi_service import ChungChiService

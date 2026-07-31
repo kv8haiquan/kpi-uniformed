@@ -11,6 +11,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from lms_service.core.timezone import localize_vn
+
 TRANG_THAI_KY_THI = ["NHAP", "CHO_DUYET", "DANG_MO", "DA_DONG"]
 
 # Chuyen trang thai hop le: trang_thai_cu -> [trang_thai_moi_hop_le]
@@ -40,6 +42,13 @@ class KyThiCreate(BaseModel):
     tron_dap_an: bool = True
     hien_ket_qua: bool = True
     hien_dap_an: bool = False
+    yeu_cau_toan_man_hinh: bool = True
+
+    @field_validator("ngay_bat_dau", "ngay_ket_thuc")
+    @classmethod
+    def gan_mui_gio_vn(cls, v: datetime) -> datetime:
+        # FE gui datetime-local khong co offset -> hieu la gio VN
+        return localize_vn(v)
 
     @field_validator("ngay_ket_thuc")
     @classmethod
@@ -63,6 +72,13 @@ class KyThiUpdate(BaseModel):
     tron_dap_an: Optional[bool] = None
     hien_ket_qua: Optional[bool] = None
     hien_dap_an: Optional[bool] = None
+    yeu_cau_toan_man_hinh: Optional[bool] = None
+
+    @field_validator("ngay_bat_dau", "ngay_ket_thuc")
+    @classmethod
+    def gan_mui_gio_vn(cls, v: Optional[datetime]) -> Optional[datetime]:
+        # FE gui datetime-local khong co offset -> hieu la gio VN
+        return localize_vn(v) if v is not None else None
 
 
 class KyThiTrangThaiUpdate(BaseModel):
@@ -94,6 +110,7 @@ class KyThiResponse(BaseModel):
     tron_dap_an: Optional[bool] = True
     hien_ket_qua: Optional[bool] = True
     hien_dap_an: Optional[bool] = False
+    yeu_cau_toan_man_hinh: Optional[bool] = True
     trang_thai: Optional[str] = "NHAP"
     nguoi_tao_id: UUID
     nguoi_duyet_id: Optional[UUID] = None

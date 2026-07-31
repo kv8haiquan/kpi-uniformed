@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.models.linh_vuc import LinhVuc
 from lms_service.schemas.linh_vuc import LinhVucCreate, LinhVucUpdate
+from lms_service.core.timezone import now_vn
 
 
 class LinhVucService:
@@ -102,7 +103,7 @@ class LinhVucService:
 
         for key, value in update_data.items():
             setattr(lv, key, value)
-        lv.updated_at = datetime.utcnow()
+        lv.updated_at = now_vn()
 
         await self.db.commit()
         await self.db.refresh(lv)
@@ -112,5 +113,5 @@ class LinhVucService:
         """Soft delete linh vuc."""
         lv = await self.chi_tiet(linh_vuc_id)
         lv.is_active = False
-        lv.updated_at = datetime.utcnow()
+        lv.updated_at = now_vn()
         await self.db.commit()

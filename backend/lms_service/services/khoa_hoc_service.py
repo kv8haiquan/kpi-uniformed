@@ -21,6 +21,7 @@ from lms_service.models.bai_hoc import BaiHoc
 from lms_service.models.dang_ky_khoa_hoc import DangKyKhoaHoc
 from lms_service.schemas.khoa_hoc import KhoaHocCreate, KhoaHocUpdate
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 
 # Cac transition hop le trong workflow trang thai
@@ -507,7 +508,7 @@ class KhoaHocService:
                     },
                 )
             kh.nguoi_duyet_id = uuid.UUID(user.sub)
-            kh.ngay_duyet = datetime.utcnow()
+            kh.ngay_duyet = now_vn()
 
         # === CHO_DUYET → NHAP (tu choi) ===
         elif current == "CHO_DUYET" and trang_thai_moi == "NHAP":

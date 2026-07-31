@@ -413,6 +413,7 @@ export interface IKyThi {
   tron_dap_an: boolean;
   hien_ket_qua: boolean;
   hien_dap_an: boolean;
+  yeu_cau_toan_man_hinh?: boolean;
   trang_thai: string; // NHAP | CHO_DUYET | DANG_MO | DA_DONG
   nguoi_tao_id: string;
   nguoi_duyet_id: string | null;
@@ -440,6 +441,7 @@ export interface IKyThiCreate {
   tron_dap_an?: boolean;
   hien_ket_qua?: boolean;
   hien_dap_an?: boolean;
+  yeu_cau_toan_man_hinh?: boolean;
 }
 
 // =============================================================================
@@ -472,6 +474,24 @@ export interface ICauTrucDeByViTri {
   chi_tiet: ICauTrucDeResponse[];
 }
 
+/** Mẫu cấu trúc đề — lưu lại để áp dụng nhanh cho kỳ thi sau. */
+export interface ICauTrucDeTemplate {
+  id: string;
+  ten_template: string;
+  mo_ta: string | null;
+  nguoi_tao_id: string;
+  nguoi_tao_ho_ten: string | null;
+  cau_truc: {
+    vi_tri_id: string;
+    linh_vuc_id: string;
+    so_cau_de: number;
+    so_cau_trung_binh: number;
+    so_cau_kho: number;
+  }[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 // =============================================================================
 // ĐGNL — THÍ SINH
 // =============================================================================
@@ -501,6 +521,7 @@ export interface IThiSinh {
   so_cau_dung: number | null;
   so_cau_sai: number | null;
   tong_so_cau: number | null;
+  so_lan_vi_pham?: number;
   diem_theo_linh_vuc: Record<string, { dung: number; tong: number; phan_tram: number }> | null;
   thoi_gian_bat_dau: string | null;
   thoi_gian_nop: string | null;
@@ -510,6 +531,43 @@ export interface IThiSinh {
   don_vi_ten: string | null;
   vi_tri_ten: string | null;
   lich_su_thi?: ILichSuThiSummary[] | null;
+}
+
+// =============================================================================
+// ĐGNL — GIÁM SÁT TRỰC TIẾP
+// =============================================================================
+
+export interface IGiamSatThiSinh {
+  cong_chuc_id: string;
+  ho_ten: string | null;
+  ma_cc: string | null;
+  don_vi_ten: string | null;
+  vi_tri_ten: string | null;
+  trang_thai: string; // CHUA_THI | DANG_THI | DA_NOP | VANG
+  lan_thi_hien_tai: number;
+  so_cau_da_lam: number;
+  tong_so_cau: number;
+  so_lan_vi_pham: number;
+  thoi_gian_bat_dau: string | null;
+  thoi_gian_con_lai_giay: number | null;
+  diem_tong: number | null;
+  xep_loai: string | null;
+  last_seen: string | null;
+  online: boolean;
+  thiet_bi: string | null;
+}
+
+export interface IGiamSatResponse {
+  tong_quan: {
+    tong_thi_sinh: number;
+    dang_thi: number;
+    da_nop: number;
+    chua_thi: number;
+    vang: number;
+    online: number;
+    co_vi_pham: number;
+  };
+  thi_sinh: IGiamSatThiSinh[];
 }
 
 export interface IDgnlBatDauResponse {

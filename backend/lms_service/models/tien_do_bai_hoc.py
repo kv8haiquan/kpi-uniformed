@@ -47,8 +47,8 @@ class TienDoBaiHoc(Base):
     # Trang thai: CHUA_XEM, DANG_XEM, DA_HOAN_THANH
     trang_thai: Mapped[Optional[str]] = mapped_column(String(50), server_default="CHUA_XEM")
     thoi_gian_xem_giay: Mapped[Optional[int]] = mapped_column(Integer, server_default="0")
-    lan_xem_cuoi: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    ngay_hoan_thanh: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    lan_xem_cuoi: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ngay_hoan_thanh: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships noi bo
     bai_hoc: Mapped[BaiHoc] = relationship(

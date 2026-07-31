@@ -21,6 +21,7 @@ from lms_service.main import app
 from lms_service.config import settings
 from lms_service.dependencies import get_db, get_current_user
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 
 # =========================================================================
@@ -74,7 +75,7 @@ _REAL_CC_IDS = [
 def _make_user(vai_tro: str, platform_roles: list[str], is_lanh_dao: bool = False, idx: int = 0) -> TokenPayload:
     return TokenPayload(
         sub=_REAL_CC_IDS[idx % len(_REAL_CC_IDS)],
-        exp=int((datetime.utcnow() + timedelta(hours=8)).timestamp()),
+        exp=int((now_vn() + timedelta(hours=8)).timestamp()),
         type="access",
         ma_cc=f"TEST-{vai_tro[:5]}",
         vai_tro=vai_tro,

@@ -9,6 +9,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { kyThiApi } from '@/services/lms';
+import DgnlKetQuaDetail from '@/components/lms/DgnlKetQuaDetail';
 import type { IKyThi, IDgnlCauHoi } from '@/types/lms';
 
 type ExamState = 'CHUA_BAT_DAU' | 'DANG_LAM' | 'DA_NOP';
@@ -17,6 +18,21 @@ function formatTime(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Sắp xếp câu hỏi theo NHÓM lĩnh vực (giữ nguyên thứ tự trong từng nhóm) để
+ * số câu hiển thị 1..N liên tục theo từng lĩnh vực — đề cũ lưu xen kẽ lĩnh vực
+ * làm số câu trong sidebar nhảy lung tung.
+ */
+function sapXepTheoLinhVuc(list: IDgnlCauHoi[]): IDgnlCauHoi[] {
+  const groups = new Map<string, IDgnlCauHoi[]>();
+  for (const ch of list) {
+    const key = ch.linh_vuc || 'Khác';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(ch);
+  }
+  return Array.from(groups.values()).flat();
 }
 
 export default function ThiDgnlPage() {
@@ -37,12 +53,48 @@ export default function ThiDgnlPage() {
   const [submitting, setSubmitting] = useState(false);
   const [violations, setViolations] = useState(0);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  // Sau nộp bài: TOÀN BỘ kết quả trả về (điểm, chi tiết, hạn tự động xác nhận)
+  // — hiển thị ngay tại màn hoàn thành, không cần điều hướng sang trang khác
+  const [nopKetQua, setNopKetQua] = useState<any>(null);
+  const [confirmLeft, setConfirmLeft] = useState<number | null>(null);
+  const [daXacNhan, setDaXacNhan] = useState(false);
+  const [xacNhanLoading, setXacNhanLoading] = useState(false);
+  // Anti-cheat: ép toàn màn hình + cảnh báo khi thoát
+  const [fsWarning, setFsWarning] = useState(false);
+  // Khóa bài khi tài khoản bị dùng để thi ở thiết bị khác (single-session)
+  const [kicked, setKicked] = useState(false);
+  // Vi phạm vừa ghi nhận trên server (để user nhập lý do giải trình)
+  const [currentVpId, setCurrentVpId] = useState<string | null>(null);
+  const [lyDoViPham, setLyDoViPham] = useState('');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const handleNopBaiRef = useRef<(opts?: { retry?: number }) => Promise<void>>(async () => {});
   const traLoiRef = useRef(traLoi);
   const violationsRef = useRef(violations);
+  const phienTokenRef = useRef<string | null>(null);
+  const lastViolationAtRef = useRef(0);
+  // Đang nộp / đã nộp — KHÔNG ghi vi phạm nữa (thoát fullscreen khi nộp bài
+  // là do hệ thống chủ động, không phải gian lận)
+  const finishedRef = useRef(false);
   traLoiRef.current = traLoi;
   violationsRef.current = violations;
+
+  // Bật ép toàn màn hình cho kỳ thi này? (mặc định bật)
+  const yeuCauFullscreen = kyThi?.yeu_cau_toan_man_hinh !== false;
+
+  // Phát hiện 409 (PHIEN_001) -> khóa bài trên thiết bị này
+  const isPhienConflict = (err: any) =>
+    err?.response?.status === 409 || err?.response?.data?.detail?.error?.code === 'PHIEN_001';
+
+  const enterFullscreen = useCallback(async () => {
+    try {
+      const el: any = document.documentElement;
+      if (!document.fullscreenElement && el.requestFullscreen) {
+        await el.requestFullscreen();
+      }
+    } catch {
+      /* trình duyệt từ chối — vẫn cho thi, chỉ ghi nhận vi phạm khi thoát */
+    }
+  }, []);
 
   // Load ky thi info
   useEffect(() => {
@@ -86,11 +138,32 @@ export default function ThiDgnlPage() {
         await kyThiApi.luuNhap(kyThiId, {
           cau_tra_loi: entries.map(([cau_hoi_id, tra_loi]) => ({ cau_hoi_id, tra_loi })),
           so_lan_vi_pham: violationsRef.current,
-        });
-      } catch { /* bo qua loi autosave de khong gay nhiu cho user */ }
+        }, phienTokenRef.current || undefined);
+      } catch (err: any) {
+        // Tài khoản bị dùng để thi ở thiết bị khác -> khóa bài tại đây
+        if (isPhienConflict(err)) setKicked(true);
+        /* các lỗi autosave khác bỏ qua để không gây nhiễu cho user */
+      }
     }, 30000);
     return () => clearInterval(interval);
   }, [state, kyThiId]);
+
+  // Đếm ngược tự động xác nhận ca thi (theo hạn server trả về — không dùng giờ máy tự tính mốc)
+  useEffect(() => {
+    if (state !== 'DA_NOP') return;
+    const han = nopKetQua?.ket_qua?.han_xac_nhan;
+    if (!han || nopKetQua?.ket_qua?.da_xac_nhan || daXacNhan) {
+      setConfirmLeft(null);
+      return;
+    }
+    const tick = () => {
+      const left = Math.floor((new Date(han).getTime() - Date.now()) / 1000);
+      setConfirmLeft(Math.max(0, left));
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
+    return () => clearInterval(iv);
+  }, [state, nopKetQua, daXacNhan]);
 
   // Canh bao khi user dong tab/F5 khi dang thi
   useEffect(() => {
@@ -104,17 +177,46 @@ export default function ThiDgnlPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [state]);
 
-  // Dem so lan thoat tab/visibility (anti-cheat)
+  // Gắn cờ khi thoát toàn màn hình / chuyển tab (anti-cheat, có hiển thị cảnh báo).
+  // Cooldown 2s tránh đếm trùng khi 1 hành động fire cả 2 event.
   useEffect(() => {
     if (state !== 'DANG_LAM') return;
-    const handleVisibility = () => {
-      if (document.hidden) {
-        setViolations(v => v + 1);
-      }
+    const COOLDOWN_MS = 2000;
+    const ghiNhanViPham = (loai: 'EXIT_FULLSCREEN' | 'SWITCH_TAB') => {
+      if (finishedRef.current) return; // đang nộp / đã nộp — bỏ qua
+      const now = Date.now();
+      if (now - lastViolationAtRef.current < COOLDOWN_MS) return;
+      lastViolationAtRef.current = now;
+      setViolations(v => v + 1);
+      setLyDoViPham('');
+      setCurrentVpId(null);
+      setFsWarning(true);
+      // Ghi server NGAY (kèm giờ) — không đợi auto-save 30s. Fail thì bỏ qua,
+      // counter fallback vẫn được đồng bộ qua luu-nhap (max, không hạ xuống).
+      kyThiApi.ghiViPham(kyThiId, { loai_vi_pham: loai }, phienTokenRef.current || undefined)
+        .then(res => {
+          setCurrentVpId(res.data?.data?.id || null);
+          if (typeof res.data?.data?.so_lan_vi_pham === 'number') {
+            setViolations(res.data.data.so_lan_vi_pham);
+          }
+        })
+        .catch((err: any) => {
+          if (isPhienConflict(err)) setKicked(true);
+        });
     };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [state]);
+    const onFullscreenChange = () => {
+      if (yeuCauFullscreen && !document.fullscreenElement) ghiNhanViPham('EXIT_FULLSCREEN');
+    };
+    const onVisibilityChange = () => {
+      if (document.hidden) ghiNhanViPham('SWITCH_TAB');
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [state, yeuCauFullscreen, kyThiId]);
 
   // Bat dau thi
   const handleBatDau = async () => {
@@ -122,8 +224,14 @@ export default function ThiDgnlPage() {
       setLoading(true);
       const res = await kyThiApi.batDau(kyThiId);
       const data = res.data.data;
-      setCauHoi(data.cau_hoi || []);
+      phienTokenRef.current = data.phien_token || null;
+      setCauHoi(sapXepTheoLinhVuc(data.cau_hoi || []));
       setTimeLeft(data.thoi_gian_con_lai_giay);
+
+      // Ép toàn màn hình (cần user-gesture — đang trong onClick nên hợp lệ)
+      if (data.yeu_cau_toan_man_hinh !== false) {
+        await enterFullscreen();
+      }
 
       // Restore bai lam nhap neu dang tiep tuc (resume autosave)
       if (data.dang_tiep_tuc && Array.isArray(data.chi_tiet_nhap)) {
@@ -154,6 +262,8 @@ export default function ThiDgnlPage() {
   const handleNopBai = useCallback(async (opts?: { retry?: number }) => {
     if (submitting) return;
     setSubmitting(true);
+    // Từ lúc bấm nộp: ngừng ghi vi phạm (thoát fullscreen khi nộp là chủ động)
+    finishedRef.current = true;
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
 
     const cauTraLoi = cauHoi.map(ch => ({
@@ -170,16 +280,28 @@ export default function ThiDgnlPage() {
         await new Promise(r => setTimeout(r, delays[attempt]));
       }
       try {
-        await kyThiApi.nopBai(kyThiId, { cau_tra_loi: cauTraLoi });
+        const res = await kyThiApi.nopBai(kyThiId, { cau_tra_loi: cauTraLoi }, phienTokenRef.current || undefined);
+        if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch { /* ignore */ } }
+        setNopKetQua(res.data?.data || null);
         setState('DA_NOP');
         setError(null);
         setSubmitting(false);
         return;
       } catch (err: any) {
         const code = err?.response?.data?.detail?.error?.code;
+        // Tài khoản bị dùng để thi ở thiết bị khác -> khóa bài, dừng retry
+        if (isPhienConflict(err)) {
+          setKicked(true);
+          setSubmitting(false);
+          return;
+        }
         // Bug B fix: backend tra DGNL_033 nghia la bai da nop tu lan submit
         // truoc (commit DB thanh cong, response mat). Coi nhu nop thanh cong.
         if (code === 'DGNL_033') {
+          // Lay lai ket qua (kem han xac nhan) vi response lan nop truoc da mat
+          kyThiApi.ketQua(kyThiId)
+            .then(r => setNopKetQua(r.data?.data || null))
+            .catch(() => { /* ignore */ });
           setState('DA_NOP');
           setError(null);
           setSubmitting(false);
@@ -188,12 +310,14 @@ export default function ThiDgnlPage() {
         // Loi nghiep vu khac (vd: DGNL_028 het han) — dung retry ngay
         if (code && code !== 'DGNL_033' && err?.response?.status && err.response.status < 500 && err.response.status !== 408 && err.response.status !== 429) {
           setError(err?.response?.data?.detail?.error?.message || 'Lỗi nộp bài');
+          finishedRef.current = false; // van dang thi -> bat lai anti-cheat
           setSubmitting(false);
           return;
         }
         // Lan cuoi van fail -> hien loi, cho user thu lai thu cong
         if (attempt === maxAttempts - 1) {
           setError('Không nộp được bài sau nhiều lần thử. Vui lòng kiểm tra mạng và bấm "Nộp bài" lại.');
+          finishedRef.current = false; // van dang thi -> bat lai anti-cheat
           setSubmitting(false);
           return;
         }
@@ -202,6 +326,34 @@ export default function ThiDgnlPage() {
   }, [submitting, cauHoi, kyThiId]);
 
   handleNopBaiRef.current = handleNopBai;
+
+  // Xac nhan hoan thanh ca thi — chot ket qua, khong duoc thi lai.
+  // Khong dieu huong di dau ca: o lai man ket qua, cap nhat trang thai da chot.
+  const handleXacNhan = async () => {
+    if (!confirm('Xác nhận hoàn thành ca thi? Sau khi xác nhận, bạn sẽ KHÔNG thể thi lại dù còn lượt.')) return;
+    setXacNhanLoading(true);
+    try {
+      await kyThiApi.xacNhanCaThi(kyThiId);
+      setDaXacNhan(true);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi xác nhận ca thi');
+    } finally {
+      setXacNhanLoading(false);
+    }
+  };
+
+  // Tiep tuc lam lan tiep theo — reset state cu roi goi bat-dau nhu binh thuong
+  const handleThiLai = async () => {
+    setTraLoi({});
+    setCurrentIdx(0);
+    setViolations(0);
+    setNopKetQua(null);
+    setConfirmLeft(null);
+    setError(null);
+    finishedRef.current = false; // vao lan thi moi -> bat lai anti-cheat
+    await handleBatDau();
+  };
 
   // Chon dap an
   const handleChonDapAn = (cauHoiId: string, loai: string, value: any) => {
@@ -230,29 +382,114 @@ export default function ThiDgnlPage() {
     );
   }
 
-  // ===== DA_NOP =====
-  if (state === 'DA_NOP') {
+  // ===== BỊ KHÓA (tài khoản đang thi ở thiết bị khác) =====
+  if (kicked) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-md text-center">
-          <div className="text-5xl mb-4">✅</div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Đã nộp bài thành công!</h2>
-          <p className="text-gray-500 mb-6">Bài thi của bạn đã được chấm điểm tự động.</p>
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => router.push(`/dao-tao/ky-thi/${kyThiId}/ket-qua`)}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Xem kết quả
-            </button>
-            <button
-              onClick={() => router.push('/dao-tao/ky-thi')}
-              className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Quay lại
-            </button>
+          <div className="text-5xl mb-4">🔒</div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Bài làm đã bị khóa</h2>
+          <p className="text-gray-600 mb-6">
+            Tài khoản của bạn đang được dùng để thi ở một thiết bị khác. Để đảm bảo
+            tính minh bạch, bài làm trên thiết bị này đã bị khóa. Vui lòng tiếp tục
+            trên thiết bị đang thi.
+          </p>
+          <button
+            onClick={() => router.push('/dao-tao/ky-thi')}
+            className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Quay lại
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== DA_NOP — hien ket qua ngay tai cho + 2 nut hanh dong =====
+  if (state === 'DA_NOP') {
+    const kq = nopKetQua?.ket_qua;
+    const lanThi = kq?.lan_thi || 0;
+    const soLanToiDa = kq?.so_lan_thi_toi_da || kyThi?.so_lan_thi_toi_da || 1;
+    const tuDongXacNhan = confirmLeft === 0 && !daXacNhan && !kq?.da_xac_nhan;
+    const daChot = daXacNhan || kq?.da_xac_nhan === true || tuDongXacNhan;
+    const conLuot = !daChot && lanThi > 0 && lanThi < soLanToiDa;
+
+    return (
+      <div className="min-h-screen bg-gray-50 pb-10">
+        {/* Thanh hanh dong sau nop bai */}
+        <div className="bg-white border-b shadow-sm">
+          <div className="max-w-4xl mx-auto px-6 py-5">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-3xl">✅</span>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Đã nộp bài thành công!</h2>
+                <p className="text-sm text-gray-500">Bài thi đã được chấm điểm tự động — kết quả hiển thị bên dưới.</p>
+              </div>
+            </div>
+
+            {error && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {error}
+              </div>
+            )}
+
+            {daChot ? (
+              <div className="mb-3 p-3 bg-green-50 border border-green-300 rounded-lg text-green-900 text-sm">
+                {tuDongXacNhan
+                  ? '✔️ Đã hết thời gian chờ — ca thi của bạn được tự động xác nhận hoàn thành.'
+                  : '✔️ Bạn đã xác nhận hoàn thành ca thi. Kết quả đã được chốt.'}
+              </div>
+            ) : (
+              confirmLeft !== null && (
+                <div className="mb-3 p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-sm">
+                  ⏱️ Nếu không thao tác, ca thi sẽ <strong>tự động xác nhận hoàn thành</strong> sau:{' '}
+                  <strong className="font-mono">{formatTime(confirmLeft)}</strong>
+                  {conLuot && <>. Sau đó bạn sẽ không thể thi lại.</>}
+                </div>
+              )
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              {conLuot && (
+                <button
+                  onClick={handleThiLai}
+                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold"
+                >
+                  🔄 Tiếp tục làm lần {lanThi + 1}/{soLanToiDa}
+                </button>
+              )}
+              {!daChot && (
+                <button
+                  onClick={handleXacNhan}
+                  disabled={xacNhanLoading}
+                  className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold disabled:opacity-50"
+                >
+                  {xacNhanLoading ? 'Đang xác nhận...' : '✅ Xác nhận hoàn thành ca thi'}
+                </button>
+              )}
+              <button
+                onClick={() => router.push('/dao-tao/ky-thi')}
+                className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Quay lại danh sách kỳ thi
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Ket qua chi tiet ngay tai cho */}
+        {nopKetQua ? (
+          <DgnlKetQuaDetail
+            ketQua={nopKetQua}
+            backHref="/dao-tao/ky-thi"
+            backLabel="Quay lại danh sách kỳ thi"
+            title="Kết quả bài thi"
+          />
+        ) : (
+          <div className="max-w-4xl mx-auto px-6 py-8 text-center text-gray-400 text-sm">
+            Đang tải kết quả...
+          </div>
+        )}
       </div>
     );
   }
@@ -263,9 +500,10 @@ export default function ThiDgnlPage() {
     const ttTs = kyThi?.trang_thai_thi_sinh;
     const lanThi = kyThi?.lan_thi_hien_tai || 0;
     const soLanToiDa = kyThi?.so_lan_thi_toi_da || 1;
+    const daXacNhanCa = (kyThi as any)?.da_xac_nhan === true;
     const isResume = ttTs === 'DANG_THI';
-    const isRetry = ttTs === 'DA_NOP' && lanThi < soLanToiDa;
-    const hetLuot = ttTs === 'DA_NOP' && lanThi >= soLanToiDa;
+    const isRetry = ttTs === 'DA_NOP' && lanThi < soLanToiDa && !daXacNhanCa;
+    const hetLuot = ttTs === 'DA_NOP' && (lanThi >= soLanToiDa || daXacNhanCa);
     const isVang = ttTs === 'VANG';
 
     let btnLabel = 'Bắt đầu thi';
@@ -296,8 +534,12 @@ export default function ThiDgnlPage() {
 
           {hetLuot && (
             <div className="mb-4 p-4 bg-red-50 border-2 border-red-300 rounded-lg text-red-900">
-              <div className="font-semibold mb-1">⛔ Đã hết lượt thi</div>
-              <p className="text-sm">Bạn đã thi {lanThi}/{soLanToiDa} lần. Không thể thi thêm.</p>
+              <div className="font-semibold mb-1">⛔ {daXacNhanCa ? 'Ca thi đã được xác nhận' : 'Đã hết lượt thi'}</div>
+              <p className="text-sm">
+                {daXacNhanCa
+                  ? 'Kết quả của bạn đã được chốt, không thể thi lại.'
+                  : `Bạn đã thi ${lanThi}/${soLanToiDa} lần. Không thể thi thêm.`}
+              </p>
             </div>
           )}
 
@@ -359,10 +601,60 @@ export default function ThiDgnlPage() {
   // ===== DANG_LAM =====
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Cảnh báo vi phạm khi thoát toàn màn hình / chuyển tab */}
+      {fsWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md text-center">
+            <div className="text-4xl mb-3">⚠️</div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Phát hiện thoát màn hình thi</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              Bạn vừa thoát toàn màn hình hoặc chuyển sang cửa sổ khác. Hành vi này
+              đã được hệ thống ghi nhận (kèm thời gian).
+            </p>
+            <p className="text-sm font-semibold text-red-600 mb-3">
+              Số lần vi phạm: {violations}
+            </p>
+            <div className="text-left mb-4">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Lý do giải trình (không bắt buộc) — TCCB sẽ xem khi đánh giá:
+              </label>
+              <textarea
+                value={lyDoViPham}
+                onChange={e => setLyDoViPham(e.target.value)}
+                rows={2}
+                maxLength={1000}
+                placeholder="VD: mất điện, sự cố máy tính, có việc khẩn cấp..."
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <button
+              onClick={async () => {
+                // Lưu lý do (nếu có nhập) rồi tiếp tục — lỗi lưu bỏ qua im lặng
+                if (currentVpId && lyDoViPham.trim()) {
+                  try { await kyThiApi.capNhatLyDoViPham(kyThiId, currentVpId, lyDoViPham.trim()); } catch { /* ignore */ }
+                }
+                if (yeuCauFullscreen) await enterFullscreen();
+                setFsWarning(false);
+                setLyDoViPham('');
+                setCurrentVpId(null);
+              }}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold"
+            >
+              {yeuCauFullscreen ? 'Quay lại toàn màn hình' : 'Tiếp tục làm bài'}
+            </button>
+          </div>
+        </div>
+      )}
       {/* Resume notice — hien 8 giay sau khi khoi phuc bai lam do */}
       {resumeNotice && (
         <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 text-sm text-amber-900 text-center font-medium">
           {resumeNotice}
+        </div>
+      )}
+      {/* Loi nop bai (vd mat mang) — nhac user den cau cuoi de bam nop lai */}
+      {error && (
+        <div className="bg-red-50 border-b border-red-300 px-4 py-2 text-sm text-red-800 text-center font-medium">
+          {error}
         </div>
       )}
       {/* Top bar */}
@@ -375,18 +667,18 @@ export default function ThiDgnlPage() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            {violations > 0 && (
+              <div
+                className="flex items-center gap-1 px-2.5 py-1 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold rounded-full"
+                title="Số lần thoát toàn màn hình / chuyển tab đã ghi nhận"
+              >
+                ⚠️ Vi phạm: {violations}
+              </div>
+            )}
             <div className={`text-lg font-mono font-bold ${(timeLeft || 0) < 300 ? 'text-red-600' : 'text-gray-900'}`}>
               {timeLeft !== null ? formatTime(timeLeft) : '--:--'}
             </div>
-            <button
-              onClick={() => {
-                if (confirm('Bạn có chắc muốn nộp bài?')) handleNopBai();
-              }}
-              disabled={submitting}
-              className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-50"
-            >
-              {submitting ? 'Đang nộp...' : 'Nộp bài'}
-            </button>
+            {/* Nút "Nộp bài" đã chuyển xuống cuối câu hỏi cuối cùng (tránh bấm nhầm) */}
           </div>
         </div>
       </div>
@@ -483,8 +775,8 @@ export default function ThiDgnlPage() {
                 </div>
               )}
 
-              {/* Navigation */}
-              <div className="flex justify-between mt-8 pt-4 border-t">
+              {/* Navigation — câu cuối cùng hiện nút "Nộp bài" thay cho "Câu tiếp" */}
+              <div className="flex justify-between items-center mt-8 pt-4 border-t">
                 <button
                   onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))}
                   disabled={currentIdx === 0}
@@ -492,13 +784,28 @@ export default function ThiDgnlPage() {
                 >
                   Câu trước
                 </button>
-                <button
-                  onClick={() => setCurrentIdx(Math.min(cauHoi.length - 1, currentIdx + 1))}
-                  disabled={currentIdx === cauHoi.length - 1}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-30"
-                >
-                  Câu tiếp
-                </button>
+                {currentIdx === cauHoi.length - 1 ? (
+                  <button
+                    onClick={() => {
+                      const chuaTraLoi = cauHoi.length - soTraLoi;
+                      const msg = chuaTraLoi > 0
+                        ? `Bạn còn ${chuaTraLoi} câu CHƯA trả lời. Bạn có chắc muốn nộp bài?`
+                        : 'Bạn có chắc muốn nộp bài?';
+                      if (confirm(msg)) handleNopBai();
+                    }}
+                    disabled={submitting}
+                    className="px-8 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 shadow"
+                  >
+                    {submitting ? 'Đang nộp...' : '📤 Nộp bài'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setCurrentIdx(Math.min(cauHoi.length - 1, currentIdx + 1))}
+                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                  >
+                    Câu tiếp
+                  </button>
+                )}
               </div>
             </div>
           )}

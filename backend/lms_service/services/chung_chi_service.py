@@ -29,6 +29,7 @@ from lms_service.schemas.chung_chi import tinh_xep_loai, KhaoSatCreate
 from lms_service.services.chung_chi_pdf import generate_certificate_pdf
 from lms_service.services.thong_bao_helper import gui_thong_bao
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +229,7 @@ class ChungChiService:
         don_vi_ten = cc_row.ten_don_vi if cc_row else None
 
         # Sinh ma chung chi: CC-{year}-{seq:06d}
-        ngay_cap = datetime.utcnow()
+        ngay_cap = now_vn()
         year = ngay_cap.year
         prefix = f"CC-{year}-"
         seq_r = await self.db.execute(

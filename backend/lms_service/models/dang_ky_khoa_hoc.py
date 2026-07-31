@@ -60,7 +60,7 @@ class DangKyKhoaHoc(Base):
     nguoi_phe_duyet_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=True
     )
-    ngay_phe_duyet: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ngay_phe_duyet: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     ly_do_tu_choi: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Tien do: CHO_PHE_DUYET, CHUA_BAT_DAU, DANG_HOC, HOAN_THANH, TU_CHOI, BI_LOAI, QUA_HAN
@@ -70,8 +70,8 @@ class DangKyKhoaHoc(Base):
     phan_tram_hoan_thanh: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(5, 2), server_default="0"
     )
-    ngay_bat_dau_hoc: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    ngay_hoan_thanh: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ngay_bat_dau_hoc: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ngay_hoan_thanh: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Ket qua
     diem_cao_nhat: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
@@ -79,10 +79,10 @@ class DangKyKhoaHoc(Base):
 
     # Timestamps
     created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships noi bo

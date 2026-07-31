@@ -50,7 +50,7 @@ class ChungChi(Base):
     ten_chung_chi: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
     diem_dat: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
     ngay_cap: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Nguoi cap — FK den public.cong_chuc

@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Integer, Numeric, String, ForeignKey, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, Integer, Numeric, String, ForeignKey, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,8 +57,8 @@ class ThiSinh(Base):
     diem_theo_linh_vuc: Mapped[Optional[dict]] = mapped_column(JSONB, server_default="'{}'")
 
     # Thoi gian
-    thoi_gian_bat_dau: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    thoi_gian_nop: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    thoi_gian_bat_dau: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    thoi_gian_nop: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     thoi_gian_lam_giay: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # De thi random
@@ -70,11 +70,19 @@ class ThiSinh(Base):
     chi_tiet_nhap: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     so_lan_vi_pham: Mapped[Optional[int]] = mapped_column(Integer, server_default="0")
 
+    # Xac nhan ca thi (chot ket qua — khong duoc thi lai du con luot).
+    # Tu dong xac nhan sau 10 phut ke tu thoi_gian_nop neu user khong bam gi
+    # (enforce lazy trong bat_dau_thi, khong can background job).
+    da_xac_nhan: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("false"))
+    thoi_gian_xac_nhan: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # Relationships

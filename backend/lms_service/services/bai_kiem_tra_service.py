@@ -25,6 +25,7 @@ from lms_service.models.base import CongChucRef, DonViRef
 from lms_service.schemas.bai_kiem_tra import BaiKiemTraCreate, BaiKiemTraUpdate
 from lms_service.services.file_service import FileService
 from shared.auth import TokenPayload
+from lms_service.core.timezone import now_vn
 
 
 class BaiKiemTraService:
@@ -390,7 +391,7 @@ class BaiKiemTraService:
 
         if not is_preview_mode:
             # Enforce ngay_mo/ngay_dong (Date check) va gio_mo/gio_dong (time check)
-            now = datetime.utcnow()
+            now = now_vn()
             today = now.date()
             current_time = now.strftime("%H:%M")
 
@@ -451,7 +452,7 @@ class BaiKiemTraService:
                         cong_chuc_id=user_uuid,
                         bai_kiem_tra_id=bai_kiem_tra_id,
                         lan_thu=lan_thu,
-                        ngay_lam=datetime.utcnow(),
+                        ngay_lam=now_vn(),
                     )
                     self.db.add(kq)
                     await self.db.flush()
@@ -535,7 +536,7 @@ class BaiKiemTraService:
 
         # Neu resume, tra ve chi_tiet_nhap va thoi_gian_da_lam
         if existing and not is_preview_mode:
-            thoi_gian_da_lam_giay = int((datetime.utcnow() - kq.ngay_lam).total_seconds()) if kq.ngay_lam else 0
+            thoi_gian_da_lam_giay = int((now_vn() - kq.ngay_lam).total_seconds()) if kq.ngay_lam else 0
             return {
                 "ket_qua_id": kq.id,
                 "lan_thu": lan_thu,
@@ -612,7 +613,7 @@ class BaiKiemTraService:
             raise HTTPException(status_code=400, detail={"success": False, "error": {"code": "LMS_ERR_001", "message": "Bài kiểm tra thực hành phải dùng endpoint nộp video"}})
 
         # Tinh thoi gian lam
-        thoi_gian_lam = int((datetime.utcnow() - kq.ngay_lam).total_seconds()) if kq.ngay_lam else 0
+        thoi_gian_lam = int((now_vn() - kq.ngay_lam).total_seconds()) if kq.ngay_lam else 0
 
         # Map tra loi theo cau_hoi_id
         tra_loi_map = {str(tl.cau_hoi_id): tl.dap_an for tl in tra_loi_list}
@@ -1013,7 +1014,7 @@ class BaiKiemTraService:
             )
 
         # Enforce ngay_mo/ngay_dong + gio_mo/gio_dong
-        now = datetime.utcnow()
+        now = now_vn()
         today = now.date()
         current_time = now.strftime("%H:%M")
         if bkt.ngay_mo and today < bkt.ngay_mo:
@@ -1092,7 +1093,7 @@ class BaiKiemTraService:
 
         # Tao lan nop moi
         lan_thu = done_count + 1
-        now_dt = datetime.utcnow()
+        now_dt = now_vn()
         kq = KetQuaBaiKiemTra(
             cong_chuc_id=user_uuid,
             bai_kiem_tra_id=bai_kiem_tra_id,
@@ -1167,7 +1168,7 @@ class BaiKiemTraService:
         kq.diem_cham_tay = diem_decimal
         kq.nhan_xet = nhan_xet
         kq.nguoi_cham_id = uuid.UUID(user.sub)
-        kq.ngay_cham = datetime.utcnow()
+        kq.ngay_cham = now_vn()
         kq.trang_thai_cham = "DA_CHAM"
         kq.dat_yeu_cau = diem_decimal >= (bkt.diem_dat or Decimal("70"))
 

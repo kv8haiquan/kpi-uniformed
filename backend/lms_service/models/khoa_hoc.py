@@ -77,17 +77,17 @@ class KhoaHoc(Base):
     nguoi_duyet_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=True
     )
-    ngay_duyet: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ngay_duyet: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Flags
     is_active: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("true"))
 
     # Timestamps
     created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, server_default=text("CURRENT_TIMESTAMP")
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP")
     )
 
     # search_vector: tsvector — quan ly boi trigger, KHONG map trong model

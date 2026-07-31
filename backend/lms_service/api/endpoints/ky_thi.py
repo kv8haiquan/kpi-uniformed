@@ -164,17 +164,10 @@ async def validate_ngan_hang(
 async def thong_ke_ky_thi(
     ky_thi_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: TokenPayload = Depends(get_current_user),
+    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
 ):
-    """Thong ke ket qua ky thi. QT_DAO_TAO va Lanh dao xem duoc."""
+    """Thong ke ket qua ky thi. Chi admin (QT_DAO_TAO/SUPER_ADMIN)."""
     service = KyThiService(db)
-    # Kiem tra quyen: QT hoac lanh dao
-    if not service._is_manager(user) and not service._is_lanh_dao(user):
-        from fastapi import HTTPException, status
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"success": False, "error": {"code": "PERM_001", "message": "Yêu cầu vai trò QT_DAO_TAO hoặc Lãnh đạo"}},
-        )
     data = await service.thong_ke(ky_thi_id, user)
     return {
         "success": True,

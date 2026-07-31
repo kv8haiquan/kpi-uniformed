@@ -3,6 +3,28 @@
 > Ngày rà quét: 30/07/2026. Công cụ: `bandit` 1.8.x (quét mã nguồn Python), `pip-audit` (lỗ hổng thư viện Python theo CSDL PyPI/OSV), `npm audit` (lỗ hổng thư viện Node.js), rà soát cấu hình thủ công.
 > **Tài liệu lưu hành nội bộ** — dùng để chủ động khắc phục trước khi đoàn kiểm tra rà quét chính thức.
 
+## 0. KẾT QUẢ ĐỢT VÁ BẢO MẬT 31/07/2026 (nhánh `feature/security-patch-2026-07`)
+
+| # | Hạng mục | Trạng thái |
+|---|---|---|
+| 1 | Nâng thư viện Python có lỗ hổng: `python-jose` 3.3.0→3.5.0, `python-multipart` 0.0.20→0.0.32, **`fastapi` 0.115.6→0.141.1 + `starlette` 0.41.3→1.3.1** (5 PYSEC DoS), `cryptography`, `urllib3`, `pillow`, `lxml`, `orjson`, `click`, `idna`, `mako`, `pyasn1`, `pygments`, `python-dotenv`, `ecdsa` | ✅ Đã vá |
+| 2 | Thư viện Node.js: `next` 16.1.4→16.2.12, `axios`→1.19.0, **`xlsx` 0.18.5→0.20.3** (bản vá lấy từ CDN chính thức SheetJS vì npm registry dừng ở 0.18.5), override `postcss`≥8.5.18 + `sharp`≥0.35.0 — **runtime sạch 100% cảnh báo**; còn 9 cảnh báo thuộc chuỗi eslint (chỉ môi trường dev, bản vá đòi eslint 10 chưa được hệ sinh thái Next hỗ trợ — chấp nhận, chờ upstream) | ✅ Đã vá |
+| 3 | Chống brute-force login: rate limit 30 lần/phút/IP (slowapi, key theo X-Real-IP sau nginx) + khóa tài khoản tạm 15 phút sau 10 lần sai liên tiếp; log sự kiện qua logger `app.security` | ✅ Đã thêm |
+| 4 | Ẩn `/docs`, `/redoc`, `/openapi.json` production trên **cả 8 service** (trước đây KPI 8000 còn hở `/api/v1/openapi.json`; 7 service phụ hở ở localhost) — bật lại bằng `DEBUG=true` | ✅ Đã tắt |
+| 5 | **Gỡ mật khẩu DB production + INTERNAL_API_KEY hardcode** làm default trong 8 file `config.py` + helpers (phát hiện mới trong đợt vá — nghiêm trọng vì mã nguồn sắp bàn giao); rotate INTERNAL_API_KEY sang giá trị ngẫu nhiên trong `.env`; verifier từ chối khi key chưa cấu hình | ✅ Đã gỡ |
+| 6 | Bắt buộc đổi mật khẩu mặc định `123456` (cờ `must_change_password`) | ⏳ Đợt sau (quyết định 31/07) |
+| 7 | Mật khẩu DB cũ vẫn nằm trong **git history** (dù đã gỡ khỏi code hiện tại; gói bàn giao dùng `git archive` nên không chứa history) — khuyến nghị **đổi mật khẩu DB** ở đợt bảo trì tới | ⏳ Khuyến nghị |
+
+**Kiểm chứng sau vá (31/07/2026, DB test `kpi_haiquan_test` clone từ prod):**
+
+- pip-audit sau nâng cấp: `python-jose`, `python-multipart`, `starlette`, `fastapi`, `urllib3`, `cryptography`, `pillow`... đều sạch. Còn lại duy nhất `ecdsa` PYSEC-2026-1325 (lỗ hổng timing Minerva — **chưa có bản vá upstream**, là dependency của python-jose; rủi ro thấp vì hệ thống chỉ dùng HS256, không dùng ECDSA) và các gói dev (pytest...).
+- npm audit: **runtime 0 cảnh báo**; 9 cảnh báo high còn lại toàn bộ trong chuỗi eslint dev-only.
+- Test hồi quy toàn backend: **~706 PASS / 41 FAIL** — đã đối chứng 41 fail này trên cả (code cũ + lib cũ): fail y hệt → **toàn bộ có sẵn từ trước** (test phụ thuộc dữ liệu, viết trên snapshot prod cũ), đợt vá gây **0 regression**. Khuyến nghị: làm mới bộ test data-dependent ở đợt bảo trì tới.
+- Frontend `npm run build`: PASS (68/68 trang).
+- Smoke in-process: login sai → 401 AUTH_003; sai 10 lần → khóa 429 AUTH_006 (Retry-After 15 phút); vượt 30 req/phút/IP → 429 AUTH_005; `/docs` + `/api/v1/openapi.json` → 404; `/health` → 200.
+
+Chi tiết trước khi vá giữ nguyên bên dưới để đối chiếu.
+
 ## 1. Tóm tắt kết quả
 
 | Hạng mục | Kết quả |

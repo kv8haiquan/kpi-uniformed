@@ -54,7 +54,7 @@ GIANG_VIEN, QT_DAO_TAO (LMS); DIEU_PHOI_FORUM, CHUYEN_GIA (Forum); BIEN_TAP, QT_
 
 | Bảng | Nội dung ghi |
 |---|---|
-| `public.audit_log` | Thao tác thay đổi dữ liệu: bảng, bản ghi, hành động, giá trị cũ/mới (JSONB), user_id, **địa chỉ IP, user-agent**, thời điểm |
+| `public.audit_log` | Cấu trúc sẵn cho audit tập trung: bảng, bản ghi, hành động, giá trị cũ/mới (JSONB), user_id, **địa chỉ IP, user-agent**, thời điểm. *Lưu ý trung thực: trigger tự ghi CHƯA kích hoạt trên production — vết thay đổi hiện nằm trong từng bảng nghiệp vụ bên dưới; kế hoạch kích hoạt ghi tại `10_HOI_DAP_BO_SUNG.md` mục 3.3* |
 | `public.lich_su_dieu_chinh` | Lịch sử điều chỉnh kết quả đánh giá |
 | `public.lich_su_dieu_chuyen` | Lịch sử điều chuyển đơn vị của công chức |
 | `chi_tieu.lich_su_duyet` | Lịch sử duyệt chỉ tiêu |

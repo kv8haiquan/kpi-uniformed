@@ -18,6 +18,11 @@
 | 9 | Hồ sơ kiểm thử, nghiệm thu, HDSD, cập nhật phiên bản | `09_kiem_thu_van_hanh_phien_ban.md` | ✅ Xong |
 | 10 | Đầu mối kỹ thuật | Ghi tại công văn phúc đáp | ⏳ Chờ TCCB |
 
+## Tài liệu bổ sung
+
+- `10_HOI_DAP_BO_SUNG.md` — trả lời trực tiếp bộ câu hỏi của đoàn kiểm tra (kiến trúc, backup, PII, mật khẩu, audit, API, kiểm thử) — lập 05/08/2026, đã gồm hiện trạng sau đợt vá 31/07.
+- `api-specs/` — 8 file OpenAPI JSON (export từ từng service) + `danh_muc_endpoints.csv` (555 endpoints, mở bằng Excel).
+
 ## Tài liệu nội bộ (không bàn giao nguyên trạng)
 
 - `BAO_CAO_RA_QUET_NOI_BO.md` — kết quả tự rà quét (bandit, pip-audit, npm audit, rà cấu hình) + kế hoạch khắc phục. Dùng để vá trước khi đoàn kiểm tra rà quét; sau khi vá xong sẽ cập nhật và có thể trích nộp phần "đã khắc phục".

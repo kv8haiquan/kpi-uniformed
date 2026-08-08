@@ -75,8 +75,11 @@ class Settings(BaseSettings):
     # Credential — BẮT BUỘC đặt qua .env, KHÔNG hardcode (xem đợt vá bảo mật
     # 31/07/2026: mật khẩu DB từng nằm làm default trong 7 file config.py)
     zalo_app_id: str = ""
-    zalo_oa_id: str = ""
     zalo_oa_secret: str = ""
+    # KHÔNG dùng trong lời gọi API (access_token đã định danh OA). Chỉ ghi lại
+    # để biết hệ thống đang gắn với OA nào — phục vụ đối soát và hồ sơ ATTT.
+    # Để trống cũng chạy bình thường.
+    zalo_oa_id: str = ""
 
     # Endpoint — tách ra config để test trỏ về mock server được
     zalo_oauth_url: str = "https://oauth.zaloapp.com/v4/oa/access_token"

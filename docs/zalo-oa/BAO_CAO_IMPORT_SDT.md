@@ -15,38 +15,38 @@
 |---|---:|
 | Công chức đang hoạt động trong hệ thống | 544 |
 | Dòng đọc được từ file | 548 |
-| **Khớp được người + số hợp lệ** | **541** |
+| Khớp được từ file này | 541 |
+| **Đã có số trong hệ thống (gồm cả bổ sung tay)** | **543** |
 | Số điện thoại không dùng được | 0 |
 | Có trong file nhưng không tìm thấy trong hệ thống | 7 |
-| **Công chức CHƯA có số điện thoại** | **3** |
+| **Công chức CHƯA có số điện thoại** | **1** |
 
-**Độ phủ: 541/544 = 99.4%**
+**Độ phủ: 543/544 = 99.8%**
 
 > ✅ Độ phủ rất tốt, đủ điều kiện triển khai.
 
 ---
 
-## 2. Công chức CHƯA có số điện thoại (3 người)
+## 2. Công chức CHƯA có số điện thoại (1 người)
 
 Những người này sẽ **không nhận được** thông báo họp qua Zalo.
 
 | # | Mã CC | Họ và tên | Chức vụ | Đơn vị |
 |---:|---|---|---|---|
-| 1 | 20ZZ-0331 | Nguyễn Thị Thu Hường | Hợp đồng 111 | HQCK quốc tế Móng Cái |
-| 2 | 20ZZ-0631 | Nguyễn Văn Hùng |  | Phòng Nghiệp vụ Hải quan |
-| 3 | ADMIN-001 | Quản trị viên | Quản trị viên hệ thống | Phòng Quản trị Hệ thống |
+| 1 | ADMIN-001 | Quản trị viên | Quản trị viên hệ thống | Phòng Quản trị Hệ thống |
 
 **Gom theo đơn vị:**
 
 | Đơn vị | Số người thiếu |
 |---|---:|
-| HQCK quốc tế Móng Cái | 1 |
-| Phòng Nghiệp vụ Hải quan | 1 |
 | Phòng Quản trị Hệ thống | 1 |
 
 ---
 
-## 3. Dòng trong file không dùng được (7 dòng)
+## 3. Dòng trong file không khớp được (7 dòng)
+
+> Đơn vị xác nhận: đây là những người **đã chuyển công tác sang chi cục**
+> **khác**, nên không còn trong danh sách công chức đang hoạt động.
 
 | Họ và tên (trong file) | Số trong file | Lý do |
 |---|---|---|

@@ -382,6 +382,22 @@ class ChiMucCongChuc:
         return None, "Không tìm thấy trong hệ thống (có thể đã nghỉ/chuyển đơn vị)"
 
 
+def _che(so: Any) -> str:
+    """Che 3 chữ số cuối khi đưa số vào báo cáo.
+
+    Báo cáo được commit vào git nên KHÔNG được chứa số điện thoại đầy đủ —
+    dữ liệu cá nhân theo Nghị định 13/2023/NĐ-CP. Giữ lại phần đầu để đơn vị
+    vẫn nhận ra được số nào cần đính chính.
+    """
+    s = str(so or "").strip()
+    if not s:
+        return ""
+    chu_so = re.sub(r"\D", "", s)
+    if len(chu_so) < 6:
+        return "***"
+    return re.sub(r"\d(?=\d{0,2}$)", "*", s)
+
+
 def _xuat_md(
     duong_dan: Path,
     nguon: Path,
@@ -391,6 +407,7 @@ def _xuat_md(
     trung_so: dict,
     lech_ngay_sinh: list[dict],
     tong_cc: int,
+    da_phu: int,
 ) -> None:
     d = []
     a = d.append
@@ -406,12 +423,13 @@ def _xuat_md(
     a("|---|---:|")
     a(f"| Công chức đang hoạt động trong hệ thống | {tong_cc} |")
     a(f"| Dòng đọc được từ file | {thong_ke['tong_dong']} |")
-    a(f"| **Khớp được người + số hợp lệ** | **{thong_ke['hop_le']}** |")
+    a(f"| Khớp được từ file này | {thong_ke['hop_le']} |")
+    a(f"| **Đã có số trong hệ thống (gồm cả bổ sung tay)** | **{da_phu}** |")
     a(f"| Số điện thoại không dùng được | {thong_ke['so_khong_dung']} |")
     a(f"| Có trong file nhưng không tìm thấy trong hệ thống | {thong_ke['khong_khop']} |")
     a(f"| **Công chức CHƯA có số điện thoại** | **{len(thieu_sdt)}** |")
-    phu = thong_ke["hop_le"] / tong_cc * 100 if tong_cc else 0
-    a(f"\n**Độ phủ: {thong_ke['hop_le']}/{tong_cc} = {phu:.1f}%**\n")
+    phu = da_phu / tong_cc * 100 if tong_cc else 0
+    a(f"\n**Độ phủ: {da_phu}/{tong_cc} = {phu:.1f}%**\n")
     if phu >= 95:
         a("> ✅ Độ phủ rất tốt, đủ điều kiện triển khai.\n")
     elif phu >= 70:
@@ -439,12 +457,14 @@ def _xuat_md(
         a("✅ Không thiếu ai — toàn bộ công chức đều có số điện thoại.\n")
 
     a("---\n")
-    a(f"## 3. Dòng trong file không dùng được ({len(loi_dong)} dòng)\n")
+    a(f"## 3. Dòng trong file không khớp được ({len(loi_dong)} dòng)\n")
+    a("> Đơn vị xác nhận: đây là những người **đã chuyển công tác sang chi cục**\n"
+      "> **khác**, nên không còn trong danh sách công chức đang hoạt động.\n")
     if loi_dong:
         a("| Họ và tên (trong file) | Số trong file | Lý do |")
         a("|---|---|---|")
         for r in loi_dong:
-            a(f"| {r['ho_ten']} | `{r['so']}` | {r['ly_do']} |")
+            a(f"| {r['ho_ten']} | `{_che(r['so'])}` | {r['ly_do']} |")
         a("")
     else:
         a("✅ Mọi dòng đều dùng được.\n")
@@ -456,7 +476,7 @@ def _xuat_md(
         a("| Số | Những người cùng khai |")
         a("|---|---|")
         for so, ds in trung_so.items():
-            a(f"| {hien_thi(so)} | {', '.join(ds)} |")
+            a(f"| {_che(hien_thi(so))} | {', '.join(ds)} |")
         a("")
     else:
         a("✅ Không có số nào bị trùng.\n")
@@ -547,7 +567,13 @@ async def chay(duong_dan: Path, ghi: bool, xuat_md: Optional[Path]) -> int:
             se_ghi.append((cc, kq_ch, so_phu))
 
         trung_so = {s: m for s, m in theo_so.items() if len(m) > 1}
-        thieu_sdt = [c for c in cong_chuc if str(c["id"]) not in da_khop_ids]
+        # "Thiếu số" tính theo THỰC TẾ trong DB: không khớp ở file này VÀ cũng
+        # chưa có liên kết từ trước (ví dụ số bổ sung tay ngoài file Excel).
+        thieu_sdt = [
+            c for c in cong_chuc
+            if str(c["id"]) not in da_khop_ids and str(c["id"]) not in da_co
+        ]
+        da_phu = len(cong_chuc) - len(thieu_sdt)
 
         # ---------------- Báo cáo ----------------
         print("=" * 64)
@@ -562,12 +588,12 @@ async def chay(duong_dan: Path, ghi: bool, xuat_md: Optional[Path]) -> int:
         print(f"  Số trùng giữa nhiều người    : {len(trung_so):>4}")
         print(f"  Lệch ngày sinh (cần soát)    : {len(lech_ns):>4}")
         print(f"  CÔNG CHỨC CHƯA CÓ SỐ         : {len(thieu_sdt):>4}")
-        phu = tk["hop_le"] / len(cong_chuc) * 100 if cong_chuc else 0
-        print(f"\n  ĐỘ PHỦ: {tk['hop_le']}/{len(cong_chuc)} = {phu:.1f}%")
+        phu = da_phu / len(cong_chuc) * 100 if cong_chuc else 0
+        print(f"\n  ĐỘ PHỦ THỰC TẾ: {da_phu}/{len(cong_chuc)} = {phu:.1f}%")
 
         if xuat_md:
             _xuat_md(xuat_md, duong_dan, tk, thieu_sdt, loi_dong, trung_so,
-                     lech_ns, len(cong_chuc))
+                     lech_ns, len(cong_chuc), da_phu)
             print(f"\n  📄 Đã xuất báo cáo → {xuat_md}")
 
         if not ghi:

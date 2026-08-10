@@ -24,33 +24,33 @@ class TestDinhDangCoBan:
     @pytest.mark.parametrize(
         "dau_vao",
         [
-            "0913048358",
-            "0913 048 358",
-            "0913.048.358",
-            "0913-048-358",
-            "+84913048358",
-            "+84 913 048 358",
-            "84913048358",
-            "0084913048358",
-            " 0913048358 ",
-            "(091) 304 8358",
+            "0913000001",
+            "0913 000 001",
+            "0913.000.001",
+            "0913-000-001",
+            "+84913000001",
+            "+84 913 000 001",
+            "84913000001",
+            "0084913000001",
+            " 0913000001 ",
+            "(091) 300 0001",
         ],
     )
     def test_cac_cach_viet_deu_ve_mot_dang(self, dau_vao):
         """Mọi cách viết thông dụng của cùng 1 số phải ra cùng kết quả."""
         kq = chuan_hoa(dau_vao)
         assert kq.hop_le, f"{dau_vao} bị loại: {kq.ghi_chu}"
-        assert kq.so_chuan == "84913048358"
+        assert kq.so_chuan == "84913000001"
 
     def test_giu_lai_so_goc_de_doi_chieu(self):
-        kq = chuan_hoa("+84 913 048 358")
-        assert kq.so_goc == "+84 913 048 358"
+        kq = chuan_hoa("+84 913 000 001")
+        assert kq.so_goc == "+84 913 000 001"
 
     def test_excel_an_mat_so_0_dau(self):
-        """Ô Excel để kiểu Number sẽ biến 0913048358 thành 913048358."""
-        kq = chuan_hoa("913048358")
+        """Ô Excel để kiểu Number sẽ biến 0913000001 thành 913048358."""
+        kq = chuan_hoa("913000001")
         assert kq.hop_le
-        assert kq.so_chuan == "84913048358"
+        assert kq.so_chuan == "84913000001"
         assert "Thiếu số 0 đầu" in kq.ghi_chu
 
 
@@ -93,7 +93,7 @@ class TestLoaiBoSoKhongDung:
         assert chuan_hoa("khong co").trang_thai == SAI_DINH_DANG
 
     def test_do_dai_sai(self):
-        for x in ["091304", "09130483581234"]:
+        for x in ["091304", "09130000011234"]:
             kq = chuan_hoa(x)
             assert not kq.hop_le
             assert kq.trang_thai == SAI_DINH_DANG
@@ -123,7 +123,7 @@ class TestDauSoNhaMang:
 
 class TestHienThi:
     def test_hien_thi_cho_nguoi_doc(self):
-        assert hien_thi("84913048358") == "0913 048 358"
+        assert hien_thi("84913000001") == "0913 000 001"
 
     def test_hien_thi_chiu_duoc_dau_vao_rac(self):
         assert hien_thi(None) == ""
@@ -131,26 +131,95 @@ class TestHienThi:
 
     def test_che_giau_khong_lo_so_day_du(self):
         """Log không được ghi nguyên số — dữ liệu cá nhân (NĐ 13/2023)."""
-        ket_qua = che_giau("84913048358")
-        assert ket_qua == "0913***358"
-        assert "048" not in ket_qua
+        ket_qua = che_giau("84913000001")
+        assert ket_qua == "0913***001"
+        assert "000 001" not in ket_qua
 
     def test_che_giau_dau_vao_ngan(self):
         assert che_giau(None) == "***"
         assert che_giau("123") == "***"
 
 
-class TestSoThat:
-    """6 số thật đang có trong public.cong_chuc phải xử lý được hết."""
+class TestDauSoThucTe:
+    """Các đầu số thực tế gặp trong danh sách công chức.
+
+    Số trong test là số MINH HỌA (đuôi 00000x) — không dùng số thật của
+    công chức, vì đó là dữ liệu cá nhân theo Nghị định 13/2023/NĐ-CP và
+    test nằm trong git vĩnh viễn.
+    """
 
     @pytest.mark.parametrize(
         "so",
-        ["0913048358", "0936719858", "0988755568",
-         "0989567855", "0913387231", "0913030388"],
+        ["0913000001", "0936000002", "0988000003",
+         "0989000004", "0913000005", "0913000006"],
     )
-    def test_6_so_hien_co_deu_hop_le(self, so):
+    def test_cac_dau_so_thuc_te_deu_hop_le(self, so):
         kq = chuan_hoa(so)
         assert kq.hop_le
         assert kq.so_chuan is not None
         assert kq.so_chuan.startswith("84")
         assert len(kq.so_chuan) == 11
+
+
+class TestNhieuSoTrongMotO:
+    """Danh sách thật có 56/548 người khai 2 số trong một ô (số dưới là minh họa)."""
+
+    def test_tach_dau_cham_phay(self):
+        from common_service.services.zalo.phone import tach_nhieu
+
+        assert tach_nhieu("0916000007; 0984000008") == ["0916000007", "0984000008"]
+
+    def test_tach_xuong_dong(self):
+        from common_service.services.zalo.phone import tach_nhieu
+
+        assert tach_nhieu("0798000009\n0912000010") == ["0798000009", "0912000010"]
+
+    def test_khong_tach_nham_khoang_trang_trong_mot_so(self):
+        """'0913 000 001' là MỘT số, không được cắt thành ba mảnh."""
+        from common_service.services.zalo.phone import tach_nhieu
+
+        assert tach_nhieu("0913 000 001") == ["0913 000 001"]
+
+    def test_khong_tach_nham_dau_cham(self):
+        from common_service.services.zalo.phone import tach_nhieu
+
+        assert tach_nhieu("0913.000.001") == ["0913.000.001"]
+
+    def test_lay_so_dau_tien_hop_le(self):
+        from common_service.services.zalo.phone import chuan_hoa_uu_tien
+
+        chinh, con_lai = chuan_hoa_uu_tien("0916000007; 0984000008")
+        assert chinh.hop_le
+        assert chinh.so_chuan == "84916000007"
+        assert con_lai == ["84984000008"]
+
+    def test_bo_qua_so_hong_lay_so_tot(self):
+        """Số đầu là máy bàn → phải lấy số di động thứ hai."""
+        from common_service.services.zalo.phone import chuan_hoa_uu_tien
+
+        chinh, con_lai = chuan_hoa_uu_tien("02033826123; 0913000001")
+        assert chinh.hop_le
+        assert chinh.so_chuan == "84913000001"
+        assert con_lai == []
+
+    def test_tat_ca_deu_hong_thi_giu_ly_do_cu_the(self):
+        from common_service.services.zalo.phone import chuan_hoa_uu_tien, SO_CO_DINH
+
+        chinh, con_lai = chuan_hoa_uu_tien("02033826123; 02033826124")
+        assert not chinh.hop_le
+        assert chinh.trang_thai == SO_CO_DINH
+        assert con_lai == []
+
+    def test_o_trong(self):
+        from common_service.services.zalo.phone import chuan_hoa_uu_tien, RONG
+
+        chinh, con_lai = chuan_hoa_uu_tien("")
+        assert chinh.trang_thai == RONG
+        assert con_lai == []
+
+    def test_mot_so_duy_nhat_van_chay_binh_thuong(self):
+        from common_service.services.zalo.phone import chuan_hoa_uu_tien
+
+        chinh, con_lai = chuan_hoa_uu_tien("0913000001")
+        assert chinh.so_chuan == "84913000001"
+        assert con_lai == []

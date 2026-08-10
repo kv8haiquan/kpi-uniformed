@@ -7,10 +7,10 @@ Module thuần túy — không đụng DB, không gọi mạng, nên test đư�
 chưa cần credential Zalo.
 
 Dữ liệu số điện thoại do người nhập tay (danh sách TCCB, Excel) thường lẫn:
-    0913048358      → 84913048358
-    +84 913 048 358 → 84913048358
-    0084913048358   → 84913048358
-    913048358       → 84913048358   (thiếu số 0 đầu do Excel ăn mất)
+    0913000001      → 84913000001
+    +84 913 000 001 → 84913000001
+    0084913000001   → 84913000001
+    913000001       → 84913000001   (thiếu số 0 đầu do Excel ăn mất)
     0163.123.4567   → 84331234567   (số 11 chữ số cũ, đã chuyển đổi năm 2018)
     0203 3826 xxx   → LOẠI (số cố định, không có Zalo)
 """
@@ -151,8 +151,43 @@ def chuan_hoa(so: Optional[str]) -> KetQuaChuanHoa:
     return KetQuaChuanHoa(so_goc, so_chuan, trang_thai, ghi_chu)
 
 
+# Dấu ngăn giữa NHIỀU số trong cùng một ô. KHÔNG gồm khoảng trắng và dấu chấm
+# vì hai ký tự đó là định dạng BÊN TRONG một số ("0913 000 001", "0913.000.001").
+_DAU_NGAN = re.compile(r"[;\n\r,/|]+")
+
+
+def tach_nhieu(chuoi: Optional[str]) -> list[str]:
+    """Tách ô có thể chứa nhiều số thành danh sách chuỗi con.
+
+    Thực tế danh sách do đơn vị lập: 56/548 người khai 2 số trong cùng một ô,
+    ngăn bằng dấu ';' hoặc xuống dòng.
+    """
+    if not chuoi:
+        return []
+    return [p.strip() for p in _DAU_NGAN.split(str(chuoi)) if p.strip()]
+
+
+def chuan_hoa_uu_tien(chuoi: Optional[str]) -> tuple[KetQuaChuanHoa, list[str]]:
+    """Chuẩn hóa ô có thể chứa nhiều số.
+
+    Trả về (số hợp lệ ĐẦU TIÊN, danh sách các số hợp lệ còn lại).
+    Lấy số đầu vì đó thường là số chính người ta khai trước.
+    Nếu không số nào hợp lệ thì trả về kết quả lỗi của số đầu tiên để giữ
+    nguyên lý do cụ thể (rỗng / sai định dạng / máy bàn / đầu số lạ).
+    """
+    phan = tach_nhieu(chuoi)
+    if not phan:
+        return chuan_hoa(chuoi), []
+
+    ket_qua = [chuan_hoa(p) for p in phan]
+    hop_le = [k for k in ket_qua if k.hop_le]
+    if not hop_le:
+        return ket_qua[0], []
+    return hop_le[0], [k.so_chuan for k in hop_le[1:] if k.so_chuan]
+
+
 def hien_thi(so_chuan: Optional[str]) -> str:
-    """Đổi 84913048358 → 0913 048 358 để hiển thị cho người dùng đọc."""
+    """Đổi 84913000001 → 0913 000 001 để hiển thị cho người dùng đọc."""
     if not so_chuan or not so_chuan.startswith("84") or len(so_chuan) != 11:
         return so_chuan or ""
     tb = so_chuan[2:]
@@ -160,7 +195,7 @@ def hien_thi(so_chuan: Optional[str]) -> str:
 
 
 def che_giau(so_chuan: Optional[str]) -> str:
-    """Che bớt số để ghi log/hiển thị: 84913048358 → 0913***358.
+    """Che bớt số để ghi log/hiển thị: 84913000001 → 0913***001.
 
     Dùng khi in ra log — số điện thoại là dữ liệu cá nhân theo Nghị định
     13/2023/NĐ-CP, không nên ghi nguyên vẹn vào file log.

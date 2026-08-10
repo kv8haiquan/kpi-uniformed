@@ -123,8 +123,8 @@ function useMenuSections(): MenuSection[] {
     { label: 'Phê duyệt', href: '/phe-duyet', icon: CheckSquare },
     { label: danhGiaLabel, href: danhGiaHref, icon: BarChart3 },
     { label: 'Xếp loại', href: '/xep-loai', icon: Trophy },
-    // Điều chỉnh điểm tiêu chí chung (28/07/2026) — chỉ LĐ Chi cục (CCT/PCCT) + admin
-    ...(user?.is_system_admin === true || ['CCT', 'PCCT'].includes(maVaiTro ?? '')
+    // Điều chỉnh điểm tiêu chí chung (28/07/2026) — LĐ Chi cục (CCT/PCCT), Trưởng ĐV + admin
+    ...(user?.is_system_admin === true || ['CCT', 'PCCT', 'TDV'].includes(maVaiTro ?? '')
       ? [{ label: 'Điều chỉnh điểm TC', href: '/dieu-chinh-tieu-chi', icon: SlidersHorizontal }]
       : []),
     // Đối soát hoàn thành đánh giá tháng (17/07/2026) — TCCB / LĐ Chi cục / can_view_all_units

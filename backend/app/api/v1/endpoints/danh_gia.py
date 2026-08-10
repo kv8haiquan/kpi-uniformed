@@ -2258,11 +2258,13 @@ async def dieu_chinh_danh_gia_thang(
             ))
 
     # 3. Guard theo trạng thái báo cáo xếp loại tháng đó của đơn vị.
-    #    CCT (và admin) được sửa BẤT KỂ trạng thái — kể cả báo cáo ĐÃ DUYỆT — khi đó
-    #    bước 6 sẽ tự đồng bộ snapshot + xếp loại + thống kê của báo cáo chính thức.
-    #    PCCT/TDV/PDV vẫn chỉ được sửa khi báo cáo CHƯA chốt (NHAP/TU_CHOI).
+    #    CCT, Trưởng đơn vị (và admin) được sửa BẤT KỂ trạng thái — kể cả báo cáo ĐÃ
+    #    DUYỆT — khi đó bước 6 tự đồng bộ snapshot + xếp loại + thống kê báo cáo.
+    #    TDV chỉ chạm được CC cùng đơn vị (đã chặn ở bước 2 — PERM_002).
+    #    PCCT/PDV vẫn chỉ được sửa khi báo cáo CHƯA chốt (NHAP/TU_CHOI).
     is_cct = cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
-    duoc_sua_da_chot = is_admin or is_cct
+    is_tdv = cap_bac == CapBacVaiTro.TRUONG_DON_VI
+    duoc_sua_da_chot = is_admin or is_cct or is_tdv
     bc = (await db.execute(
         select(BaoCaoXepLoai).where(
             BaoCaoXepLoai.don_vi_id == cong_chuc.don_vi_id,

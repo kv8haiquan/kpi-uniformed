@@ -25,9 +25,12 @@ const TRANG_THAI_SUA_DUOC = ['NHAP', 'TU_CHOI', 'TRA_LAI'];
 export default function DieuChinhTieuChiPage() {
   const { user } = useAuthStore();
   const maVaiTro = user?.vai_tro?.ma_vai_tro ?? '';
-  // Trang dành cho LĐ Chi cục (CCT/PCCT) và admin.
-  const canAccess =
-    user?.is_system_admin === true || ['CCT', 'PCCT'].includes(maVaiTro);
+  const isAdmin = user?.is_system_admin === true;
+  const isTdv = maVaiTro === 'TDV';
+  // Trang dành cho LĐ Chi cục (CCT/PCCT), Trưởng đơn vị và admin.
+  const canAccess = isAdmin || ['CCT', 'PCCT', 'TDV'].includes(maVaiTro);
+  // CCT/PCCT/admin xem toàn Chi cục; Trưởng ĐV chỉ đơn vị mình (API riêng, backend chặn).
+  const xemToanChiCuc = isAdmin || ['CCT', 'PCCT'].includes(maVaiTro);
 
   const [thang, setThang] = useState(THANG_HIEN_TAI);
   const [nam, setNam] = useState(NAM_HIEN_TAI);
@@ -46,13 +49,16 @@ export default function DieuChinhTieuChiPage() {
     setBaoCao(null);
     setSelectedBaoCaoId('');
     try {
-      const items = await baoCaoXepLoaiService.getDanhSach(thang, nam);
+      // Trưởng ĐV: chỉ lấy báo cáo đơn vị mình (API /don-vi — backend tự giới hạn).
+      const items = xemToanChiCuc
+        ? await baoCaoXepLoaiService.getDanhSach(thang, nam)
+        : await baoCaoXepLoaiService.getBaoCaoDonVi(thang, nam).then((bc) => (bc ? [bc] : []));
       setDanhSach(items);
       if (items.length > 0) setSelectedBaoCaoId(items[0].id);
     } finally {
       setLoadingList(false);
     }
-  }, [thang, nam, canAccess]);
+  }, [thang, nam, canAccess, xemToanChiCuc]);
 
   useEffect(() => { loadDanhSach(); }, [loadDanhSach]);
 
@@ -70,13 +76,14 @@ export default function DieuChinhTieuChiPage() {
 
   useEffect(() => { loadDetail(selectedBaoCaoId); }, [selectedBaoCaoId, loadDetail]);
 
-  // CCT (và admin) được sửa BẤT KỂ trạng thái — kể cả báo cáo đã duyệt.
-  const isCctOrAdmin = user?.is_system_admin === true || maVaiTro === 'CCT';
+  // CCT, Trưởng đơn vị (và admin) được sửa BẤT KỂ trạng thái — kể cả báo cáo đã duyệt.
+  // PCCT vẫn chỉ sửa khi báo cáo chưa chốt.
+  const suaMoiTrangThai = isAdmin || maVaiTro === 'CCT' || isTdv;
   const editable = useMemo(
-    () => !!baoCao && (isCctOrAdmin || TRANG_THAI_SUA_DUOC.includes(String(baoCao.trang_thai))),
-    [baoCao, isCctOrAdmin]
+    () => !!baoCao && (suaMoiTrangThai || TRANG_THAI_SUA_DUOC.includes(String(baoCao.trang_thai))),
+    [baoCao, suaMoiTrangThai]
   );
-  // Đang sửa một báo cáo ĐÃ chốt (chỉ xảy ra với CCT/admin).
+  // Đang sửa một báo cáo ĐÃ chốt (chỉ xảy ra với CCT/TDV/admin).
   const suaBaoCaoDaChot = useMemo(
     () => editable && !!baoCao && !TRANG_THAI_SUA_DUOC.includes(String(baoCao.trang_thai)),
     [editable, baoCao]
@@ -170,7 +177,7 @@ export default function DieuChinhTieuChiPage() {
         <div className="mb-3 text-sm">
           {suaBaoCaoDaChot ? (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-medium">
-              ● Báo cáo đã duyệt — CCT vẫn sửa được; điểm &amp; xếp loại trên báo cáo chính thức sẽ được tính lại
+              ● Báo cáo đã chốt — bạn vẫn sửa được; điểm &amp; xếp loại trên báo cáo chính thức sẽ được tính lại
             </span>
           ) : editable ? (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">

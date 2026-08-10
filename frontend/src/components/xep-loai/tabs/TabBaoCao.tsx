@@ -1126,10 +1126,13 @@ function BaoCaoTableView({
 
   const trangThaiInfo = TRANG_THAI_MAP[baoCao.trang_thai] || TRANG_THAI_MAP.NHAP;
   const canGuiDuyet = canEdit && (baoCao.trang_thai === 'NHAP' || baoCao.trang_thai === 'TRA_LAI' || baoCao.trang_thai === 'TU_CHOI');
-  // CCT (và admin) được sửa điểm tiêu chí chung BẤT KỂ trạng thái (kể cả báo cáo đã chốt).
+  // CCT, Trưởng đơn vị (và admin) được sửa điểm tiêu chí chung BẤT KỂ trạng thái
+  // (kể cả báo cáo đã chốt). TDV chỉ chạm được đơn vị mình — backend chặn (PERM_002).
   const currentUser = useAuthStore((state) => state.user);
-  const isCctUser = currentUser?.is_system_admin === true || currentUser?.vai_tro?.ma_vai_tro === 'CCT';
-  const showActions = (canEdit && canGuiDuyet) || isCctUser;
+  const suaDiemMoiTrangThai =
+    currentUser?.is_system_admin === true ||
+    ['CCT', 'TDV'].includes(currentUser?.vai_tro?.ma_vai_tro ?? '');
+  const showActions = (canEdit && canGuiDuyet) || suaDiemMoiTrangThai;
 
   const handleDeXuat = (ct: IChiTietXepLoai) => {
     setSelectedChiTiet(ct);

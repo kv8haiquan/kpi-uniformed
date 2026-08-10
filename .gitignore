@@ -55,3 +55,12 @@ ENROLLMENT_*.md
 EXAM_*.md
 NOTIFICATION_*.md
 *.dump
+
+# Sao lưu .env — chứa secret thật (mật khẩu DB, ZALO_OA_SECRET). KHÔNG lên git.
+.env.bak*
+.env.*.bak
+*.env.bak*
+
+# Danh sách số điện thoại công chức — dữ liệu cá nhân theo Nghị định 13/2023/NĐ-CP.
+# Giữ ngoài git; chỉ commit báo cáo đối chiếu đã tổng hợp.
+docs/zalo-oa/*.xlsx

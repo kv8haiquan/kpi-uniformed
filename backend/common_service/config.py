@@ -60,6 +60,55 @@ class Settings(BaseSettings):
     # Redis (cache/queue)
     redis_url: str = "redis://localhost:6379/0"
 
+    # ------------------------------------------------------------------
+    # Zalo OA — kênh đẩy thông báo (xem services/zalo/)
+    # ------------------------------------------------------------------
+    # HAI LỚP CỜ AN TOÀN, cả hai đều mặc định ở trạng thái KHÔNG gửi thật:
+    #   zalo_enabled=False  → worker không chạy vòng lặp nào
+    #   zalo_dry_run=True   → có chạy, có xếp hàng, nhưng CHỈ GHI LOG,
+    #                          không gọi API Zalo, không tốn tin nhắn
+    # Muốn gửi thật phải chủ động đặt CẢ HAI trong .env. Nhờ vậy code này
+    # merge vào nhánh chính cũng không thể vô tình nhắn cho ai.
+    zalo_enabled: bool = False
+    zalo_dry_run: bool = True
+
+    # Credential — BẮT BUỘC đặt qua .env, KHÔNG hardcode (xem đợt vá bảo mật
+    # 31/07/2026: mật khẩu DB từng nằm làm default trong 7 file config.py)
+    zalo_app_id: str = ""
+    zalo_oa_secret: str = ""
+    # KHÔNG dùng trong lời gọi API (access_token đã định danh OA). Chỉ ghi lại
+    # để biết hệ thống đang gắn với OA nào — phục vụ đối soát và hồ sơ ATTT.
+    # Để trống cũng chạy bình thường.
+    zalo_oa_id: str = ""
+
+    # Endpoint — tách ra config để test trỏ về mock server được
+    zalo_oauth_url: str = "https://oauth.zaloapp.com/v4/oa/access_token"
+    zalo_zns_url: str = "https://business.openapi.zalo.me/message/template"
+
+    # Template ID do Zalo cấp sau khi duyệt. Để trống = chưa có → worker
+    # đánh dấu BO_QUA/KHONG_CO_TEMPLATE thay vì gửi lỗi.
+    zalo_tpl_moi_hop: str = ""
+    zalo_tpl_nhac_hop: str = ""
+    zalo_tpl_thay_doi_hop: str = ""
+    zalo_tpl_huy_hop: str = ""
+
+    # Phạm vi bật: danh sách `loai` trong common.thong_bao được phép gửi Zalo.
+    # Giai đoạn 1 chỉ HKG. Muốn bật thêm KPI/LMS chỉ cần sửa biến môi trường.
+    zalo_loai_bat: str = "MEETING"
+
+    # Vận hành worker
+    zalo_chu_ky_giay: int = 60  # nhịp quét hàng đợi
+    zalo_cua_so_quet_phut: int = 120  # chỉ nhặt thông báo mới trong N phút qua
+    zalo_so_lan_thu_toi_da: int = 4
+    zalo_moi_lan_gui: int = 50  # số tin tối đa mỗi vòng, tránh dồn tải
+    zalo_khong_gui_truoc_gio: int = 6  # giờ VN — không nhắn lúc rạng sáng
+    zalo_khong_gui_sau_gio: int = 22
+
+    @property
+    def zalo_danh_sach_loai(self) -> List[str]:
+        """Parse zalo_loai_bat thành list, ví dụ 'MEETING,KPI' → [...]."""
+        return [x.strip().upper() for x in self.zalo_loai_bat.split(",") if x.strip()]
+
 
 @lru_cache()
 def get_settings() -> Settings:

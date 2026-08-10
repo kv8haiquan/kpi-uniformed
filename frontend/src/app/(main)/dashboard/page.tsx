@@ -696,6 +696,9 @@ export default function DashboardPage() {
               <QuickActionCard icon="📊" title="Báo cáo đánh giá, xếp loại" description={canEditManageUnit ? "Lập báo cáo đánh giá, xếp loại CC" : "Xem báo cáo đánh giá, xếp loại CC"} href="/xep-loai?tab=bao-cao" color="indigo" size="large" viewOnly={!canEditManageUnit} />
               <QuickActionCard icon="📐" title="Tạm tính KPI" description="Tổng hợp tạm tính điểm KPI tháng" href="/xep-loai?tab=tam-tinh" color="cyan" size="large" viewOnly={!canEditManageUnit} />
               <QuickActionCard icon="🏆" title="Đánh giá Quý" description="Tổng hợp đánh giá và xếp loại quý" href="/xep-loai?tab=quy" color="purple" size="large" viewOnly={!canEditManageUnit} />
+              {isDoiTruong && (
+                <QuickActionCard icon="✏️" title="Điều chỉnh điểm tiêu chí chung" description="Sửa điểm TC chung của CC đơn vị mình" href="/dieu-chinh-tieu-chi" color="green" size="large" />
+              )}
             </div>
           </div>
         )}

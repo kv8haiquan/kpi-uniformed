@@ -56,7 +56,7 @@ class TestThamSo:
         mau = lay_mau("GIAY_MOI_HOP")
         ts = mau.dung_tham_so(TT_MAU)
         assert ts["ho_ten"] == "Nguyễn Văn A"
-        assert ts["thoi_gian"] == "14:00 ngày 31/07/2026"
+        assert ts["thoi_gian"] == "31/07/2026"  # kiểu DATE: chỉ ngày
 
     @pytest.mark.parametrize(
         "loai,moc",
@@ -72,7 +72,24 @@ class TestThamSo:
             ThongTinGui(loai, "Trần Thị B", date(2026, 7, 31), time(8, 30), None)
         )
         assert ts["moc"] == moc
-        assert ts["thoi_gian"] == "08:30 ngày 31/07/2026"
+        assert ts["thoi_gian"] == "31/07/2026"
+
+    def test_dinh_dang_dung_kieu_DATE_cua_zalo(self):
+        """Zalo khai `thoi_gian` kiểu DATE → chỉ nhận đúng dd/mm/yyyy.
+
+        Gửi kèm giờ ("14:00 ngày 31/07/2026") sẽ bị Zalo từ chối. Test này
+        canh giữ điều đó; nếu đơn vị đổi template sang STRING thì sửa cờ
+        templates.THOI_GIAN_KIEU_DATE và cập nhật test.
+        """
+        import re as _re
+
+        for loai, mau in DANH_MUC_MAU.items():
+            ts = mau.dung_tham_so(
+                ThongTinGui(loai, "X", date(2026, 7, 31), time(14, 0), None)
+            )
+            assert _re.fullmatch(r"\d{2}/\d{2}/\d{4}", ts["thoi_gian"]), (
+                f"{loai}: '{ts['thoi_gian']}' không đúng dạng dd/mm/yyyy"
+            )
 
     def test_thieu_ngay_gio_khong_no(self):
         """Cuộc họp bị xóa hoặc dữ liệu thiếu → không được ném lỗi."""

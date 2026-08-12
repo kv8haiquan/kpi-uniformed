@@ -55,14 +55,29 @@ class MauTin:
     dung_tham_so: Callable[[ThongTinGui], dict[str, Any]]
 
 
+# Tham số `thoi_gian` của template ZNS hiện đang khai kiểu **DATE**, nên Zalo
+# CHỈ chấp nhận đúng dạng dd/mm/yyyy (dữ liệu mẫu Zalo trả về: "01/01/1970").
+# Gửi "14:00 ngày 31/07/2026" sẽ bị từ chối với lỗi tham số không hợp lệ.
+#
+# Hệ quả: giờ họp KHÔNG truyền được — người nhận chỉ biết ngày.
+# Muốn hiển thị cả giờ thì đơn vị phải sửa template, đổi `thoi_gian` sang kiểu
+# STRING rồi gửi duyệt lại; khi đó chỉ cần đặt cờ dưới đây thành False.
+THOI_GIAN_KIEU_DATE = True
+
+
 def _thoi_gian_hop(tt: ThongTinGui) -> str:
-    """Ghép '14:00 ngày 31/07/2026'. Thiếu dữ liệu thì trả chuỗi rỗng."""
-    phan = []
-    if tt.gio_bat_dau:
-        phan.append(tt.gio_bat_dau.strftime("%H:%M"))
-    if tt.ngay_hop:
-        phan.append(f"ngày {tt.ngay_hop.strftime('%d/%m/%Y')}")
-    return " ".join(phan)
+    """Dựng giá trị cho tham số `thoi_gian`.
+
+    - Template khai kiểu DATE  → "31/07/2026"        (mất giờ họp)
+    - Template khai kiểu STRING → "14:00 31/07/2026" (đầy đủ)
+    Thiếu dữ liệu thì trả chuỗi rỗng.
+    """
+    if not tt.ngay_hop:
+        return ""
+    ngay = tt.ngay_hop.strftime("%d/%m/%Y")
+    if THOI_GIAN_KIEU_DATE or not tt.gio_bat_dau:
+        return ngay
+    return f"{tt.gio_bat_dau.strftime('%H:%M')} {ngay}"
 
 
 def _tham_so_co_ban(tt: ThongTinGui) -> dict[str, Any]:

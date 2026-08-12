@@ -92,6 +92,13 @@ class Settings(BaseSettings):
     zalo_tpl_thay_doi_hop: str = ""
     zalo_tpl_huy_hop: str = ""
 
+    # Nút bấm trong tin ZNS có mang tham số mã cuộc họp hay không.
+    # False → nút trỏ tới URL cố định (/hop-khong-giay), KHÔNG gửi tham số ma_hop.
+    # True  → nút dạng .../chi-tiet/{{ma_hop}}, hệ thống gửi kèm mã cuộc họp.
+    # Chỉ bật SAU KHI template đã khai tham số ma_hop và được Zalo duyệt —
+    # gửi thừa tham số so với template sẽ bị Zalo từ chối cả tin.
+    zalo_nut_tham_so: bool = False
+
     # Phạm vi bật: danh sách `loai` trong common.thong_bao được phép gửi Zalo.
     # Giai đoạn 1 chỉ HKG. Muốn bật thêm KPI/LMS chỉ cần sửa biến môi trường.
     zalo_loai_bat: str = "MEETING"

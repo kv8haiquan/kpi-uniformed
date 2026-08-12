@@ -60,14 +60,9 @@ Những người này sẽ **không nhận được** thông báo họp qua Zalo
 
 ---
 
-## 4. Số điện thoại trùng giữa nhiều người (2 số)
+## 4. Số điện thoại trùng giữa nhiều người (0 số)
 
-Thường là nhập nhầm — cần đơn vị xác nhận lại.
-
-| Số | Những người cùng khai |
-|---|---|
-| 0934 216 *** | 20ZZ-0032 Vũ Tuấn Hải, 20ZZ-0336 Vũ Hồng Hải |
-| 0936 451 *** | 20ZZ-0555 Vũ Thanh Hồng, 20ZZ-0538 Trần Mạnh Trung |
+✅ Không có số nào bị trùng.
 
 ---
 

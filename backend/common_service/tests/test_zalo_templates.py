@@ -56,7 +56,7 @@ class TestThamSo:
         mau = lay_mau("GIAY_MOI_HOP")
         ts = mau.dung_tham_so(TT_MAU)
         assert ts["ho_ten"] == "Nguyễn Văn A"
-        assert ts["thoi_gian"] == "14:00 ngày 31/07/2026"
+        assert ts["thoi_gian"] == "31/07/2026"  # kiểu DATE: chỉ ngày
 
     @pytest.mark.parametrize(
         "loai,moc",
@@ -72,7 +72,24 @@ class TestThamSo:
             ThongTinGui(loai, "Trần Thị B", date(2026, 7, 31), time(8, 30), None)
         )
         assert ts["moc"] == moc
-        assert ts["thoi_gian"] == "08:30 ngày 31/07/2026"
+        assert ts["thoi_gian"] == "31/07/2026"
+
+    def test_dinh_dang_dung_kieu_DATE_cua_zalo(self):
+        """Zalo khai `thoi_gian` kiểu DATE → chỉ nhận đúng dd/mm/yyyy.
+
+        Gửi kèm giờ ("14:00 ngày 31/07/2026") sẽ bị Zalo từ chối. Test này
+        canh giữ điều đó; nếu đơn vị đổi template sang STRING thì sửa cờ
+        templates.THOI_GIAN_KIEU_DATE và cập nhật test.
+        """
+        import re as _re
+
+        for loai, mau in DANH_MUC_MAU.items():
+            ts = mau.dung_tham_so(
+                ThongTinGui(loai, "X", date(2026, 7, 31), time(14, 0), None)
+            )
+            assert _re.fullmatch(r"\d{2}/\d{2}/\d{4}", ts["thoi_gian"]), (
+                f"{loai}: '{ts['thoi_gian']}' không đúng dạng dd/mm/yyyy"
+            )
 
     def test_thieu_ngay_gio_khong_no(self):
         """Cuộc họp bị xóa hoặc dữ liệu thiếu → không được ném lỗi."""
@@ -90,7 +107,11 @@ class TestChinhSachChuongCua:
     này phải đỏ để buộc rà lại với Phòng CNTT.
     """
 
-    KHOA_DUOC_PHEP = {"ho_ten", "thoi_gian", "moc"}
+    # `ma_hop` được phép: là UUID cuộc họp, dùng để nút bấm dẫn thẳng vào
+    # đúng cuộc họp. Chuỗi này vô nghĩa với người ngoài — không lộ tiêu đề,
+    # địa điểm, thành phần hay tài liệu — nên vẫn đúng tinh thần "chuông cửa".
+    # Nó CHỈ xuất hiện khi bật ZALO_NUT_THAM_SO (template đã khai tham số).
+    KHOA_DUOC_PHEP = {"ho_ten", "thoi_gian", "moc", "ma_hop"}
 
     def test_khong_co_truong_nao_ngoai_danh_sach_cho_phep(self):
         for loai, mau in DANH_MUC_MAU.items():
@@ -99,6 +120,30 @@ class TestChinhSachChuongCua:
             )
             thua = set(ts.keys()) - self.KHOA_DUOC_PHEP
             assert not thua, f"{loai} lộ thêm trường: {thua}"
+
+    def test_mac_dinh_KHONG_gui_ma_hop(self):
+        """Chưa bật cờ thì tuyệt đối không gửi ma_hop — template chưa khai
+        tham số này, gửi thừa sẽ bị Zalo từ chối cả tin."""
+        from common_service.config import settings
+
+        assert settings.zalo_nut_tham_so is False, "Cờ phải mặc định tắt"
+        for loai, mau in DANH_MUC_MAU.items():
+            ts = mau.dung_tham_so(
+                ThongTinGui(loai, "X", date(2026, 1, 1), time(9, 0), "/l",
+                            cuoc_hop_id="abc-123")
+            )
+            assert "ma_hop" not in ts, f"{loai} gửi ma_hop khi cờ đang tắt"
+
+    def test_bat_co_thi_gui_ma_hop(self, monkeypatch):
+        """Bật cờ → có ma_hop, và giá trị đúng là UUID cuộc họp."""
+        from common_service.services.zalo import templates as tpl
+
+        monkeypatch.setattr(tpl.settings, "zalo_nut_tham_so", True, raising=False)
+        ts = DANH_MUC_MAU["GIAY_MOI_HOP"].dung_tham_so(
+            ThongTinGui("GIAY_MOI_HOP", "X", date(2026, 1, 1), time(9, 0), "/l",
+                        cuoc_hop_id="7279683b-49fb-446d-aa48-6e66f155f314")
+        )
+        assert ts["ma_hop"] == "7279683b-49fb-446d-aa48-6e66f155f314"
 
     def test_link_url_khong_bi_dua_vao_tham_so(self):
         """link_url chứa UUID cuộc họp — không cần và không nên gửi qua Zalo."""

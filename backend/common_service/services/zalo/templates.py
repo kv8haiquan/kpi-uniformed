@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from datetime import date, time
 from typing import Any, Callable, Optional
 
+from common_service.config import settings
+
 # Thứ tự ưu tiên hiển thị mốc nhắc — dùng cho template nhắc họp gộp
 _MOC_NHAC = {
     "NHAC_HOP_24H": "trước 24 giờ",
@@ -44,6 +46,7 @@ class ThongTinGui:
     ngay_hop: Optional[date]
     gio_bat_dau: Optional[time]
     link_url: Optional[str]
+    cuoc_hop_id: Optional[Any] = None
 
 
 @dataclass(frozen=True)
@@ -55,18 +58,41 @@ class MauTin:
     dung_tham_so: Callable[[ThongTinGui], dict[str, Any]]
 
 
+# Tham số `thoi_gian` của template ZNS hiện đang khai kiểu **DATE**, nên Zalo
+# CHỈ chấp nhận đúng dạng dd/mm/yyyy (dữ liệu mẫu Zalo trả về: "01/01/1970").
+# Gửi "14:00 ngày 31/07/2026" sẽ bị từ chối với lỗi tham số không hợp lệ.
+#
+# Hệ quả: giờ họp KHÔNG truyền được — người nhận chỉ biết ngày.
+# Muốn hiển thị cả giờ thì đơn vị phải sửa template, đổi `thoi_gian` sang kiểu
+# STRING rồi gửi duyệt lại; khi đó chỉ cần đặt cờ dưới đây thành False.
+THOI_GIAN_KIEU_DATE = True
+
+
 def _thoi_gian_hop(tt: ThongTinGui) -> str:
-    """Ghép '14:00 ngày 31/07/2026'. Thiếu dữ liệu thì trả chuỗi rỗng."""
-    phan = []
-    if tt.gio_bat_dau:
-        phan.append(tt.gio_bat_dau.strftime("%H:%M"))
-    if tt.ngay_hop:
-        phan.append(f"ngày {tt.ngay_hop.strftime('%d/%m/%Y')}")
-    return " ".join(phan)
+    """Dựng giá trị cho tham số `thoi_gian`.
+
+    - Template khai kiểu DATE  → "31/07/2026"        (mất giờ họp)
+    - Template khai kiểu STRING → "14:00 31/07/2026" (đầy đủ)
+    Thiếu dữ liệu thì trả chuỗi rỗng.
+    """
+    if not tt.ngay_hop:
+        return ""
+    ngay = tt.ngay_hop.strftime("%d/%m/%Y")
+    if THOI_GIAN_KIEU_DATE or not tt.gio_bat_dau:
+        return ngay
+    return f"{tt.gio_bat_dau.strftime('%H:%M')} {ngay}"
 
 
 def _tham_so_co_ban(tt: ThongTinGui) -> dict[str, Any]:
-    return {"ho_ten": tt.ho_ten, "thoi_gian": _thoi_gian_hop(tt)}
+    d = {"ho_ten": tt.ho_ten, "thoi_gian": _thoi_gian_hop(tt)}
+    if settings.zalo_nut_tham_so and tt.cuoc_hop_id:
+        # Mã cuộc họp để nút bấm dẫn thẳng vào đúng cuộc họp thay vì trang chủ.
+        # KHÔNG vi phạm chính sách "chuông cửa": đây là chuỗi định danh vô
+        # nghĩa với người ngoài, không lộ tiêu đề/địa điểm/thành phần/tài liệu.
+        # Chỉ gửi khi template đã khai tham số này (bật ZALO_NUT_THAM_SO),
+        # vì gửi thừa tham số sẽ bị Zalo từ chối.
+        d["ma_hop"] = str(tt.cuoc_hop_id)
+    return d
 
 
 def _tham_so_nhac_hop(tt: ThongTinGui) -> dict[str, Any]:

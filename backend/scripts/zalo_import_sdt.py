@@ -84,6 +84,9 @@ _COT_NS = {
     "ngay_sinh", "ngày sinh", "ngày tháng năm sinh", "ngaysinh",
     "ngay thang nam sinh", "năm sinh",
 }
+# Nguồn được coi là chính xác hơn file Excel — không cho import ghi đè.
+_NGUON_UU_TIEN = {"DINH_CHINH_DON_VI", "BO_SUNG_TAY"}
+
 _COT_DV = {"don_vi", "đơn vị", "đơn vị công tác", "don vi cong tac", "đơn vị công tác"}
 
 
@@ -566,7 +569,23 @@ async def chay(duong_dan: Path, ghi: bool, xuat_md: Optional[Path]) -> int:
             da_khop_ids.add(str(cc["id"]))
             se_ghi.append((cc, kq_ch, so_phu))
 
-        trung_so = {s: m for s, m in theo_so.items() if len(m) > 1}
+        # Trùng số phải soi theo TRẠNG THÁI CUỐI trong DB, không chỉ theo file:
+        # số bị gán nhầm có thể đã được đơn vị đính chính bằng tay sau đó.
+        ten_theo_id = {str(c["id"]): f"{c['ma_cc']} {c['ho_ten']}" for c in cong_chuc}
+        cuoi_cung: dict[str, str] = {
+            cid: lk.so_dien_thoai for cid, lk in da_co.items() if lk.so_dien_thoai
+        }
+        for c, kq_ch, _ in se_ghi:
+            cid = str(c["id"])
+            lk_cu = da_co.get(cid)
+            if lk_cu is not None and lk_cu.nguon in _NGUON_UU_TIEN:
+                continue  # giữ số đã đính chính tay
+            cuoi_cung[cid] = kq_ch.so_chuan
+        gom: defaultdict[str, list[str]] = defaultdict(list)
+        for cid, so in cuoi_cung.items():
+            if cid in ten_theo_id:
+                gom[so].append(ten_theo_id[cid])
+        trung_so = {s: m for s, m in gom.items() if len(m) > 1}
         # "Thiếu số" tính theo THỰC TẾ trong DB: không khớp ở file này VÀ cũng
         # chưa có liên kết từ trước (ví dụ số bổ sung tay ngoài file Excel).
         thieu_sdt = [
@@ -604,7 +623,7 @@ async def chay(duong_dan: Path, ghi: bool, xuat_md: Optional[Path]) -> int:
             await engine.dispose()
             return 0
 
-        them, cap_nhat = 0, 0
+        them, cap_nhat, giu_nguyen = 0, 0, 0
         for cc, kq_ch, so_phu in se_ghi:
             # Giữ lại số phụ trong ghi chú: khi số chính báo lỗi, đơn vị có sẵn
             # số thứ hai để thử mà không phải mở lại file Excel.
@@ -620,6 +639,12 @@ async def chay(duong_dan: Path, ghi: bool, xuat_md: Optional[Path]) -> int:
                     ghi_chu=ghi_chu,
                 ))
                 them += 1
+            elif lk.nguon in _NGUON_UU_TIEN:
+                # Số do đơn vị đính chính/bổ sung tay là NGUỒN CHÍNH XÁC NHẤT.
+                # File Excel cũ chạy lại KHÔNG được phép ghi đè lên nó, nếu
+                # không mọi công sức đính chính sẽ mất im lặng.
+                if lk.so_dien_thoai != kq_ch.so_chuan:
+                    giu_nguyen += 1
             elif lk.so_dien_thoai != kq_ch.so_chuan:
                 lk.so_dien_thoai = kq_ch.so_chuan
                 lk.so_goc = kq_ch.so_goc[:30]
@@ -631,6 +656,9 @@ async def chay(duong_dan: Path, ghi: bool, xuat_md: Optional[Path]) -> int:
 
         await db.commit()
         print(f"\n✅ Đã ghi: thêm mới {them}, cập nhật {cap_nhat} liên kết.")
+        if giu_nguyen:
+            print(f"   Giữ nguyên {giu_nguyen} số đã đính chính tay "
+                  f"(không để file cũ ghi đè).")
 
     await engine.dispose()
     return 0

@@ -70,6 +70,7 @@ _SQL_QUET = text(
     SELECT tb.id            AS thong_bao_id,
            tb.nguoi_nhan_id,
            tb.doi_tuong_type,
+           tb.doi_tuong_id,
            tb.link_url,
            cc.ho_ten,
            lk.so_dien_thoai,
@@ -149,6 +150,7 @@ async def xep_hang(db: AsyncSession, gioi_han: int = 500) -> dict[str, int]:
                 ngay_hop=r["ngay_hop"],
                 gio_bat_dau=r["gio_bat_dau"],
                 link_url=r["link_url"],
+                cuoc_hop_id=r["doi_tuong_id"],
             )
         )
         db.add(

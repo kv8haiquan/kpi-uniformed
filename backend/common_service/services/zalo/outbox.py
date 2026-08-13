@@ -40,6 +40,7 @@ from common_service.models.zalo import (
     BQ_DA_TU_CHOI,
     BQ_KHONG_CO_SDT,
     BQ_KHONG_CO_TEMPLATE,
+    BQ_THIEU_MA_HOP,
     LK_HOAT_DONG,
     LK_SO_LOI,
     LK_TU_CHOI_NHAN,
@@ -117,6 +118,14 @@ async def xep_hang(db: AsyncSession, gioi_han: int = 500) -> dict[str, int]:
     for r in dong:
         mau = lay_mau(r["doi_tuong_type"])
         template_id = getattr(settings, mau.khoa_config, "") if mau else ""
+        tt = ThongTinGui(
+            doi_tuong_type=r["doi_tuong_type"],
+            ho_ten=r["ho_ten"] or "",
+            ngay_hop=r["ngay_hop"],
+            gio_bat_dau=r["gio_bat_dau"],
+            link_url=r["link_url"],
+            cuoc_hop_id=r["doi_tuong_id"],
+        )
 
         ly_do: Optional[str] = None
         if mau is None or not template_id:
@@ -128,6 +137,10 @@ async def xep_hang(db: AsyncSession, gioi_han: int = 500) -> dict[str, int]:
             LK_SO_LOI,
         ):
             ly_do = BQ_DA_TU_CHOI
+        elif mau.thieu_du_lieu(tt):
+            # Thà bỏ qua có lý do rõ ràng còn hơn để Zalo từ chối và tính là
+            # lỗi gửi — lỗi gửi sẽ thử lại 4 lần rồi mới chịu thua.
+            ly_do = BQ_THIEU_MA_HOP
 
         if ly_do:
             db.add(
@@ -143,16 +156,7 @@ async def xep_hang(db: AsyncSession, gioi_han: int = 500) -> dict[str, int]:
             thong_ke["bo_qua"] += 1
             continue
 
-        tham_so = mau.dung_tham_so(  # type: ignore[union-attr]
-            ThongTinGui(
-                doi_tuong_type=r["doi_tuong_type"],
-                ho_ten=r["ho_ten"] or "",
-                ngay_hop=r["ngay_hop"],
-                gio_bat_dau=r["gio_bat_dau"],
-                link_url=r["link_url"],
-                cuoc_hop_id=r["doi_tuong_id"],
-            )
-        )
+        tham_so = mau.tham_so(tt)  # type: ignore[union-attr]
         db.add(
             ZaloOutbox(
                 thong_bao_id=r["thong_bao_id"],

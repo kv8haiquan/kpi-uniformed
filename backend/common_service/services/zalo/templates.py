@@ -17,8 +17,11 @@ Lý do làm vậy:
 Nếu sau này lãnh đạo muốn hiển thị tiêu đề cuộc họp, sửa ở đây là đủ — nhưng
 phải xin ý kiến Phòng CNTT trước và tạo template ZNS mới.
 
-TRẠNG THÁI: template_id đang là PLACEHOLDER. Sau khi Zalo duyệt template thật,
-điền ID vào .env (ZALO_TPL_*) — không sửa code.
+TRẠNG THÁI (13/08/2026): 4 template đã được Zalo duyệt (ENABLE), ID điền trong
+.env qua các biến ZALO_TPL_*. Khi đơn vị sửa template thì chạy lại
+`python scripts/zalo_xem_template.py` và cập nhật cờ `co_ma_hop` trong
+DANH_MUC_MAU cho khớp — bộ tham số phải trùng khít với template, thừa hay
+thiếu đều bị Zalo từ chối cả tin.
 """
 
 from __future__ import annotations
@@ -26,8 +29,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, time
 from typing import Any, Callable, Optional
-
-from common_service.config import settings
 
 # Thứ tự ưu tiên hiển thị mốc nhắc — dùng cho template nhắc họp gộp
 _MOC_NHAC = {
@@ -49,95 +50,116 @@ class ThongTinGui:
     cuoc_hop_id: Optional[Any] = None
 
 
-@dataclass(frozen=True)
-class MauTin:
-    """Một template ZNS + hàm dựng tham số."""
-
-    khoa_config: str  # tên biến trong settings, ví dụ "zalo_tpl_moi_hop"
-    mo_ta: str
-    dung_tham_so: Callable[[ThongTinGui], dict[str, Any]]
-
-
-# Tham số `thoi_gian` của template ZNS hiện đang khai kiểu **DATE**, nên Zalo
-# CHỈ chấp nhận đúng dạng dd/mm/yyyy (dữ liệu mẫu Zalo trả về: "01/01/1970").
-# Gửi "14:00 ngày 31/07/2026" sẽ bị từ chối với lỗi tham số không hợp lệ.
-#
-# Hệ quả: giờ họp KHÔNG truyền được — người nhận chỉ biết ngày.
-# Muốn hiển thị cả giờ thì đơn vị phải sửa template, đổi `thoi_gian` sang kiểu
-# STRING rồi gửi duyệt lại; khi đó chỉ cần đặt cờ dưới đây thành False.
-THOI_GIAN_KIEU_DATE = True
-
-
-def _thoi_gian_hop(tt: ThongTinGui) -> str:
-    """Dựng giá trị cho tham số `thoi_gian`.
-
-    - Template khai kiểu DATE  → "31/07/2026"        (mất giờ họp)
-    - Template khai kiểu STRING → "14:00 31/07/2026" (đầy đủ)
-    Thiếu dữ liệu thì trả chuỗi rỗng.
-    """
-    if not tt.ngay_hop:
-        return ""
-    ngay = tt.ngay_hop.strftime("%d/%m/%Y")
-    if THOI_GIAN_KIEU_DATE or not tt.gio_bat_dau:
-        return ngay
-    return f"{tt.gio_bat_dau.strftime('%H:%M')} {ngay}"
-
-
-def _tham_so_co_ban(tt: ThongTinGui) -> dict[str, Any]:
-    d = {"ho_ten": tt.ho_ten, "thoi_gian": _thoi_gian_hop(tt)}
-    if settings.zalo_nut_tham_so and tt.cuoc_hop_id:
-        # Mã cuộc họp để nút bấm dẫn thẳng vào đúng cuộc họp thay vì trang chủ.
-        # KHÔNG vi phạm chính sách "chuông cửa": đây là chuỗi định danh vô
-        # nghĩa với người ngoài, không lộ tiêu đề/địa điểm/thành phần/tài liệu.
-        # Chỉ gửi khi template đã khai tham số này (bật ZALO_NUT_THAM_SO),
-        # vì gửi thừa tham số sẽ bị Zalo từ chối.
-        d["ma_hop"] = str(tt.cuoc_hop_id)
-    return d
-
-
-def _tham_so_nhac_hop(tt: ThongTinGui) -> dict[str, Any]:
+def _them_moc(tt: ThongTinGui) -> dict[str, Any]:
     """Ba mốc nhắc dùng CHUNG một template, khác nhau ở tham số `moc`.
 
     Gộp lại để chỉ phải xin Zalo duyệt 1 template thay vì 3.
     """
-    d = _tham_so_co_ban(tt)
-    d["moc"] = _MOC_NHAC.get(tt.doi_tuong_type, "")
-    return d
+    return {"moc": _MOC_NHAC.get(tt.doi_tuong_type, "")}
+
+
+@dataclass(frozen=True)
+class MauTin:
+    """Một template ZNS + cách dựng bộ tham số cho nó.
+
+    Hai cờ dưới đây PHẢI khớp đúng với template Zalo đã duyệt. ZNS từ chối cả
+    tin nếu bộ tham số thừa, thiếu, hoặc sai định dạng so với khai báo — và từ
+    chối lặng lẽ, từng tin một. Đối chiếu bằng:
+
+        python scripts/zalo_xem_template.py --doi-chieu
+    """
+
+    khoa_config: str  # tên biến trong settings, ví dụ "zalo_tpl_moi_hop"
+    mo_ta: str
+    # Có khai tham số `ma_hop` (UUID cuộc họp, để nút bấm dẫn thẳng vào họp)
+    co_ma_hop: bool = False
+    # Template khai `thoi_gian` kiểu DATE → Zalo CHỈ nhận dd/mm/yyyy, giờ họp
+    # không truyền được. Đổi template sang STRING thì đặt cờ này False.
+    thoi_gian_kieu_date: bool = True
+    # Tham số riêng của từng loại (hiện chỉ `moc` của nhóm nhắc họp)
+    tham_so_rieng: Optional[Callable[[ThongTinGui], dict[str, Any]]] = None
+
+    def thoi_gian(self, tt: ThongTinGui) -> str:
+        """Giá trị tham số `thoi_gian`.
+
+        - Template kiểu DATE   → "31/07/2026"        (mất giờ họp)
+        - Template kiểu STRING → "14:00 31/07/2026"  (đầy đủ)
+        Thiếu dữ liệu thì trả chuỗi rỗng, không ném lỗi.
+        """
+        if not tt.ngay_hop:
+            return ""
+        ngay = tt.ngay_hop.strftime("%d/%m/%Y")
+        if self.thoi_gian_kieu_date or not tt.gio_bat_dau:
+            return ngay
+        return f"{tt.gio_bat_dau.strftime('%H:%M')} {ngay}"
+
+    def tham_so(self, tt: ThongTinGui) -> dict[str, Any]:
+        """Bộ tham số hoàn chỉnh gửi kèm template này."""
+        d: dict[str, Any] = {"ho_ten": tt.ho_ten, "thoi_gian": self.thoi_gian(tt)}
+        if self.tham_so_rieng is not None:
+            d.update(self.tham_so_rieng(tt))
+        if self.co_ma_hop:
+            # Mã cuộc họp để nút bấm dẫn thẳng vào đúng cuộc họp thay vì trang
+            # chủ. KHÔNG vi phạm chính sách "chuông cửa": đây là chuỗi định
+            # danh vô nghĩa với người ngoài, không lộ tiêu đề/địa điểm/thành
+            # phần/tài liệu.
+            d["ma_hop"] = str(tt.cuoc_hop_id or "")
+        return d
+
+    def thieu_du_lieu(self, tt: ThongTinGui) -> bool:
+        """True nếu thiếu dữ liệu bắt buộc → gửi đi chắc chắn bị từ chối."""
+        return self.co_ma_hop and not tt.cuoc_hop_id
 
 
 # ---------------------------------------------------------------------------
 # Registry: doi_tuong_type (trong common.thong_bao) → template ZNS
+#
+# Đối chiếu với template thật ngày 13/08/2026 (scripts/zalo_xem_template.py):
+#   620450 Giấy mời họp        ho_ten, thoi_gian                  ← KHÔNG có ma_hop
+#   622517 Nhắc họp không giấy ho_ten, thoi_gian, moc, ma_hop
+#   622518 Thay đổi lịch họp   ho_ten, thoi_gian, ma_hop
+#   622520 Hủy họp không giấy  ho_ten, thoi_gian, ma_hop
+# Cả 4 đều ENABLE. `thoi_gian` cả 4 đều khai kiểu DATE → chưa gửi được giờ họp.
 # ---------------------------------------------------------------------------
 DANH_MUC_MAU: dict[str, MauTin] = {
     "GIAY_MOI_HOP": MauTin(
         khoa_config="zalo_tpl_moi_hop",
         mo_ta="Giấy mời họp",
-        dung_tham_so=_tham_so_co_ban,
+        co_ma_hop=False,  # 620450 chưa khai — nút chỉ về trang danh sách
+        thoi_gian_kieu_date=True,
     ),
     "NHAC_HOP_24H": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
         mo_ta="Nhắc họp (dùng chung 3 mốc)",
-        dung_tham_so=_tham_so_nhac_hop,
+        co_ma_hop=True,
+        thoi_gian_kieu_date=True,
+        tham_so_rieng=_them_moc,
     ),
     "NHAC_HOP_1H": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
         mo_ta="Nhắc họp (dùng chung 3 mốc)",
-        dung_tham_so=_tham_so_nhac_hop,
+        co_ma_hop=True,
+        thoi_gian_kieu_date=True,
+        tham_so_rieng=_them_moc,
     ),
     "NHAC_HOP_30P": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
         mo_ta="Nhắc họp (dùng chung 3 mốc)",
-        dung_tham_so=_tham_so_nhac_hop,
+        co_ma_hop=True,
+        thoi_gian_kieu_date=True,
+        tham_so_rieng=_them_moc,
     ),
     "THAY_DOI_HOP": MauTin(
         khoa_config="zalo_tpl_thay_doi_hop",
         mo_ta="Thay đổi lịch họp",
-        dung_tham_so=_tham_so_co_ban,
+        co_ma_hop=True,
+        thoi_gian_kieu_date=True,
     ),
     "HUY_HOP": MauTin(
         khoa_config="zalo_tpl_huy_hop",
         mo_ta="Hủy họp",
-        dung_tham_so=_tham_so_co_ban,
+        co_ma_hop=True,
+        thoi_gian_kieu_date=True,
     ),
 }
 

@@ -87,17 +87,14 @@ class Settings(BaseSettings):
 
     # Template ID do Zalo cấp sau khi duyệt. Để trống = chưa có → worker
     # đánh dấu BO_QUA/KHONG_CO_TEMPLATE thay vì gửi lỗi.
-    zalo_tpl_moi_hop: str = ""
-    zalo_tpl_nhac_hop: str = ""
-    zalo_tpl_thay_doi_hop: str = ""
-    zalo_tpl_huy_hop: str = ""
-
-    # Nút bấm trong tin ZNS có mang tham số mã cuộc họp hay không.
-    # False → nút trỏ tới URL cố định (/hop-khong-giay), KHÔNG gửi tham số ma_hop.
-    # True  → nút dạng .../chi-tiet/{{ma_hop}}, hệ thống gửi kèm mã cuộc họp.
-    # Chỉ bật SAU KHI template đã khai tham số ma_hop và được Zalo duyệt —
-    # gửi thừa tham số so với template sẽ bị Zalo từ chối cả tin.
-    zalo_nut_tham_so: bool = False
+    #
+    # Đây CHỈ là mã định danh. Bộ tham số của từng template (đặc biệt là có
+    # `ma_hop` hay không) khai trong services/zalo/templates.py — đổi template
+    # sang cái khác thì phải xem lại chỗ đó, không chỉ sửa .env.
+    zalo_tpl_moi_hop: str = ""  # 620450 Giấy mời họp
+    zalo_tpl_nhac_hop: str = ""  # 622517 Nhắc họp không giấy
+    zalo_tpl_thay_doi_hop: str = ""  # 622518 Thay đổi lịch họp
+    zalo_tpl_huy_hop: str = ""  # 622520 Hủy họp không giấy
 
     # Phạm vi bật: danh sách `loai` trong common.thong_bao được phép gửi Zalo.
     # Giai đoạn 1 chỉ HKG. Muốn bật thêm KPI/LMS chỉ cần sửa biến môi trường.

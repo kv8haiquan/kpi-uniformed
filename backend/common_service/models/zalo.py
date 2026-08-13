@@ -46,6 +46,9 @@ BQ_KHONG_CO_SDT = "KHONG_CO_SDT"
 BQ_DA_TU_CHOI = "DA_TU_CHOI"
 BQ_KHONG_CO_TEMPLATE = "KHONG_CO_TEMPLATE"
 BQ_TAT_TINH_NANG = "TAT_TINH_NANG"
+# Template khai `ma_hop` là tham số BẮT BUỘC nhưng thông báo không có
+# doi_tuong_id — gửi đi chắc chắn bị Zalo từ chối nên chặn từ đầu.
+BQ_THIEU_MA_HOP = "THIEU_MA_HOP"
 
 
 class ZaloLienKet(Base):

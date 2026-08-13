@@ -23,6 +23,7 @@ from common_service.models.zalo import (
     BQ_DA_TU_CHOI,
     BQ_KHONG_CO_SDT,
     BQ_KHONG_CO_TEMPLATE,
+    BQ_THIEU_MA_HOP,
     LK_CHUA_XAC_MINH,
     LK_TU_CHOI_NHAN,
     OB_BO_QUA,
@@ -69,6 +70,7 @@ async def _tao_thong_bao_kieu_hkg(
     doi_tuong_type: str = "GIAY_MOI_HOP",
     loai: str = "MEETING",
     tre_phut: int = 0,
+    co_doi_tuong_id: bool = True,
 ) -> uuid.UUID:
     """Ghi thông báo BẰNG RAW SQL — bắt chước đúng cách HKG đang làm.
 
@@ -96,7 +98,7 @@ async def _tao_thong_bao_kieu_hkg(
             "loai": loai,
             "link": f"/hop-khong-giay/chi-tiet/{uuid.uuid4()}",
             "dtt": doi_tuong_type,
-            "dti": uuid.uuid4(),
+            "dti": uuid.uuid4() if co_doi_tuong_id else None,
             "tre": tre_phut,
         },
     )
@@ -254,6 +256,48 @@ class TestXepHang:
             assert ob.template_id == "TPL_NHAC_TEST"
             moc.add(ob.template_data["moc"])
         assert len(moc) == 3, "Ba mốc nhắc phải khác nhau ở tham số moc"
+
+    async def test_moi_hop_khong_kem_ma_hop_con_huy_hop_thi_co(self, db_session):
+        """Template 620450 không khai ma_hop, 622520 thì có — thừa hay thiếu
+        tham số đều bị Zalo từ chối cả tin nên phải đúng từng loại."""
+        await _tao_lien_ket(db_session, CC_A)
+        tb_moi = await _tao_thong_bao_kieu_hkg(
+            db_session, CC_A, doi_tuong_type="GIAY_MOI_HOP"
+        )
+        tb_huy = await _tao_thong_bao_kieu_hkg(
+            db_session, CC_A, doi_tuong_type="HUY_HOP"
+        )
+
+        await xep_hang(db_session)
+
+        assert "ma_hop" not in (await _outbox_cua(db_session, tb_moi)).template_data
+        ob_huy = await _outbox_cua(db_session, tb_huy)
+        assert uuid.UUID(ob_huy.template_data["ma_hop"]), "ma_hop phải là UUID cuộc họp"
+
+    async def test_thieu_doi_tuong_id_thi_bo_qua_thay_vi_gui_hong(self, db_session):
+        """HUY_HOP không có doi_tuong_id → gửi đi chắc chắn bị từ chối.
+        Chặn từ đầu để khỏi tốn 4 lần thử lại."""
+        await _tao_lien_ket(db_session, CC_A)
+        tb_id = await _tao_thong_bao_kieu_hkg(
+            db_session, CC_A, doi_tuong_type="HUY_HOP", co_doi_tuong_id=False
+        )
+
+        await xep_hang(db_session)
+
+        ob = await _outbox_cua(db_session, tb_id)
+        assert ob.trang_thai == OB_BO_QUA
+        assert ob.ly_do_bo_qua == BQ_THIEU_MA_HOP
+
+    async def test_moi_hop_thieu_doi_tuong_id_van_gui_binh_thuong(self, db_session):
+        """620450 không cần ma_hop nên thiếu doi_tuong_id không sao."""
+        await _tao_lien_ket(db_session, CC_A)
+        tb_id = await _tao_thong_bao_kieu_hkg(
+            db_session, CC_A, doi_tuong_type="GIAY_MOI_HOP", co_doi_tuong_id=False
+        )
+
+        await xep_hang(db_session)
+
+        assert (await _outbox_cua(db_session, tb_id)).trang_thai == OB_CHO_GUI
 
 
 # ---------------------------------------------------------------------------

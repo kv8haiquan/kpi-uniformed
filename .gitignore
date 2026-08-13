@@ -64,3 +64,7 @@ NOTIFICATION_*.md
 # Danh sách số điện thoại công chức — dữ liệu cá nhân theo Nghị định 13/2023/NĐ-CP.
 # Giữ ngoài git; chỉ commit báo cáo đối chiếu đã tổng hợp.
 docs/zalo-oa/*.xlsx
+# Ảnh chụp màn hình ZBS/OA có tên và ảnh đại diện cán bộ — dữ liệu cá nhân
+docs/zalo-oa/*.jpg
+docs/zalo-oa/*.jpeg
+docs/zalo-oa/*.png

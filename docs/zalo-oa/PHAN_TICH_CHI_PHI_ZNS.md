@@ -13,7 +13,7 @@
 | Một cuộc họp tốn bao nhiêu? | **Trung bình 79.000đ**, cuộc lớn nhất đã ghi nhận **204.800đ** |
 | Chi phí lớn nhất nằm ở đâu? | **Tin nhắc họp — chiếm 51,9%**, hơn một nửa |
 | Cắt được bao nhiêu mà không mất tác dụng? | **~36%** nếu giữ đúng 1 mốc nhắc |
-| Rủi ro lớn nhất hiện nay? | **Hệ thống chưa có trần chi tiêu** (xem mục 6) |
+| Rủi ro lớn nhất hiện nay? | ~~Chưa có trần chi tiêu~~ → **đã cài trần 500.000đ/ngày, 2.000.000đ/tháng** ngày 14/08/2026 (mục 6) |
 
 **Khuyến nghị:** giữ **một mốc nhắc trước 1 giờ**, bỏ mốc 24 giờ và 30 phút. Tiết kiệm ~36% chi phí, và thực tế người nhận cũng không cần bị nhắc ba lần cho cùng một cuộc họp.
 
@@ -171,9 +171,9 @@ Việc tra dùng chính số điện thoại làm khóa nên kết quả **chín
 
 ---
 
-## 6. Rủi ro cần xử lý: chưa có trần chi tiêu
+## 6. Trần chi tiêu — ĐÃ XỬ LÝ (14/08/2026)
 
-Đây là điểm tôi muốn lãnh đạo lưu ý nhất.
+> **Cập nhật 14/08/2026:** rủi ro nêu ở mục này đã được khắc phục. Phần mô tả rủi ro giữ nguyên bên dưới để hiểu vì sao phải làm; cách xử lý ở cuối mục.
 
 Zalo cấp hạn mức **20.000 tin/ngày**. Với đơn giá 800đ, mức phơi nhiễm tối đa trong một ngày là:
 
@@ -181,7 +181,7 @@ Zalo cấp hạn mức **20.000 tin/ngày**. Với đơn giá 800đ, mức phơi
 20.000 tin × 800đ = 16.000.000đ/ngày
 ```
 
-Hiện tại **trong hệ thống không có bất kỳ trần chi tiêu nào**. Các cơ chế bảo vệ đang có chỉ chặn được sự cố kỹ thuật, không chặn được chi phí:
+Trước ngày 14/08/2026, **trong hệ thống không có bất kỳ trần chi tiêu nào**. Các cơ chế bảo vệ khi đó chỉ chặn được sự cố kỹ thuật, không chặn được chi phí:
 
 | Cơ chế đang có | Chặn được gì | Không chặn được gì |
 |---|---|---|
@@ -192,14 +192,46 @@ Hiện tại **trong hệ thống không có bất kỳ trần chi tiêu nào**.
 
 Tình huống thực tế có thể xảy ra: mời họp toàn đơn vị 543 người, bị đổi lịch hai lần → 543 × 5 tin × 800đ ≈ **2.170.000đ cho một cuộc họp**, không có gì cảnh báo trước.
 
-**Đề xuất:** đặt trần chi tiêu theo ngày và theo tháng, vượt trần thì dừng gửi và báo quản trị. Đây là việc kỹ thuật nhỏ, làm được trong ngày. Cần lãnh đạo cho biết **mức trần mong muốn** — ví dụ 500.000đ/tháng.
+### Đã làm gì (14/08/2026)
+
+Trần chi tiêu theo **ngày** và theo **tháng** đã được cài vào worker gửi tin (`common_service/services/zalo/tran_chi.py`). Cơ chế:
+
+| Việc | Cách hoạt động |
+|---|---|
+| Đếm tiền đã tiêu | Đếm tin đã gửi thành công trong bảng `common.zalo_outbox`, theo mốc ngày/tháng **giờ Việt Nam** |
+| Chặn khi chạm trần | Dừng gửi ngay trước khi gọi Zalo. Tin **không bị hủy**, nằm lại hàng đợi |
+| Gửi tới sát trần | Còn 2 suất mà có 5 tin chờ thì gửi đúng 2, ba tin còn lại chờ |
+| Cảnh báo sớm | Đạt **80%** hạn mức → gửi thông báo cho tài khoản quản trị trong phần mềm |
+| Cảnh báo chặn | Chạm trần → thông báo kèm số tin đang ứ. Mỗi mức chỉ báo **một lần/ngày** |
+| Bỏ tin lỗi thời | Tin nằm chờ quá **12 giờ** bị bỏ — nhắc về cuộc họp đã diễn ra là quấy rối, không phải phục vụ |
+
+Mức trần đang đặt, căn theo số liệu thực tế ở mục 3 và 4:
+
+| | Mức đặt | Quy ra tin | So với thực tế |
+|---|---|---|---|
+| Ngày | 500.000đ | 625 tin | Cuộc họp lớn nhất từng có tốn 204.800đ → vẫn lọt |
+| Tháng | 2.000.000đ | 2.500 tin | Tháng cao nhất là 464.800đ → gấp 4,3 lần |
+
+Mức phơi nhiễm một ngày giảm từ **16.000.000đ xuống 500.000đ** — thấp hơn 32 lần.
+
+Hai con số này đặt trong `backend/.env` (`ZALO_TRAN_NGAY_DONG`, `ZALO_TRAN_THANG_DONG`), lãnh đạo cho mức khác thì sửa lại rồi khởi động lại `zalo-worker`. Quy ước giá trị: **số âm = không giới hạn, 0 = chặn hoàn toàn**.
+
+Xem chi tiêu bất cứ lúc nào:
+
+```bash
+cd backend && source venv/bin/activate
+python scripts/zalo_chi_tieu.py            # hôm nay + tháng này + bóc theo loại tin
+python scripts/zalo_chi_tieu.py --lich-su  # 6 kỳ gần nhất
+```
+
+> ⚠️ Số liệu chi tiêu chỉ tính từ 14/08/2026 trở đi — trước đó tin chưa đi qua hàng đợi nên không có gì để đếm. Các con số ở mục 3 và 4 là **dự toán** dựng lại từ bảng thông báo, không phải tiền đã thực trả.
 
 ---
 
 ## 7. Việc cần lãnh đạo quyết
 
 1. **Giữ mấy mốc nhắc?** — Đề xuất: chỉ mốc trước 1 giờ (kịch bản C, tiết kiệm 35,6%)
-2. **Trần chi tiêu tháng là bao nhiêu?** — Cần một con số để cài đặt
+2. ~~**Trần chi tiêu tháng là bao nhiêu?**~~ — ✅ đã cài 500.000đ/ngày và 2.000.000đ/tháng (mục 6). Lãnh đạo chỉ cần cho biết nếu muốn mức khác
 3. **Có gửi Zalo cho mọi cuộc họp không**, hay chỉ họp quan trọng?
 4. **Hỏi VNG: Official Account của Chi cục có được mở gửi ZNS theo Zalo ID (560đ) không?** — nếu được, tiết kiệm thêm ~19,5%
 
@@ -227,6 +259,13 @@ WHERE doi_tuong_type IN ('GIAY_MOI_HOP','NHAC_HOP_24H','NHAC_HOP_1H',
 GROUP BY 1, 2 ORDER BY 1 DESC, 3 DESC;
 ```
 
-**Hạn mức còn lại trong ngày** — hiện **chưa có công cụ dòng lệnh**; đang phải gọi trực tiếp API `message/quota` của Zalo. Nếu lãnh đạo duyệt việc đặt trần chi tiêu ở mục 6 thì sẽ làm luôn công cụ theo dõi kèm theo.
+**Hạn mức và chi tiêu còn lại** — đã có công cụ dòng lệnh từ 14/08/2026:
+
+```bash
+python scripts/zalo_chi_tieu.py           # chi tiêu + trần + bóc theo loại tin
+python scripts/zalo_chi_tieu.py --quota   # hỏi thêm hạn mức còn lại từ Zalo
+```
+
+Công cụ chỉ đọc, không gửi tin, không ghi cơ sở dữ liệu.
 
 **Lưu ý về đối soát:** số dư ví ZBS **không** giảm ngay sau khi gửi. Đồng hồ đo tin cậy là hạn mức còn lại trong ngày (`remainingQuota`) — đã kiểm chứng: gửi 1 tin thì hạn mức giảm đúng 1. Chi phí thực tế nên đối chiếu với **Nhật ký gửi** trong hệ thống ZBS của Zalo.

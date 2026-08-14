@@ -100,6 +100,32 @@ class Settings(BaseSettings):
     # Giai đoạn 1 chỉ HKG. Muốn bật thêm KPI/LMS chỉ cần sửa biến môi trường.
     zalo_loai_bat: str = "MEETING"
 
+    # ------------------------------------------------------------------
+    # Trần chi tiêu — chốt chặn cuối trước khi tiền ra (services/zalo/tran_chi.py)
+    # ------------------------------------------------------------------
+    # Hạn mức kỹ thuật Zalo cấp là 20.000 tin/ngày ⇒ 16.000.000đ/ngày nếu
+    # không có gì chặn. Trần đặt bằng ĐỒNG vì ngân sách được duyệt bằng tiền;
+    # quy đổi sang số tin theo `zalo_don_gia_tin` ở tran_chi.py.
+    #
+    # QUY ƯỚC GIÁ TRỊ — chọn thế này để không có cách gõ nhầm nào gây hại:
+    #   -1 (hoặc âm) = KHÔNG giới hạn  ← mặc định, để merge code không âm thầm
+    #                                     chặn tin của ai
+    #    0           = CHẶN HOÀN TOÀN, không gửi tin nào
+    #   >0           = trần theo đồng
+    # Nếu để 0 mang nghĩa "không giới hạn" thì người muốn khóa chi tiêu bằng
+    # cách gõ 0 sẽ mở toang hạn mức — đúng ngược ý định.
+    zalo_don_gia_tin: int = 800  # đồng/tin (cả 4 template ZNS hiện dùng)
+    zalo_tran_ngay_dong: int = -1
+    zalo_tran_thang_dong: int = -1
+    zalo_nguong_canh_bao_pc: int = 80  # báo quản trị khi đạt % trần này
+
+    # Tin xếp hàng quá số giờ này thì bỏ, không gửi nữa. Cần thiết để trần
+    # chi tiêu có nghĩa: không có nó, tin bị chặn chỉ dồn lại rồi bắn ra một
+    # lượt khi sang kỳ mới — nhắc họp đã diễn ra từ tuần trước.
+    # Ngưỡng phải lớn hơn mọi độ trễ bình thường: giờ yên tĩnh hoãn tối đa
+    # 8 tiếng (22h→6h), backoff thử lại tối đa 1 tiếng.
+    zalo_han_gui_gio: int = 12
+
     # Vận hành worker
     zalo_chu_ky_giay: int = 60  # nhịp quét hàng đợi
     zalo_cua_so_quet_phut: int = 120  # chỉ nhặt thông báo mới trong N phút qua

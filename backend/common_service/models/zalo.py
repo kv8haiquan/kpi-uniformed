@@ -49,6 +49,9 @@ BQ_TAT_TINH_NANG = "TAT_TINH_NANG"
 # Template khai `ma_hop` là tham số BẮT BUỘC nhưng thông báo không có
 # doi_tuong_id — gửi đi chắc chắn bị Zalo từ chối nên chặn từ đầu.
 BQ_THIEU_MA_HOP = "THIEU_MA_HOP"
+# Nằm chờ quá `zalo_han_gui_gio` — thường do trần chi tiêu chặn. Nội dung
+# (giấy mời, nhắc họp) đã lỗi thời nên gửi muộn còn tệ hơn không gửi.
+BQ_QUA_HAN = "QUA_HAN"
 
 
 class ZaloLienKet(Base):

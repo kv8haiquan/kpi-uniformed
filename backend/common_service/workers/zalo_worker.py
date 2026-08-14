@@ -35,6 +35,7 @@ from shared.database import create_db_engine, create_session_factory  # noqa: E4
 
 from common_service.config import settings  # noqa: E402
 from common_service.services.zalo.outbox import chay_mot_vong  # noqa: E402
+from common_service.services.zalo.tran_chi import mo_ta_tran  # noqa: E402
 
 
 def _cau_hinh_log() -> logging.Logger:
@@ -65,6 +66,18 @@ async def _vong_lap(mot_vong: bool = False) -> None:
         settings.zalo_danh_sach_loai,
         settings.zalo_chu_ky_giay,
     )
+    logger.info(
+        "Trần chi tiêu | ngày=%s tháng=%s | đơn giá %sđ/tin | hạn tin chờ %dh",
+        mo_ta_tran(settings.zalo_tran_ngay_dong),
+        mo_ta_tran(settings.zalo_tran_thang_dong),
+        settings.zalo_don_gia_tin,
+        settings.zalo_han_gui_gio,
+    )
+    if settings.zalo_tran_ngay_dong < 0 and settings.zalo_tran_thang_dong < 0:
+        logger.warning(
+            "CHƯA ĐẶT TRẦN CHI TIÊU NÀO — không có gì chặn nếu gửi nhầm hàng "
+            "loạt. Đặt ZALO_TRAN_NGAY_DONG / ZALO_TRAN_THANG_DONG trong .env."
+        )
     if settings.zalo_dry_run:
         logger.warning(
             "ĐANG Ở CHẾ ĐỘ DRY-RUN — chỉ ghi log, KHÔNG gửi tin thật. "
@@ -76,7 +89,12 @@ async def _vong_lap(mot_vong: bool = False) -> None:
             try:
                 async with session_factory() as db:
                     ket_qua = await chay_mot_vong(db)
-                    if ket_qua["xep_hang"]["quet"] or ket_qua["gui"]["gui"]:
+                    if (
+                        ket_qua["xep_hang"]["quet"]
+                        or ket_qua["gui"]["gui"]
+                        or ket_qua["het_han"]
+                        or ket_qua["gui"]["chan_boi_tran"]
+                    ):
                         logger.info("Vòng chạy xong: %s", ket_qua)
             except Exception:  # pragma: no cover — vòng lặp phải sống sót
                 logger.exception("Lỗi trong vòng chạy, sẽ thử lại ở nhịp sau")

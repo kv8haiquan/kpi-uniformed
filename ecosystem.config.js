@@ -82,5 +82,33 @@ module.exports = {
     //    schema chi_tieu). Chỉ start sau khi đã `alembic upgrade head`.
     // ════════════════════════════════════════════════════════════════
     fastapiService('chi-tieu-backend', 'chi_tieu_service', 8007, { host: '127.0.0.1' }),
+
+    // ════════════════════════════════════════════════════════════════
+    // ZALO WORKER — MỚI 2026-08-14
+    // Không phải web service: không mở port, chỉ quét common.thong_bao theo
+    // nhịp ZALO_CHU_KY_GIAY rồi gửi ZNS. Chạy tiến trình RIÊNG (không nhét vào
+    // common-backend) để restart/tắt kênh Zalo không đụng tới API đang phục vụ.
+    //
+    // ⚠️ CHẠY DUY NHẤT 1 INSTANCE. Bảng common.zalo_outbox có UNIQUE trên
+    //    thong_bao_id nên chạy 2 tiến trình không gửi trùng, nhưng sẽ tranh
+    //    nhau và đẩy lỗi vào log vô ích.
+    // ⚠️ Tắt kênh Zalo: `pm2 stop zalo-worker` là đủ và tức thì. Cờ
+    //    ZALO_ENABLED/ZALO_DRY_RUN trong backend/.env chỉ đọc lúc khởi động.
+    // ════════════════════════════════════════════════════════════════
+    {
+      name: 'zalo-worker',
+      cwd: BACKEND_CWD,
+      script: '/usr/bin/bash',
+      args: ['-c', 'venv/bin/python -m common_service.workers.zalo_worker'],
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 10,
+      out_file: '/root/.pm2/logs/zalo-worker-out.log',
+      error_file: '/root/.pm2/logs/zalo-worker-error.log',
+      merge_logs: true,
+      time: true,
+    },
   ],
 };

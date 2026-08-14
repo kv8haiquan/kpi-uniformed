@@ -56,7 +56,7 @@ class TestThamSo:
         mau = lay_mau("GIAY_MOI_HOP")
         ts = mau.tham_so(TT_MAU)
         assert ts["ho_ten"] == "Nguyễn Văn A"
-        assert ts["thoi_gian"] == "31/07/2026"  # kiểu DATE: chỉ ngày
+        assert ts["thoi_gian"] == "14:00 31/07/2026"  # kiểu STRING: có giờ
 
     @pytest.mark.parametrize(
         "loai,moc",
@@ -72,15 +72,18 @@ class TestThamSo:
             ThongTinGui(loai, "Trần Thị B", date(2026, 7, 31), time(8, 30), None)
         )
         assert ts["moc"] == moc
-        assert ts["thoi_gian"] == "31/07/2026"
+        assert ts["thoi_gian"] == "08:30 31/07/2026"
 
-    def test_dinh_dang_dung_kieu_DATE_cua_zalo(self):
-        """Zalo khai `thoi_gian` kiểu DATE → chỉ nhận đúng dd/mm/yyyy.
+    def test_dinh_dang_thoi_gian_dung_theo_kieu_template_khai(self):
+        """Định dạng `thoi_gian` phải do cờ của CHÍNH template đó quyết định.
 
-        Gửi kèm giờ ("14:00 ngày 31/07/2026") sẽ bị Zalo từ chối. Test này
-        canh giữ điều đó; nếu đơn vị đổi template sang STRING thì sửa cờ
-        thoi_gian_kieu_date của template đó trong DANH_MUC_MAU, rồi chạy
-        `python scripts/zalo_xem_template.py --doi-chieu` để xác nhận.
+        - Template khai DATE   → Zalo chỉ nhận đúng dd/mm/yyyy, kèm giờ là bị
+          từ chối cả tin.
+        - Template khai STRING → gửi kèm giờ được, và nên gửi.
+
+        Test lái theo cờ chứ không chốt cứng một dạng, để lúc đơn vị chuyển đổi
+        dần từng template thì test vẫn đúng. Nguồn sự thật là
+        `python scripts/zalo_xem_template.py --doi-chieu`.
         """
         import re as _re
 
@@ -88,32 +91,49 @@ class TestThamSo:
             ts = mau.tham_so(
                 ThongTinGui(loai, "X", date(2026, 7, 31), time(14, 0), None)
             )
-            assert _re.fullmatch(r"\d{2}/\d{2}/\d{4}", ts["thoi_gian"]), (
-                f"{loai}: '{ts['thoi_gian']}' không đúng dạng dd/mm/yyyy"
+            mong_doi = (
+                r"\d{2}/\d{2}/\d{4}"
+                if mau.thoi_gian_kieu_date
+                else r"\d{2}:\d{2} \d{2}/\d{2}/\d{4}"
+            )
+            assert _re.fullmatch(mong_doi, ts["thoi_gian"]), (
+                f"{loai}: '{ts['thoi_gian']}' không khớp kiểu template đã khai"
             )
 
-    def test_kieu_STRING_thi_co_gio_hop(self):
-        """Khi đơn vị đổi template sang STRING, cùng dữ liệu phải ra thêm giờ.
+    def test_ca_4_template_hien_dang_gui_kem_gio(self):
+        """Bộ template ZBS dùng từ 14/08/2026 khai STRING cả 4 → phải có giờ."""
+        assert all(not m.thoi_gian_kieu_date for m in DANH_MUC_MAU.values())
+        assert lay_mau("GIAY_MOI_HOP").tham_so(TT_MAU)["thoi_gian"] == (
+            "14:00 31/07/2026"
+        )
 
-        Cờ đặt theo TỪNG template chứ không phải toàn cục: template này STRING
-        mà template kia còn DATE là chuyện bình thường trong lúc chuyển đổi.
-        """
+    def test_doi_ve_kieu_DATE_thi_mat_gio(self):
+        """Cờ đặt theo TỪNG template, đổi cái này không đụng cái kia."""
         import dataclasses
 
         goc = lay_mau("GIAY_MOI_HOP")
-        moi = dataclasses.replace(goc, thoi_gian_kieu_date=False)
+        cu = dataclasses.replace(goc, thoi_gian_kieu_date=True)
 
-        assert goc.tham_so(TT_MAU)["thoi_gian"] == "31/07/2026"
-        assert moi.tham_so(TT_MAU)["thoi_gian"] == "14:00 31/07/2026"
-        # Đổi cờ KHÔNG được đụng tới các template khác
-        assert lay_mau("HUY_HOP").thoi_gian_kieu_date is True
+        assert cu.tham_so(TT_MAU)["thoi_gian"] == "31/07/2026"
+        assert lay_mau("HUY_HOP").thoi_gian_kieu_date is False
 
     def test_kieu_STRING_thieu_gio_van_khong_no(self):
-        import dataclasses
-
-        moi = dataclasses.replace(lay_mau("HUY_HOP"), thoi_gian_kieu_date=False)
+        """Họp chưa có giờ bắt đầu → lùi về chỉ ngày, không ném lỗi."""
         tt = ThongTinGui("HUY_HOP", "C", date(2026, 7, 31), None, None)
-        assert moi.tham_so(tt)["thoi_gian"] == "31/07/2026"
+        assert lay_mau("HUY_HOP").tham_so(tt)["thoi_gian"] == "31/07/2026"
+
+    def test_ho_ten_qua_dai_bi_cat_thay_vi_bi_zalo_tu_choi(self):
+        """Template khai ho_ten tối đa 30 ký tự — vượt là mất cả tin."""
+        from common_service.services.zalo.templates import MAX_HO_TEN
+
+        dai = "Nguyễn Trần Lê Hoàng Phương Thảo Vy Anh"
+        assert len(dai) > MAX_HO_TEN
+        ts = lay_mau("HUY_HOP").tham_so(
+            ThongTinGui("HUY_HOP", dai, date(2026, 7, 31), time(9, 0), None,
+                        cuoc_hop_id="abc")
+        )
+        assert len(ts["ho_ten"]) == MAX_HO_TEN
+        assert dai.startswith(ts["ho_ten"])
 
     def test_thieu_ngay_gio_khong_no(self):
         """Cuộc họp bị xóa hoặc dữ liệu thiếu → không được ném lỗi."""
@@ -159,18 +179,18 @@ class TestKhopVoiTemplateDaDuyet:
     """Bộ tham số sinh ra phải TRÙNG KHÍT template Zalo đã duyệt.
 
     Zalo từ chối cả tin nếu thừa HOẶC thiếu tham số. Bảng dưới chép từ
-    `scripts/zalo_xem_template.py` chạy ngày 13/08/2026 — nếu đơn vị sửa
+    `scripts/zalo_xem_template.py` chạy ngày 14/08/2026 — nếu đơn vị sửa
     template thì chạy lại script đó và cập nhật cả hai nơi.
     """
 
     # doi_tuong_type → bộ tham số bắt buộc của template tương ứng
     THAM_SO_THAT = {
-        "GIAY_MOI_HOP": {"ho_ten", "thoi_gian"},  # 620450
-        "NHAC_HOP_24H": {"ho_ten", "thoi_gian", "moc", "ma_hop"},  # 622517
+        "GIAY_MOI_HOP": {"ho_ten", "thoi_gian", "ma_hop"},  # 623165
+        "NHAC_HOP_24H": {"ho_ten", "thoi_gian", "moc", "ma_hop"},  # 623236
         "NHAC_HOP_1H": {"ho_ten", "thoi_gian", "moc", "ma_hop"},
         "NHAC_HOP_30P": {"ho_ten", "thoi_gian", "moc", "ma_hop"},
-        "THAY_DOI_HOP": {"ho_ten", "thoi_gian", "ma_hop"},  # 622518
-        "HUY_HOP": {"ho_ten", "thoi_gian", "ma_hop"},  # 622520
+        "THAY_DOI_HOP": {"ho_ten", "thoi_gian", "ma_hop"},  # 623180
+        "HUY_HOP": {"ho_ten", "thoi_gian", "ma_hop"},  # 623182
     }
 
     def test_bo_tham_so_khop_tung_template(self):
@@ -186,13 +206,13 @@ class TestKhopVoiTemplateDaDuyet:
                 f"{loai}: gửi {sorted(ts)}, template cần {sorted(mong_doi)}"
             )
 
-    def test_moi_hop_khong_gui_ma_hop(self):
-        """620450 KHÔNG khai ma_hop — gửi thừa là Zalo từ chối cả tin."""
+    def test_moi_hop_cung_gui_ma_hop(self):
+        """623165 có khai ma_hop → nút bấm dẫn thẳng vào đúng cuộc họp."""
         ts = DANH_MUC_MAU["GIAY_MOI_HOP"].tham_so(
             ThongTinGui("GIAY_MOI_HOP", "X", date(2026, 1, 1), time(9, 0), "/l",
                         cuoc_hop_id="7279683b-49fb-446d-aa48-6e66f155f314")
         )
-        assert "ma_hop" not in ts
+        assert ts["ma_hop"] == "7279683b-49fb-446d-aa48-6e66f155f314"
 
     def test_ma_hop_dung_bang_uuid_cuoc_hop(self):
         ts = DANH_MUC_MAU["HUY_HOP"].tham_so(
@@ -208,10 +228,12 @@ class TestKhopVoiTemplateDaDuyet:
                          cuoc_hop_id=None)
         assert DANH_MUC_MAU["HUY_HOP"].thieu_du_lieu(tt) is True
 
-    def test_moi_hop_khong_can_ma_hop_van_gui_duoc(self):
-        tt = ThongTinGui("GIAY_MOI_HOP", "X", date(2026, 1, 1), time(9, 0), "/l",
-                         cuoc_hop_id=None)
-        assert DANH_MUC_MAU["GIAY_MOI_HOP"].thieu_du_lieu(tt) is False
+    def test_moi_hop_cung_can_ma_hop(self):
+        """Cả 4 template hiện đều bắt buộc ma_hop → thiếu là phải chặn."""
+        for loai in DANH_MUC_MAU:
+            tt = ThongTinGui(loai, "X", date(2026, 1, 1), time(9, 0), "/l",
+                             cuoc_hop_id=None)
+            assert DANH_MUC_MAU[loai].thieu_du_lieu(tt) is True, loai
 
     def test_moc_la_chuoi_khong_qua_30_ky_tu(self):
         """622517 khai `moc` kiểu STRING, tối đa 30 ký tự."""

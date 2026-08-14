@@ -162,7 +162,10 @@ class TestXepHang:
         chuoi = str(ob.template_data)
         assert "mật" not in chuoi
         assert "giao ban" not in chuoi.lower()
-        assert set(ob.template_data.keys()) <= {"ho_ten", "thoi_gian", "moc"}
+        # ma_hop là UUID cuộc họp — vô nghĩa với người ngoài, không lộ nội dung
+        assert set(ob.template_data.keys()) <= {
+            "ho_ten", "thoi_gian", "moc", "ma_hop",
+        }
 
     async def test_khong_co_so_thi_bo_qua_co_ly_do(self, db_session):
         """Không có liên kết → vẫn ghi outbox để trả lời được 'vì sao không nhận'."""
@@ -257,9 +260,9 @@ class TestXepHang:
             moc.add(ob.template_data["moc"])
         assert len(moc) == 3, "Ba mốc nhắc phải khác nhau ở tham số moc"
 
-    async def test_moi_hop_khong_kem_ma_hop_con_huy_hop_thi_co(self, db_session):
-        """Template 620450 không khai ma_hop, 622520 thì có — thừa hay thiếu
-        tham số đều bị Zalo từ chối cả tin nên phải đúng từng loại."""
+    async def test_moi_hop_va_huy_hop_deu_kem_ma_hop(self, db_session):
+        """Bộ template ZBS (623165/623182) khai ma_hop ở CẢ hai loại — thừa hay
+        thiếu tham số đều bị Zalo từ chối cả tin nên phải đúng từng loại."""
         await _tao_lien_ket(db_session, CC_A)
         tb_moi = await _tao_thong_bao_kieu_hkg(
             db_session, CC_A, doi_tuong_type="GIAY_MOI_HOP"
@@ -270,9 +273,11 @@ class TestXepHang:
 
         await xep_hang(db_session)
 
-        assert "ma_hop" not in (await _outbox_cua(db_session, tb_moi)).template_data
-        ob_huy = await _outbox_cua(db_session, tb_huy)
-        assert uuid.UUID(ob_huy.template_data["ma_hop"]), "ma_hop phải là UUID cuộc họp"
+        for tb_id in (tb_moi, tb_huy):
+            ob = await _outbox_cua(db_session, tb_id)
+            assert uuid.UUID(ob.template_data["ma_hop"]), (
+                "ma_hop phải là UUID cuộc họp"
+            )
 
     async def test_thieu_doi_tuong_id_thi_bo_qua_thay_vi_gui_hong(self, db_session):
         """HUY_HOP không có doi_tuong_id → gửi đi chắc chắn bị từ chối.
@@ -288,8 +293,12 @@ class TestXepHang:
         assert ob.trang_thai == OB_BO_QUA
         assert ob.ly_do_bo_qua == BQ_THIEU_MA_HOP
 
-    async def test_moi_hop_thieu_doi_tuong_id_van_gui_binh_thuong(self, db_session):
-        """620450 không cần ma_hop nên thiếu doi_tuong_id không sao."""
+    async def test_moi_hop_thieu_doi_tuong_id_cung_bi_bo_qua(self, db_session):
+        """623165 cũng bắt buộc ma_hop → giấy mời thiếu doi_tuong_id phải chặn.
+
+        Trước 14/08/2026 loại này gửi được vì template cũ (620450) không khai
+        ma_hop; đổi sang bộ ZBS thì không còn ngoại lệ nào nữa.
+        """
         await _tao_lien_ket(db_session, CC_A)
         tb_id = await _tao_thong_bao_kieu_hkg(
             db_session, CC_A, doi_tuong_type="GIAY_MOI_HOP", co_doi_tuong_id=False
@@ -297,7 +306,9 @@ class TestXepHang:
 
         await xep_hang(db_session)
 
-        assert (await _outbox_cua(db_session, tb_id)).trang_thai == OB_CHO_GUI
+        ob = await _outbox_cua(db_session, tb_id)
+        assert ob.trang_thai == OB_BO_QUA
+        assert ob.ly_do_bo_qua == BQ_THIEU_MA_HOP
 
 
 # ---------------------------------------------------------------------------

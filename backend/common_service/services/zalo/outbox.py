@@ -54,6 +54,12 @@ from common_service.models.zalo import (
 from common_service.services.zalo.client import gui_zns, loi_lam_hong_so
 from common_service.services.zalo.phone import che_giau
 from common_service.services.zalo.templates import ThongTinGui, lay_mau
+from common_service.services.zalo.tran_chi import (
+    canh_bao_neu_can,
+    dem_cho_gui,
+    het_han_tin_cho,
+    tinh_hinh_chi,
+)
 
 logger = logging.getLogger("zalo.outbox")
 
@@ -221,8 +227,32 @@ def _backoff(so_lan_thu: int) -> datetime:
 
 
 async def gui_hang_doi(db: AsyncSession, gioi_han: Optional[int] = None) -> dict[str, int]:
-    """Lấy các bản ghi CHO_GUI đã tới hạn và gửi đi."""
+    """Lấy các bản ghi CHO_GUI đã tới hạn và gửi đi.
+
+    Trần chi tiêu được áp NGAY TRƯỚC vòng gửi (xem tran_chi.py). Tin vượt trần
+    không bị bỏ mà nằm nguyên ở CHO_GUI để gửi tiếp khi sang kỳ hoặc khi trần
+    được nâng — trừ khi nằm quá lâu thì `het_han_tin_cho()` dọn đi.
+    """
     gioi_han = gioi_han or settings.zalo_moi_lan_gui
+
+    thong_ke = {"gui": 0, "thanh_cong": 0, "that_bai": 0, "thu_lai": 0, "chan_boi_tran": 0}
+
+    th = await tinh_hinh_chi(db)
+    con_lai = th.con_lai
+    if con_lai is not None and con_lai <= 0:
+        so_cho = await dem_cho_gui(db)
+        thong_ke["chan_boi_tran"] = so_cho
+        if await canh_bao_neu_can(db, th, so_cho):
+            await db.commit()
+        logger.error(
+            "CHẠM TRẦN CHI TIÊU — không gửi tin nào vòng này. %s | %d tin đang chờ",
+            th.tom_tat(),
+            so_cho,
+        )
+        return thong_ke
+    if con_lai is not None:
+        # Gửi tối đa tới sát trần, không vượt. Phần dư ở lại hàng đợi.
+        gioi_han = min(gioi_han, con_lai)
 
     kq = await db.execute(
         select(ZaloOutbox)
@@ -235,8 +265,6 @@ async def gui_hang_doi(db: AsyncSession, gioi_han: Optional[int] = None) -> dict
         .with_for_update(skip_locked=True)  # an toàn nếu lỡ chạy 2 worker
     )
     viec = list(kq.scalars().all())
-
-    thong_ke = {"gui": 0, "thanh_cong": 0, "that_bai": 0, "thu_lai": 0}
 
     for ob in viec:
         thong_ke["gui"] += 1
@@ -289,6 +317,10 @@ async def gui_hang_doi(db: AsyncSession, gioi_han: Optional[int] = None) -> dict
             "thất bại %(that_bai)d",
             thong_ke,
         )
+        # Đo lại SAU khi gửi: vòng này có thể vừa đẩy mức chi qua ngưỡng cảnh
+        # báo, hoặc lấp đúng tới trần. Báo ngay chứ không đợi vòng sau.
+        if await canh_bao_neu_can(db, await tinh_hinh_chi(db), await dem_cho_gui(db)):
+            await db.commit()
     return thong_ke
 
 
@@ -304,7 +336,15 @@ async def _danh_dau_lien_ket(db: AsyncSession, cong_chuc_id, trang_thai: str) ->
 
 
 async def chay_mot_vong(db: AsyncSession) -> dict[str, Any]:
-    """Một nhịp đầy đủ: xếp hàng rồi gửi. Dùng cho worker và cho test."""
+    """Một nhịp đầy đủ: xếp hàng → dọn tin quá hạn → gửi.
+
+    Dọn quá hạn nằm GIỮA hai bước, không phải cuối: tin vừa xếp hàng xong
+    chưa thể quá hạn, còn tin tồn từ trước phải bị loại trước khi tới lượt
+    gửi — nếu không, hạn mức của vòng này bị tin lỗi thời ăn mất chỗ.
+    """
     kq_xep = await xep_hang(db)
+    so_het_han = await het_han_tin_cho(db)
+    if so_het_han:
+        await db.commit()
     kq_gui = await gui_hang_doi(db)
-    return {"xep_hang": kq_xep, "gui": kq_gui}
+    return {"xep_hang": kq_xep, "het_han": so_het_han, "gui": kq_gui}

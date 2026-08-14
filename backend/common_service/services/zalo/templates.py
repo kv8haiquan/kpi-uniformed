@@ -17,11 +17,14 @@ Lý do làm vậy:
 Nếu sau này lãnh đạo muốn hiển thị tiêu đề cuộc họp, sửa ở đây là đủ — nhưng
 phải xin ý kiến Phòng CNTT trước và tạo template ZNS mới.
 
-TRẠNG THÁI (13/08/2026): 4 template đã được Zalo duyệt (ENABLE), ID điền trong
-.env qua các biến ZALO_TPL_*. Khi đơn vị sửa template thì chạy lại
-`python scripts/zalo_xem_template.py` và cập nhật cờ `co_ma_hop` trong
-DANH_MUC_MAU cho khớp — bộ tham số phải trùng khít với template, thừa hay
-thiếu đều bị Zalo từ chối cả tin.
+TRẠNG THÁI (14/08/2026): chuyển sang bộ 4 template ZBS mới, tất cả ENABLE, ID
+điền trong .env qua các biến ZALO_TPL_*. Bộ mới khắc phục hai hạn chế của bộ
+cũ: `thoi_gian` khai STRING nên gửi được GIỜ họp (bộ cũ khai DATE, chỉ gửi
+được ngày), và giấy mời cũng có `ma_hop` nên nút bấm dẫn thẳng vào cuộc họp.
+
+Khi đơn vị sửa template thì chạy lại `python scripts/zalo_xem_template.py
+--doi-chieu` và cập nhật cờ trong DANH_MUC_MAU cho khớp — bộ tham số phải
+trùng khít với template, thừa hay thiếu đều bị Zalo từ chối cả tin.
 """
 
 from __future__ import annotations
@@ -29,6 +32,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, time
 from typing import Any, Callable, Optional
+
+# Giới hạn ký tự tham số `ho_ten` do template khai (xem scripts/zalo_xem_template.py)
+MAX_HO_TEN = 30
 
 # Thứ tự ưu tiên hiển thị mốc nhắc — dùng cho template nhắc họp gộp
 _MOC_NHAC = {
@@ -95,7 +101,13 @@ class MauTin:
 
     def tham_so(self, tt: ThongTinGui) -> dict[str, Any]:
         """Bộ tham số hoàn chỉnh gửi kèm template này."""
-        d: dict[str, Any] = {"ho_ten": tt.ho_ten, "thoi_gian": self.thoi_gian(tt)}
+        # Cả 4 template khai ho_ten tối đa 30 ký tự. Người dài nhất hiện nay là
+        # 25 ký tự, nhưng vượt hạn mức thì Zalo từ chối CẢ tin — thà tin nhắn
+        # có tên bị cắt còn hơn người đó không nhận được gì.
+        d: dict[str, Any] = {
+            "ho_ten": (tt.ho_ten or "")[:MAX_HO_TEN],
+            "thoi_gian": self.thoi_gian(tt),
+        }
         if self.tham_so_rieng is not None:
             d.update(self.tham_so_rieng(tt))
         if self.co_ma_hop:
@@ -114,52 +126,52 @@ class MauTin:
 # ---------------------------------------------------------------------------
 # Registry: doi_tuong_type (trong common.thong_bao) → template ZNS
 #
-# Đối chiếu với template thật ngày 13/08/2026 (scripts/zalo_xem_template.py):
-#   620450 Giấy mời họp        ho_ten, thoi_gian                  ← KHÔNG có ma_hop
-#   622517 Nhắc họp không giấy ho_ten, thoi_gian, moc, ma_hop
-#   622518 Thay đổi lịch họp   ho_ten, thoi_gian, ma_hop
-#   622520 Hủy họp không giấy  ho_ten, thoi_gian, ma_hop
-# Cả 4 đều ENABLE. `thoi_gian` cả 4 đều khai kiểu DATE → chưa gửi được giờ họp.
+# Đối chiếu với template thật ngày 14/08/2026 (scripts/zalo_xem_template.py):
+#   623165 Giấy mời họp        ho_ten, thoi_gian, ma_hop
+#   623236 Nhắc họp không giấy ho_ten, thoi_gian, moc, ma_hop
+#   623180 Thay đổi lịch họp   ho_ten, thoi_gian, ma_hop
+#   623182 Hủy họp không giấy  ho_ten, thoi_gian, ma_hop
+# Cả 4 đều ENABLE và khai `thoi_gian` kiểu STRING → gửi kèm được giờ họp.
 # ---------------------------------------------------------------------------
 DANH_MUC_MAU: dict[str, MauTin] = {
     "GIAY_MOI_HOP": MauTin(
         khoa_config="zalo_tpl_moi_hop",
         mo_ta="Giấy mời họp",
-        co_ma_hop=False,  # 620450 chưa khai — nút chỉ về trang danh sách
-        thoi_gian_kieu_date=True,
+        co_ma_hop=True,
+        thoi_gian_kieu_date=False,
     ),
     "NHAC_HOP_24H": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
         mo_ta="Nhắc họp (dùng chung 3 mốc)",
         co_ma_hop=True,
-        thoi_gian_kieu_date=True,
+        thoi_gian_kieu_date=False,
         tham_so_rieng=_them_moc,
     ),
     "NHAC_HOP_1H": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
         mo_ta="Nhắc họp (dùng chung 3 mốc)",
         co_ma_hop=True,
-        thoi_gian_kieu_date=True,
+        thoi_gian_kieu_date=False,
         tham_so_rieng=_them_moc,
     ),
     "NHAC_HOP_30P": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
         mo_ta="Nhắc họp (dùng chung 3 mốc)",
         co_ma_hop=True,
-        thoi_gian_kieu_date=True,
+        thoi_gian_kieu_date=False,
         tham_so_rieng=_them_moc,
     ),
     "THAY_DOI_HOP": MauTin(
         khoa_config="zalo_tpl_thay_doi_hop",
         mo_ta="Thay đổi lịch họp",
         co_ma_hop=True,
-        thoi_gian_kieu_date=True,
+        thoi_gian_kieu_date=False,
     ),
     "HUY_HOP": MauTin(
         khoa_config="zalo_tpl_huy_hop",
         mo_ta="Hủy họp",
         co_ma_hop=True,
-        thoi_gian_kieu_date=True,
+        thoi_gian_kieu_date=False,
     ),
 }
 

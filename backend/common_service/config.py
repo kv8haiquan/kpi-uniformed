@@ -91,10 +91,10 @@ class Settings(BaseSettings):
     # Đây CHỈ là mã định danh. Bộ tham số của từng template (đặc biệt là có
     # `ma_hop` hay không) khai trong services/zalo/templates.py — đổi template
     # sang cái khác thì phải xem lại chỗ đó, không chỉ sửa .env.
-    zalo_tpl_moi_hop: str = ""  # 620450 Giấy mời họp
-    zalo_tpl_nhac_hop: str = ""  # 622517 Nhắc họp không giấy
-    zalo_tpl_thay_doi_hop: str = ""  # 622518 Thay đổi lịch họp
-    zalo_tpl_huy_hop: str = ""  # 622520 Hủy họp không giấy
+    zalo_tpl_moi_hop: str = ""  # 623165 Giấy mời họp
+    zalo_tpl_nhac_hop: str = ""  # 623236 Nhắc họp không giấy
+    zalo_tpl_thay_doi_hop: str = ""  # 623180 Thay đổi lịch họp
+    zalo_tpl_huy_hop: str = ""  # 623182 Hủy họp không giấy
 
     # Phạm vi bật: danh sách `loai` trong common.thong_bao được phép gửi Zalo.
     # Giai đoạn 1 chỉ HKG. Muốn bật thêm KPI/LMS chỉ cần sửa biến môi trường.

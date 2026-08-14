@@ -81,8 +81,15 @@ async def gui_zns(
     template_id: str,
     template_data: dict[str, Any],
     tracking_id: Optional[str] = None,
+    che_do_thu_nghiem: bool = False,
 ) -> KetQuaGui:
-    """Gửi 1 tin ZNS. Không raise — mọi lỗi trả về trong KetQuaGui."""
+    """Gửi 1 tin ZNS. Không raise — mọi lỗi trả về trong KetQuaGui.
+
+    `che_do_thu_nghiem=True` bật chế độ development của Zalo: tin CHỈ gửi được
+    tới số điện thoại của quản trị viên Official Account, và KHÔNG bị tính phí.
+    Dùng để kiểm thật đường gửi sau mỗi lần đổi template mà không tốn tiền và
+    không có nguy cơ nhắn nhầm vào số của công chức.
+    """
 
     # --- Chế độ chạy khô: không gọi mạng ---
     if settings.zalo_dry_run:
@@ -110,6 +117,8 @@ async def gui_zns(
     }
     if tracking_id:
         payload["tracking_id"] = tracking_id
+    if che_do_thu_nghiem:
+        payload["mode"] = "development"
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:

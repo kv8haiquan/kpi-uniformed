@@ -1,6 +1,6 @@
 # Kế hoạch triển khai — Lịch công tác HQKV8 vào Nền tảng số thống nhất
 
-> **Trạng thái:** ✅ Giai đoạn 1 hoàn thành *(17/08)* · nhánh `feature/lich-cong-tac`
+> **Trạng thái:** ✅ Giai đoạn 1–2 hoàn thành *(17/08)* · nhánh `feature/lich-cong-tac`
 > **Ngày lập:** 17/08/2026
 > **Nguồn dữ liệu khảo sát:** `docs/Lich Hop Cong Tac/` (mã nguồn `Mã.gs` 5.227 dòng, `index.html` 6.898 dòng, bản xuất `LICH CONG TAC HQKV8.xlsx`), quét metadata Drive, truy vấn chỉ đọc `kpi_haiquan`
 > **Báo cáo phân tích:** https://claude.ai/code/artifact/b80fd077-2acb-4882-9de2-e393b8039f4c
@@ -105,14 +105,21 @@ Cả 4 script chạy lại được ở G6.2 để di trú phần phát sinh.
 
 ## Giai đoạn 2 — Mở rộng schema `meeting`
 
-**Ước lượng:** 3 ngày · **Chặn bởi:** G1
+**Ước lượng:** 3 ngày · **Chặn bởi:** G1 · ✅ **Hoàn thành 17/08**
 
-> Migration đặt tại `backend/alembic/versions/`, tiền tố `meeting_016_...` trở đi.
-> Migration mới nhất hiện tại: `meeting_015_create_nhom_thanh_phan_chi_tiet_20260503.py`, revision `mt_015_nhom_tp_chi_tiet_20260503` → dùng làm `down_revision`.
+> 🔴 **Hai bẫy đã gặp, ghi lại để lần sau không mắc:**
+>
+> 1. **Chuỗi alembic TUYẾN TÍNH qua mọi module** (kpi, lms, zalo, meeting…), không tách nhánh theo module.
+>    Plan ban đầu ghi dùng `mt_015_nhom_tp_chi_tiet_20260503` làm `down_revision` — sai, sẽ tạo **head thứ hai**
+>    và `alembic upgrade head` báo *"Multiple head revisions are present"*. Head thật là `zalo_oa_20260731`.
+>    Kiểm tra trước khi viết: `ScriptDirectory.from_config(Config("alembic.ini")).get_heads()`.
+> 2. **`alembic_version.version_num` là `varchar(32)`.** Revision id dài hơn 32 ký tự làm migration vỡ
+>    *giữa chừng* (DDL đã chạy, ghi version thất bại) → phải tạo lại DB test.
+>    `mt_017_lanh_dao_lien_quan_20260817` = 34 ký tự → đổi thành `mt_017_ld_lien_quan_20260817`.
 
 ### G2.1 — `meeting_016`: mở rộng `cuoc_hop`
 
-- [ ] Thêm cột phân loại và các cột của Lịch công tác:
+- [x] Thêm cột phân loại và các cột của Lịch công tác:
 
 | Cột mới | Kiểu | Ghi chú |
 |---|---|---|
@@ -128,8 +135,8 @@ Cả 4 script chạy lại được ở G6.2 để di trú phần phát sinh.
 | `ly_do_huy` | `TEXT` | 16 cuộc họp đã huỷ có lý do |
 | `updated_by` | `UUID FK public.cong_chuc(id)` | hiện chỉ có `updated_at` |
 
-- [ ] Nới `chu_toa_id` và `don_vi_to_chuc_id` thành nullable
-- [ ] Thêm ràng buộc có điều kiện:
+- [x] Nới `chu_toa_id` và `don_vi_to_chuc_id` thành nullable
+- [x] Thêm ràng buộc có điều kiện:
 
 ```sql
 ALTER TABLE meeting.cuoc_hop
@@ -138,12 +145,12 @@ ALTER TABLE meeting.cuoc_hop
   );
 ```
 
-- [ ] Index: `ma_lich`, `(nguon, ngay_hien_thi)`, `(ngay_hien_thi)`, `don_vi_chuan_bi`
-- [ ] **Kiểm tra hồi quy:** `nhom_thanh_phan_chi_tiet` có logic auto-fill `chu_toa_id` khi thêm nhóm vào cuộc họp (xem docstring `meeting_015`) — đảm bảo không vỡ khi cột thành nullable
+- [x] Index: `ma_lich`, `(nguon, ngay_hien_thi)`, `(ngay_hien_thi)`, `don_vi_chuan_bi`
+- [x] **Kiểm tra hồi quy:** `nhom_thanh_phan_chi_tiet` có logic auto-fill `chu_toa_id` khi thêm nhóm vào cuộc họp (xem docstring `meeting_015`) — đảm bảo không vỡ khi cột thành nullable
 
 ### G2.2 — `meeting_017`: lãnh đạo liên quan
 
-- [ ] Bảng `meeting.lanh_dao_lien_quan` — quan hệ nhiều–nhiều
+- [x] Bảng `meeting.lanh_dao_lien_quan` — quan hệ nhiều–nhiều
   - `cuoc_hop_id` FK CASCADE, `cong_chuc_id` FK `public.cong_chuc(id)`, `thu_tu`
   - UNIQUE `(cuoc_hop_id, cong_chuc_id)`
   - **Khớp 100%** với `cong_chuc` (480/480 token) → chuẩn hoá sạch, đây là trục của Lịch lãnh đạo + Dashboard + Tóm tắt lịch
@@ -160,37 +167,66 @@ ALTER TABLE meeting.cuoc_hop
 >
 > Bảng ánh xạ đầy đủ: `backend/scripts/di_tru_lichkv8/anh_xa.py`
 
-- [ ] `meeting.tru_so` — danh mục 9 trụ sở trực ban (bảng mới, không có trong lichkv8)
+- [x] `meeting.tru_so` — danh mục 9 trụ sở trực ban (bảng mới, không có trong lichkv8)
   - `ma_tru_so VARCHAR(20) UNIQUE` (`CHICUC`, `HONGAI`, `CAMPHA`, `VANGIA`, `HOANHMO`, `BPS`, `MONGCAI`, `KSHQ_HL`, `KSHQ_MC`)
   - `ten_tru_so`, `don_vi_id` FK `public.don_vi(id)` **nullable** (rỗng với `CHICUC`), `thu_tu`, `is_active`
   - Seed sẵn 9 dòng từ `anh_xa.TRU_SO`
-- [ ] `meeting.truc_ban` — thay `DUTY_ENTRY` (333 bản ghi còn hiệu lực)
+- [x] `meeting.truc_ban` — thay `DUTY_ENTRY` (333 bản ghi còn hiệu lực)
   - `ngay_truc DATE`, `tru_so_id` FK `meeting.tru_so(id)`, `unit_code_cu VARCHAR(20)` (giữ mã cũ để đối soát)
   - `cong_chuc_id` FK nullable, `ho_ten`, `chuc_vu`, `so_dien_thoai` (333/333 có giá trị — trường cốt lõi)
   - `loai_truc VARCHAR(20) DEFAULT 'CUOI_TUAN'` — **giữ cột để sau mở rộng, giao diện chỉ hiện cuối tuần**
   - `ca_truc VARCHAR(20) DEFAULT 'CA_NGAY'`, `ghi_chu`, `trang_thai`
-- [ ] `meeting.truc_ban_tru_so` — thay `DUTY_UNIT_STATUS` (200 bản ghi)
+- [x] `meeting.truc_ban_tru_so` — thay `DUTY_UNIT_STATUS` (200 bản ghi)
   - `(ngay_truc, tru_so_id)` UNIQUE, `trang_thai` (`NHAP`/`DA_NOP`), `nguoi_nop_id`, `thoi_diem_nop`, `is_locked`
-- [ ] **Quyền theo trụ sở:** `truc_ban.sua_don_vi_minh` cho phép sửa các trụ sở có `don_vi_id` = đơn vị của user.
+- [x] **Quyền theo trụ sở:** `truc_ban.sua_don_vi_minh` cho phép sửa các trụ sở có `don_vi_id` = đơn vị của user.
       Trụ sở `CHICUC` (`don_vi_id` rỗng) do **Văn phòng** điều phối — mã cũ cấp quyền này bằng regex `"van phong"`,
       nay khai báo tường minh qua `anh_xa.DON_VI_DIEU_PHOI_CHICUC`
 
 ### G2.4 — `meeting_019`: đánh giá + ghi chú
 
-- [ ] `meeting.danh_gia_cuoc_hop` — thay `MEETING_RATING` (105 bản ghi)
-- [ ] `meeting.ghi_chu` + `meeting.ghi_chu_chia_se` — thay `MEETING_NOTE` / `NOTE_SHARE` (7 / 0 bản ghi)
+- [x] `meeting.danh_gia_cuoc_hop` — thay `MEETING_RATING` (105 bản ghi)
+- [x] `meeting.ghi_chu` + `meeting.ghi_chu_chia_se` — thay `MEETING_NOTE` / `NOTE_SHARE` (7 / 0 bản ghi)
 
 ### G2.5 — `meeting_020`: bảng lưu vết di trú
 
-- [ ] `meeting.di_tru_doi_soat` — phục vụ màn hình đối soát và biên bản nghiệm thu
+- [x] `meeting.di_tru_doi_soat` — phục vụ màn hình đối soát và biên bản nghiệm thu
   - `duong_dan_thu_muc`, `drive_folder_id`, `so_file`, `ngay_suy_ra`
   - `nhom VARCHAR(2)` (`A`–`E`), `quyet_dinh VARCHAR(30)`, `cuoc_hop_id` nullable
   - `nguoi_quyet_dinh_id`, `thoi_diem`, `ghi_chu`
-- [ ] `meeting.di_tru_nguon` — map bản ghi cũ ↔ mới (`meeting_id_cu`, `drive_file_id`, `bang_nguon`) để truy vết và chạy lại được
+- [x] `meeting.di_tru_nguon` — map bản ghi cũ ↔ mới (`meeting_id_cu`, `drive_file_id`, `bang_nguon`) để truy vết và chạy lại được
 
-**Nghiệm thu G2:** `alembic upgrade head` chạy sạch trên `kpi_haiquan_test`; 9 cuộc họp HKG hiện có không bị ảnh hưởng; test HKG hiện có vẫn PASS.
+**Nghiệm thu G2:** ✅ Đủ.
 
-> ⚠️ Migration **chỉ chạy trên `kpi_haiquan_test`** ở giai đoạn này. Chạy prod ở G6 sau khi user duyệt.
+| Kiểm tra | Kết quả |
+|---|---|
+| `alembic upgrade head` trên `kpi_haiquan_test` (clone tươi từ prod) | ✅ 5 migration chạy sạch |
+| Số bảng schema `meeting` | 13 → **22** (thêm 9) |
+| `alembic downgrade zalo_oa_20260731` rồi upgrade lại | ✅ về đúng 13 bảng, nâng lại được |
+| Test ràng buộc mới `test_lich_cong_tac_schema.py` | ✅ **31/31 PASS** |
+| Hồi quy test HKG (trừ 2 file phụ thuộc giờ) | ✅ **165/165 PASS** |
+| 9 cuộc họp HKG sẵn có | ✅ `nguon='HKG'`, `ngay_hien_thi` backfill đủ |
+| Seed 9 trụ sở + ánh xạ đơn vị | ✅ đúng, `CHICUC` để `don_vi_id` NULL |
+
+Bằng chứng ràng buộc `CHECK` hoạt động thật (không chỉ trên giấy):
+
+```
+INSERT nguon='HKG' thiếu chu_toa_id
+  → ERROR: violates check constraint "ck_cuoc_hop_hkg_bat_buoc"
+INSERT nguon='LICH_CONG_TAC' thiếu chu_toa_id, có ma_lich
+  → THÀNH CÔNG
+```
+
+Tức mục tiêu chính của phương án một-bảng đạt được: **dòng HKG vẫn không thể tạo mà thiếu chủ trì**,
+ép ở mức cơ sở dữ liệu, trong khi 117 cuộc họp lịch sử không có chủ trì vẫn nạp được — và **không phải
+sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
+
+> ⚠️ **14 test đỏ có sẵn từ trước, không do migration này.** `test_presentation_rest.py` và
+> `test_presentation_ws.py` phụ thuộc giờ chạy: WS token hết hạn = `gio_bat_dau + 4h`
+> (`ws_token_service.py:60-66`), test tạo họp giờ sáng nên chạy buổi tối là 410 `MEETING_EXPIRED`.
+> Đã chứng minh bằng cách hạ migration rồi chạy lại — **đúng 14 test đó vẫn đỏ**. Nên sửa riêng,
+> ngoài phạm vi dự án này.
+
+> ⚠️ Migration **chỉ chạy trên `kpi_haiquan_test`** ở giai đoạn này. Chạy prod ở G6.1 sau khi user duyệt.
 
 ---
 

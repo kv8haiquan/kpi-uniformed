@@ -1,0 +1,469 @@
+# Kế hoạch triển khai — Lịch công tác HQKV8 vào Nền tảng số thống nhất
+
+> **Trạng thái:** ✅ Giai đoạn 1 hoàn thành *(17/08)* · nhánh `feature/lich-cong-tac`
+> **Ngày lập:** 17/08/2026
+> **Nguồn dữ liệu khảo sát:** `docs/Lich Hop Cong Tac/` (mã nguồn `Mã.gs` 5.227 dòng, `index.html` 6.898 dòng, bản xuất `LICH CONG TAC HQKV8.xlsx`), quét metadata Drive, truy vấn chỉ đọc `kpi_haiquan`
+> **Báo cáo phân tích:** https://claude.ai/code/artifact/b80fd077-2acb-4882-9de2-e393b8039f4c
+
+---
+
+## 0. Quyết định đã chốt — căn cứ triển khai
+
+| # | Nội dung | Quyết định |
+|---|----------|------------|
+| 1 | **Kiến trúc** | Một bảng `meeting.cuoc_hop` duy nhất + cột `nguon` (`HKG`/`LICH_CONG_TAC`) + `CHECK` ràng buộc theo loại dòng. Bảng mở rộng `cuoc_hop_hkg` **để dành**, chưa làm. |
+| 2 | **Tiêu chí 8.3** | Cuộc họp tạo mới → hiện trên lịch của mọi người dự. 487 cuộc họp lịch sử → chỉ hiện trên lịch của **lãnh đạo liên quan** (dữ liệu người dự chưa từng tồn tại). |
+| 3 | **Trực ban** | Bảng riêng, **không** ép thành loại sự kiện lịch. Giữ nguyên phạm vi **thứ 7 + chủ nhật**. |
+| 4 | **Thư viện tài liệu** | Gộp vào mục **Tài liệu** đã có, làm một mục con riêng. Không tạo kho thứ ba. |
+| 5 | **Màn hình đối soát** | Chánh Văn phòng **Tống Thị Thái Hà** (`20ZZ-0097`, lichkv8 = `hattt`) + Quản trị viên. |
+| 6 | **Thả file trực tiếp** | **Chặn.** Sau chuyển đổi mọi tài liệu phải upload qua phần mềm. |
+| 7 | **Thu hồi chia sẻ Drive** | Làm **sau khi** xác nhận tài liệu đã sang cloud thành công (giai đoạn 6). |
+
+### Số liệu gốc dùng để đối soát
+
+Ghim lại để kiểm tra sau mỗi bước di trú. Đây là ảnh chụp bản bàn giao — **phải lấy lại qua API ở G1.2** vì hệ cũ vẫn đang chạy.
+
+| Bảng / kho | Số lượng |
+|---|---|
+| `MEETING` | 487 (PUBLISHED 461, CANCELLED 16, DRAFT 10; `IS_DELETED`=0 toàn bộ) |
+| `LOAI_LICH` | HOP 232 · TRUC_BAN 85 · HOI_NGHI 69 · LAM_VIEC 46 · CONG_TAC 37 · LICH_KHAC 18 |
+| `MEETING_FILE` | 587 bản ghi (Active 421, Deleted 166) |
+| Kho Drive tài liệu họp | **230 thư mục cấp 1 · 1.226 file** (đo lại G1.3) |
+| `MEETING_PARTICIPANT` | 294 (100% `ROLE_IN_MEETING=LANH_DAO_LIEN_QUAN` — **không phải** danh sách người dự) |
+| `MEETING_LOG` | 4.279 |
+| `MEETING_RATING` | 105 (SCORE 5.0 ×102, 4.0 ×3) |
+| `MEETING_NOTE` / `NOTE_SHARE` | 7 / 0 |
+| `DUTY_ENTRY` | 709 (SUBMITTED 333, Deleted 376) — 100% `DUTY_TYPE="Thứ 7/CN"`, `DUTY_SHIFT="Cả ngày"` |
+| `DUTY_UNIT_STATUS` | 200 (100% SUBMITTED, `LOCKED`=0) |
+| Trụ sở trực ban | 9 (`CHICUC`, `HONGAI`, `CAMPHA`, `VANGIA`, `HOANHMO`, `BPS`, `MONGCAI`, `KSHQ_HL`, `KSHQ_MC`) |
+| Thư viện văn bản | 189 thư mục · 23 file |
+| `USER` | 548 (547 có `USER_ID` đúng dạng `ma_cc`) |
+| `DEPT` | 13 đơn vị (chỉ 1 có `ROOT_FOLDER_ID`) |
+
+Khoảng ngày: `MEETING` **09/03/2026 → 18/08/2026**. Kho Drive có tài liệu từ **24/01/2026** (tài liệu tiền hệ thống).
+
+---
+
+## Giai đoạn 1 — Chốt phạm vi và lấy dữ liệu gốc
+
+**Ước lượng:** 1 ngày · **Chặn:** không còn gì
+
+- [x] **G1.1** — Tạo nhánh `feature/lich-cong-tac` ✅ *17/08*
+  > ⚠️ **Sửa so với bản plan đầu:** nhánh tạo từ **`feature/hkg-zalo-oa`** (commit `1912c2e`), **không** từ `main`.
+  > Lý do: `main` (`6101d3f`) đi sau HEAD **174 commit** và **không có `backend/meeting_service/` lẫn migration `meeting_*` nào** —
+  > branch từ `main` thì không có module HKG để mở rộng, toàn bộ giai đoạn 2 bất khả thi.
+  > Lưu ý: cây làm việc còn **22 file sửa + 29 file mới chưa commit** thuộc module KPI của các việc khác — không stage vào commit của dự án này.
+- [x] **G1.2** — Xuất bản sống của cơ sở dữ liệu ✅ *17/08* → `xuat_sheet.py`, `doc_sheet.py`
+  > 🔴 **Tìm được ID bảng tính:** `1Kyp9ce15Og0b6z9iqNIWk0rziuiukJ-05hG5nbKfo-w`
+  > Nó **nằm ngay tại gốc kho tài liệu họp** `01.TAI_LIEU_HOP`, không phải ngoài kho như tài liệu bàn giao ngụ ý.
+  > Đây là **Google Sheets gốc** (`application/vnd.google-apps.spreadsheet`), không phải bản xuất `.xlsx` — nên
+  > xuất lại được bất cứ lúc nào, không cần xin quyền. Mã nguồn để `CFG.SPREADSHEET_ID = ''` và dùng
+  > `getActiveSpreadsheet()` nên ID không xuất hiện ở đâu trong 5.227 dòng mã — chỉ tìm được bằng cách quét kho Drive.
+
+  Chênh lệch so với bản bàn giao — **hệ cũ vẫn đang phát sinh dữ liệu**:
+
+  | Sheet | mốc | sống | chênh |
+  |---|---:|---:|---:|
+  | `MEETING` | 487 | **489** | +2 |
+  | `MEETING_FILE` | 587 | **590** | +3 |
+  | `MEETING_LOG` | 4.279 | **4.295** | +16 |
+  | 11 sheet còn lại | | | không đổi |
+
+  Hai cuộc họp mới là `LH0488`, `LH0489` → **mã lịch lớn nhất hiện tại là `LH0489`**, không phải `LH0487`.
+  Sinh mã mới ở G4.3 phải bắt đầu từ `LH0490`, và phải đọc lại lúc cắt chuyển chứ không hardcode.
+
+- [x] **G1.3** — Quét cây Drive cả 2 kho ✅ *17/08* → `quet_drive.py`, `dumps/drive_*.json`
+
+  | Kho | Drive folder ID | Thư mục | File |
+  |---|---|---:|---:|
+  | `01.TAI_LIEU_HOP` | `1AkMxFT-OQlmW5K9lLw_Aoj8X1tZWRSTx` | 295 | **1.226** |
+  | `03.THU_VIEN_VAN_BAN` | `1nDn4qEgJ99rRpdn5x-2VEEPA_SkX6rvv` | 189 | 23 |
+
+  Quét hai lần cách nhau 2 giờ cho thấy kho tăng **1 thư mục + 2 file** (`LH0489` mới, `LH0488` thêm 1 file)
+  → xác nhận cần G6.2 (di trú lần cuối) và G6.5 (khoá ghi) chứ không thể di trú một lần rồi thôi.
+- [x] **G1.4** — Ánh xạ đơn vị và trụ sở ✅ *17/08* → `backend/scripts/di_tru_lichkv8/anh_xa.py`
+  - `DEPT` có **13 đơn vị**, chỉ **1/13** (`HQKV8`) có `ROOT_FOLDER_ID` và nó trỏ vào chính kho tài liệu chung
+    → **không có thư mục Drive riêng theo đơn vị nào đang dùng**, không phát sinh cây thư mục thứ ba
+  - 🔴 Phát hiện: tồn tại **ba hệ mã đơn vị** không hệ nào trùng hệ nào — `public.don_vi` (15),
+    `DEPT.MA_DON_VI` (13), `DUTY_ENTRY.UNIT_CODE` (9). Hệ thứ ba là **trụ sở vật lý**, không phải đơn vị
+    → làm đổi thiết kế bảng trực ban, xem G2.3
+
+**Nghiệm thu G1:** ✅ Đủ. Sản phẩm tại `backend/scripts/di_tru_lichkv8/`:
+
+| File | Vai trò |
+|---|---|
+| `xuat_sheet.py` | Xuất bản sống Google Sheets + đối chiếu số dòng với mốc |
+| `doc_sheet.py` | Đọc `.xlsx` không cần thư viện ngoài (xử lý đúng ô rỗng tự đóng) |
+| `quet_drive.py` | Quét metadata cây Drive cả 2 kho, chỉ đọc |
+| `anh_xa.py` | Bảng ánh xạ đơn vị, trụ sở, trạng thái, loại lịch, vai trò |
+| `dumps/lichkv8_live.xlsx` | Bản sống 18 sheet |
+| `dumps/drive_tai-lieu.json` · `dumps/drive_thu-vien.json` | Mốc đối soát cây Drive |
+
+Cả 4 script chạy lại được ở G6.2 để di trú phần phát sinh.
+
+---
+
+## Giai đoạn 2 — Mở rộng schema `meeting`
+
+**Ước lượng:** 3 ngày · **Chặn bởi:** G1
+
+> Migration đặt tại `backend/alembic/versions/`, tiền tố `meeting_016_...` trở đi.
+> Migration mới nhất hiện tại: `meeting_015_create_nhom_thanh_phan_chi_tiet_20260503.py`, revision `mt_015_nhom_tp_chi_tiet_20260503` → dùng làm `down_revision`.
+
+### G2.1 — `meeting_016`: mở rộng `cuoc_hop`
+
+- [ ] Thêm cột phân loại và các cột của Lịch công tác:
+
+| Cột mới | Kiểu | Ghi chú |
+|---|---|---|
+| `nguon` | `VARCHAR(20) NOT NULL DEFAULT 'HKG'` | `HKG` / `LICH_CONG_TAC` |
+| `ma_lich` | `VARCHAR(20) UNIQUE` | `LHxxxx` — **bắt buộc giữ nguyên mã lịch sử** |
+| `ngay_ket_thuc` | `DATE` | lịch kéo dài nhiều ngày |
+| `ngay_hien_thi` | `DATE` | ngày dùng để xếp lên lịch, có thể khác ngày bắt đầu |
+| `loai_lich` | `VARCHAR(30)` | 6 giá trị đã có sẵn, **không** trùng `khoi` |
+| `chu_tri_text` | `VARCHAR(300)` | 9% chủ trì là chức danh chung / người ngoài ngành |
+| `thanh_phan_text` | `TEXT` | văn bản tự do, dài nhất 246 ký tự |
+| `don_vi_chuan_bi` | `VARCHAR(200)` | trục của báo cáo Thống kê tài liệu |
+| `so_van_ban` | `VARCHAR(100)` | dùng cho việc gắn thư mục theo số giấy mời |
+| `ly_do_huy` | `TEXT` | 16 cuộc họp đã huỷ có lý do |
+| `updated_by` | `UUID FK public.cong_chuc(id)` | hiện chỉ có `updated_at` |
+
+- [ ] Nới `chu_toa_id` và `don_vi_to_chuc_id` thành nullable
+- [ ] Thêm ràng buộc có điều kiện:
+
+```sql
+ALTER TABLE meeting.cuoc_hop
+  ADD CONSTRAINT ck_hkg_bat_buoc CHECK (
+    nguon <> 'HKG' OR (chu_toa_id IS NOT NULL AND don_vi_to_chuc_id IS NOT NULL)
+  );
+```
+
+- [ ] Index: `ma_lich`, `(nguon, ngay_hien_thi)`, `(ngay_hien_thi)`, `don_vi_chuan_bi`
+- [ ] **Kiểm tra hồi quy:** `nhom_thanh_phan_chi_tiet` có logic auto-fill `chu_toa_id` khi thêm nhóm vào cuộc họp (xem docstring `meeting_015`) — đảm bảo không vỡ khi cột thành nullable
+
+### G2.2 — `meeting_017`: lãnh đạo liên quan
+
+- [ ] Bảng `meeting.lanh_dao_lien_quan` — quan hệ nhiều–nhiều
+  - `cuoc_hop_id` FK CASCADE, `cong_chuc_id` FK `public.cong_chuc(id)`, `thu_tu`
+  - UNIQUE `(cuoc_hop_id, cong_chuc_id)`
+  - **Khớp 100%** với `cong_chuc` (480/480 token) → chuẩn hoá sạch, đây là trục của Lịch lãnh đạo + Dashboard + Tóm tắt lịch
+
+### G2.3 — `meeting_018`: trực ban
+
+> 🔴 **Sửa thiết kế sau khảo sát G1.4:** bản plan đầu định khoá trực ban theo `don_vi_id` — **sai**.
+> Dữ liệu cho thấy trực ban tổ chức theo **trụ sở vật lý**, không theo đơn vị: `UNIT_NAME` ghi rõ
+> *"Trụ sở HQCK cảng Vạn Gia"*, *"Trụ sở Chi cục HQKV VIII"*. Quan hệ trụ sở ↔ đơn vị **không 1:1**:
+>
+> - 6 trụ sở cửa khẩu → khớp 1:1 với đơn vị HQCK tương ứng
+> - `KSHQ_HL` + `KSHQ_MC` → **cùng một** đơn vị `KSHQ` (một đơn vị, hai trụ sở)
+> - `CHICUC` → trụ sở dùng chung của VP, LDCC, CNTT, NVHQ, TCCB, QLRR, PTSTQ — không ứng đơn vị nào
+>
+> Bảng ánh xạ đầy đủ: `backend/scripts/di_tru_lichkv8/anh_xa.py`
+
+- [ ] `meeting.tru_so` — danh mục 9 trụ sở trực ban (bảng mới, không có trong lichkv8)
+  - `ma_tru_so VARCHAR(20) UNIQUE` (`CHICUC`, `HONGAI`, `CAMPHA`, `VANGIA`, `HOANHMO`, `BPS`, `MONGCAI`, `KSHQ_HL`, `KSHQ_MC`)
+  - `ten_tru_so`, `don_vi_id` FK `public.don_vi(id)` **nullable** (rỗng với `CHICUC`), `thu_tu`, `is_active`
+  - Seed sẵn 9 dòng từ `anh_xa.TRU_SO`
+- [ ] `meeting.truc_ban` — thay `DUTY_ENTRY` (333 bản ghi còn hiệu lực)
+  - `ngay_truc DATE`, `tru_so_id` FK `meeting.tru_so(id)`, `unit_code_cu VARCHAR(20)` (giữ mã cũ để đối soát)
+  - `cong_chuc_id` FK nullable, `ho_ten`, `chuc_vu`, `so_dien_thoai` (333/333 có giá trị — trường cốt lõi)
+  - `loai_truc VARCHAR(20) DEFAULT 'CUOI_TUAN'` — **giữ cột để sau mở rộng, giao diện chỉ hiện cuối tuần**
+  - `ca_truc VARCHAR(20) DEFAULT 'CA_NGAY'`, `ghi_chu`, `trang_thai`
+- [ ] `meeting.truc_ban_tru_so` — thay `DUTY_UNIT_STATUS` (200 bản ghi)
+  - `(ngay_truc, tru_so_id)` UNIQUE, `trang_thai` (`NHAP`/`DA_NOP`), `nguoi_nop_id`, `thoi_diem_nop`, `is_locked`
+- [ ] **Quyền theo trụ sở:** `truc_ban.sua_don_vi_minh` cho phép sửa các trụ sở có `don_vi_id` = đơn vị của user.
+      Trụ sở `CHICUC` (`don_vi_id` rỗng) do **Văn phòng** điều phối — mã cũ cấp quyền này bằng regex `"van phong"`,
+      nay khai báo tường minh qua `anh_xa.DON_VI_DIEU_PHOI_CHICUC`
+
+### G2.4 — `meeting_019`: đánh giá + ghi chú
+
+- [ ] `meeting.danh_gia_cuoc_hop` — thay `MEETING_RATING` (105 bản ghi)
+- [ ] `meeting.ghi_chu` + `meeting.ghi_chu_chia_se` — thay `MEETING_NOTE` / `NOTE_SHARE` (7 / 0 bản ghi)
+
+### G2.5 — `meeting_020`: bảng lưu vết di trú
+
+- [ ] `meeting.di_tru_doi_soat` — phục vụ màn hình đối soát và biên bản nghiệm thu
+  - `duong_dan_thu_muc`, `drive_folder_id`, `so_file`, `ngay_suy_ra`
+  - `nhom VARCHAR(2)` (`A`–`E`), `quyet_dinh VARCHAR(30)`, `cuoc_hop_id` nullable
+  - `nguoi_quyet_dinh_id`, `thoi_diem`, `ghi_chu`
+- [ ] `meeting.di_tru_nguon` — map bản ghi cũ ↔ mới (`meeting_id_cu`, `drive_file_id`, `bang_nguon`) để truy vết và chạy lại được
+
+**Nghiệm thu G2:** `alembic upgrade head` chạy sạch trên `kpi_haiquan_test`; 9 cuộc họp HKG hiện có không bị ảnh hưởng; test HKG hiện có vẫn PASS.
+
+> ⚠️ Migration **chỉ chạy trên `kpi_haiquan_test`** ở giai đoạn này. Chạy prod ở G6 sau khi user duyệt.
+
+---
+
+## Giai đoạn 3 — Di trú dữ liệu và 1.223 file
+
+**Ước lượng:** 5–6 ngày · **Chặn bởi:** G2
+
+### G3.1 — ETL bảng dữ liệu
+
+- [ ] Script `backend/scripts/di_tru_lichkv8/01_cuoc_hop.py`
+  - 487 dòng `MEETING` → `cuoc_hop` với `nguon='LICH_CONG_TAC'`, giữ `ma_lich`
+  - Ánh xạ trạng thái: `PUBLISHED`→`DA_THONG_BAO`, `CANCELLED`→`HUY`, `DRAFT`→`LEN_KE_HOACH`
+  - `CHU_TRI`: khớp `cong_chuc` (91%) → `chu_toa_id`; phần còn lại → `chu_tri_text`
+  - `NGUOI_TAO`: 272 dòng ghi `import` → **cần tài khoản hệ thống** cho `created_by` (FK NOT NULL)
+  - `THANH_PHAN` → `thanh_phan_text` nguyên văn (rỗng ở 214/487)
+- [ ] `02_lanh_dao_lien_quan.py` — 480 token, khớp 100%
+- [ ] `03_truc_ban.py` — `DUTY_ENTRY` 333 còn hiệu lực + `DUTY_UNIT_STATUS` 200; map `UNIT_CODE` cũ (`CHICUC`, `VANGIA`, `MONGCAI`, `HONGAI`, `BPS`, `KSHQ_MC`, `HOANHMO`, `CAMPHA`) → `don_vi_id`
+- [ ] `04_danh_gia_ghi_chu.py` — 105 đánh giá + 7 ghi chú
+- [ ] `05_nguoi_dung.py` — ánh xạ `USER.USER_ID` = `ma_cc` (547/548), ngoại lệ `superadmin`
+  - ⛔ **KHÔNG nạp cột `PASSWORD_HASH`** dưới bất kỳ hình thức nào (505 dòng là mật khẩu dạng rõ)
+  - Map vai trò lichkv8 → RBAC nền tảng: `SuperAdmin`/`Admin` → admin; `Lanhdaochicuc` → CCT/PCCT; `Lanhdaophong`/`Lanhdaodoi` → TDV/PDV; `Thuky` → quyền tác nghiệp lịch; `Congchuc` → CC
+
+### G3.2 — Di trú file **theo thư mục**
+
+> **Nguyên tắc:** thư mục Drive là nguồn sự thật của file, **không phải** bảng `MEETING_FILE`.
+> Bảng chỉ dùng bổ sung metadata (ai tải lên, lúc nào) ở chỗ nào có.
+
+- [ ] Script `06_tai_file_drive.py` — tải toàn bộ cây về đĩa, giữ nguyên cấu trúc, ghi log từng file
+- [ ] Script `07_gan_tai_lieu.py` — đẩy qua `StorageService` sẵn có (`meeting_service/services/storage_service.py`, hiện `uploads/meeting/`), gắn vào cuộc họp:
+
+| Nhóm | Căn cứ | Thư mục | File | Xử lý |
+|---|---|---:|---:|---|
+| A | Tên thư mục là `LHxxxx` | 169 | 672 | Tự động |
+| B | Khớp cả ngày lẫn số GM | 14 | 76 | Tự động |
+| C | Khớp số giấy mời ↔ `SO_VAN_BAN` | 12 | 63 | Tự động |
+| D | Chỉ khớp ngày (2–8 ứng viên) | 15 | 210 | → màn hình đối soát |
+| E | Không khớp gì | 19 | 202 | → màn hình đối soát |
+
+  - **811 file (66%) gắn tự động**, 412 file chờ đối soát
+  - ⚠️ **`DA_KET_THUC` là ngoại lệ**: không phải 1 cuộc họp mà là kho lưu trữ chứa **13 cuộc họp con** (75 file). Script phải đi thêm 1 cấp ở thư mục này
+  - ⚠️ Loại **4 bản ghi có file đã biến mất khỏi Drive**: `LH0327`, `LH0354`, `LH0373`, `LH0399`
+  - ⚠️ Loại 166 bản ghi `STATUS=Deleted`
+
+### G3.3 — Đối soát sau di trú
+
+- [ ] So khớp: số cuộc họp, số bản ghi trực ban, số file, tổng dung lượng trước/sau
+- [ ] Mở thử ngẫu nhiên 20 file mỗi định dạng (pdf, docx, doc, xlsx, pptx) — không hỏng
+- [ ] Kiểm tra tiếng Việt, ngày giờ, số điện thoại, tên file không bị lỗi mã hoá
+- [ ] Xuất biên bản đối chiếu ra Excel
+
+**Nghiệm thu G3:** biên bản đối chiếu khớp số lượng; mọi `ma_lich` lịch sử giữ nguyên; không mất dữ liệu tiếng Việt.
+
+---
+
+## Giai đoạn 4 — API và giao diện Lịch công tác
+
+**Ước lượng:** 10–14 ngày · **Chặn bởi:** G2 (không cần chờ G3)
+
+> Backend: `backend/meeting_service/` (port 8006, PM2 `meeting-backend`), prefix nginx `/api/v1/hop-khong-giay/`
+> Frontend: `frontend/src/app/(main)/lich-cong-tac/`, service `frontend/src/services/hkg.ts` (mở rộng) hoặc tách `lich-cong-tac.ts`
+
+### G4.1 — Điều hướng
+
+- [ ] Thêm mục **Lịch công tác** vào `frontend/src/components/common/Sidebar.tsx`, đặt **ngay trên** mục Họp Không Giấy (dòng ~172)
+- [ ] Thêm widget vào lưới trang Tổng quan (`app/(main)/tong-quan/`), theo mẫu `WidgetHKG.tsx`
+
+### G4.2 — Lịch công tác (màn hình trung tâm)
+
+- [ ] `GET /lich-cong-tac` — lọc theo khoảng ngày, loại lịch, lãnh đạo, trạng thái; **phân trang server-side** (hệ cũ tải hết vào bộ nhớ, có ngưỡng cảnh báo 3000ms)
+- [ ] Xem theo tháng / tuần / danh sách
+- [ ] Tìm kiếm toàn văn trên: nội dung, ghi chú, địa điểm, chủ trì, thành phần, lãnh đạo liên quan
+- [ ] Chi tiết lịch: đầy đủ trường + tài liệu + lãnh đạo liên quan
+- [ ] **Bấm sự kiện loại họp → mở thẳng chi tiết cuộc họp trong HKG** (tiêu chí 8.3 gạch 2)
+
+### G4.3 — Quản lý lịch
+
+- [ ] CRUD + huỷ (giữ trạng thái, không xoá vật lý) + xoá mềm theo quyền
+- [ ] Sinh `ma_lich` tiếp nối: `LH0488` trở đi, có khoá chống trùng
+- [ ] Xuất Excel: STT, mã lịch, ngày, giờ, loại, nội dung, thành phần, địa điểm, chủ trì, lãnh đạo, đơn vị chuẩn bị, số văn bản, ghi chú, trạng thái, số file
+- [ ] Ghi nhật ký thay đổi theo từng trường (thay `MEETING_LOG`)
+
+### G4.4 — Tóm tắt lịch
+
+- [ ] Tổng hợp theo khoảng ngày (mặc định 3 ngày), nhóm theo ngày → lãnh đạo
+- [ ] Chế độ gọn, chọn thông tin đi kèm: địa điểm, chức danh, lịch trực, chỉ lịch đã đăng
+- [ ] Nút copy để dán sang Zalo/email
+- [ ] **Sinh trực tiếp từ dữ liệu lịch**, không lưu bản riêng
+
+### G4.5 — Lịch lãnh đạo
+
+- [ ] Thẻ chương trình công tác từng lãnh đạo, dựa trên `lanh_dao_lien_quan` (khớp 100%)
+- [ ] Hiển thị: ngày, giờ, nội dung, địa điểm, vai trò
+
+### G4.6 — Thống kê tài liệu họp
+
+- [ ] Lọc: từ ngày, đến ngày, từ khoá, lãnh đạo, trạng thái lịch, tình trạng tài liệu, tính/không tính lịch huỷ
+- [ ] 5 trạng thái: Tất cả · Có giao chuẩn bị · Đã gắn tài liệu · Thiếu tài liệu · Chưa giao chuẩn bị
+- [ ] Xuất Excel
+- [ ] 🔴 **BÊ NGUYÊN quy tắc "giấy mời không tính là tài liệu chuẩn bị"** — port nguyên văn 3 hàm từ `Mã.gs` dòng 1513–1570:
+  - `hasMeetingDocsMaterialSignal_()` — regex tín hiệu tài liệu chuyên môn
+  - `hasInvitationSignal_()` — regex tín hiệu giấy mời
+  - `isInvitationDocFile_()` — **thứ tự ưu tiên: có tín hiệu tài liệu thì TÍNH, kể cả khi nằm trong nhóm `GIAY_MOI`**
+  - Lý do: bình luận V145 trong mã ghi rõ làm sai sẽ *"báo oan đơn vị chưa nộp tài liệu"*. 279/587 file mang nhóm `GIAY_MOI` → quy tắc này chi phối gần một nửa báo cáo
+  - Viết test theo đúng các ca đã tinh chỉnh
+
+### G4.7 — Trực ban
+
+- [ ] Bảng ma trận: hàng = ngày, cột = 8 trụ sở, ô = người trực (họ tên, chức vụ, SĐT)
+- [ ] Sắp xếp theo thứ tự chức vụ: CCT → PCCT → Trưởng/Chánh → Phó → Công chức
+- [ ] Lọc tuần trước / tuần này / tuần sau + khoảng ngày tuỳ chọn + theo đơn vị
+- [ ] Tab dữ liệu chi tiết
+- [ ] Nhập thủ công · sửa trực tiếp · nộp chính thức (`NHAP → DA_NOP`) · copy báo cáo · in · xuất Excel
+- [ ] 🔴 **Phân quyền phải THAY, không port**: hệ cũ dùng `isDutyAdmin_()` dò chuỗi trên họ tên + chức vụ + đơn vị gộp lại (`Mã.gs` dòng 4591) — ai có đơn vị chứa "Văn phòng" hoặc chức vụ chứa "lãnh đạo" đều thành quản trị toàn Chi cục. Thay bằng quyền chức năng thật:
+  - `truc_ban.xem` · `truc_ban.sua_don_vi_minh` · `truc_ban.sua_tat_ca` · `truc_ban.import` · `truc_ban.xoa`
+  - Dựa trên `vai_tro` + `don_vi_id` khoá ngoại, không so khớp chuỗi
+
+### G4.8 — Import trực ban từ Excel
+
+- [ ] Quy trình 2 bước: parse → **preview** → commit (không ghi thẳng)
+- [ ] Nhận diện linh hoạt biến thể tên cột (`GHI_CHU` / `Ghi chú` / `Ghi chu` / `NOTE` là cùng một cột)
+- [ ] Báo dòng hợp lệ / không hợp lệ trước khi ghi
+- [ ] 📎 **Mang file mẫu sang**: `docs/Lich Hop Cong Tac/Github/Mau_import_lich_truc_ban_HQKV8_v127.xlsx` → đặt làm file mẫu tải về trên nền tảng
+
+### G4.9 — Màn hình đối soát tài liệu (dùng một lần)
+
+- [ ] Route riêng, **chỉ** Chánh VP `20ZZ-0097` + Quản trị viên thấy
+- [ ] Liệt kê 34 thư mục (15 nhóm D + 19 nhóm E), 412 file
+- [ ] Mỗi dòng: tên thư mục, số file, ngày suy ra, **danh sách tên file mở rộng được** (nhiều khi phải nhìn tên file mới đoán ra cuộc họp)
+- [ ] Gợi ý ứng viên **xếp hạng theo từ khoá trùng** giữa tên thư mục và nội dung cuộc họp
+  - ⚠️ **Không thư mục nào có ứng viên duy nhất** — ngày nào cũng có 2–8 cuộc họp vì "Chỉ đạo trực ban" lặp gần như hằng ngày. Phải là danh sách để chọn, không phải nút xác nhận một chạm
+  - Xếp hạng giúp rõ 9/29 trường hợp; số còn lại tên viết tắt quá (`TL HN chỉ số`, `260519-CCT lv KTSTQ`)
+- [ ] 4 hành động: gắn vào cuộc họp đã chọn · **tạo cuộc họp lịch sử từ chính thư mục này** · đưa vào kho lưu trữ không gắn · không di trú
+- [ ] Ghi `meeting.di_tru_doi_soat` kèm người + thời điểm → xuất Excel = **biên bản đối chiếu nộp khi nghiệm thu**
+- [ ] Dùng xong ẩn khỏi menu
+
+### G4.10 — Dashboard
+
+- [ ] Chỉ số: hôm nay, ngày mai, trong tuần, trong tháng, trong năm
+- [ ] Thống kê theo lãnh đạo (từ `lanh_dao_lien_quan`)
+- [ ] Bấm thẻ → nhảy tới nhóm lịch tương ứng
+- [ ] **Tính từ dữ liệu thật**, không lưu số thủ công
+
+**Nghiệm thu G4:** đủ 7 màn hình nghiệp vụ; mục Lịch công tác nằm trên Họp Không Giấy; xuất/nhập Excel hoạt động; test quy tắc giấy mời PASS.
+
+---
+
+## Giai đoạn 5 — Thư viện, ghi chú, đánh giá, phân quyền tài liệu
+
+**Ước lượng:** 4–5 ngày · **Chặn bởi:** G4
+
+### G5.1 — Thư viện văn bản → gộp vào mục Tài liệu
+
+> ✅ **Đã quét thư mục thư viện `1nDn4qE...` (17/08):** **189 thư mục nhưng chỉ 23 file.**
+> Đây gần như là bộ khung phân loại được dựng sẵn 3 cấp mà chưa dùng — trong đó có 1 file
+> `TEST_UPLOAD_THU_VIEN.txt`. 3 nhóm gốc (`06.BO_NGANH_KHAC`, `07.TINH_QN`, `99.KHAC`) rỗng hoàn toàn.
+>
+> Việc di trú thư viện vì thế **rất nhẹ**: phần việc là dựng lại cây 189 thư mục, không phải chuyển file.
+
+| Nhóm gốc | File |
+|---|---:|
+| `08.DANG` | 6 |
+| `01.QUOC_HOI` | 5 |
+| `04.CUC_HAI_QUAN` | 5 |
+| `05.CHI_CUC_HQKV8` | 4 |
+| `02.CHINH_PHU` · `03.BO_TAI_CHINH` · gốc | 1 mỗi nhóm |
+| `06.BO_NGANH_KHAC` · `07.TINH_QN` · `99.KHAC` | 0 |
+
+> ⚠️ **Vẫn cần chốt trước khi code:** mục Tài liệu hiện dùng `frontend/src/services/portal.ts` →
+> **portal_service (port 8004)**, bảng `portal.thu_muc` (5 dòng) và `portal.tai_lieu` (**0 dòng** — mới là khung).
+> Tài liệu họp nằm ở `meeting_service`, thư viện sẽ nằm ở `portal_service` → hai service, hai cơ chế lưu file.
+> Điểm nhẹ nhõm: cả hai bên đều gần như rỗng nên không có xung đột dữ liệu, chỉ là quyết định kiến trúc.
+
+- [ ] Chốt: thư viện dùng storage của `portal_service` hay dùng chung `StorageService` của `meeting_service`
+- [ ] Dựng lại cây 189 thư mục theo 9 nhóm gốc (`01.QUOC_HOI` … `99.KHAC`)
+- [ ] Di trú 23 file, bỏ file `TEST_UPLOAD_THU_VIEN.txt`
+- [ ] Duyệt thư mục · breadcrumb · tìm kiếm theo tên/số hiệu · upload · xem trước · tải
+- [ ] ⛔ **Không** nhúng iframe Google Drive — kho phải nằm trên nền tảng
+
+### G5.2 — Ghi chú và chia sẻ
+
+- [ ] CRUD ghi chú (độc lập hoặc gắn cuộc họp), đính kèm file, chia sẻ cho người khác, đếm chưa đọc
+- [ ] Dữ liệu thật rất ít (7 ghi chú, 0 chia sẻ) → làm gọn, không cần tối ưu
+
+### G5.3 — Đánh giá cuộc họp
+
+- [ ] Chấm sao, giới hạn vai trò (lãnh đạo Chi cục + quản trị) theo `canRateMeetingPrep_`
+- [ ] Giữ liên kết user–meeting–rating khi di trú (105 bản ghi)
+
+### G5.4 — Phân quyền tài liệu 2 mức
+
+> ⚠️ Đây là **xây mới theo thiết kế**, không phải giữ hành vi cũ: `FILE_VISIBILITY` không có giá trị `LEADER_*` nào trong 587 file (chỉ `PUBLIC`=374, rỗng=213). Cơ chế này chưa từng vận hành thật.
+
+- [ ] 2 mức: `LEADER_CHICUC` (chỉ lãnh đạo Chi cục + quản trị) và `LEADER_PHONGDOI_UP` (thêm lãnh đạo phòng/đội)
+- [ ] Ánh xạ sang RBAC nền tảng qua `vai_tro` + `is_lanh_dao`
+- [ ] 587 file lịch sử mặc định mức công khai nội bộ; Văn phòng nâng mức từng file nếu cần
+
+### G5.5 — Chặn thả file trực tiếp
+
+- [ ] Mọi tài liệu chỉ vào kho qua API upload có xác thực
+- [ ] 📣 **Thông báo trước cho Văn phòng và các đơn vị** — hiện 49% tài liệu (605/1.223 file) vào kho bằng đường thả trực tiếp. Bật lặng lẽ sẽ có người kéo file vào Drive rồi tưởng đã nộp
+
+**Nghiệm thu G5:** thư viện duyệt/tìm/upload/tải hoạt động không phụ thuộc Drive; phân quyền 2 mức đúng theo vai trò.
+
+---
+
+## Giai đoạn 6 — Chạy song song và cắt chuyển
+
+**Ước lượng:** 2 tuần chạy song song · **Chặn bởi:** G3, G4, G5
+
+- [ ] **G6.1** — Chạy migration trên prod `kpi_haiquan` (⚠️ **cần user duyệt từng lần**, xem `CLAUDE.md`)
+- [ ] **G6.2** — Di trú lần cuối phần dữ liệu phát sinh từ G1.2 đến nay
+- [ ] **G6.3** — Bà Hà rà 34 thư mục trên màn hình đối soát (ước 1 buổi)
+- [ ] **G6.4** — Mở cho người dùng đối chiếu, chạy song song với lichkv8
+- [ ] **G6.5** — Khoá ghi trên Google Sheets sau khi lãnh đạo xác nhận dữ liệu đủ
+- [ ] **G6.6** — Dừng deploy Apps Script Web App + gỡ GitHub Pages
+  - ⛔ **Không tự ý tắt** — chỉ làm sau xác nhận của lãnh đạo, đây là hệ nhiều người đang dùng thật
+- [ ] **G6.7** — Xử lý phụ thuộc Google, **sau khi** xác nhận tài liệu đã sang cloud thành công:
+  - [ ] Thu hồi chia sẻ công khai thư mục Drive `1AkMxFT-...` và `1nDn4qE...`
+  - [ ] Chuyển file Sheets `LICH CONG TAC HQKV8` sang chỉ đọc, giữ làm bản lưu, **thu hồi chia sẻ** (file này chứa 505 mật khẩu dạng rõ)
+  - [ ] Rà các link Drive đã gửi kèm giấy mời / email trước đây — sẽ chết sau khi thu hồi, cần thông báo
+- [ ] **G6.8** — Bàn giao: mã nguồn, tài khoản quản trị, hướng dẫn sử dụng, hướng dẫn sao lưu/khôi phục, biên bản đối chiếu
+
+---
+
+## Rủi ro và điểm dễ mất
+
+| # | Rủi ro | Cách xử lý |
+|---|--------|-----------|
+| 1 | **Quy tắc giấy mời** viết lại từ đặc tả sẽ sai — đặc tả chỉ mô tả 1 câu, mã thật là 3 hàm với thứ tự ưu tiên | Port nguyên văn regex + test theo ca đã tinh chỉnh (G4.6) |
+| 2 | **Phân quyền trực ban** hệ cũ dò chuỗi → ai có "Văn phòng"/"lãnh đạo" trong hồ sơ đều thành admin toàn Chi cục | Thay bằng quyền chức năng thật, không port (G4.7) |
+| 3 | `created_by` NOT NULL nhưng 272 dòng `NGUOI_TAO='import'` | Tạo tài khoản hệ thống trước khi ETL (G3.1) |
+| 4 | `DA_KET_THUC` không phải 1 cuộc họp mà là kho chứa 13 cuộc họp con | Script đi thêm 1 cấp (G3.2) |
+| 5 | Tài liệu **tiền hệ thống** (24/01 → trước 09/03) không có bản ghi cuộc họp để gắn | Lựa chọn "tạo cuộc họp lịch sử từ thư mục" trên màn hình đối soát (G4.9) |
+| 6 | Thư viện thuộc `portal_service` còn tài liệu họp thuộc `meeting_service` → 2 cơ chế lưu file | Chốt phương án trước khi code (G5.1). Cả hai bên gần như rỗng nên không xung đột dữ liệu |
+| 7 | Hệ cũ vẫn phát sinh dữ liệu trong lúc làm | Di trú lần cuối ở G6.2, khoá ghi ở G6.5 |
+| 8 | Chặn thả file là thay đổi thói quen của 49% lượng tài liệu | Thông báo trước, không bật lặng lẽ (G5.5) |
+| 9 | Múi giờ — hệ cũ dùng `CFG.TZ`, nền tảng dùng TIMESTAMPTZ giờ VN | Chuẩn hoá khi ETL, kiểm tra giờ bắt đầu/kết thúc không lệch |
+
+---
+
+## Tổng hợp ước lượng
+
+| Giai đoạn | Nội dung | Ngày công |
+|---|---|---:|
+| G1 | Chốt phạm vi, lấy dữ liệu gốc | 1 |
+| G2 | Mở rộng schema `meeting` | 3 |
+| G3 | Di trú dữ liệu + 1.223 file | 5–6 |
+| G4 | API và giao diện Lịch công tác | 10–14 |
+| G5 | Thư viện, ghi chú, đánh giá, phân quyền | 4–5 |
+| | **Tổng xây dựng** | **23–29** |
+| G6 | Chạy song song + cắt chuyển | 2 tuần |
+
+---
+
+## Tiêu chí nghiệm thu cuối
+
+- [ ] Mục **Lịch công tác** xuất hiện **phía trên** Họp Không Giấy trong điều hướng
+- [ ] Tạo/sửa/huỷ cuộc họp phản ánh đúng và kịp thời giữa Họp Không Giấy và Lịch công tác
+- [ ] Bấm sự kiện họp trên lịch mở đúng chi tiết cuộc họp tương ứng
+- [ ] Toàn bộ cuộc họp, bản ghi trực ban, file đính kèm được di trú đầy đủ, đối soát khớp số lượng
+- [ ] Mọi `ma_lich` `LHxxxx` lịch sử **giữ nguyên**, liên kết đúng tài liệu
+- [ ] Người dùng lichkv8 cũ đăng nhập bằng đúng tài khoản SSO, không tạo mới
+- [ ] Phân quyền xem tài liệu 2 mức hoạt động đúng sau ánh xạ RBAC
+- [ ] Trực ban đúng quy trình nộp/khoá theo đơn vị, phạm vi thứ 7 + chủ nhật
+- [ ] Các chức năng chính **không còn phụ thuộc** Google Apps Script / Sheets / Drive
+- [ ] Có biên bản đối chiếu dữ liệu và file, nêu rõ trường hợp ngoại lệ
+
+---
+
+## Việc nằm ngoài phạm vi dự án này
+
+Phát hiện trong lúc khảo sát, cần xử lý riêng:
+
+- [ ] **Báo cáo Thống kê tài liệu của lichkv8 đang sai** — đọc từ `MEETING_FILE` nên báo đơn vị chưa nộp trong khi tài liệu đã có trên Drive (cá biệt `LH0347` bảng ghi 1 file, Drive có 14). Đáng sửa ngay trên hệ cũ.
+- [ ] **505 mật khẩu dạng rõ trong Google Sheets** — sẽ tự tiêu khi chuyển sang SSO, nhưng trong lúc chờ thì file vẫn đang chia sẻ. Nhật ký có 225 lượt `LOGIN_FAIL` đáng rà.
+- [ ] **Kho tài liệu đang công khai với bất kỳ ai có link** — tải được toàn bộ cấu trúc không cần đăng nhập Google. Xử lý ở G6.7.

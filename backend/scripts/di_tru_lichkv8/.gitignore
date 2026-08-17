@@ -1,0 +1,7 @@
+# ⛔ KHÔNG commit bản xuất dữ liệu lichkv8.
+# Sheet USER chứa 505 mật khẩu DẠNG RÕ ở cột PASSWORD_HASH — đưa vào git là
+# đẩy thông tin đăng nhập của 548 công chức vào lịch sử repo, không xoá được.
+# Chạy `python xuat_sheet.py` và `python quet_drive.py` để tạo lại khi cần.
+dumps/
+*.log
+__pycache__/

@@ -110,6 +110,9 @@ async def nhac_hop_3_tang_logic(
         select(CuocHop).where(
             CuocHop.is_deleted.is_(False),
             CuocHop.trang_thai == "DA_THONG_BAO",
+            # Chỉ nhắc cuộc họp HKG. Sự kiện Lịch công tác di trú từ lichkv8
+            # nằm cùng bảng nhưng không có thành phần dự để gửi nhắc.
+            CuocHop.nguon == "HKG",
         )
     )
     candidates: list[CuocHop] = []

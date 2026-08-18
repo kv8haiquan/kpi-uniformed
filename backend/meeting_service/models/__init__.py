@@ -1,4 +1,4 @@
-"""Models cho schema meeting (10 bảng MVP + 1 bảng Phase 4.1) + base."""
+"""Models cho schema meeting: HKG + Lịch công tác (di trú lichkv8)."""
 
 from meeting_service.models.base import Base
 from meeting_service.models.cuoc_hop import CuocHop
@@ -13,6 +13,13 @@ from meeting_service.models.tien_do import TienDo
 from meeting_service.models.mau_bieu import MauBieu
 from meeting_service.models.trang_thai_trinh_chieu import TrangThaiTrinhChieu
 from meeting_service.models.nhom_thanh_phan import NhomThanhPhan, NhomThanhPhanChiTiet
+from meeting_service.models.lich_cong_tac import (
+    DiTruDoiSoat,
+    LanhDaoLienQuan,
+    TrucBan,
+    TrucBanTruSo,
+    TruSo,
+)
 
 __all__ = [
     "Base",
@@ -28,5 +35,10 @@ __all__ = [
     "MauBieu",
     "TrangThaiTrinhChieu",
     "NhomThanhPhan",
+    "LanhDaoLienQuan",
+    "TruSo",
+    "TrucBan",
+    "TrucBanTruSo",
+    "DiTruDoiSoat",
     "NhomThanhPhanChiTiet",
 ]

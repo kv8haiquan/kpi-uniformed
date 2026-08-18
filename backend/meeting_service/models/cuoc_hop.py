@@ -35,11 +35,14 @@ class CuocHop(Base):
     gio_ket_thuc: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     dia_diem: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
 
-    don_vi_to_chuc_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("public.don_vi.id"), nullable=False
+    # Nullable từ migration 016 để nạp được 117 cuộc họp lịch sử không có chủ
+    # trì. Dòng nguon='HKG' VẪN bắt buộc có, ép bằng ràng buộc CHECK
+    # ck_cuoc_hop_hkg_bat_buoc ở mức cơ sở dữ liệu.
+    don_vi_to_chuc_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.don_vi.id"), nullable=True
     )
-    chu_toa_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=False
+    chu_toa_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=True
     )
     thu_ky_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=True
@@ -48,6 +51,23 @@ class CuocHop(Base):
     trang_thai: Mapped[str] = mapped_column(
         String(30), nullable=False, server_default="LEN_KE_HOACH"
     )
+
+    # ── Lịch công tác (migration 016) ────────────────────────────────
+    # Dòng HKG để trống toàn bộ nhóm này; trigger fn_dong_bo_ngay_hien_thi tự
+    # điền ngay_hien_thi và loai_lich nên HKG không phải biết tới chúng.
+    nguon: Mapped[str] = mapped_column(
+        String(20), server_default="HKG", nullable=False)
+    ma_lich: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    ngay_ket_thuc: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    ngay_hien_thi: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    loai_lich: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    chu_tri_text: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    thanh_phan_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    don_vi_chuan_bi: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    so_van_ban: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    ly_do_huy: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=True)
 
     la_dinh_ky: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text("FALSE"))
     chu_ky: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)

@@ -12,7 +12,7 @@
    nhánh git : prod
    cổng      : 8000–8007 (backend) · 3000 (frontend)
    CSDL      : kpi_haiquan
-   kho file  : uploads/ (symlink)
+   kho file  : /var/data/kpi/uploads (qua symlink)
    nạp code  : CHỈ khi chạy trien_khai.sh
 
 /root/kpi-haiquan/      PHÁT TRIỂN — nơi viết code
@@ -44,7 +44,23 @@ cd /root/kpi-haiquan/backend
 ./scripts/dev.sh dung               # dừng dev; prod không đụng tới
 ```
 
-Mở trình duyệt vào **http://localhost:3001** (không phải 3000 — đó là prod).
+### Truy cập dev từ máy cá nhân
+
+Dev chỉ lắng nghe `127.0.0.1` — **không mở ra Internet**, và nên giữ vậy: máy chủ
+có IP công cộng, tường lửa đang tắt, còn dev thì chứa bản sao dữ liệu thật và
+giao diện đang làm dở.
+
+Dùng đường hầm SSH:
+
+```bash
+ssh -L 3001:127.0.0.1:3001 -L 9000:127.0.0.1:9000 -L 9006:127.0.0.1:9006 root@<máy-chủ>
+```
+
+Giữ cửa sổ đó mở, rồi vào **http://localhost:3001** trên trình duyệt.
+Không phải 3000 — đó là production.
+
+Muốn tiện hơn thì làm `dev.kpihaiquan.vn` riêng có chứng chỉ và mật khẩu bảo vệ,
+nhưng cần thêm bản ghi DNS.
 
 Sửa file `.py` là uvicorn tự nạp lại, không phải khởi động tay.
 Log ở `/tmp/kpi-dev-logs/<tên>.log`.
@@ -206,18 +222,16 @@ pm2 logs <tên dịch vụ> --lines 50
 |---|---|---|
 | CSDL | `backup_daily.sh` 02:00 và 14:00 | ✅ GitHub, mã hoá AES256, giữ 14 bản |
 | Mã nguồn | `backup_source.sh` — chụp cả code chưa commit | ✅ nhánh `auto-backup` |
-| `uploads/meeting` | rsync 2 lần/ngày | ❌ chỉ local |
-| `uploads/lms` (5,4 GB) | ❌ **chưa có** | ❌ |
+| `uploads/` toàn bộ 6,1 GB | rsync 2 lần/ngày | ❌ chỉ local |
 
 Cấu hình ở `/etc/cron.d/hkg-backups`, script ở `/opt/kpi/scripts/`.
 
 ### 5.3. Việc còn nợ
 
-- [ ] `uploads/` vẫn nằm trong cây phát triển, prod symlink tới. Nên chuyển ra
-      `/var/data/kpi/uploads` rồi symlink từ cả hai bên
-- [ ] `backup_daily.sh` chỉ rsync `uploads/meeting`; mở rộng cho cả `uploads/`
-      để phủ 5,4 GB của LMS
-- [ ] Off-site cho file tài liệu, làm **trước** khi thu hồi chia sẻ Google Drive
+- [x] ~~Chuyển `uploads/` ra khỏi cây phát triển~~ → `/var/data/kpi/uploads` *(18/08)*
+- [x] ~~Mở rộng sao lưu cho cả `uploads/`~~ → đã phủ 6,1 GB gồm LMS *(18/08)*
+- [ ] **Off-site cho file tài liệu** — hiện chỉ sao lưu cục bộ. Làm **trước**
+      khi thu hồi chia sẻ Google Drive, vì sau đó bản trên nền tảng là bản duy nhất
 
 ---
 

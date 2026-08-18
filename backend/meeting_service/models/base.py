@@ -31,6 +31,9 @@ class CongChucRef(Base):
     don_vi_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("public.don_vi.id"), nullable=True
     )
+    # Lịch công tác hiển thị chức vụ cạnh họ tên (thẻ lịch lãnh đạo, tóm tắt
+    # lịch, danh sách trực ban) nên map thêm cột này. Vẫn CHỈ ĐỌC.
+    chuc_vu: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
 
 

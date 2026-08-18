@@ -288,14 +288,16 @@ async def test_cuoc_hop_hkg_san_co_duoc_gan_nguon_va_ngay_hien_thi(
     """Migration 016 backfill ngay_hien_thi = ngay_hop cho dòng cũ, nếu không
     thì cuộc họp HKG hiện có sẽ không hiện lên Lịch công tác."""
     row = (await db_session.execute(sa_text("""
-        SELECT count(*) AS tong,
-               count(*) FILTER (WHERE nguon = 'HKG') AS hkg,
+        SELECT count(*) FILTER (WHERE nguon = 'HKG') AS hkg,
+               count(*) FILTER (WHERE nguon = 'HKG'
+                                AND ngay_hien_thi IS NULL) AS hkg_thieu_ngay,
                count(*) FILTER (WHERE ngay_hien_thi IS NULL) AS thieu_ngay
         FROM meeting.cuoc_hop
         WHERE is_deleted = FALSE
     """))).one()
-    assert row.tong == row.hkg, "dữ liệu sẵn có phải đều là nguồn HKG"
-    assert row.thieu_ngay == 0, "phải backfill hết ngay_hien_thi"
+    assert row.hkg >= 1, "phải còn cuộc họp HKG sẵn có"
+    assert row.hkg_thieu_ngay == 0, "phải backfill hết ngay_hien_thi cho HKG"
+    assert row.thieu_ngay == 0, "không dòng nào được thiếu ngày hiển thị"
 
 
 # ════════════════════════════════════════════════════════════════════

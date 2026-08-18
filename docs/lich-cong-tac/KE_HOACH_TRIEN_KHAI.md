@@ -18,6 +18,7 @@
 | 5 | **Màn hình đối soát** | Chánh Văn phòng **Tống Thị Thái Hà** (`20ZZ-0097`, lichkv8 = `hattt`) + Quản trị viên. |
 | 6 | **Thả file trực tiếp** | **Chặn.** Sau chuyển đổi mọi tài liệu phải upload qua phần mềm. |
 | 7 | **Thu hồi chia sẻ Drive** | Làm **sau khi** xác nhận tài liệu đã sang cloud thành công (giai đoạn 6). |
+| 8 | **Định dạng file** | **Giữ nguyên 13 định dạng** của HKG, không mở rộng cho `.zip`/`.rar`. File nén phải tách ra trước khi tải lên. 4 file nén lịch sử vẫn được di trú và mở được. |
 
 ### Số liệu gốc dùng để đối soát
 

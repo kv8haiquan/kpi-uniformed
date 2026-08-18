@@ -1,0 +1,5 @@
+# Dữ liệu sinh ra từ script, không phải mã nguồn — tạo lại được:
+#   dumps/chi_tieu_giao_nam_preview.csv  ← extract_chi_tieu_excel.py
+#   dumps/cau_hoi_dgnl_backup_*.dump     ← pg_dump bảng câu hỏi
+# Trước đây .xlsx trong đây lọt vào snapshot auto-backup đẩy lên GitHub hằng ngày.
+dumps/

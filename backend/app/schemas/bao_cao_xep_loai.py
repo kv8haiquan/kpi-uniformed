@@ -96,7 +96,7 @@ class ChiTietXepLoaiResponse(BaseModel):
     diem_kpi: Decimal = Field(default=Decimal("0"), description="Điểm KPI (0-70)")
     diem_tong: Decimal = Field(default=Decimal("0"), description="Điểm tổng (0-100)")
     xep_loai_he_thong: str = Field(description="Xếp loại hệ thống tự tính")
-    
+
     # Đề xuất của Đội trưởng
     xep_loai_de_xuat: Optional[str] = None
     ly_do_dieu_chinh_dt: Optional[str] = None

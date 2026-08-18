@@ -157,6 +157,10 @@ class UserStatusRequest(BaseModel):
         max_length=500,
         description="Lý do thay đổi trạng thái"
     )
+    ngay_hieu_luc: Optional[date] = Field(
+        default=None,
+        description="Ngày có hiệu lực của thay đổi trạng thái (mặc định hôm nay)"
+    )
 
 
 class UserTransferRequest(BaseModel):
@@ -232,7 +236,10 @@ class LichSuDieuChuyenResponse(BaseModel):
     
     id: UUID
     cong_chuc_id: UUID
-    
+    cong_chuc_ho_ten: Optional[str] = None
+    cong_chuc_ma_cc: Optional[str] = None
+    loai: str = "DIEU_CHUYEN"
+
     # Đơn vị
     don_vi_cu_id: Optional[UUID] = None
     don_vi_cu_ten: Optional[str] = None
@@ -255,8 +262,36 @@ class LichSuDieuChuyenResponse(BaseModel):
     # Người thực hiện
     nguoi_thuc_hien_id: Optional[UUID] = None
     nguoi_thuc_hien_ten: Optional[str] = None
-    
+
     created_at: datetime
+
+
+class LichSuDieuChuyenUpdateRequest(BaseModel):
+    """Schema điều chỉnh một bản ghi lịch sử điều chuyển/trạng thái (sửa sai sót)."""
+
+    loai: Optional[str] = Field(
+        default=None,
+        description="Loại bản ghi: DIEU_CHUYEN | VO_HIEU_HOA | KICH_HOAT"
+    )
+    don_vi_cu_id: Optional[UUID] = None
+    don_vi_moi_id: Optional[UUID] = None
+    vai_tro_cu_id: Optional[UUID] = None
+    vai_tro_moi_id: Optional[UUID] = None
+    chuc_vu_cu: Optional[str] = Field(default=None, max_length=100)
+    chuc_vu_moi: Optional[str] = Field(default=None, max_length=100)
+    ngay_hieu_luc: Optional[date] = None
+    ly_do: Optional[str] = Field(default=None, max_length=500)
+    dong_bo_hien_tai: bool = Field(
+        default=False,
+        description="Nếu true và đây là bản ghi mới nhất: đồng bộ lại đơn vị/vai trò/trạng thái hiện tại của công chức theo bản ghi này"
+    )
+
+    @field_validator('loai')
+    @classmethod
+    def validate_loai(cls, v):
+        if v is not None and v not in ('DIEU_CHUYEN', 'VO_HIEU_HOA', 'KICH_HOAT'):
+            raise ValueError('loai phải là DIEU_CHUYEN, VO_HIEU_HOA hoặc KICH_HOAT')
+        return v
 
 
 # =============================================================================

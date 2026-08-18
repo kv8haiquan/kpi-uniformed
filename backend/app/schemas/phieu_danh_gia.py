@@ -10,29 +10,82 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # =============================================================================
 # REQUEST SCHEMAS
 # =============================================================================
 
+#: Mã mức xếp loại hợp lệ (Nghị định 335/2025/NĐ-CP)
+XEP_LOAI_HOP_LE = {"HTXSNV", "HTTNV", "HTNV", "KHTNV"}
+
+
 class UpsertPhieuQuyRequest(BaseModel):
-    """Tạo mới hoặc cập nhật phiếu nháp của CC (mục 4 & 5)."""
+    """Tạo mới hoặc cập nhật phiếu nháp của CC (mục 4.1/4.2 & mục 5)."""
 
     quy: int = Field(..., ge=1, le=4, description="Quý (1-4)")
     nam: int = Field(..., ge=2020, le=2100, description="Năm")
-    uu_diem: Optional[str] = Field(None, description="Mục 4: Ưu điểm")
-    han_che: Optional[str] = Field(None, description="Mục 5: Hạn chế, khuyết điểm")
+    uu_diem: Optional[str] = Field(None, description="Mục 4.1: Ưu điểm")
+    han_che: Optional[str] = Field(None, description="Mục 4.2: Hạn chế, khuyết điểm")
+    tu_de_xuat_xep_loai: Optional[str] = Field(
+        None,
+        description="Mục 5: Cá nhân tự đề xuất mức xếp loại "
+        "(HTXSNV | HTTNV | HTNV | KHTNV)",
+    )
+    # Kê khai lại tiêu chí đ cấp quý (chỉ LĐ) — giá trị 50/100
+    dd_quy_ke_khai: Optional[int] = Field(
+        None,
+        description="đ (tổ chức triển khai) LĐ kê khai lại cấp quý: 50 hoặc 100",
+    )
+    dd_quy_ghi_chu: Optional[str] = Field(
+        None, description="Giải trình việc kê khai lại đ cấp quý"
+    )
+
+    @field_validator("dd_quy_ke_khai")
+    @classmethod
+    def _validate_dd(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (50, 100):
+            raise ValueError("dd_quy_ke_khai chỉ nhận giá trị 50 hoặc 100")
+        return v
 
 
 class PheDuyetPhieuRequest(BaseModel):
-    """TDV/CCT duyệt phiếu: chấp nhận + nhập ý kiến mục 6."""
+    """
+    TDV/CCT duyệt phiếu: chấp nhận + nhập nhận xét.
+
+    - Phiếu THÁNG (mẫu 01): chỉ dùng `y_kien_lanh_dao` (mục 6).
+    - Phiếu QUÝ (mẫu 02): `y_kien_lanh_dao` = mục III.1 (ý kiến người trực tiếp
+      sử dụng); các trường xếp loại là mục III.2 và mục IV.
+    """
 
     y_kien_lanh_dao: Optional[str] = Field(
         None,
-        description="Mục 6: Ý kiến nhận xét của cấp có thẩm quyền",
+        description="Mục 6 (tháng) / Mục III.1 (quý): Ý kiến nhận xét",
     )
+    de_xuat_xep_loai: Optional[str] = Field(
+        None,
+        description="Mục III.2 (quý): Người trực tiếp sử dụng đề xuất mức xếp loại",
+    )
+    quyet_dinh_xep_loai: Optional[str] = Field(
+        None,
+        description="Mục IV.1 (quý): Quyết định mức xếp loại của cấp có thẩm quyền",
+    )
+    y_kien_cap_tham_quyen: Optional[str] = Field(
+        None,
+        description="Mục IV.2 (quý): Ý kiến nhận xét của cấp có thẩm quyền",
+    )
+    dd_quy_phe_duyet: Optional[int] = Field(
+        None,
+        description="đ quý người duyệt chốt (50/100) — chỉ được ≥ MIN các tháng",
+    )
+
+    @field_validator("dd_quy_phe_duyet")
+    @classmethod
+    def _validate_dd_pd(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (50, 100):
+            raise ValueError("dd_quy_phe_duyet chỉ nhận giá trị 50 hoặc 100")
+        return v
 
 
 class TuChoiPhieuRequest(BaseModel):
@@ -82,6 +135,17 @@ class PhieuDanhGiaQuyResponse(BaseModel):
     han_che: Optional[str] = None
     y_kien_lanh_dao: Optional[str] = None
 
+    # Xếp loại (mẫu 02A/02B theo quý)
+    tu_de_xuat_xep_loai: Optional[str] = None
+    de_xuat_xep_loai: Optional[str] = None
+    quyet_dinh_xep_loai: Optional[str] = None
+    y_kien_cap_tham_quyen: Optional[str] = None
+
+    # Kê khai lại đ cấp quý (chỉ LĐ)
+    dd_quy_ke_khai: Optional[int] = None
+    dd_quy_ghi_chu: Optional[str] = None
+    dd_quy_phe_duyet: Optional[int] = None
+
     trang_thai: str = Field(..., description="NHAP | CHO_PHE_DUYET | DA_PHE_DUYET | BI_TU_CHOI")
     ngay_gui_duyet: Optional[datetime] = None
 
@@ -117,6 +181,13 @@ class PhieuChoPheDuyetItem(BaseModel):
     uu_diem: Optional[str] = None
     han_che: Optional[str] = None
     y_kien_lanh_dao: Optional[str] = None
+    tu_de_xuat_xep_loai: Optional[str] = None
+    de_xuat_xep_loai: Optional[str] = None
+    quyet_dinh_xep_loai: Optional[str] = None
+    y_kien_cap_tham_quyen: Optional[str] = None
+    dd_quy_ke_khai: Optional[int] = None
+    dd_quy_ghi_chu: Optional[str] = None
+    dd_quy_phe_duyet: Optional[int] = None
 
 
 class ChiTietThangThieu(BaseModel):

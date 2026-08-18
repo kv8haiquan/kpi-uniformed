@@ -111,7 +111,63 @@ class PhieuDanhGiaQuy(BaseModel):
     y_kien_lanh_dao: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,
-        comment="Mục 6: Ý kiến nhận xét của cấp có thẩm quyền",
+        comment="Mục 6 (tháng) / Mục III.1 (quý mẫu 02): Ý kiến nhận xét của "
+        "người trực tiếp sử dụng / cấp có thẩm quyền",
+    )
+
+    # -------------------------------------------------------------------------
+    # XẾP LOẠI (chỉ dùng cho mẫu 02A/02B theo QUÝ — Nghị định 335/2025/NĐ-CP)
+    #   Giá trị mã: HTXSNV | HTTNV | HTNV | KHTNV (None = chưa chọn)
+    # -------------------------------------------------------------------------
+
+    tu_de_xuat_xep_loai: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Mục 5: Cá nhân tự đề xuất mức xếp loại (CC nhập)",
+    )
+
+    de_xuat_xep_loai: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Mục III.2: Người trực tiếp sử dụng đề xuất mức xếp loại "
+        "(người duyệt nhập)",
+    )
+
+    quyet_dinh_xep_loai: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        nullable=True,
+        comment="Mục IV.1: Quyết định mức xếp loại của cấp có thẩm quyền",
+    )
+
+    y_kien_cap_tham_quyen: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Mục IV.2: Ý kiến nhận xét của cấp có thẩm quyền (nếu có)",
+    )
+
+    # -------------------------------------------------------------------------
+    # KÊ KHAI LẠI TIÊU CHÍ đ (tổ chức triển khai) CẤP QUÝ — chỉ LÃNH ĐẠO
+    #   Quy định: nếu LĐ hoàn thành chỉ tiêu quý dù có tháng chưa hoàn thành,
+    #   được kê khai lại đ ở cấp quý. Giá trị 50/100; NULL = không kê khai lại
+    #   (điểm đ quý = MIN các tháng như cũ). Khi áp dụng chỉ được NÂNG (≥ MIN).
+    # -------------------------------------------------------------------------
+
+    dd_quy_ke_khai: Mapped[Optional[int]] = mapped_column(
+        SmallInteger,
+        nullable=True,
+        comment="đ quý LĐ tự kê khai lại (50/100); NULL = không kê khai lại",
+    )
+
+    dd_quy_ghi_chu: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Giải trình cho việc kê khai lại đ cấp quý",
+    )
+
+    dd_quy_phe_duyet: Mapped[Optional[int]] = mapped_column(
+        SmallInteger,
+        nullable=True,
+        comment="đ quý sau khi người duyệt chốt (50/100); NULL = giữ dd_quy_ke_khai",
     )
 
     # -------------------------------------------------------------------------
@@ -180,6 +236,14 @@ class PhieuDanhGiaQuy(BaseModel):
         ),
         CheckConstraint("quy BETWEEN 1 AND 4", name="ck_phieu_quy_quy"),
         CheckConstraint("nam BETWEEN 2020 AND 2100", name="ck_phieu_quy_nam"),
+        CheckConstraint(
+            "dd_quy_ke_khai IS NULL OR dd_quy_ke_khai IN (50, 100)",
+            name="ck_phieu_quy_dd_ke_khai",
+        ),
+        CheckConstraint(
+            "dd_quy_phe_duyet IS NULL OR dd_quy_phe_duyet IN (50, 100)",
+            name="ck_phieu_quy_dd_phe_duyet",
+        ),
         CheckConstraint(
             "trang_thai IN ('NHAP','CHO_PHE_DUYET','DA_PHE_DUYET','BI_TU_CHOI')",
             name="ck_phieu_quy_trang_thai",

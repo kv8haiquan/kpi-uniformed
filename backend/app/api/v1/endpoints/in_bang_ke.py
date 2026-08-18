@@ -329,6 +329,116 @@ def _fill_section_after_heading(doc: Document, heading_prefix: str, content: str
     return False
 
 
+# =============================================================================
+# HELPERS RIÊNG CHO PHIẾU QUÝ (Mẫu 02A/02B — ĐÁNH GIÁ, XẾP LOẠI)
+# =============================================================================
+
+#: Nhãn hiển thị của từng mức xếp loại trong mục 5 / III / IV
+XEP_LOAI_LABEL = {
+    "HTXSNV": "Hoàn thành xuất sắc nhiệm vụ",
+    "HTTNV": "Hoàn thành tốt nhiệm vụ",
+    "HTNV": "Hoàn thành nhiệm vụ",
+    "KHTNV": "Không hoàn thành nhiệm vụ",
+}
+
+
+def _fill_inline_label(doc: Document, prefix: str, value: str) -> bool:
+    """Nối `value` vào cuối paragraph có text bắt đầu bằng `prefix` (điền sau nhãn)."""
+    if value is None:
+        return False
+    for p in doc.paragraphs:
+        if p.text.strip().startswith(prefix):
+            run = p.add_run(str(value))
+            set_times_new_roman(run)
+            return True
+    return False
+
+
+def _fill_first_blank_after(doc: Document, prefix: str, value: str) -> bool:
+    """
+    Điền `value` vào paragraph TRỐNG đầu tiên nằm sau paragraph có text bắt đầu
+    bằng `prefix`. Dùng cho các mục có dòng hướng dẫn xen giữa nhãn và vùng nhập
+    (VD: mục III.1 có dòng "(Nêu rõ ưu điểm...)" trước vùng trống).
+    """
+    if not value:
+        return False
+    paras = doc.paragraphs
+    for i, p in enumerate(paras):
+        if p.text.strip().startswith(prefix):
+            for j in range(i + 1, min(i + 8, len(paras))):
+                tgt = paras[j]
+                if tgt.text.strip() in ("", "\t"):
+                    for run in tgt.runs:
+                        run.text = ""
+                    if tgt.runs:
+                        tgt.runs[0].text = value
+                        set_times_new_roman(tgt.runs[0])
+                    else:
+                        r = tgt.add_run(value)
+                        set_times_new_roman(r)
+                    return True
+    return False
+
+
+def _tick_xep_loai(doc: Document, ma_xep_loai: Optional[str]) -> None:
+    """Đánh dấu (in đậm + tiền tố ✔) dòng mức xếp loại được chọn ở mục 5."""
+    if not ma_xep_loai:
+        return
+    label = XEP_LOAI_LABEL.get(ma_xep_loai)
+    if not label:
+        return
+    for p in doc.paragraphs:
+        if p.text.strip() == label:
+            if p.runs:
+                p.runs[0].text = "☑ " + p.runs[0].text  # ☑
+                for run in p.runs:
+                    run.bold = True
+                    set_times_new_roman(run)
+            return
+
+
+def _fill_footer_quy(
+    doc: Document,
+    ngay_str: str,
+    ten_cong_chuc: str,
+    ten_nguoi_nhan_xet: Optional[str],
+    ten_cap_tham_quyen: Optional[str],
+) -> None:
+    """
+    Điền footer 3 khối chữ ký của phiếu quý (mẫu 02A/02B):
+      - tables[2] → CÔNG CHỨC TỰ ĐÁNH GIÁ
+      - tables[3] → NGƯỜI NHẬN XÉT, ĐÁNH GIÁ (người trực tiếp sử dụng)
+      - tables[4] → CẤP CÓ THẨM QUYỀN ĐÁNH GIÁ, XẾP LOẠI
+
+    Mỗi bảng: điền địa điểm+ngày vào paragraph '....., ngày...' và tên ký dưới
+    dòng '(Ký, ghi rõ họ tên)'. Tên nào None/rỗng thì để trống (ký tay).
+    """
+    mapping = [(2, ten_cong_chuc), (3, ten_nguoi_nhan_xet), (4, ten_cap_tham_quyen)]
+    for ti, ten in mapping:
+        if ti >= len(doc.tables):
+            continue
+        tbl = doc.tables[ti]
+        for row in tbl.rows:
+            for cell in row.cells:
+                # 1) Địa điểm + ngày
+                for p in cell.paragraphs:
+                    t = p.text
+                    if "ngày" in t and "tháng" in t and "năm" in t and "....." in t:
+                        for run in p.runs:
+                            run.text = ""
+                        if p.runs:
+                            p.runs[0].text = ngay_str
+                            set_times_new_roman(p.runs[0])
+                        else:
+                            r = p.add_run(ngay_str)
+                            set_times_new_roman(r)
+                # 2) Tên ký dưới '(Ký, ghi rõ họ tên)'
+                if ten and any(
+                    "Ký" in p.text and "ghi rõ" in p.text for p in cell.paragraphs
+                ):
+                    _them_ten_ky(cell, ten)
+
+
 async def _tim_nguoi_duyet_auto(db, cc: CongChuc) -> Optional[CongChuc]:
     """
     Xác định người duyệt mặc định theo cấp bậc CC (dùng cho auto-fill tên
@@ -1363,14 +1473,12 @@ async def export_phieu_danh_gia_quy(
 
     is_lanh_dao = cc.is_lanh_dao or False
 
-    # Điểm quý — mặc định lấy `tam_tinh=False` (chỉ DA_PHE_DUYET) cho phiếu chính thức.
-    # CHÍNH SÁCH (20/04/2026): với TDV và PCCT — luôn lấy điểm TẠM TÍNH (gộp cả
-    # CHO_PHE_DUYET) vì CCT là bottleneck duyệt kê khai của họ; bắt chờ CCT duyệt
-    # xong mới in phiếu sẽ làm điểm tụt giả tạo. CCT và CC thường giữ nguyên
-    # `tam_tinh=False`.
-    cap_bac = cc.vai_tro.cap_bac if cc.vai_tro else None
-    dung_tam_tinh = cap_bac in (CapBacVaiTro.TRUONG_DON_VI, CapBacVaiTro.PHO_CHI_CUC_TRUONG)
-    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam, tam_tinh=dung_tam_tinh)
+    # Điểm quý — BẬT FALLBACK (tam_tinh=True): `tinh_diem_quy` ưu tiên số liệu ĐÃ
+    # PHÊ DUYỆT từng tháng, tháng nào chưa duyệt mới lấy TẠM TÍNH và đặt cờ
+    # `abc_co_tam_tinh` để phiếu ghi chú. Nhờ per-month, tháng đã duyệt vẫn dùng
+    # số chính thức nên không bị "tụt điểm giả" (thay cho hack cap_bac cũ).
+    ket_qua = await tinh_diem_quy(db, cc.id, quy, nam, tam_tinh=True)
+    abc_tam_tinh_suffix = " (tạm tính)" if ket_qua.get("abc_co_tam_tinh") else ""
 
     # Lấy 3 tháng trong quý
     thang_list = QUY_TO_THANG.get(quy, [])
@@ -1391,8 +1499,12 @@ async def export_phieu_danh_gia_quy(
     diem_dd = (ket_qua.get("dd_to_chuc") * 100) if ket_qua.get("dd_to_chuc") is not None else None
     diem_e = (ket_qua.get("e_doan_ket") * 100) if ket_qua.get("e_doan_ket") is not None else None
 
-    # Chọn template
-    template_name = "PL-Mẫu số 01B-LĐ.docx" if is_lanh_dao else "PL-Mẫu số 01A-CC.docx"
+    # Chọn template — QUÝ dùng mẫu 02A/02B (PHIẾU ĐÁNH GIÁ, XẾP LOẠI) theo
+    # Nghị định 335/2025/NĐ-CP: có mục 5 (tự đề xuất), III (người sử dụng),
+    # IV (quyết định cấp có thẩm quyền). Khác mẫu tháng 01A/01B (theo dõi).
+    template_name = (
+        "PL-Mẫu số 02B-LĐ Quý.docx" if is_lanh_dao else "PL-Mẫu số 02A-CC Quý.docx"
+    )
     template_path = TEMPLATES_DIR / template_name
 
     if not template_path.exists():
@@ -1401,30 +1513,38 @@ async def export_phieu_danh_gia_quy(
     # Load template
     doc = Document(template_path)
 
-    # Replace placeholders
-    ky_danh_gia = f"Quý {quy}/{nam}"
+    # Thông tin định danh
     ho_ten = cc.ho_ten or "N/A"
     chuc_vu = cc.chuc_vu or "Công chức"
     don_vi = cc.don_vi.ten_don_vi if cc.don_vi else "N/A"
     diem_tieu_chi_str = f"{diem_tieu_chi:.2f}"
-    diem_tong_str = f"{diem_tong:.2f}" if diem_tong else "Chưa có dữ liệu"
 
-    replace_placeholder_in_docx(doc, "{{ky_danh_gia}}", ky_danh_gia)
-    replace_placeholder_in_docx(doc, "{{ho_ten}}", ho_ten)
-    replace_placeholder_in_docx(doc, "{{chuc_vu}}", chuc_vu)
-    replace_placeholder_in_docx(doc, "{{don_vi}}", don_vi)
-    replace_placeholder_in_docx(doc, "{{diem_tieu_chi}}", diem_tieu_chi_str)
-    replace_placeholder_in_docx(doc, "{{diem_tong}}", diem_tong_str)
+    # Điền header theo anchor-text (mẫu 02A/02B không dùng {{placeholder}}).
+    # "Quý:......" → "Quý: {quy}/{nam}"
+    for p in doc.paragraphs:
+        if p.text.strip().startswith("Quý:"):
+            replace_in_runs(p, "......", f" {quy}/{nam}")
+            break
+    _fill_inline_label(doc, "Họ và tên:", f" {ho_ten}")
+    # 02A: "Vị trí việc làm/nhiệm vụ..."; 02B: "Chức vụ, chức danh:"
+    if is_lanh_dao:
+        _fill_inline_label(doc, "Chức vụ, chức danh:", f" {chuc_vu}")
+    else:
+        _fill_inline_label(
+            doc, "Vị trí việc làm/nhiệm vụ được phân công chuyên trách:", f" {chuc_vu}"
+        )
+    _fill_inline_label(doc, "Đơn vị công tác:", f" {don_vi}")
+    _fill_inline_label(doc, "1. Điểm tiêu chí chung", f" {diem_tieu_chi_str}")
 
     # === Replace điểm a,b,c,d,đ,e vào paragraphs ===
     for para in doc.paragraphs:
         full_text = para.text
         replaced = False
 
-        # Điểm a (số lượng)
+        # Điểm a (số lượng) — kèm ghi chú (tạm tính) nếu có tháng chưa duyệt
         if "Điểm tỷ lệ % đánh giá về số lượng (a):" in full_text:
             if diem_a is not None:
-                full_text = full_text.replace("………..(%)", f"{diem_a:.2f}%")
+                full_text = full_text.replace("………..(%)", f"{diem_a:.2f}%{abc_tam_tinh_suffix}")
             else:
                 full_text = full_text.replace("………..(%)", "N/A")
             replaced = True
@@ -1432,7 +1552,7 @@ async def export_phieu_danh_gia_quy(
         # Điểm b (tiến độ)
         elif "Điểm tỷ lệ % đánh giá về tiến độ (b):" in full_text:
             if diem_b is not None:
-                full_text = full_text.replace("………..(%)", f"{diem_b:.2f}%")
+                full_text = full_text.replace("………..(%)", f"{diem_b:.2f}%{abc_tam_tinh_suffix}")
             else:
                 full_text = full_text.replace("………..(%)", "N/A")
             replaced = True
@@ -1440,7 +1560,7 @@ async def export_phieu_danh_gia_quy(
         # Điểm c (chất lượng)
         elif "Điểm tỷ lệ % đánh giá về chất lượng (c):" in full_text:
             if diem_c is not None:
-                full_text = full_text.replace("………..(%)", f"{diem_c:.2f}%")
+                full_text = full_text.replace("………..(%)", f"{diem_c:.2f}%{abc_tam_tinh_suffix}")
             else:
                 full_text = full_text.replace("………..(%)", "N/A")
             replaced = True
@@ -1521,19 +1641,31 @@ async def export_phieu_danh_gia_quy(
                 set_times_new_roman(new_run)
 
     # === Điền điểm tiêu chí chung vào bảng (Table 1 - bảng thứ 2) ===
-    # Logic quý: Nhóm I, II → MIN (vi phạm bất kỳ tháng nào → vi phạm quý)
-    #             Nhóm III → MAX (đạt bất kỳ tháng nào → đạt quý)
+    # Điểm TC chung quý mỗi tiêu chí = trung bình điểm phê duyệt các THÁNG THỰC TẾ
+    # làm việc. Mẫu số PHẢI là `so_thang_thuc_te` (loại tháng thai sản / chưa về
+    # Chi cục / nghỉ trọn tháng) để tổng bảng khớp dòng "1. Điểm tiêu chí chung"
+    # (= diem_tc_quy từ tinh_diem_quy — SINGLE SOURCE OF TRUTH). Trước đây chia
+    # cứng /3 → lệch tổng khi CC không đủ 3 tháng.
     if len(doc.tables) >= 2:
         table_tc = doc.tables[1]
 
-        # Query tiêu chí chung của 3 tháng
-        # Lấy tất cả DanhGiaThang trong quý
+        # Xác định các tháng thực tế (đồng bộ với tinh_diem_quy)
+        chi_tiet_thuc_te = ket_qua.get("chi_tiet_thuc_te") or []
+        thang_thuc_te = [
+            c["thang"] for c in chi_tiet_thuc_te if not c.get("ly_do_loai")
+        ]
+        if not thang_thuc_te:
+            # Fallback: dữ liệu cũ không có chi_tiet_thuc_te → dùng cả quý
+            thang_thuc_te = list(thang_list)
+        so_thang_tt = ket_qua.get("so_thang_thuc_te") or len(thang_thuc_te)
+
+        # Lấy DanhGiaThang CHỈ của các tháng thực tế trong quý
         stmt_dg_quy = (
             select(DanhGiaThang)
             .where(
                 and_(
                     DanhGiaThang.cong_chuc_id == cc.id,
-                    DanhGiaThang.thang.in_(thang_list),
+                    DanhGiaThang.thang.in_(thang_thuc_te),
                     DanhGiaThang.nam == nam,
                     DanhGiaThang.is_deleted == False,
                 )
@@ -1543,8 +1675,9 @@ async def export_phieu_danh_gia_quy(
         danh_gia_list = result_dg_quy.scalars().all()
         dg_ids = [dg.id for dg in danh_gia_list]
 
-        # Lấy tất cả TieuChiChungDanhGia của 3 tháng — CHỈ tiêu chí đã phê duyệt.
-        # Tháng nào thiếu tiêu chí đã duyệt sẽ tính 0 cho tháng đó (TB /3 vẫn chia 3).
+        # Lấy TieuChiChungDanhGia của các tháng thực tế — CHỈ tiêu chí đã phê duyệt.
+        # Tháng nào thiếu tiêu chí đã duyệt sẽ tính 0 cho tháng đó (mẫu số vẫn là
+        # so_thang_tt để nhất quán với diem_tc_quy).
         tc_quy_map = {}  # ma_tieu_chi → list of (diem, nhom, danh_gia_thang_id)
         if dg_ids:
             stmt_tc_quy = (
@@ -1637,40 +1770,78 @@ async def export_phieu_danh_gia_quy(
 
                         tc_idx += 1
 
-    # === Load phiếu quý từ DB (nếu có) và fill mục 4/5/6 ===
+    # === Load phiếu quý từ DB (nếu có) và fill mục 4.1/4.2, 5, III, IV ===
     phieu = await _lay_phieu_quy(db, cc.id, quy, nam)
     ngay_ky: Optional[datetime] = None
-    ten_nguoi_duyet_override: Optional[str] = None
+    ten_nguoi_nhan_xet: Optional[str] = None
 
     if phieu is not None:
-        # Fill nội dung mục 4/5/6 (nếu có)
+        da_duyet = phieu.trang_thai == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value
+
+        # Mục 4.1 Ưu điểm / 4.2 Hạn chế (CC nhập) — có dòng hướng dẫn xen giữa
         if phieu.uu_diem:
-            _fill_section_after_heading(doc, "4. Ưu điểm", phieu.uu_diem)
+            _fill_first_blank_after(doc, "4.1. Ưu điểm", phieu.uu_diem)
         if phieu.han_che:
-            _fill_section_after_heading(doc, "5. Hạn chế", phieu.han_che)
-        if phieu.y_kien_lanh_dao and phieu.trang_thai == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value:
-            _fill_section_after_heading(doc, "6. Ý kiến", phieu.y_kien_lanh_dao)
+            _fill_first_blank_after(doc, "4.2. Hạn chế", phieu.han_che)
+
+        # Mục 5: Cá nhân tự đề xuất mức xếp loại (hiển thị kể cả khi chưa duyệt)
+        _tick_xep_loai(doc, phieu.tu_de_xuat_xep_loai)
+
+        # Mục III & IV chỉ điền khi phiếu đã được phê duyệt
+        if da_duyet:
+            # III.1: Ý kiến nhận xét của người trực tiếp sử dụng
+            if phieu.y_kien_lanh_dao:
+                _fill_first_blank_after(
+                    doc, "1. Ý kiến nhận xét", phieu.y_kien_lanh_dao
+                )
+            # III.2: Người trực tiếp sử dụng đề xuất mức xếp loại
+            if phieu.de_xuat_xep_loai:
+                _fill_first_blank_after(
+                    doc,
+                    "2. Đề xuất mức xếp loại",
+                    XEP_LOAI_LABEL.get(
+                        phieu.de_xuat_xep_loai, phieu.de_xuat_xep_loai
+                    ),
+                )
+            # IV.1: Quyết định mức xếp loại của cấp có thẩm quyền
+            if phieu.quyet_dinh_xep_loai:
+                _fill_first_blank_after(
+                    doc,
+                    "1. Kết quả đánh giá, xếp loại",
+                    XEP_LOAI_LABEL.get(
+                        phieu.quyet_dinh_xep_loai, phieu.quyet_dinh_xep_loai
+                    ),
+                )
+            # IV.2: Ý kiến nhận xét của cấp có thẩm quyền (nếu có)
+            if phieu.y_kien_cap_tham_quyen:
+                _fill_first_blank_after(
+                    doc, "2. Ý kiến nhận xét (nếu có)", phieu.y_kien_cap_tham_quyen
+                )
 
         # Ngày ký footer theo trạng thái
-        if phieu.trang_thai == TrangThaiPhieuDanhGia.DA_PHE_DUYET.value:
+        if da_duyet:
             ngay_ky = phieu.ngay_phe_duyet
         elif phieu.trang_thai == TrangThaiPhieuDanhGia.CHO_PHE_DUYET.value:
             ngay_ky = phieu.ngay_gui_duyet
 
-        # Tên người duyệt:
-        # - DA_PHE_DUYET / BI_TU_CHOI: đã có nguoi_phe_duyet → dùng luôn
-        # - NHAP / CHO_PHE_DUYET: auto-tra theo rule (để trống nếu không có)
-        if phieu.trang_thai in (
-            TrangThaiPhieuDanhGia.DA_PHE_DUYET.value,
-            TrangThaiPhieuDanhGia.BI_TU_CHOI.value,
-        ) and phieu.nguoi_phe_duyet is not None:
-            ten_nguoi_duyet_override = phieu.nguoi_phe_duyet.ho_ten or ""
+        # Tên người nhận xét (mục III) = người đã duyệt phiếu
+        if (
+            phieu.trang_thai
+            in (
+                TrangThaiPhieuDanhGia.DA_PHE_DUYET.value,
+                TrangThaiPhieuDanhGia.BI_TU_CHOI.value,
+            )
+            and phieu.nguoi_phe_duyet is not None
+        ):
+            ten_nguoi_nhan_xet = phieu.nguoi_phe_duyet.ho_ten or ""
 
-    # Auto-fill footer: ngày + tên CC + tên TDV/CCT
-    await _apply_auto_fill_chung(
-        doc, db, cc,
-        ngay_ky=ngay_ky,
-        ten_nguoi_duyet_override=ten_nguoi_duyet_override,
+    # Footer 3 khối chữ ký: CC / người nhận xét / cấp có thẩm quyền (ký tay)
+    _fill_footer_quy(
+        doc,
+        ngay_str=_format_ngay_dia_diem(ngay_ky),
+        ten_cong_chuc=cc.ho_ten or "",
+        ten_nguoi_nhan_xet=ten_nguoi_nhan_xet,
+        ten_cap_tham_quyen=None,
     )
 
     # Lưu vào buffer

@@ -45,6 +45,7 @@ import WidgetTinTuc from './components/WidgetTinTuc';
 import WidgetLegal from './components/WidgetLegal';
 import WidgetForum from './components/WidgetForum';
 import WidgetHKG from './components/WidgetHKG';
+import WidgetLichCongTac from './components/WidgetLichCongTac';
 import VinhDanhWidget from '@/components/dashboard/VinhDanhWidget';
 
 // =============================================================================
@@ -223,6 +224,8 @@ export default function TongQuanPage() {
 
           {/* Hàng 3: Diễn đàn | Họp không giấy */}
           <WidgetForum    data={data.forum}    loading={loading} />
+          {/* Lịch công tác đặt ngay trên Họp Không Giấy — mục 8.1 đề bài. */}
+          <WidgetLichCongTac />
           <WidgetHKG      data={data.hkg}      loading={loading} />
 
         </div>

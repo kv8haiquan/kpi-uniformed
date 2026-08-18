@@ -166,6 +166,12 @@ function useMenuSections(): MenuSection[] {
         { label: 'Tin tức', href: '/tin-tuc', icon: Newspaper },
         { label: 'Tài liệu', href: '/tai-lieu', icon: FolderOpen },
         { label: 'Kho tri thức', href: '/kien-thuc', icon: BookOpen },
+        // Lịch công tác đặt NGAY TRÊN Họp Không Giấy — yêu cầu mục 8.1 của
+        // đề bài chuyển đổi. Hai mục dùng chung dữ liệu cuộc họp nên đi cạnh nhau.
+        // Dùng chung điều kiện hiển thị với HKG vì cùng một backend.
+        ...(hkgVisible
+          ? [{ label: 'Lịch công tác', href: '/lich-cong-tac', icon: CalendarDays }]
+          : []),
         // HKG (01/05/2026 — UAT): chỉ visible khi user có role HKG hoặc admin/leadership.
         // Sau UAT pass → bỏ điều kiện hkgVisible để mở cho 549 user.
         ...(hkgVisible

@@ -1,6 +1,6 @@
 # Kế hoạch triển khai — Lịch công tác HQKV8 vào Nền tảng số thống nhất
 
-> **Trạng thái:** ✅ Giai đoạn 1–2 hoàn thành *(17/08)* · nhánh `feature/lich-cong-tac`
+> **Trạng thái:** ✅ G1, G2, **G3 trọn vẹn** *(18/08)* · nhánh `feature/lich-cong-tac`
 > **Ngày lập:** 17/08/2026
 > **Nguồn dữ liệu khảo sát:** `docs/Lich Hop Cong Tac/` (mã nguồn `Mã.gs` 5.227 dòng, `index.html` 6.898 dòng, bản xuất `LICH CONG TAC HQKV8.xlsx`), quét metadata Drive, truy vấn chỉ đọc `kpi_haiquan`
 > **Báo cáo phân tích:** https://claude.ai/code/artifact/b80fd077-2acb-4882-9de2-e393b8039f4c
@@ -18,6 +18,7 @@
 | 5 | **Màn hình đối soát** | Chánh Văn phòng **Tống Thị Thái Hà** (`20ZZ-0097`, lichkv8 = `hattt`) + Quản trị viên. |
 | 6 | **Thả file trực tiếp** | **Chặn.** Sau chuyển đổi mọi tài liệu phải upload qua phần mềm. |
 | 7 | **Thu hồi chia sẻ Drive** | Làm **sau khi** xác nhận tài liệu đã sang cloud thành công (giai đoạn 6). |
+| 8 | **Định dạng file** | **Giữ nguyên 13 định dạng** của HKG, không mở rộng cho `.zip`/`.rar`. File nén phải tách ra trước khi tải lên. 4 file nén lịch sử vẫn được di trú và mở được. |
 
 ### Số liệu gốc dùng để đối soát
 
@@ -187,6 +188,25 @@ ALTER TABLE meeting.cuoc_hop
 - [x] `meeting.danh_gia_cuoc_hop` — thay `MEETING_RATING` (105 bản ghi)
 - [x] `meeting.ghi_chu` + `meeting.ghi_chu_chia_se` — thay `MEETING_NOTE` / `NOTE_SHARE` (7 / 0 bản ghi)
 
+### G2.5b — `meeting_021`: trigger đồng bộ `ngay_hien_thi` ✅ *17/08*
+
+> 🔴 **Phát sinh sau khi rà lại 016** — hai lỗi đều phá vỡ tiêu chí 8.3, tìm ra bằng cách chạy thật
+> câu INSERT mà `cuoc_hop_service.tao_moi()` sinh ra:
+>
+> 1. Cuộc họp HKG **tạo mới** có `ngay_hien_thi = NULL` → **vô hình trên Lịch công tác**.
+>    Model `CuocHop` không biết cột này (đúng thiết kế), nên INSERT bỏ trống.
+>    016 chỉ backfill 9 dòng sẵn có, không lo được cho dòng tương lai.
+> 2. Cuộc họp HKG **dời ngày** thì `ngay_hien_thi` giữ ngày cũ → lịch hiện sai ngày.
+>    `cap_nhat()` dùng `setattr` theo model, model không có cột này.
+>
+> Sửa bằng **trigger ở mức cơ sở dữ liệu**, không sửa model/service — giữ đúng nguyên tắc
+> HKG không phải biết gì về Lịch công tác, và đúng với mọi đường ghi (kể cả script di trú, sửa tay).
+
+- [x] `fn_dong_bo_ngay_hien_thi()` + trigger `BEFORE INSERT OR UPDATE`
+  - `nguon='HKG'` → `ngay_hien_thi` **luôn** soi gương `ngay_hop`; `loai_lich` trống thì gán `'HOP'`
+  - `nguon='LICH_CONG_TAC'` → giữ nguyên giá trị người dùng đặt, chỉ điền khi bỏ trống
+    (lichkv8 có `NGAY_HIEN_THI` khác ngày bắt đầu thật)
+
 ### G2.5 — `meeting_020`: bảng lưu vết di trú
 
 - [x] `meeting.di_tru_doi_soat` — phục vụ màn hình đối soát và biên bản nghiệm thu
@@ -201,9 +221,12 @@ ALTER TABLE meeting.cuoc_hop
 |---|---|
 | `alembic upgrade head` trên `kpi_haiquan_test` (clone tươi từ prod) | ✅ 5 migration chạy sạch |
 | Số bảng schema `meeting` | 13 → **22** (thêm 9) |
+| HKG tạo cuộc họp mới không đụng field nào của Lịch công tác | ✅ chạy nguyên câu INSERT cũ |
+| Cuộc họp HKG mới hiện trên Lịch công tác | ✅ qua trigger `meeting_021` |
+| Dời ngày họp HKG thì lịch cập nhật theo | ✅ tiêu chí 8.3 |
 | `alembic downgrade zalo_oa_20260731` rồi upgrade lại | ✅ về đúng 13 bảng, nâng lại được |
-| Test ràng buộc mới `test_lich_cong_tac_schema.py` | ✅ **31/31 PASS** |
-| Hồi quy test HKG (trừ 2 file phụ thuộc giờ) | ✅ **165/165 PASS** |
+| Test ràng buộc mới `test_lich_cong_tac_schema.py` | ✅ **35/35 PASS** |
+| Hồi quy test HKG (trừ 2 file phụ thuộc giờ) | ✅ **169/169 PASS** |
 | 9 cuộc họp HKG sẵn có | ✅ `nguon='HKG'`, `ngay_hien_thi` backfill đủ |
 | Seed 9 trụ sở + ánh xạ đơn vị | ✅ đúng, `CHICUC` để `don_vi_id` NULL |
 
@@ -234,28 +257,82 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 **Ước lượng:** 5–6 ngày · **Chặn bởi:** G2
 
-### G3.1 — ETL bảng dữ liệu
+### G3.1 — ETL bảng dữ liệu ✅ *17/08*
 
-- [ ] Script `backend/scripts/di_tru_lichkv8/01_cuoc_hop.py`
+> 🔴 **Lỗi ngày tháng trong dữ liệu gốc — phát hiện khi rà, suýt làm hỏng 43% dữ liệu.**
+>
+> Cột serial `NGAY_BAT_DAU`/`NGAY_KET_THUC` **lệch sớm 1 ngày ở 212/489 dòng**. Chênh lệch
+> chỉ có đúng hai giá trị (+0 và +1) nên không phải dữ liệu tự nhiên mà là lỗi hệ thống của lichkv8.
+> Dùng cột `THU` (thứ trong tuần, người nhập) làm trọng tài độc lập:
+>
+> | | khớp `THU` |
+> |---|---:|
+> | `NGAY_HIEN_THI` (chuỗi dd/mm/yyyy) | **476/476 (100%)** |
+> | `NGAY_BAT_DAU` (serial) | **0/476** |
+>
+> → ETL lấy `NGAY_HIEN_THI` làm chuẩn. Cặp serial vẫn nhất quán về độ dài (13/13 dòng nhiều ngày
+> khớp) nên `ngay_ket_thuc` = ngày đúng + độ dài từ serial. Sau di trú: **489/489 khớp `THU`, 0 lệch**.
+>
+> 🔴 **`GIO_BAT_DAU` lẫn hai định dạng**: 278 dòng `'HH:MM'` và **211 dòng phân số Excel**
+> (`'0.3333'` = 08:00). Chỉ parse `'HH:MM'` thì mất giờ của 43% cuộc họp.
+>
+> 🔴 **`NGUOI_TAO` là USERNAME**, không phải mã công chức → phải qua sheet `USER` để ánh xạ
+> username → `ma_cc` → `cong_chuc.id`. Kết quả: 217 người thật, 272 dòng `'import'` → tài khoản
+> hệ thống `ADMIN-001` (dùng tài khoản sẵn có, không tạo mới vì `public` là chỉ đọc).
+
+- [x] Script `backend/scripts/di_tru_lichkv8/01_cuoc_hop.py`
   - 487 dòng `MEETING` → `cuoc_hop` với `nguon='LICH_CONG_TAC'`, giữ `ma_lich`
   - Ánh xạ trạng thái: `PUBLISHED`→`DA_THONG_BAO`, `CANCELLED`→`HUY`, `DRAFT`→`LEN_KE_HOACH`
   - `CHU_TRI`: khớp `cong_chuc` (91%) → `chu_toa_id`; phần còn lại → `chu_tri_text`
   - `NGUOI_TAO`: 272 dòng ghi `import` → **cần tài khoản hệ thống** cho `created_by` (FK NOT NULL)
   - `THANH_PHAN` → `thanh_phan_text` nguyên văn (rỗng ở 214/487)
-- [ ] `02_lanh_dao_lien_quan.py` — 480 token, khớp 100%
-- [ ] `03_truc_ban.py` — `DUTY_ENTRY` 333 còn hiệu lực + `DUTY_UNIT_STATUS` 200; map `UNIT_CODE` cũ (`CHICUC`, `VANGIA`, `MONGCAI`, `HONGAI`, `BPS`, `KSHQ_MC`, `HOANHMO`, `CAMPHA`) → `don_vi_id`
-- [ ] `04_danh_gia_ghi_chu.py` — 105 đánh giá + 7 ghi chú
-- [ ] `05_nguoi_dung.py` — ánh xạ `USER.USER_ID` = `ma_cc` (547/548), ngoại lệ `superadmin`
+- [x] `02_lanh_dao_lien_quan.py` — 480 token, khớp 100%
+- [x] `03_truc_ban.py` — `DUTY_ENTRY` 333 còn hiệu lực + `DUTY_UNIT_STATUS` 200; map `UNIT_CODE` cũ (`CHICUC`, `VANGIA`, `MONGCAI`, `HONGAI`, `BPS`, `KSHQ_MC`, `HOANHMO`, `CAMPHA`) → `don_vi_id`
+- [x] `04_danh_gia_ghi_chu.py` — 105 đánh giá + 7 ghi chú
+- [x] `05_nguoi_dung.py` — ánh xạ `USER.USER_ID` = `ma_cc` (547/548), ngoại lệ `superadmin`
   - ⛔ **KHÔNG nạp cột `PASSWORD_HASH`** dưới bất kỳ hình thức nào (505 dòng là mật khẩu dạng rõ)
   - Map vai trò lichkv8 → RBAC nền tảng: `SuperAdmin`/`Admin` → admin; `Lanhdaochicuc` → CCT/PCCT; `Lanhdaophong`/`Lanhdaodoi` → TDV/PDV; `Thuky` → quyền tác nghiệp lịch; `Congchuc` → CC
 
 ### G3.2 — Di trú file **theo thư mục**
 
+> **Sản phẩm:** `05_tai_file_drive.py` (tải bản lạnh), `phan_nhom.py` (phân nhóm A–E dùng chung
+> với màn hình đối soát G4.9), `06_gan_tai_lieu.py` (đẩy vào kho + gắn cuộc họp).
+>
+> Đường đi của file: `dumps/drive_files/<drive_id>` → `uploads/meeting/tai-lieu/<cuoc_hop_id>/<uuid>_<tên>`
+> — trùng quy ước `storage_service.py` để API xem/tải sẵn có dùng được ngay, không phải sửa gì.
+>
+> ⚠️ **Whitelist 13 phần mở rộng của HKG không áp dụng khi di trú.** Kho có 5 file ngoài danh sách
+> (2 `.zip`, 2 `.rar`, 1 `.db`); từ chối là mất dữ liệu đã tồn tại. Whitelist chỉ áp cho upload mới —
+> cần quyết định có mở rộng không.
+>
+> ⚠️ `dumps/drive_files/` bị `.gitignore` nên **không nằm trong backup mã nguồn**. Đây là chủ ý
+> (hơn 1 GB không nên vào git) nhưng nghĩa là phải off-site nó **trước G6.7** — sau khi thu hồi
+> chia sẻ Drive thì không tải lại được nữa.
+>
+> 🔴 **File Google gốc không tải nhị phân được.** 2 file trả HTTP 500 ở endpoint
+> `uc?export=download` vì là Google Docs/Sheets gốc chứ không phải file tải lên (nhận biết: ID dài
+> 44 ký tự thay vì 33). Phải dùng endpoint xuất riêng. Bẫy phụ: trang Drive khai báo nhiều mime
+> cùng lúc (`vnd.google-apps.document` **và** `vnd.google-apps.kix`) nên phải duyệt hết rồi chọn,
+> không được lấy cái gặp đầu tiên.
+
+**Kết quả G3.2** *(18/08)*:
+
+| | |
+|---|---:|
+| File tải về từ kho tài liệu họp | **1.225** · 1,35 GB |
+| Gắn tự động (nhóm A + B + C) | **813** |
+| Vào hàng đợi đối soát (D + E) | **412** file / **34 cụm** |
+| Cuộc họp có tài liệu | 197 |
+| Tài liệu HKG sẵn có (không đụng) | 40 |
+| Trùng khoá lưu trữ | 0 |
+
+23 file kho thư viện **không** vào hàng đợi cuộc họp — thuộc portal, xử lý ở G5.1.
+
 > **Nguyên tắc:** thư mục Drive là nguồn sự thật của file, **không phải** bảng `MEETING_FILE`.
 > Bảng chỉ dùng bổ sung metadata (ai tải lên, lúc nào) ở chỗ nào có.
 
-- [ ] Script `06_tai_file_drive.py` — tải toàn bộ cây về đĩa, giữ nguyên cấu trúc, ghi log từng file
-- [ ] Script `07_gan_tai_lieu.py` — đẩy qua `StorageService` sẵn có (`meeting_service/services/storage_service.py`, hiện `uploads/meeting/`), gắn vào cuộc họp:
+- [x] Script `06_tai_file_drive.py` — tải toàn bộ cây về đĩa, giữ nguyên cấu trúc, ghi log từng file
+- [x] Script `07_gan_tai_lieu.py` — đẩy qua `StorageService` sẵn có (`meeting_service/services/storage_service.py`, hiện `uploads/meeting/`), gắn vào cuộc họp:
 
 | Nhóm | Căn cứ | Thư mục | File | Xử lý |
 |---|---|---:|---:|---|
@@ -272,10 +349,10 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 ### G3.3 — Đối soát sau di trú
 
-- [ ] So khớp: số cuộc họp, số bản ghi trực ban, số file, tổng dung lượng trước/sau
-- [ ] Mở thử ngẫu nhiên 20 file mỗi định dạng (pdf, docx, doc, xlsx, pptx) — không hỏng
-- [ ] Kiểm tra tiếng Việt, ngày giờ, số điện thoại, tên file không bị lỗi mã hoá
-- [ ] Xuất biên bản đối chiếu ra Excel
+- [x] So khớp: số cuộc họp, số bản ghi trực ban, số file, tổng dung lượng trước/sau
+- [x] Mở thử ngẫu nhiên 20 file mỗi định dạng (pdf, docx, doc, xlsx, pptx) — không hỏng
+- [x] Kiểm tra tiếng Việt, ngày giờ, số điện thoại, tên file không bị lỗi mã hoá
+- [x] Xuất biên bản đối chiếu ra Excel
 
 **Nghiệm thu G3:** biên bản đối chiếu khớp số lượng; mọi `ma_lich` lịch sử giữ nguyên; không mất dữ liệu tiếng Việt.
 

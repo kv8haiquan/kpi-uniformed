@@ -1,0 +1,20 @@
+# Phase 4.1 P0 — KPI/HKG backup + cleanup
+# Đặt tại: 2026-05-04
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOME=/root
+# 18/08/2026: uploads chuyển ra /var/data/kpi/uploads khi tách môi trường.
+# Đổi từ .../uploads/meeting sang cả thư mục uploads để phủ luôn LMS 5,4 GB —
+# trước đây LMS hoàn toàn không được sao lưu.
+HKG_UPLOAD_DIR=/var/data/kpi/uploads
+
+# 02:00 + 14:00 hằng ngày — full DB + uploads backup (nâng 2x/ngày 30/05/2026)
+0 2,14 * * * root /opt/kpi/scripts/backup_daily.sh >> /var/log/backup_kpi.log 2>&1
+
+# 02:30 + 14:30 — đẩy backup ĐÃ MÃ HÓA lên private GitHub (off-site, 30/05/2026)
+30 2,14 * * * root /opt/kpi/scripts/backup_to_github.sh >> /var/log/backup_github.log 2>&1
+
+# 02:45 + 14:45 — auto-backup SOURCE CODE (snapshot working tree -> branch auto-backup)
+45 2,14 * * * root /opt/kpi/scripts/backup_source.sh >> /var/log/backup_source.log 2>&1
+
+# Sunday 03:00 — cleanup preview cache cũ hơn 30 ngày
+0 3 * * 0 root /opt/kpi/scripts/cleanup_preview_cache.sh >> /var/log/cleanup_cache.log 2>&1

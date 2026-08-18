@@ -136,8 +136,8 @@ class CuocHopResponse(BaseModel):
     gio_bat_dau: time
     gio_ket_thuc: Optional[time]
     dia_diem: Optional[str]
-    don_vi_to_chuc_id: UUID
-    chu_toa_id: UUID
+    don_vi_to_chuc_id: Optional[UUID] = None
+    chu_toa_id: Optional[UUID] = None
     thu_ky_id: Optional[UUID]
     trang_thai: str
     created_at: datetime
@@ -157,8 +157,8 @@ class CuocHopListItem(BaseModel):
     ngay_hop: date
     gio_bat_dau: time
     trang_thai: str
-    don_vi_to_chuc_id: UUID
-    chu_toa_id: UUID
+    don_vi_to_chuc_id: Optional[UUID] = None
+    chu_toa_id: Optional[UUID] = None
     # Cần cho FE quyết định hiển thị nút "Sửa" với thư ký ngay trên list view
     thu_ky_id: Optional[UUID] = None
     so_thanh_phan: int = 0

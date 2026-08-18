@@ -90,7 +90,13 @@ class CuocHopService:
         khoi: Optional[str] = None,
         trang_thai: Optional[str] = None,
     ) -> dict:
-        stmt = select(CuocHop).where(CuocHop.is_deleted.is_(False))
+        # nguon='HKG': từ migration 016, bảng cuoc_hop dùng chung với Lịch
+        # công tác. Không lọc thì danh sách HKG lẫn 489 sự kiện lịch di trú
+        # từ lichkv8 — chúng không có chu_toa_id nên còn vỡ cả schema.
+        stmt = select(CuocHop).where(
+            CuocHop.is_deleted.is_(False),
+            CuocHop.nguon == "HKG",
+        )
 
         # Filter
         if ngay_tu:

@@ -28,3 +28,9 @@ python-docx==1.1.2
 
 # Phase 4.1 P0 hardening — rate limit upload
 slowapi==0.1.9
+
+# Bổ sung 18/08/2026 khi tách môi trường: hai gói này được cài tay vào venv dev
+# nên chưa từng nằm trong requirements.txt. Dựng venv sạch từ file này thì
+# meeting_service không khởi động được.
+APScheduler==3.11.2   # scheduler nhắc họp, tự duyệt xin phép vắng (meeting_service)
+qrcode==8.2           # sinh mã QR điểm danh (meeting_service)

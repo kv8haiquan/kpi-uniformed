@@ -1386,17 +1386,18 @@ function BaoCaoTableView({
                 </span>
               </div>
             </div>
-            
+
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Xếp loại đề xuất</label>
-              <div className="grid grid-cols-4 gap-2">
-                {['A', 'B', 'C', 'D'].map((xl) => (
+              <div className="grid grid-cols-5 gap-2">
+                {['A', 'B', 'C', 'D', 'E'].map((xl) => (
                   <button
                     key={xl}
                     onClick={() => setDeXuatXepLoai(xl)}
+                    title={xl === 'E' ? 'Không đánh giá (nghỉ thai sản/thôi việc/chuyển đơn vị)' : undefined}
                     className={`py-2 px-3 rounded-lg border-2 font-bold text-center transition-all ${
-                      deXuatXepLoai === xl 
-                        ? `${XEP_LOAI_COLORS[xl]} border-current` 
+                      deXuatXepLoai === xl
+                        ? `${XEP_LOAI_COLORS[xl]} border-current`
                         : 'bg-gray-50 text-gray-400 border-gray-200 hover:border-gray-300'
                     }`}
                   >
@@ -1404,6 +1405,7 @@ function BaoCaoTableView({
                   </button>
                 ))}
               </div>
+              <p className="mt-1 text-xs text-gray-400">E = Không đánh giá (nghỉ thai sản/thôi việc/chuyển đơn vị)</p>
             </div>
             
             <div className="mb-4">

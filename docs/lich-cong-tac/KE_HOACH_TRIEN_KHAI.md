@@ -1,6 +1,6 @@
 # Kế hoạch triển khai — Lịch công tác HQKV8 vào Nền tảng số thống nhất
 
-> **Trạng thái:** ✅ Giai đoạn 1–2 hoàn thành *(17/08)* · nhánh `feature/lich-cong-tac`
+> **Trạng thái:** ✅ G1, G2, **G3.1** hoàn thành *(17/08)* · nhánh `feature/lich-cong-tac`
 > **Ngày lập:** 17/08/2026
 > **Nguồn dữ liệu khảo sát:** `docs/Lich Hop Cong Tac/` (mã nguồn `Mã.gs` 5.227 dòng, `index.html` 6.898 dòng, bản xuất `LICH CONG TAC HQKV8.xlsx`), quét metadata Drive, truy vấn chỉ đọc `kpi_haiquan`
 > **Báo cáo phân tích:** https://claude.ai/code/artifact/b80fd077-2acb-4882-9de2-e393b8039f4c
@@ -256,18 +256,39 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 **Ước lượng:** 5–6 ngày · **Chặn bởi:** G2
 
-### G3.1 — ETL bảng dữ liệu
+### G3.1 — ETL bảng dữ liệu ✅ *17/08*
 
-- [ ] Script `backend/scripts/di_tru_lichkv8/01_cuoc_hop.py`
+> 🔴 **Lỗi ngày tháng trong dữ liệu gốc — phát hiện khi rà, suýt làm hỏng 43% dữ liệu.**
+>
+> Cột serial `NGAY_BAT_DAU`/`NGAY_KET_THUC` **lệch sớm 1 ngày ở 212/489 dòng**. Chênh lệch
+> chỉ có đúng hai giá trị (+0 và +1) nên không phải dữ liệu tự nhiên mà là lỗi hệ thống của lichkv8.
+> Dùng cột `THU` (thứ trong tuần, người nhập) làm trọng tài độc lập:
+>
+> | | khớp `THU` |
+> |---|---:|
+> | `NGAY_HIEN_THI` (chuỗi dd/mm/yyyy) | **476/476 (100%)** |
+> | `NGAY_BAT_DAU` (serial) | **0/476** |
+>
+> → ETL lấy `NGAY_HIEN_THI` làm chuẩn. Cặp serial vẫn nhất quán về độ dài (13/13 dòng nhiều ngày
+> khớp) nên `ngay_ket_thuc` = ngày đúng + độ dài từ serial. Sau di trú: **489/489 khớp `THU`, 0 lệch**.
+>
+> 🔴 **`GIO_BAT_DAU` lẫn hai định dạng**: 278 dòng `'HH:MM'` và **211 dòng phân số Excel**
+> (`'0.3333'` = 08:00). Chỉ parse `'HH:MM'` thì mất giờ của 43% cuộc họp.
+>
+> 🔴 **`NGUOI_TAO` là USERNAME**, không phải mã công chức → phải qua sheet `USER` để ánh xạ
+> username → `ma_cc` → `cong_chuc.id`. Kết quả: 217 người thật, 272 dòng `'import'` → tài khoản
+> hệ thống `ADMIN-001` (dùng tài khoản sẵn có, không tạo mới vì `public` là chỉ đọc).
+
+- [x] Script `backend/scripts/di_tru_lichkv8/01_cuoc_hop.py`
   - 487 dòng `MEETING` → `cuoc_hop` với `nguon='LICH_CONG_TAC'`, giữ `ma_lich`
   - Ánh xạ trạng thái: `PUBLISHED`→`DA_THONG_BAO`, `CANCELLED`→`HUY`, `DRAFT`→`LEN_KE_HOACH`
   - `CHU_TRI`: khớp `cong_chuc` (91%) → `chu_toa_id`; phần còn lại → `chu_tri_text`
   - `NGUOI_TAO`: 272 dòng ghi `import` → **cần tài khoản hệ thống** cho `created_by` (FK NOT NULL)
   - `THANH_PHAN` → `thanh_phan_text` nguyên văn (rỗng ở 214/487)
-- [ ] `02_lanh_dao_lien_quan.py` — 480 token, khớp 100%
-- [ ] `03_truc_ban.py` — `DUTY_ENTRY` 333 còn hiệu lực + `DUTY_UNIT_STATUS` 200; map `UNIT_CODE` cũ (`CHICUC`, `VANGIA`, `MONGCAI`, `HONGAI`, `BPS`, `KSHQ_MC`, `HOANHMO`, `CAMPHA`) → `don_vi_id`
-- [ ] `04_danh_gia_ghi_chu.py` — 105 đánh giá + 7 ghi chú
-- [ ] `05_nguoi_dung.py` — ánh xạ `USER.USER_ID` = `ma_cc` (547/548), ngoại lệ `superadmin`
+- [x] `02_lanh_dao_lien_quan.py` — 480 token, khớp 100%
+- [x] `03_truc_ban.py` — `DUTY_ENTRY` 333 còn hiệu lực + `DUTY_UNIT_STATUS` 200; map `UNIT_CODE` cũ (`CHICUC`, `VANGIA`, `MONGCAI`, `HONGAI`, `BPS`, `KSHQ_MC`, `HOANHMO`, `CAMPHA`) → `don_vi_id`
+- [x] `04_danh_gia_ghi_chu.py` — 105 đánh giá + 7 ghi chú
+- [x] `05_nguoi_dung.py` — ánh xạ `USER.USER_ID` = `ma_cc` (547/548), ngoại lệ `superadmin`
   - ⛔ **KHÔNG nạp cột `PASSWORD_HASH`** dưới bất kỳ hình thức nào (505 dòng là mật khẩu dạng rõ)
   - Map vai trò lichkv8 → RBAC nền tảng: `SuperAdmin`/`Admin` → admin; `Lanhdaochicuc` → CCT/PCCT; `Lanhdaophong`/`Lanhdaodoi` → TDV/PDV; `Thuky` → quyền tác nghiệp lịch; `Congchuc` → CC
 

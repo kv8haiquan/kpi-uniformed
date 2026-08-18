@@ -14,6 +14,8 @@ import {
   IUserStatusRequest,
   IUserTransferRequest,
   ILichSuDieuChuyenResponse,
+  ILichSuDieuChuyenUpdateRequest,
+  LoaiLichSuDieuChuyen,
   ISpChuanResponse,
   ISpChuanCreateRequest,
   ISpChuanUpdateRequest,
@@ -198,6 +200,77 @@ export const adminService = {
     try {
       const response = await apiClient.get(`${ADMIN_URL}/users/${userId}/transfer-history`);
       return response.data.data;
+    } catch (error) {
+      throw handleError(error);
+    }
+  },
+
+  /**
+   * Lấy N hoạt động điều chuyển/trạng thái gần đây toàn cơ quan (widget dashboard).
+   */
+  async getRecentLichSu(limit: number = 10): Promise<ILichSuDieuChuyenResponse[]> {
+    try {
+      const response = await apiClient.get(`${ADMIN_URL}/lich-su-dieu-chuyen`, {
+        params: { page: 1, page_size: limit },
+      });
+      return response.data.data;
+    } catch (error) {
+      throw handleError(error);
+    }
+  },
+
+  /**
+   * Danh sách lịch sử điều chuyển/trạng thái toàn cơ quan (phân trang + lọc) —
+   * gồm cả CC đã vô hiệu hóa. Dùng cho trang xem đầy đủ.
+   */
+  async getLichSuDieuChuyen(params: {
+    page?: number;
+    page_size?: number;
+    loai?: LoaiLichSuDieuChuyen;
+    search?: string;
+  } = {}): Promise<IPaginatedResponse<ILichSuDieuChuyenResponse>> {
+    try {
+      const response = await apiClient.get(`${ADMIN_URL}/lich-su-dieu-chuyen`, { params });
+      return response.data;
+    } catch (error) {
+      throw handleError(error);
+    }
+  },
+
+  /**
+   * Điều chỉnh một bản ghi lịch sử điều chuyển/trạng thái (sửa sai sót).
+   * Nếu dong_bo_hien_tai=true và là bản ghi mới nhất → đồng bộ lại hồ sơ CC.
+   */
+  async updateTransferHistory(
+    userId: string,
+    historyId: string,
+    data: ILichSuDieuChuyenUpdateRequest
+  ): Promise<ILichSuDieuChuyenResponse> {
+    try {
+      const response = await apiClient.put(
+        `${ADMIN_URL}/users/${userId}/transfer-history/${historyId}`,
+        data
+      );
+      return response.data.data;
+    } catch (error) {
+      throw handleError(error);
+    }
+  },
+
+  /**
+   * Xóa một bản ghi lịch sử điều chuyển/trạng thái nhập sai.
+   * dongBo=true và là bản ghi mới nhất → hoàn tác trạng thái hồ sơ CC về giá trị cũ.
+   */
+  async deleteTransferHistory(
+    userId: string,
+    historyId: string,
+    dongBo: boolean = false
+  ): Promise<void> {
+    try {
+      await apiClient.delete(
+        `${ADMIN_URL}/users/${userId}/transfer-history/${historyId}`,
+        { params: { dong_bo_hien_tai: dongBo } }
+      );
     } catch (error) {
       throw handleError(error);
     }

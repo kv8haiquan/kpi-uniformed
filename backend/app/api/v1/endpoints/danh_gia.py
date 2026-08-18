@@ -2351,22 +2351,42 @@ async def get_kpi_summary(
     # 3. Lấy ngày nghỉ
     nghi_phep = await tinh_tong_ngay_nghi_thang(db, current_user.id, thang, nam)
     
-    # 4. Tính điểm KPI
+    # 4. Tính điểm KPI — PHÂN NHÁNH đúng theo loại CC (giống /xep-loai/tong-hop
+    #    và bản in phiếu): lãnh đạo / HĐ111 VB714 / HĐ111 form lãnh đạo / CC thường.
+    #    Trước đây hardcode công thức CC thường (ngày×96) → HĐ111 & lãnh đạo bị SAI.
+    from app.api.v1.endpoints.xep_loai_moi import (
+        tinh_diem_kpi_70,
+        tinh_diem_kpi_70_lanh_dao,
+        tinh_diem_kpi_70_hd_111,
+        _has_ke_khai_lanh_dao,
+    )
+    from app.core.hdld_vb714 import is_hdld_vb714_active, tinh_diem_kpi_70_hdld_vb714
+
     so_ngay_lam_viec = nghi_phep["so_ngay_lam_viec"]
     target_sp = float(so_ngay_lam_viec) * 96
-    
     tong_sp_hoan_thanh = ke_khai_stats["tong_sp_quy_doi"]
     tong_sp_chat_luong = ke_khai_stats["tong_sp_chat_luong"]
     tong_sp_tien_do = ke_khai_stats["tong_sp_tien_do"]
-    
-    # Tính a, b, c
-    a_so_luong = tong_sp_hoan_thanh / target_sp if target_sp > 0 else 0
-    b_chat_luong = tong_sp_chat_luong / target_sp if target_sp > 0 else 0
-    c_tien_do = tong_sp_tien_do / target_sp if target_sp > 0 else 0
-    
-    # Điểm KPI = (a + b + c) / 3 * 70
-    diem_kpi = (a_so_luong + b_chat_luong + c_tien_do) / 3
-    diem_kpi_quy_doi = diem_kpi * 70
+
+    cc = current_user
+    _vb = None
+    if cc.is_lanh_dao:
+        kd = await tinh_diem_kpi_70_lanh_dao(db, cc.id, thang, nam, tam_tinh=False)
+    elif cc.is_hd_111 and is_hdld_vb714_active(thang, nam) and (
+        _vb := await tinh_diem_kpi_70_hdld_vb714(db, cc.id, thang, nam, tam_tinh=False)
+    ) is not None:
+        kd = _vb
+    elif cc.is_hd_111 and await _has_ke_khai_lanh_dao(db, cc.id, thang, nam):
+        kd = await tinh_diem_kpi_70_hd_111(db, cc.id, thang, nam, tam_tinh=False)
+    else:
+        kd = await tinh_diem_kpi_70(db, cc.id, thang, nam, tam_tinh=False)
+
+    a_so_luong = kd.get("a_so_luong", 0)
+    # Chuẩn hóa b=tiến độ, c=chất lượng (tinh_diem_kpi_70 CC dùng key legacy đảo)
+    b_chat_luong = kd.get("b_tien_do", kd.get("b_chat_luong", 0))
+    c_tien_do = kd.get("c_chat_luong", kd.get("c_tien_do", 0))
+    diem_kpi = kd.get("diem_kpi", 0)
+    diem_kpi_quy_doi = kd.get("diem_70", 0)
     
     return success_response(data={
         "thang": thang,

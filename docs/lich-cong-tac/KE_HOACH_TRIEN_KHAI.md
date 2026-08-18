@@ -187,6 +187,25 @@ ALTER TABLE meeting.cuoc_hop
 - [x] `meeting.danh_gia_cuoc_hop` — thay `MEETING_RATING` (105 bản ghi)
 - [x] `meeting.ghi_chu` + `meeting.ghi_chu_chia_se` — thay `MEETING_NOTE` / `NOTE_SHARE` (7 / 0 bản ghi)
 
+### G2.5b — `meeting_021`: trigger đồng bộ `ngay_hien_thi` ✅ *17/08*
+
+> 🔴 **Phát sinh sau khi rà lại 016** — hai lỗi đều phá vỡ tiêu chí 8.3, tìm ra bằng cách chạy thật
+> câu INSERT mà `cuoc_hop_service.tao_moi()` sinh ra:
+>
+> 1. Cuộc họp HKG **tạo mới** có `ngay_hien_thi = NULL` → **vô hình trên Lịch công tác**.
+>    Model `CuocHop` không biết cột này (đúng thiết kế), nên INSERT bỏ trống.
+>    016 chỉ backfill 9 dòng sẵn có, không lo được cho dòng tương lai.
+> 2. Cuộc họp HKG **dời ngày** thì `ngay_hien_thi` giữ ngày cũ → lịch hiện sai ngày.
+>    `cap_nhat()` dùng `setattr` theo model, model không có cột này.
+>
+> Sửa bằng **trigger ở mức cơ sở dữ liệu**, không sửa model/service — giữ đúng nguyên tắc
+> HKG không phải biết gì về Lịch công tác, và đúng với mọi đường ghi (kể cả script di trú, sửa tay).
+
+- [x] `fn_dong_bo_ngay_hien_thi()` + trigger `BEFORE INSERT OR UPDATE`
+  - `nguon='HKG'` → `ngay_hien_thi` **luôn** soi gương `ngay_hop`; `loai_lich` trống thì gán `'HOP'`
+  - `nguon='LICH_CONG_TAC'` → giữ nguyên giá trị người dùng đặt, chỉ điền khi bỏ trống
+    (lichkv8 có `NGAY_HIEN_THI` khác ngày bắt đầu thật)
+
 ### G2.5 — `meeting_020`: bảng lưu vết di trú
 
 - [x] `meeting.di_tru_doi_soat` — phục vụ màn hình đối soát và biên bản nghiệm thu
@@ -201,9 +220,12 @@ ALTER TABLE meeting.cuoc_hop
 |---|---|
 | `alembic upgrade head` trên `kpi_haiquan_test` (clone tươi từ prod) | ✅ 5 migration chạy sạch |
 | Số bảng schema `meeting` | 13 → **22** (thêm 9) |
+| HKG tạo cuộc họp mới không đụng field nào của Lịch công tác | ✅ chạy nguyên câu INSERT cũ |
+| Cuộc họp HKG mới hiện trên Lịch công tác | ✅ qua trigger `meeting_021` |
+| Dời ngày họp HKG thì lịch cập nhật theo | ✅ tiêu chí 8.3 |
 | `alembic downgrade zalo_oa_20260731` rồi upgrade lại | ✅ về đúng 13 bảng, nâng lại được |
-| Test ràng buộc mới `test_lich_cong_tac_schema.py` | ✅ **31/31 PASS** |
-| Hồi quy test HKG (trừ 2 file phụ thuộc giờ) | ✅ **165/165 PASS** |
+| Test ràng buộc mới `test_lich_cong_tac_schema.py` | ✅ **35/35 PASS** |
+| Hồi quy test HKG (trừ 2 file phụ thuộc giờ) | ✅ **169/169 PASS** |
 | 9 cuộc họp HKG sẵn có | ✅ `nguon='HKG'`, `ngay_hien_thi` backfill đủ |
 | Seed 9 trụ sở + ánh xạ đơn vị | ✅ đúng, `CHICUC` để `don_vi_id` NULL |
 

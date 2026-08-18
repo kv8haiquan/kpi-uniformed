@@ -296,3 +296,94 @@ async def test_cuoc_hop_hkg_san_co_duoc_gan_nguon_va_ngay_hien_thi(
     """))).one()
     assert row.tong == row.hkg, "dữ liệu sẵn có phải đều là nguồn HKG"
     assert row.thieu_ngay == 0, "phải backfill hết ngay_hien_thi"
+
+
+# ════════════════════════════════════════════════════════════════════
+# Trigger đồng bộ ngay_hien_thi (migration 021)
+#
+# HKG tạo/sửa cuộc họp mà KHÔNG hề biết tới cột ngay_hien_thi. Nếu không có
+# trigger thì cuộc họp HKG mới sẽ vô hình trên Lịch công tác, và dời họp xong
+# lịch vẫn hiện ngày cũ — đều vi phạm tiêu chí 8.3.
+# ════════════════════════════════════════════════════════════════════
+
+INSERT_KIEU_HKG = sa_text("""
+    INSERT INTO meeting.cuoc_hop
+        (tieu_de, khoi, hinh_thuc, ngay_hop, gio_bat_dau,
+         don_vi_to_chuc_id, chu_toa_id, created_by)
+    VALUES
+        (:tieu_de, 'CHUYEN_MON', 'TRUC_TIEP', :ngay_hop, '09:00',
+         :dv, :cc, :cc)
+    RETURNING id
+""")
+
+
+async def test_hkg_tao_moi_tu_dien_ngay_hien_thi(db_session: AsyncSession):
+    """Câu INSERT của HKG không nhắc ngay_hien_thi — trigger phải điền."""
+    cc, dv = await _ids(db_session)
+    ngay = date.today() + timedelta(days=7)
+    ch = (await db_session.execute(INSERT_KIEU_HKG, {
+        "tieu_de": "họp hkg mới", "ngay_hop": ngay, "cc": cc, "dv": dv,
+    })).scalar_one()
+
+    row = (await db_session.execute(sa_text(
+        "SELECT ngay_hien_thi, loai_lich, nguon FROM meeting.cuoc_hop WHERE id = :i"
+    ), {"i": ch})).one()
+    assert row.ngay_hien_thi == ngay, "không có ngày hiển thị thì lịch không thấy"
+    assert row.loai_lich == "HOP", "không có loại lịch thì bộ lọc bỏ sót"
+    assert row.nguon == "HKG"
+
+
+async def test_hkg_doi_ngay_thi_lich_cap_nhat_theo(db_session: AsyncSession):
+    """Tiêu chí 8.3: đổi giờ hoặc ngày thì sự kiện trên lịch phải theo."""
+    cc, dv = await _ids(db_session)
+    ch = (await db_session.execute(INSERT_KIEU_HKG, {
+        "tieu_de": "họp sẽ dời", "ngay_hop": date.today(), "cc": cc, "dv": dv,
+    })).scalar_one()
+
+    ngay_moi = date.today() + timedelta(days=14)
+    # Đúng cách cuoc_hop_service.cap_nhat() làm: chỉ setattr ngay_hop.
+    await db_session.execute(sa_text(
+        "UPDATE meeting.cuoc_hop SET ngay_hop = :n WHERE id = :i"
+    ), {"n": ngay_moi, "i": ch})
+
+    ngay_ht = (await db_session.execute(sa_text(
+        "SELECT ngay_hien_thi FROM meeting.cuoc_hop WHERE id = :i"
+    ), {"i": ch})).scalar_one()
+    assert ngay_ht == ngay_moi, "dời họp xong lịch vẫn hiện ngày cũ"
+
+
+async def test_lich_cong_tac_giu_ngay_hien_thi_rieng(db_session: AsyncSession):
+    """lichkv8 có NGAY_HIEN_THI khác ngày bắt đầu thật — không được ghi đè."""
+    ngay_hop = date.today()
+    ngay_ht = date.today() + timedelta(days=5)
+    cc, _ = await _ids(db_session)
+    ch = (await db_session.execute(sa_text("""
+        INSERT INTO meeting.cuoc_hop
+            (tieu_de, ngay_hop, ngay_hien_thi, gio_bat_dau, created_by,
+             nguon, ma_lich, loai_lich)
+        VALUES (:t, :nh, :nht, '08:00', :cc, 'LICH_CONG_TAC', :ml, 'CONG_TAC')
+        RETURNING id
+    """), {"t": "lịch riêng", "nh": ngay_hop, "nht": ngay_ht, "cc": cc,
+           "ml": f"LH8{ngay_hop.strftime('%j')}"})).scalar_one()
+
+    row = (await db_session.execute(sa_text(
+        "SELECT ngay_hop, ngay_hien_thi FROM meeting.cuoc_hop WHERE id = :i"
+    ), {"i": ch})).one()
+    assert row.ngay_hop == ngay_hop
+    assert row.ngay_hien_thi == ngay_ht, "đã đặt tay thì phải giữ nguyên"
+
+
+async def test_lich_cong_tac_bo_trong_thi_lay_ngay_hop(db_session: AsyncSession):
+    cc, _ = await _ids(db_session)
+    ngay = date.today()
+    ch = (await db_session.execute(sa_text("""
+        INSERT INTO meeting.cuoc_hop
+            (tieu_de, ngay_hop, gio_bat_dau, created_by, nguon, ma_lich, loai_lich)
+        VALUES (:t, :nh, '08:00', :cc, 'LICH_CONG_TAC', 'LH8888', 'HOP')
+        RETURNING id
+    """), {"t": "lịch trống ngày ht", "nh": ngay, "cc": cc})).scalar_one()
+
+    ngay_ht = (await db_session.execute(sa_text(
+        "SELECT ngay_hien_thi FROM meeting.cuoc_hop WHERE id = :i"
+    ), {"i": ch})).scalar_one()
+    assert ngay_ht == ngay

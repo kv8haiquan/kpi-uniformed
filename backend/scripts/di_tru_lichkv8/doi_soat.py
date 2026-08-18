@@ -72,6 +72,31 @@ KIEM_TRA_THEM = [
      "SELECT count(*) FROM meeting.cuoc_hop WHERE nguon='HKG'"),
 ]
 
+# G3.2 — đối soát kho tài liệu. Chỉ chạy khi đã có manifest tải file.
+KIEM_TRA_FILE = [
+    ("Tài liệu di trú từ Drive",
+     "SELECT count(*) FROM meeting.di_tru_nguon WHERE bang_nguon='DRIVE_FILE'"),
+    ("Tài liệu sẵn có của HKG (không đụng)",
+     "SELECT count(*) FROM meeting.tai_lieu tl JOIN meeting.cuoc_hop ch "
+     "ON ch.id = tl.cuoc_hop_id WHERE ch.nguon = 'HKG'"),
+    ("Cuộc họp có tài liệu",
+     "SELECT count(DISTINCT cuoc_hop_id) FROM meeting.tai_lieu "
+     "WHERE cuoc_hop_id IS NOT NULL"),
+    ("Tổng dung lượng đã gắn (MB)",
+     "SELECT COALESCE(round(sum(file_size)/1048576.0, 1), 0) "
+     "FROM meeting.tai_lieu"),
+    ("Thư mục chờ đối soát (nhóm D)",
+     "SELECT count(*) FROM meeting.di_tru_doi_soat WHERE nhom='D'"),
+    ("Thư mục chờ đối soát (nhóm E)",
+     "SELECT count(*) FROM meeting.di_tru_doi_soat WHERE nhom='E'"),
+    ("File chờ đối soát",
+     "SELECT COALESCE(sum(so_file), 0) FROM meeting.di_tru_doi_soat "
+     "WHERE quyet_dinh IS NULL"),
+    ("Tài liệu trùng khoá lưu trữ (phải = 0)",
+     "SELECT count(*) FROM (SELECT minio_key FROM meeting.tai_lieu "
+     "GROUP BY 1 HAVING count(*) > 1) x"),
+]
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -121,6 +146,41 @@ def main() -> None:
             ra(f"| {nhan} | {cur.fetchone()[0]} |")
 
         # Đối chiếu thứ trong tuần — bắt lỗi lệch ngày, xem 01_cuoc_hop.py
+        # ── kho tài liệu ────────────────────────────────────────────
+        cur.execute("SELECT count(*) FROM meeting.tai_lieu")
+        if cur.fetchone()[0]:
+            ra()
+            ra("## Kho tài liệu")
+            ra()
+            ra("| Chỉ tiêu | Giá trị |")
+            ra("|---|---:|")
+            for nhan, sql in KIEM_TRA_FILE:
+                cur.execute(sql)
+                ra(f"| {nhan} | {cur.fetchone()[0]} |")
+
+            manifest = XLSX.parent / "drive_files_manifest.json"
+            if manifest.exists():
+                import json as _json
+                # CHỈ so kho tài liệu họp. 23 file kho thư viện thuộc portal
+                # (quyết định 17/08), xử lý riêng ở G5.1 — không tính vào đây.
+                m = {k: v for k, v in
+                     _json.loads(manifest.read_text(encoding="utf8")).items()
+                     if v.get("kho") == "tai-lieu"}
+                cur.execute("SELECT count(*) FROM meeting.di_tru_nguon "
+                            "WHERE bang_nguon = 'DRIVE_FILE'")
+                da_gan = cur.fetchone()[0]
+                cur.execute("SELECT COALESCE(sum(so_file),0) "
+                            "FROM meeting.di_tru_doi_soat")
+                cho = cur.fetchone()[0]
+                ra()
+                ra(f"File kho tài liệu họp tải về: **{len(m)}** · đã gắn cuộc họp: "
+                   f"**{da_gan}** · chờ đối soát: **{cho}** · "
+                   f"tổng đã xử lý: **{da_gan + cho}**")
+                if da_gan + cho != len(m):
+                    ra()
+                    ra(f"> ⚠️ Lệch {len(m) - da_gan - cho} file so với manifest "
+                       f"— cần rà lại trước khi nghiệm thu.")
+
         ra()
         ra("## Đối chiếu thứ trong tuần")
         ra()

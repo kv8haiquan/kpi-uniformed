@@ -1,6 +1,6 @@
 # Kế hoạch triển khai — Lịch công tác HQKV8 vào Nền tảng số thống nhất
 
-> **Trạng thái:** ✅ G1, G2, **G3.1** hoàn thành *(17/08)* · nhánh `feature/lich-cong-tac`
+> **Trạng thái:** ✅ G1, G2, **G3 trọn vẹn** *(18/08)* · nhánh `feature/lich-cong-tac`
 > **Ngày lập:** 17/08/2026
 > **Nguồn dữ liệu khảo sát:** `docs/Lich Hop Cong Tac/` (mã nguồn `Mã.gs` 5.227 dòng, `index.html` 6.898 dòng, bản xuất `LICH CONG TAC HQKV8.xlsx`), quét metadata Drive, truy vấn chỉ đọc `kpi_haiquan`
 > **Báo cáo phân tích:** https://claude.ai/code/artifact/b80fd077-2acb-4882-9de2-e393b8039f4c
@@ -294,11 +294,44 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 ### G3.2 — Di trú file **theo thư mục**
 
+> **Sản phẩm:** `05_tai_file_drive.py` (tải bản lạnh), `phan_nhom.py` (phân nhóm A–E dùng chung
+> với màn hình đối soát G4.9), `06_gan_tai_lieu.py` (đẩy vào kho + gắn cuộc họp).
+>
+> Đường đi của file: `dumps/drive_files/<drive_id>` → `uploads/meeting/tai-lieu/<cuoc_hop_id>/<uuid>_<tên>`
+> — trùng quy ước `storage_service.py` để API xem/tải sẵn có dùng được ngay, không phải sửa gì.
+>
+> ⚠️ **Whitelist 13 phần mở rộng của HKG không áp dụng khi di trú.** Kho có 5 file ngoài danh sách
+> (2 `.zip`, 2 `.rar`, 1 `.db`); từ chối là mất dữ liệu đã tồn tại. Whitelist chỉ áp cho upload mới —
+> cần quyết định có mở rộng không.
+>
+> ⚠️ `dumps/drive_files/` bị `.gitignore` nên **không nằm trong backup mã nguồn**. Đây là chủ ý
+> (hơn 1 GB không nên vào git) nhưng nghĩa là phải off-site nó **trước G6.7** — sau khi thu hồi
+> chia sẻ Drive thì không tải lại được nữa.
+>
+> 🔴 **File Google gốc không tải nhị phân được.** 2 file trả HTTP 500 ở endpoint
+> `uc?export=download` vì là Google Docs/Sheets gốc chứ không phải file tải lên (nhận biết: ID dài
+> 44 ký tự thay vì 33). Phải dùng endpoint xuất riêng. Bẫy phụ: trang Drive khai báo nhiều mime
+> cùng lúc (`vnd.google-apps.document` **và** `vnd.google-apps.kix`) nên phải duyệt hết rồi chọn,
+> không được lấy cái gặp đầu tiên.
+
+**Kết quả G3.2** *(18/08)*:
+
+| | |
+|---|---:|
+| File tải về từ kho tài liệu họp | **1.225** · 1,35 GB |
+| Gắn tự động (nhóm A + B + C) | **813** |
+| Vào hàng đợi đối soát (D + E) | **412** file / **34 cụm** |
+| Cuộc họp có tài liệu | 197 |
+| Tài liệu HKG sẵn có (không đụng) | 40 |
+| Trùng khoá lưu trữ | 0 |
+
+23 file kho thư viện **không** vào hàng đợi cuộc họp — thuộc portal, xử lý ở G5.1.
+
 > **Nguyên tắc:** thư mục Drive là nguồn sự thật của file, **không phải** bảng `MEETING_FILE`.
 > Bảng chỉ dùng bổ sung metadata (ai tải lên, lúc nào) ở chỗ nào có.
 
-- [ ] Script `06_tai_file_drive.py` — tải toàn bộ cây về đĩa, giữ nguyên cấu trúc, ghi log từng file
-- [ ] Script `07_gan_tai_lieu.py` — đẩy qua `StorageService` sẵn có (`meeting_service/services/storage_service.py`, hiện `uploads/meeting/`), gắn vào cuộc họp:
+- [x] Script `06_tai_file_drive.py` — tải toàn bộ cây về đĩa, giữ nguyên cấu trúc, ghi log từng file
+- [x] Script `07_gan_tai_lieu.py` — đẩy qua `StorageService` sẵn có (`meeting_service/services/storage_service.py`, hiện `uploads/meeting/`), gắn vào cuộc họp:
 
 | Nhóm | Căn cứ | Thư mục | File | Xử lý |
 |---|---|---:|---:|---|
@@ -315,10 +348,10 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 ### G3.3 — Đối soát sau di trú
 
-- [ ] So khớp: số cuộc họp, số bản ghi trực ban, số file, tổng dung lượng trước/sau
-- [ ] Mở thử ngẫu nhiên 20 file mỗi định dạng (pdf, docx, doc, xlsx, pptx) — không hỏng
-- [ ] Kiểm tra tiếng Việt, ngày giờ, số điện thoại, tên file không bị lỗi mã hoá
-- [ ] Xuất biên bản đối chiếu ra Excel
+- [x] So khớp: số cuộc họp, số bản ghi trực ban, số file, tổng dung lượng trước/sau
+- [x] Mở thử ngẫu nhiên 20 file mỗi định dạng (pdf, docx, doc, xlsx, pptx) — không hỏng
+- [x] Kiểm tra tiếng Việt, ngày giờ, số điện thoại, tên file không bị lỗi mã hoá
+- [x] Xuất biên bản đối chiếu ra Excel
 
 **Nghiệm thu G3:** biên bản đối chiếu khớp số lượng; mọi `ma_lich` lịch sử giữ nguyên; không mất dữ liệu tiếng Việt.
 

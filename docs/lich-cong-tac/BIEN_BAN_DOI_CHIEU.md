@@ -25,6 +25,21 @@
 | Trực ban thiếu số điện thoại | 0 |
 | Cuộc họp HKG (không được đụng tới) | 9 |
 
+## Kho tài liệu
+
+| Chỉ tiêu | Giá trị |
+|---|---:|
+| Tài liệu di trú từ Drive | 813 |
+| Tài liệu sẵn có của HKG (không đụng) | 40 |
+| Cuộc họp có tài liệu | 197 |
+| Tổng dung lượng đã gắn (MB) | 785.0 |
+| Thư mục chờ đối soát (nhóm D) | 15 |
+| Thư mục chờ đối soát (nhóm E) | 19 |
+| File chờ đối soát | 412 |
+| Tài liệu trùng khoá lưu trữ (phải = 0) | 0 |
+
+File kho tài liệu họp tải về: **1225** · đã gắn cuộc họp: **813** · chờ đối soát: **412** · tổng đã xử lý: **1225**
+
 ## Đối chiếu thứ trong tuần
 
 Ngày sau di trú khớp cột `THU` của bản gốc: **489 khớp, 0 lệch**.

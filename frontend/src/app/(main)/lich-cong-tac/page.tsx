@@ -17,16 +17,19 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Download,
   ExternalLink,
   FileText,
   List,
   Loader2,
   MapPin,
+  Plus,
   Search,
   Users,
 } from 'lucide-react';
 
 import { lichCongTacApi } from '@/services/lich-cong-tac';
+import FormLich from './components/FormLich';
 import { errMsg } from '@/lib/hkg-error';
 import {
   NHAN_LOAI_LICH,
@@ -85,6 +88,9 @@ export default function LichCongTacPage() {
   const [locLoai, setLocLoai] = useState<LoaiLich | ''>('');
   const [tuKhoa, setTuKhoa] = useState('');
   const [tuKhoaGui, setTuKhoaGui] = useState('');
+
+  const [moForm, setMoForm] = useState(false);
+  const [dangXuat, setDangXuat] = useState(false);
 
   const soDong = 30;
 
@@ -149,6 +155,32 @@ export default function LichCongTacPage() {
       d.getDate(),
     ).padStart(2, '0')}`;
 
+  /** Xuất đúng phạm vi đang xem: chế độ tháng thì cả tháng, danh sách thì
+   *  theo bộ lọc và từ khoá hiện tại. */
+  const xuatExcel = async () => {
+    setDangXuat(true);
+    setLoi(null);
+    try {
+      const cuoiThang = new Date(nam, thang, 0).getDate();
+      await lichCongTacApi.xuatExcel(
+        cheDo === 'thang'
+          ? {
+              'tu-ngay': `${nam}-${String(thang).padStart(2, '0')}-01`,
+              'den-ngay': `${nam}-${String(thang).padStart(2, '0')}-${cuoiThang}`,
+              'loai-lich': locLoai || undefined,
+            }
+          : {
+              'loai-lich': locLoai || undefined,
+              'tim-kiem': tuKhoaGui || undefined,
+            },
+      );
+    } catch (e) {
+      setLoi(errMsg(e, 'Không xuất được Excel'));
+    } finally {
+      setDangXuat(false);
+    }
+  };
+
   const tongTrang = Math.max(1, Math.ceil(tong / soDong));
 
   return (
@@ -198,6 +230,30 @@ export default function LichCongTacPage() {
               </option>
             ))}
           </select>
+
+          <button
+            type="button"
+            onClick={() => setMoForm(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4" />
+            Thêm lịch
+          </button>
+
+          <button
+            type="button"
+            onClick={xuatExcel}
+            disabled={dangXuat}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40"
+            title="Xuất đúng phạm vi đang xem"
+          >
+            {dangXuat ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Xuất Excel
+          </button>
         </div>
 
         {cheDo === 'thang' ? (
@@ -443,6 +499,16 @@ export default function LichCongTacPage() {
             </div>
           )}
         </>
+      )}
+
+      {moForm && (
+        <FormLich
+          onDong={() => setMoForm(false)}
+          onXong={() => {
+            setMoForm(false);
+            void tai();
+          }}
+        />
       )}
     </div>
   );

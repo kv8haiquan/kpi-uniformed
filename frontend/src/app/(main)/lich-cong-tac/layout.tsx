@@ -17,6 +17,7 @@ import { getPlatformRolesFromToken, userCanAccessHkg } from '@/lib/jwt-claims';
 const TAB = [
   { href: '/lich-cong-tac', nhan: 'Lịch' },
   { href: '/lich-cong-tac/tom-tat', nhan: 'Tóm tắt lịch' },
+  { href: '/lich-cong-tac/thong-ke-tai-lieu', nhan: 'Thống kê tài liệu' },
 ];
 
 export default function LichCongTacLayout({

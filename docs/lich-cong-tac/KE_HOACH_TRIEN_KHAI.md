@@ -365,44 +365,44 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 > Backend: `backend/meeting_service/` (port 8006, PM2 `meeting-backend`), prefix nginx `/api/v1/hop-khong-giay/`
 > Frontend: `frontend/src/app/(main)/lich-cong-tac/`, service `frontend/src/services/hkg.ts` (mở rộng) hoặc tách `lich-cong-tac.ts`
 
-### G4.1 — Điều hướng
+### G4.1 — Điều hướng ✅ *18/08*
 
-- [ ] Thêm mục **Lịch công tác** vào `frontend/src/components/common/Sidebar.tsx`, đặt **ngay trên** mục Họp Không Giấy (dòng ~172)
-- [ ] Thêm widget vào lưới trang Tổng quan (`app/(main)/tong-quan/`), theo mẫu `WidgetHKG.tsx`
+- [x] Thêm mục **Lịch công tác** vào `frontend/src/components/common/Sidebar.tsx`, đặt **ngay trên** mục Họp Không Giấy (dòng ~172)
+- [x] Thêm widget vào lưới trang Tổng quan (`app/(main)/tong-quan/`), theo mẫu `WidgetHKG.tsx`
 
-### G4.2 — Lịch công tác (màn hình trung tâm)
+### G4.2 — Lịch công tác (màn hình trung tâm) ✅ *18/08*
 
-- [ ] `GET /lich-cong-tac` — lọc theo khoảng ngày, loại lịch, lãnh đạo, trạng thái; **phân trang server-side** (hệ cũ tải hết vào bộ nhớ, có ngưỡng cảnh báo 3000ms)
-- [ ] Xem theo tháng / tuần / danh sách
-- [ ] Tìm kiếm toàn văn trên: nội dung, ghi chú, địa điểm, chủ trì, thành phần, lãnh đạo liên quan
-- [ ] Chi tiết lịch: đầy đủ trường + tài liệu + lãnh đạo liên quan
-- [ ] **Bấm sự kiện loại họp → mở thẳng chi tiết cuộc họp trong HKG** (tiêu chí 8.3 gạch 2)
+- [x] `GET /lich-cong-tac` — lọc theo khoảng ngày, loại lịch, lãnh đạo, trạng thái; **phân trang server-side** (hệ cũ tải hết vào bộ nhớ, có ngưỡng cảnh báo 3000ms)
+- [x] Xem theo tháng / tuần / danh sách
+- [x] Tìm kiếm toàn văn trên: nội dung, ghi chú, địa điểm, chủ trì, thành phần, lãnh đạo liên quan
+- [x] Chi tiết lịch: đầy đủ trường + tài liệu + lãnh đạo liên quan
+- [x] **Bấm sự kiện loại họp → mở thẳng chi tiết cuộc họp trong HKG** (tiêu chí 8.3 gạch 2)
 
-### G4.3 — Quản lý lịch
+### G4.3 — Quản lý lịch ✅ *19/08*
 
-- [ ] CRUD + huỷ (giữ trạng thái, không xoá vật lý) + xoá mềm theo quyền
-- [ ] Sinh `ma_lich` tiếp nối: `LH0488` trở đi, có khoá chống trùng
-- [ ] Xuất Excel: STT, mã lịch, ngày, giờ, loại, nội dung, thành phần, địa điểm, chủ trì, lãnh đạo, đơn vị chuẩn bị, số văn bản, ghi chú, trạng thái, số file
-- [ ] Ghi nhật ký thay đổi theo từng trường (thay `MEETING_LOG`)
+- [x] CRUD + huỷ (giữ trạng thái, không xoá vật lý) + xoá mềm theo quyền
+- [x] Sinh `ma_lich` tiếp nối: `LH0488` trở đi, có khoá chống trùng
+- [x] Xuất Excel: STT, mã lịch, ngày, giờ, loại, nội dung, thành phần, địa điểm, chủ trì, lãnh đạo, đơn vị chuẩn bị, số văn bản, ghi chú, trạng thái, số file
+- [x] Ghi nhật ký thay đổi theo từng trường (thay `MEETING_LOG`)
 
-### G4.4 — Tóm tắt lịch
+### G4.4 — Tóm tắt lịch ✅ *18/08*
 
-- [ ] Tổng hợp theo khoảng ngày (mặc định 3 ngày), nhóm theo ngày → lãnh đạo
-- [ ] Chế độ gọn, chọn thông tin đi kèm: địa điểm, chức danh, lịch trực, chỉ lịch đã đăng
-- [ ] Nút copy để dán sang Zalo/email
-- [ ] **Sinh trực tiếp từ dữ liệu lịch**, không lưu bản riêng
+- [x] Tổng hợp theo khoảng ngày (mặc định 3 ngày), nhóm theo ngày → lãnh đạo
+- [x] Chế độ gọn, chọn thông tin đi kèm: địa điểm, chức danh, lịch trực, chỉ lịch đã đăng
+- [x] Nút copy để dán sang Zalo/email
+- [x] **Sinh trực tiếp từ dữ liệu lịch**, không lưu bản riêng
 
-### G4.5 — Lịch lãnh đạo
+### G4.5 — Lịch lãnh đạo ✅ *18/08*
 
-- [ ] Thẻ chương trình công tác từng lãnh đạo, dựa trên `lanh_dao_lien_quan` (khớp 100%)
-- [ ] Hiển thị: ngày, giờ, nội dung, địa điểm, vai trò
+- [x] Thẻ chương trình công tác từng lãnh đạo, dựa trên `lanh_dao_lien_quan` (khớp 100%)
+- [x] Hiển thị: ngày, giờ, nội dung, địa điểm, vai trò
 
-### G4.6 — Thống kê tài liệu họp
+### G4.6 — Thống kê tài liệu họp ✅ *19/08*
 
-- [ ] Lọc: từ ngày, đến ngày, từ khoá, lãnh đạo, trạng thái lịch, tình trạng tài liệu, tính/không tính lịch huỷ
-- [ ] 5 trạng thái: Tất cả · Có giao chuẩn bị · Đã gắn tài liệu · Thiếu tài liệu · Chưa giao chuẩn bị
-- [ ] Xuất Excel
-- [ ] 🔴 **BÊ NGUYÊN quy tắc "giấy mời không tính là tài liệu chuẩn bị"** — port nguyên văn 3 hàm từ `Mã.gs` dòng 1513–1570:
+- [x] Lọc: từ ngày, đến ngày, từ khoá, lãnh đạo, trạng thái lịch, tình trạng tài liệu, tính/không tính lịch huỷ
+- [x] 5 trạng thái: Tất cả · Có giao chuẩn bị · Đã gắn tài liệu · Thiếu tài liệu · Chưa giao chuẩn bị
+- [x] Xuất Excel
+- [x] 🔴 **BÊ NGUYÊN quy tắc "giấy mời không tính là tài liệu chuẩn bị"** — port nguyên văn 3 hàm từ `Mã.gs` dòng 1513–1570:
   - `hasMeetingDocsMaterialSignal_()` — regex tín hiệu tài liệu chuyên môn
   - `hasInvitationSignal_()` — regex tín hiệu giấy mời
   - `isInvitationDocFile_()` — **thứ tự ưu tiên: có tín hiệu tài liệu thì TÍNH, kể cả khi nằm trong nhóm `GIAY_MOI`**

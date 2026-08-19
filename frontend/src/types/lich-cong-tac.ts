@@ -80,6 +80,8 @@ export interface ISuKienLich {
 }
 
 export interface ISuKienChiTiet extends ISuKienLich {
+  /** Người tạo — giao diện dựa vào đây để ẩn/hiện nút Sửa, Xoá. */
+  created_by?: string | null;
   mo_ta?: string | null;
   thanh_phan_text?: string | null;
   ly_do_huy?: string | null;
@@ -131,4 +133,101 @@ export interface IThongKeLich {
 export interface IDanhMucLoai {
   ma: LoaiLich;
   ten: string;
+}
+
+// ─── Thống kê tài liệu họp (G4.6) ───────────────────────────────────────
+
+/**
+ * Năm mức tình trạng tài liệu, giữ đúng của lichkv8.
+ *
+ * `TAT_CA` là giá trị BỘ LỌC, không phải tình trạng của một dòng — dòng chỉ
+ * nhận ba mức cuối. `CO_GIAO_CHUAN_BI` cũng chỉ dùng để lọc (= đã gắn + thiếu).
+ */
+export type TinhTrangTaiLieu =
+  | 'TAT_CA'
+  | 'CO_GIAO_CHUAN_BI'
+  | 'DA_GAN_TAI_LIEU'
+  | 'THIEU_TAI_LIEU'
+  | 'CHUA_GIAO_CHUAN_BI';
+
+export interface IDongThongKeTaiLieu {
+  id: string;
+  ma_lich: string | null;
+  ngay: string | null;
+  gio_bat_dau: string | null;
+  tieu_de: string;
+  loai_lich: string | null;
+  trang_thai: string;
+  lanh_dao: string[];
+  chu_tri: string;
+  don_vi_chuan_bi: string | null;
+  so_van_ban: string | null;
+  /** Tổng số file đính kèm. */
+  so_tai_lieu: number;
+  /** Số file tính là tài liệu chuẩn bị — giấy mời thuần KHÔNG được tính. */
+  so_tai_lieu_chuan_bi: number;
+  so_giay_moi: number;
+  tinh_trang: TinhTrangTaiLieu;
+  tinh_trang_nhan: string;
+}
+
+export interface ITongHopTaiLieu {
+  tong: number;
+  CO_GIAO_CHUAN_BI: number;
+  DA_GAN_TAI_LIEU: number;
+  THIEU_TAI_LIEU: number;
+  CHUA_GIAO_CHUAN_BI: number;
+}
+
+export interface IBaoCaoTaiLieu {
+  dong: IDongThongKeTaiLieu[];
+  tong_hop: ITongHopTaiLieu;
+}
+
+export interface IDanhMucTinhTrang {
+  ma: TinhTrangTaiLieu;
+  ten: string;
+}
+
+// ─── Quản lý lịch (G4.3) ────────────────────────────────────────────────
+
+/**
+ * Dữ liệu ghi khi tạo hoặc sửa. Tạo thì các trường bắt buộc phải có; sửa thì
+ * chỉ gửi những trường thật sự đổi (backend dùng PATCH, `exclude_unset`).
+ */
+export interface ILichCongTacGhi {
+  tieu_de?: string;
+  loai_lich?: LoaiLich;
+  ngay_hop?: string;
+  ngay_ket_thuc?: string | null;
+  ngay_hien_thi?: string | null;
+  gio_bat_dau?: string;
+  gio_ket_thuc?: string | null;
+  dia_diem?: string | null;
+  mo_ta?: string | null;
+  trang_thai?: TrangThaiLich;
+  chu_toa_id?: string | null;
+  chu_tri_text?: string | null;
+  thanh_phan_text?: string | null;
+  don_vi_chuan_bi?: string | null;
+  so_van_ban?: string | null;
+  lanh_dao_lien_quan_ids?: string[];
+}
+
+export interface IQuyenLich {
+  /** Sửa được MỌI sự kiện. Người thường chỉ sửa được lịch mình tạo. */
+  la_quan_tri_lich: boolean;
+  cong_chuc_id: string;
+}
+
+export interface IDongNhatKy {
+  hanh_dong: string;
+  thoi_diem: string;
+  nguoi_thuc_hien: string | null;
+  chi_tiet: {
+    ma_lich?: string;
+    tieu_de?: string;
+    ly_do?: string;
+    thay_doi?: { truong: string; nhan: string; cu: string; moi: string }[];
+  } | null;
 }

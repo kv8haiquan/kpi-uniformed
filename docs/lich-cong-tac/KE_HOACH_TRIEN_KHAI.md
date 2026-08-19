@@ -409,23 +409,23 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
   - Lý do: bình luận V145 trong mã ghi rõ làm sai sẽ *"báo oan đơn vị chưa nộp tài liệu"*. 279/587 file mang nhóm `GIAY_MOI` → quy tắc này chi phối gần một nửa báo cáo
   - Viết test theo đúng các ca đã tinh chỉnh
 
-### G4.7 — Trực ban
+### G4.7 — Trực ban ✅ *19/08*
 
-- [ ] Bảng ma trận: hàng = ngày, cột = 8 trụ sở, ô = người trực (họ tên, chức vụ, SĐT)
-- [ ] Sắp xếp theo thứ tự chức vụ: CCT → PCCT → Trưởng/Chánh → Phó → Công chức
-- [ ] Lọc tuần trước / tuần này / tuần sau + khoảng ngày tuỳ chọn + theo đơn vị
-- [ ] Tab dữ liệu chi tiết
-- [ ] Nhập thủ công · sửa trực tiếp · nộp chính thức (`NHAP → DA_NOP`) · copy báo cáo · in · xuất Excel
-- [ ] 🔴 **Phân quyền phải THAY, không port**: hệ cũ dùng `isDutyAdmin_()` dò chuỗi trên họ tên + chức vụ + đơn vị gộp lại (`Mã.gs` dòng 4591) — ai có đơn vị chứa "Văn phòng" hoặc chức vụ chứa "lãnh đạo" đều thành quản trị toàn Chi cục. Thay bằng quyền chức năng thật:
+- [x] Bảng ma trận: hàng = ngày, cột = 8 trụ sở, ô = người trực (họ tên, chức vụ, SĐT)
+- [x] Sắp xếp theo thứ tự chức vụ: CCT → PCCT → Trưởng/Chánh → Phó → Công chức
+- [x] Lọc tuần trước / tuần này / tuần sau + khoảng ngày tuỳ chọn + theo đơn vị
+- [x] Tab dữ liệu chi tiết
+- [x] Nhập thủ công · sửa trực tiếp · nộp chính thức (`NHAP → DA_NOP`) · copy báo cáo · in · xuất Excel
+- [x] 🔴 **Phân quyền phải THAY, không port**: hệ cũ dùng `isDutyAdmin_()` dò chuỗi trên họ tên + chức vụ + đơn vị gộp lại (`Mã.gs` dòng 4591) — ai có đơn vị chứa "Văn phòng" hoặc chức vụ chứa "lãnh đạo" đều thành quản trị toàn Chi cục. Thay bằng quyền chức năng thật:
   - `truc_ban.xem` · `truc_ban.sua_don_vi_minh` · `truc_ban.sua_tat_ca` · `truc_ban.import` · `truc_ban.xoa`
   - Dựa trên `vai_tro` + `don_vi_id` khoá ngoại, không so khớp chuỗi
 
-### G4.8 — Import trực ban từ Excel
+### G4.8 — Import trực ban từ Excel ✅ *19/08*
 
-- [ ] Quy trình 2 bước: parse → **preview** → commit (không ghi thẳng)
-- [ ] Nhận diện linh hoạt biến thể tên cột (`GHI_CHU` / `Ghi chú` / `Ghi chu` / `NOTE` là cùng một cột)
-- [ ] Báo dòng hợp lệ / không hợp lệ trước khi ghi
-- [ ] 📎 **Mang file mẫu sang**: `docs/Lich Hop Cong Tac/Github/Mau_import_lich_truc_ban_HQKV8_v127.xlsx` → đặt làm file mẫu tải về trên nền tảng
+- [x] Quy trình 2 bước: parse → **preview** → commit (không ghi thẳng)
+- [x] Nhận diện linh hoạt biến thể tên cột (`GHI_CHU` / `Ghi chú` / `Ghi chu` / `NOTE` là cùng một cột)
+- [x] Báo dòng hợp lệ / không hợp lệ trước khi ghi
+- [x] 📎 **Mang file mẫu sang**: `docs/Lich Hop Cong Tac/Github/Mau_import_lich_truc_ban_HQKV8_v127.xlsx` → đặt làm file mẫu tải về trên nền tảng
 
 ### G4.9 — Màn hình đối soát tài liệu (dùng một lần)
 

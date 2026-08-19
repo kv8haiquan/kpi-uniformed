@@ -231,3 +231,88 @@ export interface IDongNhatKy {
     thay_doi?: { truong: string; nhan: string; cu: string; moi: string }[];
   } | null;
 }
+
+// ─── Trực ban (G4.7) ────────────────────────────────────────────────────
+
+export interface ITruSo {
+  id: string;
+  ma_tru_so: string;
+  ten_tru_so: string;
+  don_vi_id: string | null;
+  thu_tu: number;
+}
+
+export interface INguoiTruc {
+  id: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+  so_dien_thoai: string | null;
+  cong_chuc_id: string | null;
+  ca_truc: string;
+  loai_truc: string;
+  ghi_chu: string | null;
+  trang_thai: string;
+}
+
+export interface IOTruc {
+  tru_so_id: string;
+  nguoi: INguoiTruc[];
+  /** NHAP = còn sửa được; DA_NOP = đã chốt. */
+  trang_thai: string;
+  /** Đã nộp thì khoá — muốn sửa phải nhờ Văn phòng mở khoá. */
+  is_locked: boolean;
+  /** Người đang đăng nhập có sửa được ô này không. */
+  sua_duoc: boolean;
+}
+
+export interface IHangTruc {
+  ngay: string;
+  thu: string;
+  cuoi_tuan: boolean;
+  o: IOTruc[];
+}
+
+export interface IMaTranTruc {
+  tu_ngay: string;
+  den_ngay: string;
+  tru_so: ITruSo[];
+  hang: IHangTruc[];
+  la_quan_tri: boolean;
+}
+
+export interface ITrucBanGhi {
+  ngay_truc?: string;
+  tru_so_id?: string;
+  ho_ten?: string;
+  chuc_vu?: string | null;
+  so_dien_thoai?: string | null;
+  ca_truc?: string;
+  loai_truc?: string;
+  ghi_chu?: string | null;
+}
+
+// ─── Nhập trực ban từ Excel (G4.8) ──────────────────────────────────────
+
+export interface IDongNhapExcel {
+  dong: number;
+  ngay_truc: string | null;
+  ma_tru_so: string | null;
+  tru_so_id: string | null;
+  ten_tru_so: string | null;
+  ho_ten: string | null;
+  chuc_vu: string | null;
+  so_dien_thoai: string | null;
+  ca_truc: string;
+  loai_truc: string;
+  ghi_chu: string | null;
+  hop_le: boolean;
+  /** Lý do dòng này không dùng được — hiện thẳng cho người nhập sửa file. */
+  loi: string[];
+}
+
+export interface IKetQuaXemTruoc {
+  tong_dong: number;
+  so_hop_le: number;
+  so_loi: number;
+  dong: IDongNhapExcel[];
+}

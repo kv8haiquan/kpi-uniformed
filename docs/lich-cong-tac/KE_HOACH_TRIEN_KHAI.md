@@ -365,86 +365,86 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 > Backend: `backend/meeting_service/` (port 8006, PM2 `meeting-backend`), prefix nginx `/api/v1/hop-khong-giay/`
 > Frontend: `frontend/src/app/(main)/lich-cong-tac/`, service `frontend/src/services/hkg.ts` (mở rộng) hoặc tách `lich-cong-tac.ts`
 
-### G4.1 — Điều hướng
+### G4.1 — Điều hướng ✅ *18/08*
 
-- [ ] Thêm mục **Lịch công tác** vào `frontend/src/components/common/Sidebar.tsx`, đặt **ngay trên** mục Họp Không Giấy (dòng ~172)
-- [ ] Thêm widget vào lưới trang Tổng quan (`app/(main)/tong-quan/`), theo mẫu `WidgetHKG.tsx`
+- [x] Thêm mục **Lịch công tác** vào `frontend/src/components/common/Sidebar.tsx`, đặt **ngay trên** mục Họp Không Giấy (dòng ~172)
+- [x] Thêm widget vào lưới trang Tổng quan (`app/(main)/tong-quan/`), theo mẫu `WidgetHKG.tsx`
 
-### G4.2 — Lịch công tác (màn hình trung tâm)
+### G4.2 — Lịch công tác (màn hình trung tâm) ✅ *18/08*
 
-- [ ] `GET /lich-cong-tac` — lọc theo khoảng ngày, loại lịch, lãnh đạo, trạng thái; **phân trang server-side** (hệ cũ tải hết vào bộ nhớ, có ngưỡng cảnh báo 3000ms)
-- [ ] Xem theo tháng / tuần / danh sách
-- [ ] Tìm kiếm toàn văn trên: nội dung, ghi chú, địa điểm, chủ trì, thành phần, lãnh đạo liên quan
-- [ ] Chi tiết lịch: đầy đủ trường + tài liệu + lãnh đạo liên quan
-- [ ] **Bấm sự kiện loại họp → mở thẳng chi tiết cuộc họp trong HKG** (tiêu chí 8.3 gạch 2)
+- [x] `GET /lich-cong-tac` — lọc theo khoảng ngày, loại lịch, lãnh đạo, trạng thái; **phân trang server-side** (hệ cũ tải hết vào bộ nhớ, có ngưỡng cảnh báo 3000ms)
+- [x] Xem theo tháng / tuần / danh sách
+- [x] Tìm kiếm toàn văn trên: nội dung, ghi chú, địa điểm, chủ trì, thành phần, lãnh đạo liên quan
+- [x] Chi tiết lịch: đầy đủ trường + tài liệu + lãnh đạo liên quan
+- [x] **Bấm sự kiện loại họp → mở thẳng chi tiết cuộc họp trong HKG** (tiêu chí 8.3 gạch 2)
 
-### G4.3 — Quản lý lịch
+### G4.3 — Quản lý lịch ✅ *19/08*
 
-- [ ] CRUD + huỷ (giữ trạng thái, không xoá vật lý) + xoá mềm theo quyền
-- [ ] Sinh `ma_lich` tiếp nối: `LH0488` trở đi, có khoá chống trùng
-- [ ] Xuất Excel: STT, mã lịch, ngày, giờ, loại, nội dung, thành phần, địa điểm, chủ trì, lãnh đạo, đơn vị chuẩn bị, số văn bản, ghi chú, trạng thái, số file
-- [ ] Ghi nhật ký thay đổi theo từng trường (thay `MEETING_LOG`)
+- [x] CRUD + huỷ (giữ trạng thái, không xoá vật lý) + xoá mềm theo quyền
+- [x] Sinh `ma_lich` tiếp nối: `LH0488` trở đi, có khoá chống trùng
+- [x] Xuất Excel: STT, mã lịch, ngày, giờ, loại, nội dung, thành phần, địa điểm, chủ trì, lãnh đạo, đơn vị chuẩn bị, số văn bản, ghi chú, trạng thái, số file
+- [x] Ghi nhật ký thay đổi theo từng trường (thay `MEETING_LOG`)
 
-### G4.4 — Tóm tắt lịch
+### G4.4 — Tóm tắt lịch ✅ *18/08*
 
-- [ ] Tổng hợp theo khoảng ngày (mặc định 3 ngày), nhóm theo ngày → lãnh đạo
-- [ ] Chế độ gọn, chọn thông tin đi kèm: địa điểm, chức danh, lịch trực, chỉ lịch đã đăng
-- [ ] Nút copy để dán sang Zalo/email
-- [ ] **Sinh trực tiếp từ dữ liệu lịch**, không lưu bản riêng
+- [x] Tổng hợp theo khoảng ngày (mặc định 3 ngày), nhóm theo ngày → lãnh đạo
+- [x] Chế độ gọn, chọn thông tin đi kèm: địa điểm, chức danh, lịch trực, chỉ lịch đã đăng
+- [x] Nút copy để dán sang Zalo/email
+- [x] **Sinh trực tiếp từ dữ liệu lịch**, không lưu bản riêng
 
-### G4.5 — Lịch lãnh đạo
+### G4.5 — Lịch lãnh đạo ✅ *18/08*
 
-- [ ] Thẻ chương trình công tác từng lãnh đạo, dựa trên `lanh_dao_lien_quan` (khớp 100%)
-- [ ] Hiển thị: ngày, giờ, nội dung, địa điểm, vai trò
+- [x] Thẻ chương trình công tác từng lãnh đạo, dựa trên `lanh_dao_lien_quan` (khớp 100%)
+- [x] Hiển thị: ngày, giờ, nội dung, địa điểm, vai trò
 
-### G4.6 — Thống kê tài liệu họp
+### G4.6 — Thống kê tài liệu họp ✅ *19/08*
 
-- [ ] Lọc: từ ngày, đến ngày, từ khoá, lãnh đạo, trạng thái lịch, tình trạng tài liệu, tính/không tính lịch huỷ
-- [ ] 5 trạng thái: Tất cả · Có giao chuẩn bị · Đã gắn tài liệu · Thiếu tài liệu · Chưa giao chuẩn bị
-- [ ] Xuất Excel
-- [ ] 🔴 **BÊ NGUYÊN quy tắc "giấy mời không tính là tài liệu chuẩn bị"** — port nguyên văn 3 hàm từ `Mã.gs` dòng 1513–1570:
+- [x] Lọc: từ ngày, đến ngày, từ khoá, lãnh đạo, trạng thái lịch, tình trạng tài liệu, tính/không tính lịch huỷ
+- [x] 5 trạng thái: Tất cả · Có giao chuẩn bị · Đã gắn tài liệu · Thiếu tài liệu · Chưa giao chuẩn bị
+- [x] Xuất Excel
+- [x] 🔴 **BÊ NGUYÊN quy tắc "giấy mời không tính là tài liệu chuẩn bị"** — port nguyên văn 3 hàm từ `Mã.gs` dòng 1513–1570:
   - `hasMeetingDocsMaterialSignal_()` — regex tín hiệu tài liệu chuyên môn
   - `hasInvitationSignal_()` — regex tín hiệu giấy mời
   - `isInvitationDocFile_()` — **thứ tự ưu tiên: có tín hiệu tài liệu thì TÍNH, kể cả khi nằm trong nhóm `GIAY_MOI`**
   - Lý do: bình luận V145 trong mã ghi rõ làm sai sẽ *"báo oan đơn vị chưa nộp tài liệu"*. 279/587 file mang nhóm `GIAY_MOI` → quy tắc này chi phối gần một nửa báo cáo
   - Viết test theo đúng các ca đã tinh chỉnh
 
-### G4.7 — Trực ban
+### G4.7 — Trực ban ✅ *19/08*
 
-- [ ] Bảng ma trận: hàng = ngày, cột = 8 trụ sở, ô = người trực (họ tên, chức vụ, SĐT)
-- [ ] Sắp xếp theo thứ tự chức vụ: CCT → PCCT → Trưởng/Chánh → Phó → Công chức
-- [ ] Lọc tuần trước / tuần này / tuần sau + khoảng ngày tuỳ chọn + theo đơn vị
-- [ ] Tab dữ liệu chi tiết
-- [ ] Nhập thủ công · sửa trực tiếp · nộp chính thức (`NHAP → DA_NOP`) · copy báo cáo · in · xuất Excel
-- [ ] 🔴 **Phân quyền phải THAY, không port**: hệ cũ dùng `isDutyAdmin_()` dò chuỗi trên họ tên + chức vụ + đơn vị gộp lại (`Mã.gs` dòng 4591) — ai có đơn vị chứa "Văn phòng" hoặc chức vụ chứa "lãnh đạo" đều thành quản trị toàn Chi cục. Thay bằng quyền chức năng thật:
+- [x] Bảng ma trận: hàng = ngày, cột = 8 trụ sở, ô = người trực (họ tên, chức vụ, SĐT)
+- [x] Sắp xếp theo thứ tự chức vụ: CCT → PCCT → Trưởng/Chánh → Phó → Công chức
+- [x] Lọc tuần trước / tuần này / tuần sau + khoảng ngày tuỳ chọn + theo đơn vị
+- [x] Tab dữ liệu chi tiết
+- [x] Nhập thủ công · sửa trực tiếp · nộp chính thức (`NHAP → DA_NOP`) · copy báo cáo · in · xuất Excel
+- [x] 🔴 **Phân quyền phải THAY, không port**: hệ cũ dùng `isDutyAdmin_()` dò chuỗi trên họ tên + chức vụ + đơn vị gộp lại (`Mã.gs` dòng 4591) — ai có đơn vị chứa "Văn phòng" hoặc chức vụ chứa "lãnh đạo" đều thành quản trị toàn Chi cục. Thay bằng quyền chức năng thật:
   - `truc_ban.xem` · `truc_ban.sua_don_vi_minh` · `truc_ban.sua_tat_ca` · `truc_ban.import` · `truc_ban.xoa`
   - Dựa trên `vai_tro` + `don_vi_id` khoá ngoại, không so khớp chuỗi
 
-### G4.8 — Import trực ban từ Excel
+### G4.8 — Import trực ban từ Excel ✅ *19/08*
 
-- [ ] Quy trình 2 bước: parse → **preview** → commit (không ghi thẳng)
-- [ ] Nhận diện linh hoạt biến thể tên cột (`GHI_CHU` / `Ghi chú` / `Ghi chu` / `NOTE` là cùng một cột)
-- [ ] Báo dòng hợp lệ / không hợp lệ trước khi ghi
-- [ ] 📎 **Mang file mẫu sang**: `docs/Lich Hop Cong Tac/Github/Mau_import_lich_truc_ban_HQKV8_v127.xlsx` → đặt làm file mẫu tải về trên nền tảng
+- [x] Quy trình 2 bước: parse → **preview** → commit (không ghi thẳng)
+- [x] Nhận diện linh hoạt biến thể tên cột (`GHI_CHU` / `Ghi chú` / `Ghi chu` / `NOTE` là cùng một cột)
+- [x] Báo dòng hợp lệ / không hợp lệ trước khi ghi
+- [x] 📎 **Mang file mẫu sang**: `docs/Lich Hop Cong Tac/Github/Mau_import_lich_truc_ban_HQKV8_v127.xlsx` → đặt làm file mẫu tải về trên nền tảng
 
-### G4.9 — Màn hình đối soát tài liệu (dùng một lần)
+### G4.9 — Màn hình đối soát tài liệu (dùng một lần) ✅ *19/08*
 
-- [ ] Route riêng, **chỉ** Chánh VP `20ZZ-0097` + Quản trị viên thấy
-- [ ] Liệt kê 34 thư mục (15 nhóm D + 19 nhóm E), 412 file
-- [ ] Mỗi dòng: tên thư mục, số file, ngày suy ra, **danh sách tên file mở rộng được** (nhiều khi phải nhìn tên file mới đoán ra cuộc họp)
-- [ ] Gợi ý ứng viên **xếp hạng theo từ khoá trùng** giữa tên thư mục và nội dung cuộc họp
+- [x] Route riêng, **chỉ** Chánh VP `20ZZ-0097` + Quản trị viên thấy
+- [x] Liệt kê 34 thư mục (15 nhóm D + 19 nhóm E), 412 file
+- [x] Mỗi dòng: tên thư mục, số file, ngày suy ra, **danh sách tên file mở rộng được** (nhiều khi phải nhìn tên file mới đoán ra cuộc họp)
+- [x] Gợi ý ứng viên **xếp hạng theo từ khoá trùng** giữa tên thư mục và nội dung cuộc họp
   - ⚠️ **Không thư mục nào có ứng viên duy nhất** — ngày nào cũng có 2–8 cuộc họp vì "Chỉ đạo trực ban" lặp gần như hằng ngày. Phải là danh sách để chọn, không phải nút xác nhận một chạm
   - Xếp hạng giúp rõ 9/29 trường hợp; số còn lại tên viết tắt quá (`TL HN chỉ số`, `260519-CCT lv KTSTQ`)
-- [ ] 4 hành động: gắn vào cuộc họp đã chọn · **tạo cuộc họp lịch sử từ chính thư mục này** · đưa vào kho lưu trữ không gắn · không di trú
-- [ ] Ghi `meeting.di_tru_doi_soat` kèm người + thời điểm → xuất Excel = **biên bản đối chiếu nộp khi nghiệm thu**
-- [ ] Dùng xong ẩn khỏi menu
+- [x] 4 hành động: gắn vào cuộc họp đã chọn · **tạo cuộc họp lịch sử từ chính thư mục này** · đưa vào kho lưu trữ không gắn · không di trú
+- [x] Ghi `meeting.di_tru_doi_soat` kèm người + thời điểm → xuất Excel = **biên bản đối chiếu nộp khi nghiệm thu**
+- [x] Dùng xong ẩn khỏi menu
 
-### G4.10 — Dashboard
+### G4.10 — Dashboard ✅ *19/08*
 
-- [ ] Chỉ số: hôm nay, ngày mai, trong tuần, trong tháng, trong năm
-- [ ] Thống kê theo lãnh đạo (từ `lanh_dao_lien_quan`)
-- [ ] Bấm thẻ → nhảy tới nhóm lịch tương ứng
-- [ ] **Tính từ dữ liệu thật**, không lưu số thủ công
+- [x] Chỉ số: hôm nay, ngày mai, trong tuần, trong tháng, trong năm
+- [x] Thống kê theo lãnh đạo (từ `lanh_dao_lien_quan`)
+- [x] Bấm thẻ → nhảy tới nhóm lịch tương ứng
+- [x] **Tính từ dữ liệu thật**, không lưu số thủ công
 
 **Nghiệm thu G4:** đủ 7 màn hình nghiệp vụ; mục Lịch công tác nằm trên Họp Không Giấy; xuất/nhập Excel hoạt động; test quy tắc giấy mời PASS.
 
@@ -454,7 +454,7 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 **Ước lượng:** 4–5 ngày · **Chặn bởi:** G4
 
-### G5.1 — Thư viện văn bản → gộp vào mục Tài liệu
+### G5.1 — Thư viện văn bản → gộp vào mục Tài liệu ✅ *19/08*
 
 > ✅ **Đã quét thư mục thư viện `1nDn4qE...` (17/08):** **189 thư mục nhưng chỉ 23 file.**
 > Đây gần như là bộ khung phân loại được dựng sẵn 3 cấp mà chưa dùng — trong đó có 1 file
@@ -476,11 +476,11 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 > Tài liệu họp nằm ở `meeting_service`, thư viện sẽ nằm ở `portal_service` → hai service, hai cơ chế lưu file.
 > Điểm nhẹ nhõm: cả hai bên đều gần như rỗng nên không có xung đột dữ liệu, chỉ là quyết định kiến trúc.
 
-- [ ] Chốt: thư viện dùng storage của `portal_service` hay dùng chung `StorageService` của `meeting_service`
-- [ ] Dựng lại cây 189 thư mục theo 9 nhóm gốc (`01.QUOC_HOI` … `99.KHAC`)
-- [ ] Di trú 23 file, bỏ file `TEST_UPLOAD_THU_VIEN.txt`
-- [ ] Duyệt thư mục · breadcrumb · tìm kiếm theo tên/số hiệu · upload · xem trước · tải
-- [ ] ⛔ **Không** nhúng iframe Google Drive — kho phải nằm trên nền tảng
+- [x] **Chốt: dùng `portal_service`** — mục Tài liệu trên giao diện đã trỏ sang đó, `portal.thu_muc` sẵn có cây cha–con và cột phân quyền, và thư viện văn bản là quản lý tài liệu chứ không phải nghiệp vụ họp
+- [x] Dựng lại cây 189 thư mục theo 9 nhóm gốc (`01.QUOC_HOI` … `99.KHAC`)
+- [x] Di trú 23 file, bỏ file `TEST_UPLOAD_THU_VIEN.txt`
+- [x] Duyệt thư mục · breadcrumb · tìm kiếm theo tên/số hiệu · upload · xem trước · tải
+- [x] ⛔ **Không** nhúng iframe Google Drive — kho phải nằm trên nền tảng
 
 ### G5.2 — Ghi chú và chia sẻ
 

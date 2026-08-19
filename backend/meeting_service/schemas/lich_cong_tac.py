@@ -69,6 +69,7 @@ class LichCongTacChiTiet(LichCongTacItem):
     mo_ta: Optional[str] = None
     thanh_phan_text: Optional[str] = None
     ly_do_huy: Optional[str] = None
+    created_by: Optional[UUID] = None
 
 
 class LichCongTacCreate(BaseModel):

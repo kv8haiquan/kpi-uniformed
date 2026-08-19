@@ -12,13 +12,17 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
+  Ban,
   Building2,
   CalendarDays,
   Clock,
   ExternalLink,
   FileText,
+  History,
   Loader2,
   MapPin,
+  Pencil,
+  Trash2,
   User,
   Users,
 } from 'lucide-react';
@@ -27,10 +31,12 @@ import { lichCongTacApi } from '@/services/lich-cong-tac';
 import { errMsg } from '@/lib/hkg-error';
 import {
   NHAN_TRANG_THAI,
+  type IDongNhatKy,
   type ISuKienChiTiet,
   type LoaiLich,
   type TrangThaiLich,
 } from '@/types/lich-cong-tac';
+import FormLich from '../components/FormLich';
 
 const MAU_LOAI: Record<LoaiLich, string> = {
   HOP: 'bg-blue-100 text-blue-800',
@@ -74,6 +80,11 @@ export default function ChiTietSuKienPage() {
   const [dangTai, setDangTai] = useState(true);
   const [loi, setLoi] = useState<string | null>(null);
 
+  const [moForm, setMoForm] = useState(false);
+  const [suaDuoc, setSuaDuoc] = useState(false);
+  const [nhatKy, setNhatKy] = useState<IDongNhatKy[] | null>(null);
+  const [dangXuLy, setDangXuLy] = useState(false);
+
   useEffect(() => {
     const chay = async () => {
       setDangTai(true);
@@ -88,6 +99,60 @@ export default function ChiTietSuKienPage() {
     };
     void chay();
   }, [id]);
+
+  // Quyền sửa: quản trị lịch sửa được tất cả, người thường chỉ sửa lịch mình
+  // tạo. Backend mới là nơi quyết định — chỗ này chỉ để ẩn nút cho đỡ rối.
+  useEffect(() => {
+    if (!sk || sk.nguon !== 'LICH_CONG_TAC') {
+      setSuaDuoc(false);
+      return;
+    }
+    lichCongTacApi
+      .quyenCuaToi()
+      .then((q) => setSuaDuoc(q.la_quan_tri_lich || q.cong_chuc_id === sk.created_by))
+      .catch(() => setSuaDuoc(false));
+  }, [sk]);
+
+  const huyLich = async () => {
+    const ly_do = window.prompt('Lý do huỷ lịch này?');
+    if (!ly_do?.trim()) return;
+    setDangXuLy(true);
+    try {
+      setSk(await lichCongTacApi.huy(id, ly_do.trim()));
+    } catch (e) {
+      setLoi(errMsg(e, 'Không huỷ được lịch'));
+    } finally {
+      setDangXuLy(false);
+    }
+  };
+
+  const xoaLich = async () => {
+    if (
+      !window.confirm(
+        'Xoá lịch này khỏi danh sách?\n\n' +
+          'Muốn giữ lại để tra cứu thì bấm Huỷ lịch thay vì Xoá.',
+      )
+    ) {
+      return;
+    }
+    setDangXuLy(true);
+    try {
+      await lichCongTacApi.xoa(id);
+      router.push('/lich-cong-tac');
+    } catch (e) {
+      setLoi(errMsg(e, 'Không xoá được lịch'));
+      setDangXuLy(false);
+    }
+  };
+
+  const xemNhatKy = async () => {
+    if (nhatKy) return setNhatKy(null);
+    try {
+      setNhatKy(await lichCongTacApi.nhatKy(id));
+    } catch (e) {
+      setLoi(errMsg(e, 'Không tải được nhật ký'));
+    }
+  };
 
   if (dangTai) {
     return (
@@ -129,15 +194,59 @@ export default function ChiTietSuKienPage() {
           Lịch công tác
         </Link>
 
-        {sk.co_the_mo_hkg && (
-          <Link
-            href={`/hop-khong-giay/chi-tiet/${sk.id}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
+        <div className="flex flex-wrap gap-2">
+          {suaDuoc && (
+            <>
+              <button
+                type="button"
+                onClick={() => setMoForm(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+              >
+                <Pencil className="w-4 h-4" />
+                Sửa
+              </button>
+              {sk.trang_thai !== 'HUY' && (
+                <button
+                  type="button"
+                  onClick={huyLich}
+                  disabled={dangXuLy}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-sm text-amber-800 hover:bg-amber-50 disabled:opacity-40"
+                >
+                  <Ban className="w-4 h-4" />
+                  Huỷ lịch
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={xoaLich}
+                disabled={dangXuLy}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-40"
+              >
+                <Trash2 className="w-4 h-4" />
+                Xoá
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={xemNhatKy}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
           >
-            <ExternalLink className="w-4 h-4" />
-            Mở trong Họp Không Giấy
-          </Link>
-        )}
+            <History className="w-4 h-4" />
+            Nhật ký
+          </button>
+
+          {sk.co_the_mo_hkg && (
+            <Link
+              href={`/hop-khong-giay/chi-tiet/${sk.id}`}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Mở trong Họp Không Giấy
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="rounded-lg border border-gray-200 bg-white p-5">
@@ -256,6 +365,60 @@ export default function ChiTietSuKienPage() {
           </Dong>
         </div>
       </div>
+
+      {nhatKy && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <h2 className="font-semibold text-gray-900 mb-3">Nhật ký thay đổi</h2>
+          {nhatKy.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Chưa có thay đổi nào được ghi nhận.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {nhatKy.map((n, i) => (
+                <li key={i} className="text-sm border-l-2 border-gray-200 pl-3">
+                  <div className="text-gray-500">
+                    {new Date(n.thoi_diem).toLocaleString('vi-VN')}
+                    {n.nguoi_thuc_hien && <> — {n.nguoi_thuc_hien}</>}
+                  </div>
+                  <div className="font-medium text-gray-900">
+                    {{
+                      TAO_LICH: 'Tạo lịch',
+                      SUA_LICH: 'Sửa lịch',
+                      HUY_LICH: 'Huỷ lịch',
+                      XOA_LICH: 'Xoá lịch',
+                    }[n.hanh_dong] ?? n.hanh_dong}
+                  </div>
+                  {n.chi_tiet?.ly_do && (
+                    <div className="text-gray-700">Lý do: {n.chi_tiet.ly_do}</div>
+                  )}
+                  {n.chi_tiet?.thay_doi?.map((t) => (
+                    <div key={t.truong} className="text-gray-700">
+                      {t.nhan}:{' '}
+                      <span className="line-through text-gray-400">
+                        {t.cu || '(trống)'}
+                      </span>{' '}
+                      → <span>{t.moi || '(trống)'}</span>
+                    </div>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {moForm && (
+        <FormLich
+          banGhi={sk}
+          onDong={() => setMoForm(false)}
+          onXong={(moi) => {
+            setSk(moi);
+            setMoForm(false);
+            setNhatKy(null);
+          }}
+        />
+      )}
     </div>
   );
 }

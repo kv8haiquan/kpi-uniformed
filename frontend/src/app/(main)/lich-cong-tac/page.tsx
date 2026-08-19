@@ -13,20 +13,24 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Download,
   ExternalLink,
   FileText,
   List,
   Loader2,
   MapPin,
+  Plus,
   Search,
   Users,
 } from 'lucide-react';
 
 import { lichCongTacApi } from '@/services/lich-cong-tac';
+import FormLich from './components/FormLich';
 import { errMsg } from '@/lib/hkg-error';
 import {
   NHAN_LOAI_LICH,
@@ -71,7 +75,18 @@ function chuTri(sk: ISuKienLich): string {
 
 export default function LichCongTacPage() {
   const homNay = useMemo(() => new Date(), []);
-  const [cheDo, setCheDo] = useState<'thang' | 'danh-sach'>('thang');
+
+  // Trang Tổng quan trỏ về đây kèm khoảng ngày trên URL ("hôm nay", "trong
+  // tuần"…). Đọc một lần lúc mở trang; sau đó người dùng đổi bộ lọc thì URL
+  // không đổi theo — giữ URL đồng bộ hai chiều chỉ thêm phức tạp mà không ai
+  // cần chia sẻ đường dẫn đã lọc.
+  const qs = useSearchParams();
+  const qsTuNgay = qs.get('tu-ngay') ?? '';
+  const qsDenNgay = qs.get('den-ngay') ?? '';
+
+  const [cheDo, setCheDo] = useState<'thang' | 'danh-sach'>(
+    qs.get('che-do') === 'danh-sach' ? 'danh-sach' : 'thang',
+  );
   const [nam, setNam] = useState(homNay.getFullYear());
   const [thang, setThang] = useState(homNay.getMonth() + 1);
 
@@ -82,9 +97,16 @@ export default function LichCongTacPage() {
 
   const [dangTai, setDangTai] = useState(true);
   const [loi, setLoi] = useState<string | null>(null);
-  const [locLoai, setLocLoai] = useState<LoaiLich | ''>('');
+  const [locLoai, setLocLoai] = useState<LoaiLich | ''>(
+    (qs.get('loai-lich') as LoaiLich | null) ?? '',
+  );
+  const [tuNgay, setTuNgay] = useState(qsTuNgay);
+  const [denNgay, setDenNgay] = useState(qsDenNgay);
   const [tuKhoa, setTuKhoa] = useState('');
   const [tuKhoaGui, setTuKhoaGui] = useState('');
+
+  const [moForm, setMoForm] = useState(false);
+  const [dangXuat, setDangXuat] = useState(false);
 
   const soDong = 30;
 
@@ -102,6 +124,11 @@ export default function LichCongTacPage() {
         const resp = await lichCongTacApi.danhSach({
           'loai-lich': locLoai || undefined,
           'tim-kiem': tuKhoaGui || undefined,
+          'tu-ngay': tuNgay || undefined,
+          'den-ngay': denNgay || undefined,
+          // Danh sách xếp ngày gần nhất lên đầu. Tăng dần là mở ra thấy tháng
+          // 3 — dữ liệu cũ nhất — trong khi việc cần xem nằm quanh hôm nay.
+          'moi-truoc': true,
           trang,
           'so-dong': soDong,
         });
@@ -113,7 +140,7 @@ export default function LichCongTacPage() {
     } finally {
       setDangTai(false);
     }
-  }, [cheDo, nam, thang, locLoai, tuKhoaGui, trang]);
+  }, [cheDo, nam, thang, locLoai, tuKhoaGui, tuNgay, denNgay, trang]);
 
   useEffect(() => {
     void tai();
@@ -148,6 +175,32 @@ export default function LichCongTacPage() {
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
       d.getDate(),
     ).padStart(2, '0')}`;
+
+  /** Xuất đúng phạm vi đang xem: chế độ tháng thì cả tháng, danh sách thì
+   *  theo bộ lọc và từ khoá hiện tại. */
+  const xuatExcel = async () => {
+    setDangXuat(true);
+    setLoi(null);
+    try {
+      const cuoiThang = new Date(nam, thang, 0).getDate();
+      await lichCongTacApi.xuatExcel(
+        cheDo === 'thang'
+          ? {
+              'tu-ngay': `${nam}-${String(thang).padStart(2, '0')}-01`,
+              'den-ngay': `${nam}-${String(thang).padStart(2, '0')}-${cuoiThang}`,
+              'loai-lich': locLoai || undefined,
+            }
+          : {
+              'loai-lich': locLoai || undefined,
+              'tim-kiem': tuKhoaGui || undefined,
+            },
+      );
+    } catch (e) {
+      setLoi(errMsg(e, 'Không xuất được Excel'));
+    } finally {
+      setDangXuat(false);
+    }
+  };
 
   const tongTrang = Math.max(1, Math.ceil(tong / soDong));
 
@@ -198,6 +251,30 @@ export default function LichCongTacPage() {
               </option>
             ))}
           </select>
+
+          <button
+            type="button"
+            onClick={() => setMoForm(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
+          >
+            <Plus className="w-4 h-4" />
+            Thêm lịch
+          </button>
+
+          <button
+            type="button"
+            onClick={xuatExcel}
+            disabled={dangXuat}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-40"
+            title="Xuất đúng phạm vi đang xem"
+          >
+            {dangXuat ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Xuất Excel
+          </button>
         </div>
 
         {cheDo === 'thang' ? (
@@ -259,6 +336,23 @@ export default function LichCongTacPage() {
           </form>
         )}
       </div>
+
+      {cheDo === 'danh-sach' && (tuNgay || denNgay) && (
+        <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-900">
+          Đang xem lịch từ <b>{tuNgay || '…'}</b> đến <b>{denNgay || '…'}</b>
+          <button
+            type="button"
+            onClick={() => {
+              setTuNgay('');
+              setDenNgay('');
+              setTrang(1);
+            }}
+            className="ml-3 text-blue-700 hover:underline"
+          >
+            bỏ lọc khoảng ngày
+          </button>
+        </div>
+      )}
 
       {loi && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -443,6 +537,16 @@ export default function LichCongTacPage() {
             </div>
           )}
         </>
+      )}
+
+      {moForm && (
+        <FormLich
+          onDong={() => setMoForm(false)}
+          onXong={() => {
+            setMoForm(false);
+            void tai();
+          }}
+        />
       )}
     </div>
   );

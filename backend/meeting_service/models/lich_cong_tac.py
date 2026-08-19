@@ -10,8 +10,10 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, Text, text
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
+from sqlalchemy import (
+    Boolean, Date, ForeignKey, Integer, SmallInteger, String, Text, func, text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from meeting_service.models.base import Base
@@ -169,5 +171,86 @@ class DiTruDoiSoat(Base):
     thoi_diem_quyet_dinh: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True)
     ghi_chu: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Tên từng file trong thư mục — màn hình đối soát cần để đoán ra cuộc họp
+    # khi tên thư mục viết tắt quá (migration meeting_022).
+    danh_sach_file: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)
+
+
+class GhiChu(Base):
+    """Ghi chú cá nhân — G5.2, thay `MEETING_NOTE` của lichkv8.
+
+    Gắn cuộc họp hoặc đứng độc lập, nên `cuoc_hop_id` để rỗng được.
+    """
+
+    __tablename__ = "ghi_chu"
+    __table_args__ = {"schema": "meeting"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    cuoc_hop_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("meeting.cuoc_hop.id", ondelete="CASCADE"),
+        nullable=True)
+    tieu_de: Mapped[str] = mapped_column(String(300), nullable=False)
+    noi_dung: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cong_chuc_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=False)
+    is_ghim: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("FALSE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("FALSE"), nullable=False)
+
+
+class GhiChuChiaSe(Base):
+    """Một lượt chia sẻ ghi chú cho một người, kèm trạng thái đã đọc."""
+
+    __tablename__ = "ghi_chu_chia_se"
+    __table_args__ = {"schema": "meeting"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    ghi_chu_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("meeting.ghi_chu.id", ondelete="CASCADE"),
+        nullable=False)
+    nguoi_gui_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=False)
+    nguoi_nhan_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=False)
+    loi_nhan: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    da_doc: Mapped[bool] = mapped_column(
+        Boolean, server_default=text("FALSE"), nullable=False)
+    thoi_diem_doc: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DanhGiaCuocHop(Base):
+    """Chấm điểm công tác chuẩn bị cuộc họp — G5.3, thay `MEETING_RATING`.
+
+    Mỗi người một điểm cho một cuộc họp (ràng buộc duy nhất trong CSDL); chấm
+    lại là ghi đè chứ không thêm dòng.
+    """
+
+    __tablename__ = "danh_gia_cuoc_hop"
+    __table_args__ = {"schema": "meeting"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    cuoc_hop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("meeting.cuoc_hop.id", ondelete="CASCADE"),
+        nullable=False)
+    cong_chuc_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("public.cong_chuc.id"), nullable=False)
+    diem: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    ghi_chu: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)

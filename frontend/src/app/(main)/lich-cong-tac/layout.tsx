@@ -7,17 +7,25 @@
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
+import { doiSoatApi } from '@/services/doi-soat';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { getPlatformRolesFromToken, userCanAccessHkg } from '@/lib/jwt-claims';
 
 const TAB = [
   { href: '/lich-cong-tac', nhan: 'Lịch' },
+  { href: '/lich-cong-tac/tong-quan', nhan: 'Tổng quan' },
   { href: '/lich-cong-tac/tom-tat', nhan: 'Tóm tắt lịch' },
+  { href: '/lich-cong-tac/truc-ban', nhan: 'Trực ban' },
+  { href: '/lich-cong-tac/thong-ke-tai-lieu', nhan: 'Thống kê tài liệu' },
 ];
+
+// Đối soát là màn hình DÙNG MỘT LẦN của đợt chuyển đổi, chỉ Chánh Văn phòng
+// và Quản trị viên thấy. Xong việc thì xoá cả mục này lẫn thư mục doi-soat/.
+const TAB_DOI_SOAT = { href: '/lich-cong-tac/doi-soat', nhan: 'Đối soát di trú' };
 
 export default function LichCongTacLayout({
   children,
@@ -27,6 +35,7 @@ export default function LichCongTacLayout({
   const router = useRouter();
   const pathname = usePathname();
   const { user, isAuthenticated, isLoading } = useAuthStore();
+  const [thayDoiSoat, setThayDoiSoat] = useState(false);
 
   useEffect(() => {
     if (isLoading) return;
@@ -45,6 +54,16 @@ export default function LichCongTacLayout({
     }
   }, [isAuthenticated, isLoading, user, router, pathname]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    doiSoatApi
+      .quyen()
+      .then((q) => setThayDoiSoat(q.duoc_xem))
+      .catch(() => setThayDoiSoat(false));
+  }, [isAuthenticated]);
+
+  const tab = thayDoiSoat ? [...TAB, TAB_DOI_SOAT] : TAB;
+
   return (
     <div className="min-h-screen p-6 bg-gray-50">
       <header className="mb-4">
@@ -55,7 +74,7 @@ export default function LichCongTacLayout({
       </header>
 
       <nav className="mb-4 flex gap-1 border-b border-gray-200 print:hidden">
-        {TAB.map((t) => {
+        {tab.map((t) => {
           const dangO =
             t.href === '/lich-cong-tac'
               ? pathname === t.href

@@ -1,0 +1,123 @@
+# =============================================================================
+# dev.kpihaiquan.vn — cấu hình nginx cho MÔI TRƯỜNG PHÁT TRIỂN
+# =============================================================================
+# CHƯA KÍCH HOẠT. Đây là bản mẫu, xem docs/van-hanh/HUONG_DAN_DNS_DEV.md
+# để biết thứ tự các bước (DNS → mật khẩu → nginx → chứng chỉ).
+#
+# Chép sang /etc/nginx/sites-available/kpi-dev rồi tạo symlink sang
+# sites-enabled khi đã làm xong bước DNS.
+#
+# ⚠️ Trỏ vào cổng 9000–9007 và 3001 (dev), KHÔNG phải 8000–8007 và 3000 (prod).
+#    Nhầm cổng ở đây nghĩa là dev.kpihaiquan.vn phục vụ dữ liệu production.
+# =============================================================================
+
+# =============================================================================
+# XUNG ĐỘT `Authorization`: Basic của nginx vs Bearer của ứng dụng
+# =============================================================================
+# HTTP chỉ có MỘT tiêu đề `Authorization`. Sau khi đăng nhập, ứng dụng gắn
+# `Authorization: Bearer <JWT>` vào mọi lệnh gọi API — đè mất
+# `Authorization: Basic` mà trình duyệt vẫn tự gửi. nginx không thấy mật khẩu,
+# trả 401 kèm `WWW-Authenticate: Basic`, trình duyệt bật lại hộp đăng nhập.
+# Triệu chứng: đăng nhập xong bị hỏi mật khẩu liên tục, mỗi lệnh gọi API một lần.
+#
+# Cách xử lý: request nào đã mang Bearer thì bỏ qua basic-auth — JWT của ứng
+# dụng kiểm nó rồi, đúng như trên prod. Request không có Bearer (trang HTML,
+# lệnh đăng nhập) vẫn phải qua mật khẩu.
+#
+# ⚠️ ĐÁNH ĐỔI: API dev do đó có thể gọi từ Internet nếu gửi kèm Bearer bất kỳ.
+#    Token sai vẫn bị ứng dụng từ chối, nhưng lớp mật khẩu không còn che API.
+#    Muốn chặt lại thì thêm giới hạn theo IP — xem HUONG_DAN_DNS_DEV.md mục 2.
+map $http_authorization $vung_bao_ve_dev {
+    default        "Moi truong phat trien — chi noi bo";
+    "~*^Bearer\s"  off;
+}
+
+server {
+    server_name dev.kpihaiquan.vn;
+
+    client_max_body_size 500M;
+
+    # =========================================================================
+    # BẢO VỆ — bắt buộc, không được bỏ
+    # =========================================================================
+    # Môi trường dev chứa bản sao dữ liệu thật của 549 công chức và giao diện
+    # đang làm dở. Không có lớp này thì bất kỳ ai trên Internet cũng vào được.
+    auth_basic $vung_bao_ve_dev;
+    auth_basic_user_file /etc/nginx/.htpasswd-dev;
+
+    # Không cho công cụ tìm kiếm lập chỉ mục.
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+
+    # Nhãn nhận biết, tránh nhầm với prod khi mở nhiều tab.
+    add_header X-Moi-Truong "DEV" always;
+
+    # =========================================================================
+    # API — cổng dev 9000–9007
+    # =========================================================================
+    location /api/v1/lms/      { proxy_pass http://localhost:9001; include /etc/nginx/snippets/dev-proxy.conf; }
+    location /api/v1/chi-tieu/ { proxy_pass http://localhost:9007; include /etc/nginx/snippets/dev-proxy.conf; }
+    location /api/forum/v1/    { proxy_pass http://localhost:9002; include /etc/nginx/snippets/dev-proxy.conf; }
+    location /api/legal/v1/    { proxy_pass http://localhost:9003; include /etc/nginx/snippets/dev-proxy.conf; }
+    location /api/portal/v1/   { proxy_pass http://localhost:9004/api/v1/; include /etc/nginx/snippets/dev-proxy.conf; }
+    location /api/common/      { proxy_pass http://localhost:9005/api/common/; include /etc/nginx/snippets/dev-proxy.conf; }
+
+    location /api/v1/hop-khong-giay/ {
+        proxy_pass http://localhost:9006;
+        include /etc/nginx/snippets/dev-proxy.conf;
+    }
+
+    location /ws/hop-khong-giay/ {
+        proxy_pass http://localhost:9006;
+        include /etc/nginx/snippets/dev-proxy.conf;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+    }
+
+    # Đặt SAU các location cụ thể hơn ở trên.
+    location /api {
+        proxy_pass http://localhost:9000/api;
+        include /etc/nginx/snippets/dev-proxy.conf;
+    }
+
+    # =========================================================================
+    # FRONTEND — cổng 3001
+    # =========================================================================
+    # Font và gói mã tĩnh: Next.js tải bằng chế độ `crossorigin`, mà chế độ đó
+    # KHÔNG đính mật khẩu đã lưu → 401 → trình duyệt lại hỏi mật khẩu. Đây chỉ
+    # là mã chạy phía trình duyệt, không chứa dữ liệu công chức, nên mở được.
+    location /__nextjs_font/ {
+        auth_basic off;
+        proxy_pass http://localhost:3001;
+        include /etc/nginx/snippets/dev-proxy.conf;
+    }
+
+    location /_next/ {
+        auth_basic off;
+        proxy_pass http://localhost:3001;
+        include /etc/nginx/snippets/dev-proxy.conf;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    location / {
+        proxy_pass http://localhost:3001;
+        include /etc/nginx/snippets/dev-proxy.conf;
+        # Next.js chế độ dev dùng websocket để nạp lại nóng.
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    listen 443 ssl;
+    # ssl_certificate / ssl_certificate_key do certbot điền, xem hướng dẫn.
+}
+
+# HTTP → HTTPS
+server {
+    listen 80;
+    server_name dev.kpihaiquan.vn;
+    return 301 https://$host$request_uri;
+}

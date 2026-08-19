@@ -59,8 +59,15 @@ ssh -L 3001:127.0.0.1:3001 -L 9000:127.0.0.1:9000 -L 9006:127.0.0.1:9006 root@<m
 Giữ cửa sổ đó mở, rồi vào **http://localhost:3001** trên trình duyệt.
 Không phải 3000 — đó là production.
 
-Muốn tiện hơn thì làm `dev.kpihaiquan.vn` riêng có chứng chỉ và mật khẩu bảo vệ,
-nhưng cần thêm bản ghi DNS.
+**Hoặc dùng subdomain** (đã dựng 19/08/2026): **https://dev.kpihaiquan.vn**
+
+Đăng nhập lớp ngoài bằng tài khoản `hqkv8`, mật khẩu ở `/root/.dev-htpasswd-note`.
+Vào rồi mới tới màn hình đăng nhập của ứng dụng — hai lớp riêng biệt.
+
+⚠️ Dịch vụ dev KHÔNG tự chạy. Chưa `./scripts/dev.sh chay` mà vào sẽ thấy
+502 Bad Gateway — đó là bình thường.
+
+Cách dựng lại hoặc gỡ bỏ: xem `HUONG_DAN_DNS_DEV.md`.
 
 Sửa file `.py` là uvicorn tự nạp lại, không phải khởi động tay.
 Log ở `/tmp/kpi-dev-logs/<tên>.log`.

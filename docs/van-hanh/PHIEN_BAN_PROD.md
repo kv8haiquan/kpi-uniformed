@@ -7,21 +7,21 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `19bea09a2eeab82442fde5852c88b6ea5469b9ca` |
-| **Ngắn** | `19bea09` |
-| **Nhánh nguồn** | `prod` (tách từ `feature/lich-cong-tac`) |
-| **Ngày ghi mốc** | 18/08/2026 19:47 |
-| **Alembic** | `zalo_oa_20260731` |
+| **Commit** | `be0670b655a966bf9d1e977cb5d682138bea3181` |
+| **Ngắn** | `be0670b` |
+| **Nhánh nguồn** | `prod` (fast-forward từ `feature/lich-cong-tac`) |
+| **Ngày ghi mốc** | 19/08/2026 20:0x |
+| **Alembic** | `mt_022_ds_file_doi_soat_20260819` |
 
-Nội dung: 4 tính năng KPI (phiếu Quý 02A/02B, vô hiệu hóa có ngày hiệu lực,
-fix tính điểm theo loại công chức, chọn xếp loại A–E) + `meeting_service` ở
-bản TRƯỚC Lịch công tác.
+Nội dung: toàn bộ **Lịch công tác** (Giai đoạn 4 — 7 màn hình) cùng dữ liệu di
+trú từ lichkv8, chồng lên bản KPI ngày 18/08.
 
-⚠️ **Chưa gồm Lịch công tác** — phần đó cần migration `meeting_016` → `021`
-chạy trước, sẽ triển khai ở đợt riêng.
+Số liệu sau di trú: 498 sự kiện lịch · 9 cuộc họp HKG · 844 tài liệu ·
+333 lượt trực ban · 34 cụm chờ đối soát (412 file).
 
 ## Lịch sử triển khai
 
 | Ngày | Commit | Ghi chú |
 |---|---|---|
 | 18/08/2026 | `19bea09` | Mốc đầu tiên khi tách môi trường |
+| 19/08/2026 | `be0670b` | Lịch công tác G4 + migration `meeting_016`→`022` + di trú dữ liệu |

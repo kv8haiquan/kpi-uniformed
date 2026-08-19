@@ -126,6 +126,26 @@ Monthly cycle: Staff **declares** work (ke_khai) → Unit leader **reviews/appro
 >
 > Địa chỉ `27.71.229.103` ở phần `QUY TẮC TUYỆT ĐỐI` bên dưới CHỈ là cảnh báo cho tương lai khi deploy lên server riêng — hiện tại chưa dùng.
 
+### ✅ QUY TẮC CHẠY TEST — LUÔN dùng database test, KHÔNG dùng prod
+
+Mọi test có ghi DB (integration/E2E của bất kỳ service nào: KPI, LMS, chi_tieu, ...) **PHẢI** chạy trên database test `kpi_haiquan_test`, **TUYỆT ĐỐI KHÔNG** chạy trên `kpi_haiquan` (prod) hay cloud `79.108.216.189`. Lý do: conftest dùng `settings.database_url` và service tự `commit()` → chạy thẳng sẽ ghi rác vào prod.
+
+Cách chạy đúng (override DB qua biến môi trường `DB_NAME`, ăn ngay vì pydantic env > .env):
+
+```bash
+# Tạo/refresh DB test (clone từ prod — pg_dump CHỈ ĐỌC prod; dump+restore đều chạy bằng postgres
+# để xử lý owner/extension, và dump CẢ DB để không tạo lại schema public):
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS kpi_haiquan_test;"
+sudo -u postgres psql -c "CREATE DATABASE kpi_haiquan_test OWNER kpi_user;"
+sudo -u postgres bash -c "pg_dump kpi_haiquan | psql -d kpi_haiquan_test"
+
+# Chạy test trỏ vào DB test:
+cd backend && source venv/bin/activate
+DB_NAME=kpi_haiquan_test pytest lms_service/tests/ -v
+```
+
+Chỉ `pytest --collect-only` (không ghi DB) mới được chạy khi chưa có DB test. Unit test thuần (không đụng DB) chạy ở đâu cũng được.
+
 - PostgreSQL exposed on port **5432** (`backend/.env`: `DB_HOST=localhost`, `DB_PORT=5432`)
 - Migrations in `backend/alembic/versions/` - auto-run on app startup
 - Default credentials after seed: username = staff code (e.g., `20ZZ-0224`), password = `123456`

@@ -11,6 +11,27 @@
 #    Nhầm cổng ở đây nghĩa là dev.kpihaiquan.vn phục vụ dữ liệu production.
 # =============================================================================
 
+# =============================================================================
+# XUNG ĐỘT `Authorization`: Basic của nginx vs Bearer của ứng dụng
+# =============================================================================
+# HTTP chỉ có MỘT tiêu đề `Authorization`. Sau khi đăng nhập, ứng dụng gắn
+# `Authorization: Bearer <JWT>` vào mọi lệnh gọi API — đè mất
+# `Authorization: Basic` mà trình duyệt vẫn tự gửi. nginx không thấy mật khẩu,
+# trả 401 kèm `WWW-Authenticate: Basic`, trình duyệt bật lại hộp đăng nhập.
+# Triệu chứng: đăng nhập xong bị hỏi mật khẩu liên tục, mỗi lệnh gọi API một lần.
+#
+# Cách xử lý: request nào đã mang Bearer thì bỏ qua basic-auth — JWT của ứng
+# dụng kiểm nó rồi, đúng như trên prod. Request không có Bearer (trang HTML,
+# lệnh đăng nhập) vẫn phải qua mật khẩu.
+#
+# ⚠️ ĐÁNH ĐỔI: API dev do đó có thể gọi từ Internet nếu gửi kèm Bearer bất kỳ.
+#    Token sai vẫn bị ứng dụng từ chối, nhưng lớp mật khẩu không còn che API.
+#    Muốn chặt lại thì thêm giới hạn theo IP — xem HUONG_DAN_DNS_DEV.md mục 2.
+map $http_authorization $vung_bao_ve_dev {
+    default        "Moi truong phat trien — chi noi bo";
+    "~*^Bearer\s"  off;
+}
+
 server {
     server_name dev.kpihaiquan.vn;
 
@@ -21,7 +42,7 @@ server {
     # =========================================================================
     # Môi trường dev chứa bản sao dữ liệu thật của 549 công chức và giao diện
     # đang làm dở. Không có lớp này thì bất kỳ ai trên Internet cũng vào được.
-    auth_basic "Moi truong phat trien — chi noi bo";
+    auth_basic $vung_bao_ve_dev;
     auth_basic_user_file /etc/nginx/.htpasswd-dev;
 
     # Không cho công cụ tìm kiếm lập chỉ mục.
@@ -63,6 +84,24 @@ server {
     # =========================================================================
     # FRONTEND — cổng 3001
     # =========================================================================
+    # Font và gói mã tĩnh: Next.js tải bằng chế độ `crossorigin`, mà chế độ đó
+    # KHÔNG đính mật khẩu đã lưu → 401 → trình duyệt lại hỏi mật khẩu. Đây chỉ
+    # là mã chạy phía trình duyệt, không chứa dữ liệu công chức, nên mở được.
+    location /__nextjs_font/ {
+        auth_basic off;
+        proxy_pass http://localhost:3001;
+        include /etc/nginx/snippets/dev-proxy.conf;
+    }
+
+    location /_next/ {
+        auth_basic off;
+        proxy_pass http://localhost:3001;
+        include /etc/nginx/snippets/dev-proxy.conf;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
     location / {
         proxy_pass http://localhost:3001;
         include /etc/nginx/snippets/dev-proxy.conf;

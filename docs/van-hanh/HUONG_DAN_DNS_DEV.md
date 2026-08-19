@@ -195,7 +195,161 @@ liệu cá nhân của công chức thì vẫn là thật — đối xử cẩn 
 
 ---
 
-## 7. Gỡ bỏ nếu không dùng nữa
+## 7. Ba cái bẫy đã gặp (19/08/2026)
+
+Cả ba đều cho ra CÙNG một triệu chứng: vào `dev.kpihaiquan.vn` thì đứng ở màn
+hình **"Đang tải hệ thống"**. Đã sửa, ghi lại để lần sau nhận ra ngay.
+
+### 7.1. `frontend/.env` trỏ tuyệt đối vào prod
+
+```
+NEXT_PUBLIC_API_URL=https://kpihaiquan.vn/api/v1
+```
+
+Địa chỉ **tuyệt đối** — mở dev.kpihaiquan.vn thì trình duyệt gọi API của
+**production**. Tức giao diện đang làm dở thao tác trên dữ liệu thật của 549
+công chức.
+
+Thực tế chưa xảy ra, vì `CORS_ORIGINS` của prod không có
+`https://dev.kpihaiquan.vn` nên trình duyệt chặn phản hồi — và `AuthProvider`
+không thoát khỏi trạng thái đang tải. **Lỗi giao diện đó vô tình là chốt an
+toàn.** Đừng thêm dev vào `CORS_ORIGINS` của prod để "sửa" — như vậy là mở
+đúng cái cửa mà nó đang chặn.
+
+**Cách sửa:** `frontend/.env.local` (bị gitignore, Next.js ưu tiên hơn `.env`)
+đặt lại tất cả biến `NEXT_PUBLIC_*_API_URL` thành đường dẫn **tương đối**
+(`/api/v1`, …). Trình duyệt gọi cùng tên miền đang mở, nginx định tuyến sang
+cổng dev. Chạy được cả qua đường hầm SSH.
+
+### 7.2. `next.config.ts` viết cứng cổng 800x
+
+Các quy tắc `rewrites` trỏ thẳng `http://localhost:8001…8007` — cổng
+**production**. Qua nginx thì không sao vì nginx bắt các tiền tố `/api/...`
+trước; nhưng `/uploads/lms/`, `/uploads/legal/`, `/uploads/portal/` không có
+trong cấu hình nginx dev nên rơi vào Next.js và bị đẩy sang prod. Vào thẳng
+`localhost:3001` qua đường hầm SSH thì **mọi** lệnh gọi đều sang prod.
+
+**Cách sửa:** số cổng lấy từ biến `BACKEND_PORT_PREFIX` (mặc định `80` = prod).
+`frontend/.env.local` đặt `BACKEND_PORT_PREFIX=90`.
+
+### 7.3. Next.js 16 chặn Origin lạ ở chế độ dev
+
+```
+⚠ Blocked cross-origin request to Next.js dev resource /_next/webpack-hmr
+  from "dev.kpihaiquan.vn".
+```
+
+Trang HTML về được (200) nhưng các gói mã JS bị chặn → React không khởi động →
+đứng ở màn hình đang tải. **Log của frontend là chỗ nhìn ra ngay:**
+
+```bash
+grep "Blocked cross-origin" /tmp/kpi-dev-logs/frontend.log
+```
+
+**Cách sửa:** `allowedDevOrigins: ['dev.kpihaiquan.vn']` trong `next.config.ts`.
+Chỉ có tác dụng ở chế độ dev; prod chạy `next start` nên không đọc mục này.
+
+### 7.4. Sai mật khẩu trong `/etc/nginx/.htpasswd-dev`
+
+Băm trong file không khớp mật khẩu đã ghi chú → nginx trả 401 cho mọi thứ, kể
+cả khi nhập đúng theo ghi chú. Kiểm tra:
+
+```bash
+htpasswd -vb /etc/nginx/.htpasswd-dev hqkv8 '<mật-khẩu>'
+# "Password for user hqkv8 correct." là đạt
+```
+
+Đặt lại (**bỏ `-c`**, có `-c` là xoá hết người dùng cũ):
+
+```bash
+htpasswd -bB /etc/nginx/.htpasswd-dev hqkv8 '<mật-khẩu>'
+chmod 640 /etc/nginx/.htpasswd-dev && chown root:www-data /etc/nginx/.htpasswd-dev
+```
+
+### 7.5. Đăng nhập xong bị hỏi mật khẩu liên tục
+
+Triệu chứng khác hẳn ba mục trên: vào được, đăng nhập được, nhưng hộp
+**"Sign in to dev.kpihaiquan.vn"** cứ bật lại. Nguyên nhân là **xung đột tiêu
+đề `Authorization`**:
+
+HTTP chỉ có **một** tiêu đề `Authorization`. Sau khi đăng nhập, ứng dụng gắn
+`Authorization: Bearer <JWT>` vào mọi lệnh gọi API — đè mất
+`Authorization: Basic` mà trình duyệt vẫn tự gửi. nginx không thấy mật khẩu
+nữa nên trả 401 kèm `WWW-Authenticate: Basic`, và trình duyệt bật lại hộp đăng
+nhập. **Mỗi lệnh gọi API là một lần hỏi.**
+
+Cách nhìn ra trong 5 giây:
+
+```bash
+curl -s -I -H "Authorization: Bearer bat-ky" \
+     https://dev.kpihaiquan.vn/api/v1/auth/me | grep -i www-authenticate
+# Còn dòng `WWW-Authenticate: Basic` → đúng bệnh này.
+```
+
+Kèm theo là các file font 401: Next.js tải font ở chế độ `crossorigin`, mà chế
+độ đó **không** đính mật khẩu đã lưu.
+
+**Cách sửa** (đã áp dụng, xem `nginx-dev.conf.mau`): request đã mang Bearer thì
+bỏ qua basic-auth — JWT của ứng dụng kiểm nó rồi, đúng như trên prod. Dùng
+`map` đặt ngoài khối `server`:
+
+```nginx
+map $http_authorization $vung_bao_ve_dev {
+    default        "Moi truong phat trien — chi noi bo";
+    "~*^Bearer\s"  off;
+}
+# trong server: auth_basic $vung_bao_ve_dev;
+```
+
+Thêm `auth_basic off` cho `/_next/` và `/__nextjs_font/`.
+
+> ⚠️ **Đánh đổi cần biết.** Sau thay đổi này, API của dev có thể gọi từ Internet
+> nếu gửi kèm Bearer bất kỳ. Token sai vẫn bị ứng dụng từ chối — tức API dev
+> được bảo vệ đúng bằng lớp mà prod đang dùng — nhưng lớp mật khẩu không còn
+> che API nữa. Cổng vào (`/`, `/login`) thì vẫn phải có mật khẩu.
+>
+> Muốn giữ nguyên độ chặt cũ thì thêm **giới hạn theo IP** ở mục 2. Khi đó phải
+> qua cả hai lớp và đánh đổi trên không còn ý nghĩa.
+
+### Quy trình rà khi lại đứng ở "Đang tải hệ thống"
+
+```bash
+# 1. Dịch vụ dev có chạy không (dev KHÔNG tự khởi động, khác prod do PM2 quản)
+cd /root/kpi-haiquan/backend && ./scripts/dev.sh trang-thai
+
+# 2. Mật khẩu nginx
+curl -s -o /dev/null -w "%{http_code}\n" -u hqkv8:<mk> https://dev.kpihaiquan.vn/   # 200
+
+# 3. Next.js có chặn Origin không
+grep "Blocked cross-origin" /tmp/kpi-dev-logs/frontend.log                          # rỗng
+
+# 4. Trang có nhúng địa chỉ prod không
+curl -s -u hqkv8:<mk> https://dev.kpihaiquan.vn/login | grep -c 'https://kpihaiquan.vn/api'   # 0
+
+# 5. Lệnh gọi API có vào backend DEV không — xem log dev tăng dòng
+tail -f /tmp/kpi-dev-logs/kpi.log
+
+# 6. Hỏi mật khẩu liên tục sau khi đăng nhập → xung đột Bearer/Basic (mục 7.5)
+curl -s -I -H "Authorization: Bearer bat-ky" \
+     https://dev.kpihaiquan.vn/api/v1/auth/me | grep -i www-authenticate   # rỗng
+```
+
+Mẹo đọc log nginx: `/var/log/nginx/access.log` gộp cả prod lẫn dev, phân biệt
+bằng cột `Referer`. Kích thước phần thân giúp đoán ai trả lời:
+
+| Số byte | Ai trả |
+|---|---|
+| 188 | nginx — hộp mật khẩu basic-auth |
+| 30 | backend — `{"detail":"Not authenticated"}`, thiếu/sai JWT |
+| ~100 | backend — lỗi nghiệp vụ có mã |
+
+**Sau khi sửa `.env.local` hay `next.config.ts` phải khởi động lại frontend
+dev** — Next.js chỉ đọc các file này lúc khởi động. Dòng `- Environments:
+.env.local, .env` trong log xác nhận đã nạp đúng.
+
+---
+
+## 8. Gỡ bỏ nếu không dùng nữa
 
 ```bash
 rm /etc/nginx/sites-enabled/kpi-dev

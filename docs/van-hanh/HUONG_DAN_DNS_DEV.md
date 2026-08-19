@@ -2,6 +2,11 @@
 
 > Mục đích: vào môi trường phát triển bằng trình duyệt mà không phải mở đường
 > hầm SSH mỗi lần. Đọc kèm `HUONG_DAN_DEV_PROD.md`.
+>
+> **✅ ĐÃ DỰNG XONG 19/08/2026** — https://dev.kpihaiquan.vn
+> Tài khoản `hqkv8`, mật khẩu lưu tại `/root/.dev-htpasswd-note` (chmod 600).
+> Chứng chỉ hết hạn 17/11/2026, certbot tự gia hạn.
+> Phần dưới giữ lại làm tài liệu tham chiếu và để dựng lại khi cần.
 
 ---
 

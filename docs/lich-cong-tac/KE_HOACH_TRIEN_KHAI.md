@@ -427,24 +427,24 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 - [x] Báo dòng hợp lệ / không hợp lệ trước khi ghi
 - [x] 📎 **Mang file mẫu sang**: `docs/Lich Hop Cong Tac/Github/Mau_import_lich_truc_ban_HQKV8_v127.xlsx` → đặt làm file mẫu tải về trên nền tảng
 
-### G4.9 — Màn hình đối soát tài liệu (dùng một lần)
+### G4.9 — Màn hình đối soát tài liệu (dùng một lần) ✅ *19/08*
 
-- [ ] Route riêng, **chỉ** Chánh VP `20ZZ-0097` + Quản trị viên thấy
-- [ ] Liệt kê 34 thư mục (15 nhóm D + 19 nhóm E), 412 file
-- [ ] Mỗi dòng: tên thư mục, số file, ngày suy ra, **danh sách tên file mở rộng được** (nhiều khi phải nhìn tên file mới đoán ra cuộc họp)
-- [ ] Gợi ý ứng viên **xếp hạng theo từ khoá trùng** giữa tên thư mục và nội dung cuộc họp
+- [x] Route riêng, **chỉ** Chánh VP `20ZZ-0097` + Quản trị viên thấy
+- [x] Liệt kê 34 thư mục (15 nhóm D + 19 nhóm E), 412 file
+- [x] Mỗi dòng: tên thư mục, số file, ngày suy ra, **danh sách tên file mở rộng được** (nhiều khi phải nhìn tên file mới đoán ra cuộc họp)
+- [x] Gợi ý ứng viên **xếp hạng theo từ khoá trùng** giữa tên thư mục và nội dung cuộc họp
   - ⚠️ **Không thư mục nào có ứng viên duy nhất** — ngày nào cũng có 2–8 cuộc họp vì "Chỉ đạo trực ban" lặp gần như hằng ngày. Phải là danh sách để chọn, không phải nút xác nhận một chạm
   - Xếp hạng giúp rõ 9/29 trường hợp; số còn lại tên viết tắt quá (`TL HN chỉ số`, `260519-CCT lv KTSTQ`)
-- [ ] 4 hành động: gắn vào cuộc họp đã chọn · **tạo cuộc họp lịch sử từ chính thư mục này** · đưa vào kho lưu trữ không gắn · không di trú
-- [ ] Ghi `meeting.di_tru_doi_soat` kèm người + thời điểm → xuất Excel = **biên bản đối chiếu nộp khi nghiệm thu**
-- [ ] Dùng xong ẩn khỏi menu
+- [x] 4 hành động: gắn vào cuộc họp đã chọn · **tạo cuộc họp lịch sử từ chính thư mục này** · đưa vào kho lưu trữ không gắn · không di trú
+- [x] Ghi `meeting.di_tru_doi_soat` kèm người + thời điểm → xuất Excel = **biên bản đối chiếu nộp khi nghiệm thu**
+- [x] Dùng xong ẩn khỏi menu
 
-### G4.10 — Dashboard
+### G4.10 — Dashboard ✅ *19/08*
 
-- [ ] Chỉ số: hôm nay, ngày mai, trong tuần, trong tháng, trong năm
-- [ ] Thống kê theo lãnh đạo (từ `lanh_dao_lien_quan`)
-- [ ] Bấm thẻ → nhảy tới nhóm lịch tương ứng
-- [ ] **Tính từ dữ liệu thật**, không lưu số thủ công
+- [x] Chỉ số: hôm nay, ngày mai, trong tuần, trong tháng, trong năm
+- [x] Thống kê theo lãnh đạo (từ `lanh_dao_lien_quan`)
+- [x] Bấm thẻ → nhảy tới nhóm lịch tương ứng
+- [x] **Tính từ dữ liệu thật**, không lưu số thủ công
 
 **Nghiệm thu G4:** đủ 7 màn hình nghiệp vụ; mục Lịch công tác nằm trên Họp Không Giấy; xuất/nhập Excel hoạt động; test quy tắc giấy mời PASS.
 

@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   CalendarDays,
   ChevronLeft,
@@ -74,7 +75,18 @@ function chuTri(sk: ISuKienLich): string {
 
 export default function LichCongTacPage() {
   const homNay = useMemo(() => new Date(), []);
-  const [cheDo, setCheDo] = useState<'thang' | 'danh-sach'>('thang');
+
+  // Trang Tổng quan trỏ về đây kèm khoảng ngày trên URL ("hôm nay", "trong
+  // tuần"…). Đọc một lần lúc mở trang; sau đó người dùng đổi bộ lọc thì URL
+  // không đổi theo — giữ URL đồng bộ hai chiều chỉ thêm phức tạp mà không ai
+  // cần chia sẻ đường dẫn đã lọc.
+  const qs = useSearchParams();
+  const qsTuNgay = qs.get('tu-ngay') ?? '';
+  const qsDenNgay = qs.get('den-ngay') ?? '';
+
+  const [cheDo, setCheDo] = useState<'thang' | 'danh-sach'>(
+    qs.get('che-do') === 'danh-sach' ? 'danh-sach' : 'thang',
+  );
   const [nam, setNam] = useState(homNay.getFullYear());
   const [thang, setThang] = useState(homNay.getMonth() + 1);
 
@@ -85,7 +97,11 @@ export default function LichCongTacPage() {
 
   const [dangTai, setDangTai] = useState(true);
   const [loi, setLoi] = useState<string | null>(null);
-  const [locLoai, setLocLoai] = useState<LoaiLich | ''>('');
+  const [locLoai, setLocLoai] = useState<LoaiLich | ''>(
+    (qs.get('loai-lich') as LoaiLich | null) ?? '',
+  );
+  const [tuNgay, setTuNgay] = useState(qsTuNgay);
+  const [denNgay, setDenNgay] = useState(qsDenNgay);
   const [tuKhoa, setTuKhoa] = useState('');
   const [tuKhoaGui, setTuKhoaGui] = useState('');
 
@@ -108,6 +124,8 @@ export default function LichCongTacPage() {
         const resp = await lichCongTacApi.danhSach({
           'loai-lich': locLoai || undefined,
           'tim-kiem': tuKhoaGui || undefined,
+          'tu-ngay': tuNgay || undefined,
+          'den-ngay': denNgay || undefined,
           trang,
           'so-dong': soDong,
         });
@@ -119,7 +137,7 @@ export default function LichCongTacPage() {
     } finally {
       setDangTai(false);
     }
-  }, [cheDo, nam, thang, locLoai, tuKhoaGui, trang]);
+  }, [cheDo, nam, thang, locLoai, tuKhoaGui, tuNgay, denNgay, trang]);
 
   useEffect(() => {
     void tai();
@@ -315,6 +333,23 @@ export default function LichCongTacPage() {
           </form>
         )}
       </div>
+
+      {cheDo === 'danh-sach' && (tuNgay || denNgay) && (
+        <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-2 text-sm text-blue-900">
+          Đang xem lịch từ <b>{tuNgay || '…'}</b> đến <b>{denNgay || '…'}</b>
+          <button
+            type="button"
+            onClick={() => {
+              setTuNgay('');
+              setDenNgay('');
+              setTrang(1);
+            }}
+            className="ml-3 text-blue-700 hover:underline"
+          >
+            bỏ lọc khoảng ngày
+          </button>
+        </div>
+      )}
 
       {loi && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">

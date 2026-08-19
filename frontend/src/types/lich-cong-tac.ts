@@ -128,6 +128,23 @@ export interface IThongKeLich {
   trong_thang: number;
   trong_nam: number;
   theo_loai_thang_nay: Record<string, number>;
+  theo_lanh_dao_thang_nay: {
+    cong_chuc_id: string;
+    ho_ten: string;
+    chuc_vu: string | null;
+    so_su_kien: number;
+  }[];
+  /** Mốc ngày của từng chỉ số — để bấm thẻ là mở lịch đúng khoảng đó. */
+  moc: {
+    hom_nay: string;
+    ngay_mai: string;
+    dau_tuan: string;
+    cuoi_tuan: string;
+    dau_thang: string;
+    cuoi_thang: string;
+    dau_nam: string;
+    cuoi_nam: string;
+  };
 }
 
 export interface IDanhMucLoai {
@@ -315,4 +332,72 @@ export interface IKetQuaXemTruoc {
   so_hop_le: number;
   so_loi: number;
   dong: IDongNhapExcel[];
+}
+
+// ─── Đối soát tài liệu di trú (G4.9 — dùng một lần) ─────────────────────
+
+export interface IFileTrongThuMuc {
+  drive_file_id: string;
+  ten: string;
+  so_byte: number | null;
+  /** Đường dẫn con so với thư mục gốc; rỗng nếu nằm ngay trong. */
+  thu_muc_con: string;
+}
+
+export type QuyetDinhDoiSoat =
+  | 'GAN_CUOC_HOP'
+  | 'TAO_CUOC_HOP_LICH_SU'
+  | 'KHO_LUU_TRU'
+  | 'KHONG_DI_TRU';
+
+export interface IThuMucDoiSoat {
+  id: string;
+  nhom: string;
+  duong_dan_thu_muc: string;
+  ten_thu_muc: string;
+  drive_folder_id: string;
+  so_file: number;
+  ngay_suy_ra: string | null;
+  so_gm_suy_ra: string | null;
+  danh_sach_file: IFileTrongThuMuc[];
+  quyet_dinh: QuyetDinhDoiSoat | null;
+  quyet_dinh_nhan: string | null;
+  cuoc_hop_id: string | null;
+  nguoi_quyet_dinh: string | null;
+  thoi_diem_quyet_dinh: string | null;
+  ghi_chu: string | null;
+}
+
+export interface IDanhSachDoiSoat {
+  dong: IThuMucDoiSoat[];
+  tong_hop: {
+    tong_thu_muc: number;
+    tong_file: number;
+    da_quyet_dinh: number;
+    con_lai: number;
+  };
+}
+
+export interface IUngVienDoiSoat {
+  cuoc_hop_id: string;
+  ma_lich: string | null;
+  tieu_de: string;
+  ngay: string | null;
+  gio_bat_dau: string | null;
+  so_van_ban: string | null;
+  don_vi_chuan_bi: string | null;
+  diem: number;
+  tu_trung: string[];
+}
+
+export interface IGoiYDoiSoat {
+  thu_muc: string;
+  ngay_suy_ra: string | null;
+  so_ung_vien: number;
+  /**
+   * Có ứng viên nào vượt hẳn không. Sai thì đừng tin ứng viên đầu bảng —
+   * ngày nào cũng có 2–8 cuộc họp nên rất hay hoà điểm.
+   */
+  co_ung_vien_noi_troi: boolean;
+  ung_vien: IUngVienDoiSoat[];
 }

@@ -11,7 +11,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, Text, text
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from meeting_service.models.base import Base
@@ -169,5 +169,9 @@ class DiTruDoiSoat(Base):
     thoi_diem_quyet_dinh: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True)
     ghi_chu: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Tên từng file trong thư mục — màn hình đối soát cần để đoán ra cuộc họp
+    # khi tên thư mục viết tắt quá (migration meeting_022).
+    danh_sach_file: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), server_default=text("NOW()"), nullable=False)

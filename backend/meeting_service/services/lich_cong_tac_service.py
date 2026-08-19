@@ -539,21 +539,65 @@ class LichCongTacService:
             return int(await self.db.scalar(
                 select(func.count()).select_from(cau.subquery())) or 0)
 
+        # Trọn tháng, không cắt ở hôm nay: lịch là để nhìn việc SẮP tới, đếm
+        # đến hôm nay thì đầu tháng nào con số cũng gần bằng 0.
+        cuoi_thang = (date(hn.year + (hn.month == 12), (hn.month % 12) + 1, 1)
+                      - timedelta(days=1))
+
         cau_loai = (select(CuocHop.loai_lich, func.count())
                     .where(CuocHop.is_deleted.is_(False),
                            CuocHop.ngay_hien_thi.between(
-                               hn.replace(day=1), hn))
+                               hn.replace(day=1), cuoi_thang))
                     .group_by(CuocHop.loai_lich))
         theo_loai = {k or "?": v
                      for k, v in (await self.db.execute(cau_loai)).all()}
+
+        # Số sự kiện theo từng lãnh đạo trong tháng — dựa trên bảng lãnh đạo
+        # liên quan (khớp 100% khi di trú) HỢP với vai trò chủ toạ, vì lichkv8
+        # ghi lãnh đạo theo cả hai cách.
+        cau_ld = sa_text("""
+            SELECT cc.id, cc.ho_ten, cc.chuc_vu, count(*) AS so_su_kien
+              FROM meeting.cuoc_hop ch
+              JOIN LATERAL (
+                    SELECT ldlq.cong_chuc_id
+                      FROM meeting.lanh_dao_lien_quan ldlq
+                     WHERE ldlq.cuoc_hop_id = ch.id
+                    UNION
+                    SELECT ch.chu_toa_id WHERE ch.chu_toa_id IS NOT NULL
+                   ) AS ld(cong_chuc_id) ON TRUE
+              JOIN public.cong_chuc cc ON cc.id = ld.cong_chuc_id
+             WHERE ch.is_deleted = false
+               AND ch.ngay_hien_thi BETWEEN :dau AND :cuoi
+             GROUP BY cc.id, cc.ho_ten, cc.chuc_vu
+             ORDER BY so_su_kien DESC, cc.ho_ten
+             LIMIT 20
+        """)
+        theo_lanh_dao = [
+            {"cong_chuc_id": i, "ho_ten": h, "chuc_vu": cv, "so_su_kien": n}
+            for i, h, cv, n in (await self.db.execute(
+                cau_ld, {"dau": hn.replace(day=1), "cuoi": cuoi_thang})).all()
+        ]
 
         return {
             "hom_nay": await dem(hn, hn),
             "ngay_mai": await dem(hn + timedelta(days=1), hn + timedelta(days=1)),
             "trong_tuan": await dem(dau_tuan, dau_tuan + timedelta(days=6)),
-            "trong_thang": await dem(hn.replace(day=1), hn),
-            "trong_nam": await dem(hn.replace(month=1, day=1), hn),
+            "trong_thang": await dem(hn.replace(day=1), cuoi_thang),
+            "trong_nam": await dem(hn.replace(month=1, day=1),
+                                   hn.replace(month=12, day=31)),
             "theo_loai_thang_nay": theo_loai,
+            "theo_lanh_dao_thang_nay": theo_lanh_dao,
+            # Giao diện cần biết mốc để bấm thẻ là nhảy sang lịch đúng khoảng.
+            "moc": {
+                "hom_nay": hn,
+                "ngay_mai": hn + timedelta(days=1),
+                "dau_tuan": dau_tuan,
+                "cuoi_tuan": dau_tuan + timedelta(days=6),
+                "dau_thang": hn.replace(day=1),
+                "cuoi_thang": cuoi_thang,
+                "dau_nam": hn.replace(month=1, day=1),
+                "cuoi_nam": hn.replace(month=12, day=31),
+            },
         }
 
 

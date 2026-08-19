@@ -454,7 +454,7 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 **Ước lượng:** 4–5 ngày · **Chặn bởi:** G4
 
-### G5.1 — Thư viện văn bản → gộp vào mục Tài liệu
+### G5.1 — Thư viện văn bản → gộp vào mục Tài liệu ✅ *19/08*
 
 > ✅ **Đã quét thư mục thư viện `1nDn4qE...` (17/08):** **189 thư mục nhưng chỉ 23 file.**
 > Đây gần như là bộ khung phân loại được dựng sẵn 3 cấp mà chưa dùng — trong đó có 1 file
@@ -476,11 +476,11 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 > Tài liệu họp nằm ở `meeting_service`, thư viện sẽ nằm ở `portal_service` → hai service, hai cơ chế lưu file.
 > Điểm nhẹ nhõm: cả hai bên đều gần như rỗng nên không có xung đột dữ liệu, chỉ là quyết định kiến trúc.
 
-- [ ] Chốt: thư viện dùng storage của `portal_service` hay dùng chung `StorageService` của `meeting_service`
-- [ ] Dựng lại cây 189 thư mục theo 9 nhóm gốc (`01.QUOC_HOI` … `99.KHAC`)
-- [ ] Di trú 23 file, bỏ file `TEST_UPLOAD_THU_VIEN.txt`
-- [ ] Duyệt thư mục · breadcrumb · tìm kiếm theo tên/số hiệu · upload · xem trước · tải
-- [ ] ⛔ **Không** nhúng iframe Google Drive — kho phải nằm trên nền tảng
+- [x] **Chốt: dùng `portal_service`** — mục Tài liệu trên giao diện đã trỏ sang đó, `portal.thu_muc` sẵn có cây cha–con và cột phân quyền, và thư viện văn bản là quản lý tài liệu chứ không phải nghiệp vụ họp
+- [x] Dựng lại cây 189 thư mục theo 9 nhóm gốc (`01.QUOC_HOI` … `99.KHAC`)
+- [x] Di trú 23 file, bỏ file `TEST_UPLOAD_THU_VIEN.txt`
+- [x] Duyệt thư mục · breadcrumb · tìm kiếm theo tên/số hiệu · upload · xem trước · tải
+- [x] ⛔ **Không** nhúng iframe Google Drive — kho phải nằm trên nền tảng
 
 ### G5.2 — Ghi chú và chia sẻ
 

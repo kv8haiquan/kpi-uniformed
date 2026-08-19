@@ -54,6 +54,8 @@ async def danh_sach(
     nguon: Optional[str] = Query(None),
     trang: int = Query(1, ge=1),
     so_dong: int = Query(50, ge=1, le=500, alias="so-dong"),
+    moi_truoc: bool = Query(False, alias="moi-truoc",
+                            description="Xếp ngày gần nhất lên đầu"),
 ):
     """Phân trang phía máy chủ.
 
@@ -72,7 +74,7 @@ async def danh_sach(
         trang=trang, so_dong=so_dong,
         tu_ngay=tu_ngay, den_ngay=den_ngay, loai_lich=loai_lich,
         trang_thai=trang_thai, lanh_dao_id=lanh_dao_id, tim_kiem=tim_kiem,
-        nguon=nguon,
+        nguon=nguon, moi_truoc=moi_truoc,
     )
     return {
         "success": True,
@@ -163,6 +165,18 @@ async def lich_lanh_dao(
 async def thong_ke(db: DatabaseDep, user: CurrentUserDep):
     svc = LichCongTacService(db)
     return {"success": True, "data": await svc.thong_ke()}
+
+
+@router.get("/danh-muc-don-vi", summary="Danh mục đơn vị (để chọn đơn vị chuẩn bị)")
+async def danh_muc_don_vi(db: DatabaseDep, user: CurrentUserDep):
+    """Đọc thẳng public.don_vi — chỉ đọc, module này không sở hữu bảng đó."""
+    from sqlalchemy import text as sa_text
+    rows = (await db.execute(sa_text(
+        "SELECT id, ma_don_vi, ten_don_vi FROM public.don_vi "
+        " ORDER BY ma_don_vi"))).all()
+    return {"success": True,
+            "data": [{"id": i, "ma_don_vi": m, "ten_don_vi": t}
+                     for i, m, t in rows]}
 
 
 @router.get("/danh-muc", summary="Danh mục loại lịch")

@@ -126,6 +126,9 @@ export default function LichCongTacPage() {
           'tim-kiem': tuKhoaGui || undefined,
           'tu-ngay': tuNgay || undefined,
           'den-ngay': denNgay || undefined,
+          // Danh sách xếp ngày gần nhất lên đầu. Tăng dần là mở ra thấy tháng
+          // 3 — dữ liệu cũ nhất — trong khi việc cần xem nằm quanh hôm nay.
+          'moi-truoc': true,
           trang,
           'so-dong': soDong,
         });

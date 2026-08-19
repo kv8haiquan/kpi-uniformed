@@ -50,6 +50,9 @@ export default function TrucBanPage() {
   const [dangXuat, setDangXuat] = useState(false);
 
   const [moNhap, setMoNhap] = useState(false);
+  // Chi cục chỉ phân trực T7–CN. Mặc định bỏ ngày trong tuần cho bảng gọn;
+  // ngày thường CÓ người trực (lễ, Tết) vẫn luôn hiện, backend lo việc đó.
+  const [duNgay, setDuNgay] = useState(false);
   const [oDangThem, setODangThem] = useState<{
     ngay: string;
     tru_so_id: string;
@@ -57,11 +60,13 @@ export default function TrucBanPage() {
   } | null>(null);
 
   const thamSo = useCallback(
-    () =>
-      tuChon && tuNgay && denNgay
+    () => ({
+      ...(tuChon && tuNgay && denNgay
         ? { 'tu-ngay': tuNgay, 'den-ngay': denNgay }
-        : { tuan },
-    [tuChon, tuNgay, denNgay, tuan],
+        : { tuan }),
+      'chi-cuoi-tuan': !duNgay,
+    }),
+    [tuChon, tuNgay, denNgay, tuan, duNgay],
   );
 
   const tai = useCallback(async () => {
@@ -196,6 +201,15 @@ export default function TrucBanPage() {
           />
         </label>
 
+        <label className="flex items-center gap-2 text-sm pb-1.5">
+          <input
+            type="checkbox"
+            checked={duNgay}
+            onChange={(e) => setDuNgay(e.target.checked)}
+          />
+          Hiện cả ngày trong tuần
+        </label>
+
         <div className="ml-auto flex flex-wrap gap-2">
           <button type="button" onClick={chep} className={nut}>
             {daChep ? (
@@ -319,8 +333,10 @@ export default function TrucBanPage() {
       )}
 
       <p className="text-xs text-gray-500 print:hidden">
-        Ô nền vàng là ngày cuối tuần. Ô có biểu tượng khoá là đã nộp chính thức
-        — đơn vị không sửa được nữa, cần Văn phòng mở khoá.
+        Bảng chỉ hiện Thứ Bảy và Chủ Nhật — ngày Chi cục phân trực. Ngày thường
+        có người trực (lễ, Tết) vẫn hiện; muốn xem đủ cả tuần thì tích
+        &ldquo;Hiện cả ngày trong tuần&rdquo;. Ô có biểu tượng khoá là đã nộp
+        chính thức, đơn vị không sửa được nữa, cần Văn phòng mở khoá.
       </p>
 
       {oDangThem && (

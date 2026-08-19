@@ -3,15 +3,24 @@
  *
  * Một ô có thể có nhiều người (trụ sở Chi cục thường có một lãnh đạo và một
  * công chức), nên form này chỉ thêm từng người; sửa thì xoá rồi thêm lại.
+ *
+ * Chọn người từ danh sách công chức của đơn vị giữ trụ sở, không gõ tay: gõ
+ * tay là mỗi người viết tên và chức vụ một kiểu, mà chức vụ lại quyết định
+ * thứ tự hiển thị trong ô.
+ *
+ * Số điện thoại điền sẵn từ lượt trực gần nhất của chính người đó, KHÔNG lấy
+ * từ `public.cong_chuc` — bảng đó chỉ có 6/544 người khai số. Vẫn sửa được
+ * tại chỗ vì số có thể đã đổi.
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 
 import { trucBanApi } from '@/services/truc-ban';
 import { errMsg } from '@/lib/hkg-error';
+import type { INguoiGoiYTruc } from '@/types/lich-cong-tac';
 
 interface Props {
   ngay: string;
@@ -24,6 +33,11 @@ interface Props {
 const oCss =
   'w-full rounded-lg border border-gray-300 px-3 py-1.5 focus:border-blue-500 focus:outline-none';
 
+/** Số điện thoại hợp lệ: 10 số bắt đầu bằng 0. */
+function sdtHopLe(s: string): boolean {
+  return s === '' || /^0\d{9}$/.test(s.replace(/\s/g, ''));
+}
+
 export default function FormNguoiTruc({
   ngay,
   truSoId,
@@ -31,18 +45,55 @@ export default function FormNguoiTruc({
   onDong,
   onXong,
 }: Props) {
-  const [hoTen, setHoTen] = useState('');
-  const [chucVu, setChucVu] = useState('');
+  const [ds, setDs] = useState<INguoiGoiYTruc[] | null>(null);
+  const [chon, setChon] = useState('');
+  const [tuKhoa, setTuKhoa] = useState('');
+
   const [sdt, setSdt] = useState('');
   const [caTruc, setCaTruc] = useState('CA_NGAY');
+  const [loaiTruc, setLoaiTruc] = useState('CUOI_TUAN');
   const [ghiChu, setGhiChu] = useState('');
 
   const [dangLuu, setDangLuu] = useState(false);
   const [loi, setLoi] = useState<string | null>(null);
 
+  useEffect(() => {
+    trucBanApi
+      .nguoiGoiY(truSoId)
+      .then(setDs)
+      .catch((e) => {
+        setDs([]);
+        setLoi(errMsg(e, 'Không tải được danh sách công chức'));
+      });
+  }, [truSoId]);
+
+  const loc = useMemo(() => {
+    if (!ds) return [];
+    const t = tuKhoa.trim().toLowerCase();
+    if (!t) return ds;
+    return ds.filter(
+      (x) =>
+        x.ho_ten.toLowerCase().includes(t) ||
+        x.ma_cc.toLowerCase().includes(t) ||
+        (x.chuc_vu ?? '').toLowerCase().includes(t),
+    );
+  }, [ds, tuKhoa]);
+
+  const nguoi = ds?.find((x) => x.cong_chuc_id === chon) ?? null;
+
+  const chonNguoi = (id: string) => {
+    setChon(id);
+    const n = ds?.find((x) => x.cong_chuc_id === id);
+    // Chỉ điền sẵn, không khoá — số điện thoại có thể đã đổi từ lần trực trước.
+    setSdt(n?.so_dien_thoai ?? '');
+  };
+
   const luu = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!hoTen.trim()) return setLoi('Chưa nhập họ tên');
+    if (!nguoi) return setLoi('Chưa chọn người trực');
+    if (!sdtHopLe(sdt)) {
+      return setLoi('Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0');
+    }
 
     setDangLuu(true);
     setLoi(null);
@@ -50,13 +101,12 @@ export default function FormNguoiTruc({
       await trucBanApi.them({
         ngay_truc: ngay,
         tru_so_id: truSoId,
-        ho_ten: hoTen.trim(),
-        chuc_vu: chucVu.trim() || null,
-        so_dien_thoai: sdt.trim() || null,
+        cong_chuc_id: nguoi.cong_chuc_id,
+        ho_ten: nguoi.ho_ten,
+        chuc_vu: nguoi.chuc_vu,
+        so_dien_thoai: sdt.replace(/\s/g, '') || null,
         ca_truc: caTruc,
-        // Dữ liệu đang chạy chỉ có trực cuối tuần; để mặc định đúng thực tế
-        // thay vì bắt người nhập chọn mỗi lần.
-        loai_truc: 'CUOI_TUAN',
+        loai_truc: loaiTruc,
         ghi_chu: ghiChu.trim() || null,
       });
       onXong();
@@ -67,9 +117,14 @@ export default function FormNguoiTruc({
     }
   };
 
+  const laCuoiTuan = [0, 6].includes(new Date(`${ngay}T00:00:00`).getDay());
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
-      <form onSubmit={luu} className="w-full max-w-lg rounded-xl bg-white shadow-xl my-12">
+      <form
+        onSubmit={luu}
+        className="w-full max-w-lg rounded-xl bg-white shadow-xl my-12"
+      >
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <div>
             <h2 className="font-semibold text-gray-900">Thêm người trực</h2>
@@ -88,50 +143,106 @@ export default function FormNguoiTruc({
 
         <div className="space-y-3 px-5 py-4">
           <label className="block text-sm">
-            <span className="block text-gray-600 mb-1">Họ và tên *</span>
+            <span className="block text-gray-600 mb-1">
+              Tìm nhanh trong danh sách
+            </span>
             <input
               className={oCss}
-              value={hoTen}
-              onChange={(e) => setHoTen(e.target.value)}
-              maxLength={100}
+              value={tuKhoa}
+              onChange={(e) => setTuKhoa(e.target.value)}
+              placeholder="Gõ tên, mã công chức hoặc chức vụ…"
               autoFocus
             />
           </label>
 
           <label className="block text-sm">
-            <span className="block text-gray-600 mb-1">Chức vụ</span>
-            <input
-              className={oCss}
-              value={chucVu}
-              onChange={(e) => setChucVu(e.target.value)}
-              maxLength={100}
-              placeholder="Quyết định thứ tự hiển thị trong ô"
-            />
+            <span className="block text-gray-600 mb-1">Người trực *</span>
+            {ds === null ? (
+              <div className="flex items-center gap-2 text-gray-500 py-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Đang tải danh sách…
+              </div>
+            ) : ds.length === 0 ? (
+              <p className="text-sm text-amber-700">
+                Đơn vị giữ trụ sở này chưa có công chức nào trong hệ thống.
+              </p>
+            ) : (
+              <select
+                className={oCss}
+                value={chon}
+                onChange={(e) => chonNguoi(e.target.value)}
+                size={Math.min(8, Math.max(3, loc.length))}
+              >
+                {loc.map((x) => (
+                  <option key={x.cong_chuc_id} value={x.cong_chuc_id}>
+                    {x.ho_ten}
+                    {x.chuc_vu ? ` — ${x.chuc_vu}` : ''}
+                    {x.so_dien_thoai ? ` · ${x.so_dien_thoai}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            {ds !== null && ds.length > 0 && (
+              <span className="block text-xs text-gray-500 mt-1">
+                {loc.length}/{ds.length} người · xếp theo chức vụ, lãnh đạo lên
+                trước
+              </span>
+            )}
           </label>
 
           <label className="block text-sm">
             <span className="block text-gray-600 mb-1">Số điện thoại</span>
             <input
-              className={oCss}
+              className={`${oCss} ${
+                sdtHopLe(sdt) ? '' : 'border-red-400 bg-red-50'
+              }`}
               value={sdt}
               onChange={(e) => setSdt(e.target.value)}
-              maxLength={20}
+              maxLength={15}
+              placeholder="0912345678"
             />
+            <span className="block text-xs text-gray-500 mt-1">
+              {nguoi?.so_dien_thoai
+                ? 'Điền sẵn từ lượt trực gần nhất — sửa được nếu đã đổi số.'
+                : 'Người này chưa từng có số trong lịch trực, nhập tay.'}
+            </span>
           </label>
 
-          <label className="block text-sm">
-            <span className="block text-gray-600 mb-1">Ca trực</span>
-            <select
-              className={oCss}
-              value={caTruc}
-              onChange={(e) => setCaTruc(e.target.value)}
-            >
-              <option value="CA_NGAY">Cả ngày</option>
-              <option value="SANG">Buổi sáng</option>
-              <option value="CHIEU">Buổi chiều</option>
-              <option value="DEM">Ban đêm</option>
-            </select>
-          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm">
+              <span className="block text-gray-600 mb-1">Ca trực</span>
+              <select
+                className={oCss}
+                value={caTruc}
+                onChange={(e) => setCaTruc(e.target.value)}
+              >
+                <option value="CA_NGAY">Cả ngày</option>
+                <option value="SANG">Buổi sáng</option>
+                <option value="CHIEU">Buổi chiều</option>
+                <option value="DEM">Ban đêm</option>
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="block text-gray-600 mb-1">Loại trực</span>
+              <select
+                className={oCss}
+                value={loaiTruc}
+                onChange={(e) => setLoaiTruc(e.target.value)}
+              >
+                <option value="CUOI_TUAN">Cuối tuần</option>
+                <option value="LE_TET">Lễ, Tết</option>
+                <option value="NGAY_THUONG">Ngày thường</option>
+              </select>
+            </label>
+          </div>
+
+          {!laCuoiTuan && loaiTruc === 'CUOI_TUAN' && (
+            <p className="text-xs text-amber-700">
+              Ngày này không phải Thứ Bảy hay Chủ Nhật — cân nhắc chọn
+              &ldquo;Lễ, Tết&rdquo; hoặc &ldquo;Ngày thường&rdquo;.
+            </p>
+          )}
 
           <label className="block text-sm">
             <span className="block text-gray-600 mb-1">Ghi chú</span>
@@ -150,12 +261,16 @@ export default function FormNguoiTruc({
         )}
 
         <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-3">
-          <button type="button" onClick={onDong} className="rounded-lg border border-gray-300 px-4 py-1.5 text-sm hover:bg-gray-50">
+          <button
+            type="button"
+            onClick={onDong}
+            className="rounded-lg border border-gray-300 px-4 py-1.5 text-sm hover:bg-gray-50"
+          >
             Đóng
           </button>
           <button
             type="submit"
-            disabled={dangLuu}
+            disabled={dangLuu || !chon}
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
           >
             {dangLuu && <Loader2 className="w-4 h-4 animate-spin" />}

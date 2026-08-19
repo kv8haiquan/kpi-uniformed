@@ -79,9 +79,13 @@ def _nguoi(tru_so_id: str, **ghi_de) -> dict:
 # ── ma trận ───────────────────────────────────────────────────────────
 
 async def test_ma_tran_tra_ca_ngay_trong(client, admin_user):
-    """Ngày không ai trực vẫn phải có hàng — ô trống là thông tin."""
+    """Ngày không ai trực vẫn phải có hàng — ô trống là thông tin.
+
+    Tắt bộ lọc cuối tuần để kiểm đúng điều này; mặc định bảng chỉ hiện T7–CN.
+    """
     resp = await client.get(
-        f"{BASE}/ma-tran?tu-ngay=2026-12-01&den-ngay=2026-12-07")
+        f"{BASE}/ma-tran?tu-ngay=2026-12-01&den-ngay=2026-12-07"
+        f"&chi-cuoi-tuan=false")
     assert resp.status_code == 200, resp.text
     d = resp.json()["data"]
     assert len(d["hang"]) == 7
@@ -360,3 +364,74 @@ async def test_mac_dinh_lay_tuan_nay(client, admin_user):
     assert d["tu_ngay"] == dau.isoformat()
     assert d["den_ngay"] == cuoi.isoformat()
     assert (cuoi - dau) == timedelta(days=6)
+
+
+# ── lọc ngày cuối tuần (yêu cầu 19/08) ────────────────────────────────
+
+async def test_mac_dinh_chi_hien_cuoi_tuan(client, admin_user):
+    """Chi cục chỉ phân trực T7 và CN — ngày thường trống thì bỏ khỏi bảng."""
+    d = (await client.get(
+        f"{BASE}/ma-tran?tu-ngay=2026-12-01&den-ngay=2026-12-07")
+         ).json()["data"]
+    assert [h["ngay"] for h in d["hang"]] == ["2026-12-05", "2026-12-06"]
+    assert all(h["cuoi_tuan"] for h in d["hang"])
+
+
+async def test_ngay_thuong_co_nguoi_truc_van_hien(client, db_session,
+                                                  admin_user, tru_so_chi_cuc,
+                                                  don_dep):
+    """Trực ngày lễ rơi giữa tuần — lọc cứng theo thứ là giấu mất ca đó."""
+    await client.post(f"{BASE}/", json=_nguoi(
+        tru_so_chi_cuc, ngay_truc="2026-12-02", loai_truc="LE_TET"))
+
+    d = (await client.get(
+        f"{BASE}/ma-tran?tu-ngay=2026-12-01&den-ngay=2026-12-07")
+         ).json()["data"]
+    ngay = [h["ngay"] for h in d["hang"]]
+    assert "2026-12-02" in ngay, "ngày thường có người trực phải được giữ lại"
+
+
+async def test_tat_loc_thi_hien_du_bay_ngay(client, admin_user):
+    d = (await client.get(
+        f"{BASE}/ma-tran?tu-ngay=2026-12-01&den-ngay=2026-12-07"
+        f"&chi-cuoi-tuan=false")).json()["data"]
+    assert len(d["hang"]) == 7
+
+
+# ── chọn người trực và số điện thoại (yêu cầu 19/08) ──────────────────
+
+async def test_goi_y_nguoi_theo_tru_so(client, db_session, admin_user,
+                                       tru_so_chi_cuc):
+    resp = await client.get(f"{BASE}/nguoi-goi-y/{tru_so_chi_cuc}")
+    assert resp.status_code == 200, resp.text
+    ds = resp.json()["data"]
+    if not ds:
+        pytest.skip("trụ sở này chưa có công chức nào")
+    for k in ("cong_chuc_id", "ho_ten", "chuc_vu", "so_dien_thoai"):
+        assert k in ds[0]
+    # Xếp sẵn theo bậc chức vụ để chọn từ trên xuống là đúng thứ tự hiển thị.
+    bac = [bac_chuc_vu(x["chuc_vu"]) for x in ds]
+    assert bac == sorted(bac)
+
+
+async def test_goi_y_tru_so_khong_ton_tai(client, admin_user):
+    resp = await client.get(
+        f"{BASE}/nguoi-goi-y/00000000-0000-0000-0000-000000000000")
+    assert resp.status_code == 404
+
+
+async def test_so_dien_thoai_duoc_chuan_hoa_khi_them(client, admin_user,
+                                                     tru_so_chi_cuc, don_dep):
+    """Excel biến số điện thoại thành số thực và rụng số 0 đứng đầu."""
+    resp = await client.post(f"{BASE}/", json=_nguoi(
+        tru_so_chi_cuc, so_dien_thoai="9.13264387E8"))
+    assert resp.json()["data"]["so_dien_thoai"] == "0913264387"
+
+
+async def test_so_dien_thoai_chuan_hoa_khi_sua(client, admin_user,
+                                               tru_so_chi_cuc, don_dep):
+    tb = (await client.post(f"{BASE}/", json=_nguoi(tru_so_chi_cuc))
+          ).json()["data"]
+    resp = await client.patch(f"{BASE}/{tb['id']}",
+                              json={"so_dien_thoai": "0916,382,222"})
+    assert resp.json()["data"]["so_dien_thoai"] == "0916382222"

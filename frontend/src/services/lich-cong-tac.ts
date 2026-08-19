@@ -14,6 +14,7 @@ import type {
   IBaoCaoTaiLieu,
   IDanhMucLoai,
   IDanhMucTinhTrang,
+  IDonVi,
   IDongNhatKy,
   ILichCongTacGhi,
   ILichLanhDao,
@@ -74,6 +75,8 @@ export interface ILichParams {
   nguon?: string;
   trang?: number;
   'so-dong'?: number;
+  /** Xếp ngày gần nhất lên đầu. Chế độ danh sách dùng true. */
+  'moi-truoc'?: boolean;
 }
 
 export const lichCongTacApi = {
@@ -106,6 +109,9 @@ export const lichCongTacApi = {
   thongKe: () => unwrap<IThongKeLich>(api.get('/thong-ke')),
 
   danhMuc: () => unwrap<IDanhMucLoai[]>(api.get('/danh-muc')),
+
+  /** Danh mục đơn vị — dùng cho ô "đơn vị chuẩn bị". */
+  danhMucDonVi: () => unwrap<IDonVi[]>(api.get('/danh-muc-don-vi')),
 
   // ── quản lý lịch (G4.3) ────────────────────────────────────────────
 

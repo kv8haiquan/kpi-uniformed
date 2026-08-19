@@ -12,6 +12,7 @@ import axios, { type AxiosInstance } from 'axios';
 
 import type {
   IDongNhapExcel,
+  INguoiGoiYTruc,
   IKetQuaXemTruoc,
   IMaTranTruc,
   INguoiTruc,
@@ -57,6 +58,8 @@ export interface ITrucBanParams {
   tuan?: Tuan;
   'don-vi-id'?: string;
   'tru-so-id'?: string;
+  /** Mặc định true — bỏ ngày trong tuần trống khỏi bảng. */
+  'chi-cuoi-tuan'?: boolean;
 }
 
 /** Tải một Blob về máy, dùng chung cho xuất Excel và tải file mẫu. */
@@ -77,6 +80,11 @@ async function taiVe(duong_dan: string, ten_du_phong: string,
 
 export const trucBanApi = {
   truSo: () => unwrap<ITruSo[]>(api.get('/tru-so')),
+
+  /** Công chức thuộc đơn vị giữ trụ sở này — để chọn thay vì gõ tay. */
+  nguoiGoiY: (truSoId: string, tuKhoa?: string) =>
+    unwrap<INguoiGoiYTruc[]>(
+      api.get(`/nguoi-goi-y/${truSoId}`, { params: { 'tu-khoa': tuKhoa } })),
 
   maTran: (params?: ITrucBanParams) =>
     unwrap<IMaTranTruc>(api.get('/ma-tran', { params })),

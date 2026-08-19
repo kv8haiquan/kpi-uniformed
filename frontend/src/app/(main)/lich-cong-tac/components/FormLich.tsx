@@ -14,9 +14,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 
 import { lichCongTacApi } from '@/services/lich-cong-tac';
+import { congChucApi, type ICongChucSearchItem } from '@/services/hkg';
 import { errMsg } from '@/lib/hkg-error';
 import type {
   IDanhMucLoai,
+  IDonVi,
   ILichCongTacGhi,
   ISuKienChiTiet,
   LoaiLich,
@@ -75,8 +77,17 @@ export default function FormLich({
   const dangSua = Boolean(banGhi);
 
   const [loai, setLoai] = useState<IDanhMucLoai[]>([]);
+  const [donVi, setDonVi] = useState<IDonVi[]>([]);
   const [dangLuu, setDangLuu] = useState(false);
   const [loi, setLoi] = useState<string | null>(null);
+
+  // Chủ trì: chọn công chức thì lưu vào `chu_toa_id` và liên kết được sang
+  // chương trình công tác của người đó. Người ngoài Chi cục (lãnh đạo Tỉnh,
+  // Tổng cục) không có trong danh bạ nên vẫn phải cho gõ tay — 8/498 sự kiện
+  // di trú rơi vào trường hợp này.
+  const [timChuTri, setTimChuTri] = useState('');
+  const [ketQuaChuTri, setKetQuaChuTri] = useState<ICongChucSearchItem[]>([]);
+  const [dangTimChuTri, setDangTimChuTri] = useState(false);
 
   const banDau = useMemo<Record<Truong, string>>(
     () => ({
@@ -94,7 +105,7 @@ export default function FormLich({
       don_vi_chuan_bi: banGhi?.don_vi_chuan_bi ?? '',
       so_van_ban: banGhi?.so_van_ban ?? '',
       trang_thai: banGhi?.trang_thai ?? 'LEN_KE_HOACH',
-      chu_toa_id: '',
+      chu_toa_id: banGhi?.chu_toa?.id ?? '',
       lanh_dao_lien_quan_ids: '',
     }),
     [banGhi, ngayMacDinh],
@@ -106,7 +117,27 @@ export default function FormLich({
 
   useEffect(() => {
     lichCongTacApi.danhMuc().then(setLoai).catch(() => setLoai([]));
+    lichCongTacApi.danhMucDonVi().then(setDonVi).catch(() => setDonVi([]));
   }, []);
+
+  // Tìm công chức khi gõ, hoãn 300ms để không gọi API mỗi phím.
+  useEffect(() => {
+    const tu = timChuTri.trim();
+    // Dưới 2 ký tự thì không gọi API. Không xoá state ở đây — xoá đồng bộ
+    // trong effect là một vòng vẽ lại thừa; lọc lúc hiển thị là đủ.
+    if (tu.length < 2) return;
+    // Đặt cờ "đang tìm" bên trong hẹn giờ: đặt ngay ở thân effect sẽ kích
+    // hoạt một vòng vẽ lại thừa cho mỗi phím gõ.
+    const h = setTimeout(() => {
+      setDangTimChuTri(true);
+      congChucApi
+        .search({ q: tu, limit: 15 })
+        .then(setKetQuaChuTri)
+        .catch(() => setKetQuaChuTri([]))
+        .finally(() => setDangTimChuTri(false));
+    }, 300);
+    return () => clearTimeout(h);
+  }, [timChuTri]);
 
   const dat = (k: Truong, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -126,7 +157,7 @@ export default function FormLich({
     // Chỉ những trường đổi so với lúc mở form.
     const goi: ILichCongTacGhi = {};
     (Object.keys(form) as Truong[]).forEach((k) => {
-      if (k === 'chu_toa_id' || k === 'lanh_dao_lien_quan_ids') return;
+      if (k === 'lanh_dao_lien_quan_ids') return;
       if (dangSua && form[k] === banDau[k]) return;
       const v = form[k];
       if (k === 'tieu_de' || k === 'loai_lich' || k === 'ngay_hop') {
@@ -137,6 +168,8 @@ export default function FormLich({
         goi.gio_ket_thuc = v ? `${v}:00` : null;
       } else if (k === 'trang_thai') {
         (goi as Record<string, unknown>)[k] = v;
+      } else if (k === 'chu_toa_id') {
+        goi.chu_toa_id = v || null;
       } else {
         (goi as Record<string, unknown>)[k] = chuanHoa(v);
       }
@@ -263,23 +296,111 @@ export default function FormLich({
             />
           </O>
 
-          <O nhan="Chủ trì">
+          <O nhan="Chủ trì" rong>
+            {form.chu_toa_id ? (
+              <div className="flex items-center gap-2">
+                <span className="flex-1 rounded-lg border border-green-300 bg-green-50 px-3 py-1.5">
+                  {ketQuaChuTri.find((x) => x.id === form.chu_toa_id)?.ho_ten ??
+                    banGhi?.chu_toa?.ho_ten ??
+                    'Đã chọn'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    dat('chu_toa_id', '');
+                    setTimChuTri('');
+                  }}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50"
+                >
+                  Bỏ chọn
+                </button>
+              </div>
+            ) : (
+              <>
+                <input
+                  className={oCss}
+                  value={timChuTri}
+                  onChange={(e) => setTimChuTri(e.target.value)}
+                  placeholder="Gõ tên hoặc mã công chức để chọn…"
+                />
+                {dangTimChuTri && (
+                  <span className="block text-xs text-gray-500 mt-1">
+                    Đang tìm…
+                  </span>
+                )}
+                {timChuTri.trim().length >= 2 && ketQuaChuTri.length > 0 && (
+                  <ul className="mt-1 max-h-40 overflow-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+                    {ketQuaChuTri.map((cc) => (
+                      <li key={cc.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            dat('chu_toa_id', cc.id);
+                            dat('chu_tri_text', '');
+                          }}
+                          className="w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50"
+                        >
+                          {cc.ho_ten}
+                          {cc.chuc_vu && (
+                            <span className="text-gray-500"> — {cc.chuc_vu}</span>
+                          )}
+                          {cc.ten_don_vi && (
+                            <span className="block text-xs text-gray-400">
+                              {cc.ten_don_vi}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </O>
+
+          <O nhan="Hoặc ghi tay người chủ trì" rong>
             <input
               className={oCss}
               value={form.chu_tri_text}
               onChange={(e) => dat('chu_tri_text', e.target.value)}
               maxLength={300}
-              placeholder="Ví dụ: đ/c Chi cục trưởng"
+              disabled={Boolean(form.chu_toa_id)}
+              placeholder="Dùng khi người chủ trì ngoài Chi cục — vd: đ/c Phó Chủ tịch UBND tỉnh"
             />
           </O>
 
-          <O nhan="Đơn vị chuẩn bị">
-            <input
+          <O nhan="Đơn vị chuẩn bị" rong>
+            <select
               className={oCss}
-              value={form.don_vi_chuan_bi}
-              onChange={(e) => dat('don_vi_chuan_bi', e.target.value)}
-              maxLength={200}
-            />
+              value={
+                donVi.some((d) => d.ten_don_vi === form.don_vi_chuan_bi)
+                  ? form.don_vi_chuan_bi
+                  : '__khac__'
+              }
+              onChange={(e) =>
+                dat(
+                  'don_vi_chuan_bi',
+                  e.target.value === '__khac__' ? '' : e.target.value,
+                )
+              }
+            >
+              <option value="">— Chưa giao đơn vị nào —</option>
+              {donVi.map((d) => (
+                <option key={d.id} value={d.ten_don_vi}>
+                  {d.ten_don_vi}
+                </option>
+              ))}
+              <option value="__khac__">Khác (tự nhập bên dưới)…</option>
+            </select>
+            {!donVi.some((d) => d.ten_don_vi === form.don_vi_chuan_bi) && (
+              <input
+                className={`${oCss} mt-1.5`}
+                value={form.don_vi_chuan_bi}
+                onChange={(e) => dat('don_vi_chuan_bi', e.target.value)}
+                maxLength={200}
+                placeholder="Nhiều đơn vị hoặc tên khác — vd: Văn phòng, Đội NV1"
+              />
+            )}
           </O>
 
           <O nhan="Thành phần" rong>

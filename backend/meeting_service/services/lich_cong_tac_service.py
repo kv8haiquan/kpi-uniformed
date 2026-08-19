@@ -151,14 +151,23 @@ class LichCongTacService:
 
     # ── danh sách có phân trang ───────────────────────────────────────
     async def danh_sach(self, *, trang: int = 1, so_dong: int = 50,
+                        moi_truoc: bool = False,
                         **loc: Any) -> tuple[list[dict], int]:
+        """`moi_truoc=True` xếp ngày gần nhất lên đầu.
+
+        Xem theo tháng thì phải tăng dần vì đó là thứ tự của tờ lịch. Nhưng ở
+        chế độ danh sách, tăng dần nghĩa là mở ra thấy tháng 3 — dữ liệu cũ
+        nhất — trong khi việc cần xem là những ngày quanh hôm nay.
+        """
         cau = self._cau_truy_van(**loc)
 
         tong = await self.db.scalar(
             select(func.count()).select_from(cau.subquery()))
 
-        cau = (cau.order_by(CuocHop.ngay_hien_thi.asc(),
-                            CuocHop.gio_bat_dau.asc())
+        thu_tu = ((CuocHop.ngay_hien_thi.desc(), CuocHop.gio_bat_dau.desc())
+                  if moi_truoc
+                  else (CuocHop.ngay_hien_thi.asc(), CuocHop.gio_bat_dau.asc()))
+        cau = (cau.order_by(*thu_tu)
                .offset((trang - 1) * so_dong).limit(so_dong))
         rows = (await self.db.execute(cau)).scalars().all()
         return await self._lam_giau(rows), int(tong or 0)

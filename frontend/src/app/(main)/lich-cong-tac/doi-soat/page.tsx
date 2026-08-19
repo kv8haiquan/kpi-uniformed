@@ -372,12 +372,22 @@ function ThuMuc({
                           className="flex items-start gap-3 px-3 py-2"
                         >
                           <div className="flex-1 min-w-0 text-sm">
-                            <div className="font-medium">{uv.tieu_de}</div>
+                            <div className="flex items-start gap-2">
+                              {/* Mã lịch đứng trước nội dung: người rà đối
+                                  chiếu bằng mã, và mã là thứ tra ngược lại
+                                  được trên màn hình Lịch. */}
+                              {uv.ma_lich && (
+                                <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-700">
+                                  {uv.ma_lich}
+                                </span>
+                              )}
+                              <span className="font-medium">{uv.tieu_de}</span>
+                            </div>
                             <div className="text-xs text-gray-500">
                               {uv.ngay?.split('-').reverse().join('/')}
                               {uv.gio_bat_dau && ` ${uv.gio_bat_dau.slice(0, 5)}`}
-                              {uv.ma_lich && ` · ${uv.ma_lich}`}
                               {uv.so_van_ban && ` · VB ${uv.so_van_ban}`}
+                              {uv.don_vi_chuan_bi && ` · ${uv.don_vi_chuan_bi}`}
                             </div>
                             {uv.tu_trung.length > 0 && (
                               <div className="text-xs text-gray-500">

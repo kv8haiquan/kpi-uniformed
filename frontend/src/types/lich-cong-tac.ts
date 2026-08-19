@@ -300,6 +300,7 @@ export interface IMaTranTruc {
 export interface ITrucBanGhi {
   ngay_truc?: string;
   tru_so_id?: string;
+  cong_chuc_id?: string | null;
   ho_ten?: string;
   chuc_vu?: string | null;
   so_dien_thoai?: string | null;
@@ -400,4 +401,24 @@ export interface IGoiYDoiSoat {
    */
   co_ung_vien_noi_troi: boolean;
   ung_vien: IUngVienDoiSoat[];
+}
+
+/** Công chức có thể phân trực ở một trụ sở, kèm số điện thoại gợi ý. */
+export interface INguoiGoiYTruc {
+  cong_chuc_id: string;
+  ma_cc: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+  is_lanh_dao: boolean;
+  /**
+   * Lấy từ lượt trực gần nhất của người đó, KHÔNG phải từ `public.cong_chuc`
+   * — bảng đó chỉ có 6/544 người khai số điện thoại.
+   */
+  so_dien_thoai: string | null;
+}
+
+export interface IDonVi {
+  id: string;
+  ma_don_vi: string;
+  ten_don_vi: string;
 }

@@ -25,6 +25,7 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import and_, func, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meeting_service.models.lich_cong_tac import TrucBan, TrucBanTruSo, TruSo
@@ -36,7 +37,16 @@ from meeting_service.services.lich_cong_tac_service import (
 )
 from shared.auth import TokenPayload
 
-LOAI_TRUC_VALUES = ["CUOI_TUAN", "NGAY_LE", "NGAY_THUONG"]
+# Phải khớp CHECK `ck_truc_ban_loai` trong CSDL. Lệch một giá trị là người
+# dùng chọn xong nhận lỗi 500 thay vì thông báo tử tế — schema không được tự
+# nghĩ ra danh mục riêng.
+LOAI_TRUC_VALUES = ["CUOI_TUAN", "NGAY_THUONG", "LE_TET"]
+
+NHAN_LOAI_TRUC = {
+    "CUOI_TUAN": "Cuối tuần",
+    "NGAY_THUONG": "Ngày thường",
+    "LE_TET": "Lễ, Tết",
+}
 CA_TRUC_VALUES = ["CA_NGAY", "SANG", "CHIEU", "DEM"]
 TRANG_THAI_VALUES = ["NHAP", "DA_NOP"]
 
@@ -74,6 +84,46 @@ def bac_chuc_vu(chuc_vu: Optional[str]) -> int:
         if re.search(mau, s):
             return bac
     return 9
+
+
+def chuan_hoa_sdt(v: object) -> Optional[str]:
+    """Đưa số điện thoại về dạng chuẩn `0xxxxxxxxx`.
+
+    Dữ liệu di trú từ lichkv8 hỏng theo hai kiểu, cùng một nguyên nhân là
+    Excel coi số điện thoại như SỐ chứ không phải chuỗi:
+
+      - `9.13264340E8`  → Excel đổi sang số thực, mất số 0 đứng đầu
+      - `0916,382,222`  → Excel chèn dấu phân cách hàng nghìn
+
+    Hàm này cũng chạy khi thêm/nhập mới, để một chỗ sửa là mọi đường vào đều
+    sạch — nếu không thì nhập Excel lần sau lại đẻ ra đúng bộ dữ liệu hỏng này.
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+
+    # Dạng khoa học: 9.13264340E8 → 913264340
+    if re.fullmatch(r"[0-9]+\.?[0-9]*[Ee][+]?[0-9]+", s):
+        try:
+            s = str(int(float(s)))
+        except (ValueError, OverflowError):
+            return s
+
+    so = re.sub(r"[^0-9+]", "", s)
+
+    # +84 / 84 đứng đầu là mã quốc gia — đưa về dạng nội địa.
+    if so.startswith("+84"):
+        so = "0" + so[3:]
+    elif so.startswith("84") and len(so) == 11:
+        so = "0" + so[2:]
+
+    # 9 chữ số là đã rụng số 0 đứng đầu.
+    if len(so) == 9 and not so.startswith("0"):
+        so = "0" + so
+
+    return so or None
 
 
 class TrucBanService:
@@ -119,15 +169,72 @@ class TrucBanService:
                  "ten_tru_so": r.ten_tru_so, "don_vi_id": r.don_vi_id,
                  "thu_tu": r.thu_tu} for r in rows]
 
+    async def nguoi_goi_y(self, tru_so_id: UUID, *,
+                          tu_khoa: Optional[str] = None,
+                          gioi_han: int = 200) -> list[dict]:
+        """Công chức có thể phân trực ở trụ sở này, kèm số điện thoại gợi ý.
+
+        Số điện thoại KHÔNG lấy từ `public.cong_chuc`: bảng đó chỉ có 6/544
+        người khai số. Nguồn thật là chính lịch trực cũ — lichkv8 ghi số theo
+        từng lượt trực, nên lấy lượt gần nhất của người đó.
+
+        Trụ sở Chi cục không gắn với đơn vị nào (`don_vi_id` rỗng) nên trả toàn
+        Chi cục; lịch trực trụ sở Chi cục do Văn phòng xếp, người trực có thể
+        thuộc bất kỳ phòng nào.
+        """
+        ts = await self.db.get(TruSo, tru_so_id)
+        if ts is None:
+            raise LoiNghiepVu("KHONG_TIM_THAY", "Không tìm thấy trụ sở", 404)
+
+        dieu_kien = "cc.is_active"
+        tham_so: dict = {"gioi_han": gioi_han}
+        if ts.don_vi_id:
+            dieu_kien += " AND cc.don_vi_id = :dv"
+            tham_so["dv"] = ts.don_vi_id
+        if tu_khoa:
+            dieu_kien += " AND (cc.ho_ten ILIKE :tk OR cc.ma_cc ILIKE :tk)"
+            tham_so["tk"] = f"%{tu_khoa.strip()}%"
+
+        rows = (await self.db.execute(sa_text(f"""
+            SELECT cc.id, cc.ma_cc, cc.ho_ten, cc.chuc_vu, cc.is_lanh_dao,
+                   (SELECT tb.so_dien_thoai
+                      FROM meeting.truc_ban tb
+                     WHERE tb.cong_chuc_id = cc.id
+                       AND tb.so_dien_thoai IS NOT NULL
+                     ORDER BY tb.ngay_truc DESC
+                     LIMIT 1) AS sdt_goi_y
+              FROM public.cong_chuc cc
+             WHERE {dieu_kien}
+             ORDER BY cc.is_lanh_dao DESC, cc.ho_ten
+             LIMIT :gioi_han
+        """), tham_so)).all()
+
+        # Chuẩn hoá cả khi ĐỌC, không chỉ khi ghi: dữ liệu di trú có thể còn
+        # sót bản ghi hỏng ở môi trường chưa vá, và số hiện sai trên màn hình
+        # thì người dùng chép nhầm vào báo cáo.
+        ds = [{"cong_chuc_id": i, "ma_cc": ma, "ho_ten": ht, "chuc_vu": cv,
+               "is_lanh_dao": ld, "so_dien_thoai": chuan_hoa_sdt(sdt)}
+              for i, ma, ht, cv, ld, sdt in rows]
+        # Chức vụ quyết định thứ tự hiển thị trong ô nên xếp sẵn theo bậc,
+        # người dùng chọn từ trên xuống là ra đúng thứ tự.
+        ds.sort(key=lambda x: (bac_chuc_vu(x["chuc_vu"]), x["ho_ten"]))
+        return ds
+
     # ── ma trận ───────────────────────────────────────────────────────
 
     async def ma_tran(self, tu_ngay: date, den_ngay: date, *,
                       user: TokenPayload,
-                      don_vi_id: Optional[UUID] = None) -> dict:
+                      don_vi_id: Optional[UUID] = None,
+                      chi_cuoi_tuan: bool = True) -> dict:
         """Hàng = ngày, cột = trụ sở, ô = danh sách người trực.
 
-        Trả về CẢ những ngày không có ai trực: ô trống chính là thông tin —
-        đó là chỗ Văn phòng phải đi hỏi.
+        Ngày cuối tuần luôn có hàng kể cả khi chưa ai trực — ô trống chính là
+        thông tin, đó là chỗ Văn phòng phải đi hỏi.
+
+        `chi_cuoi_tuan=True` (mặc định) bỏ các ngày trong tuần, vì Chi cục chỉ
+        phân trực Thứ Bảy và Chủ Nhật. NHƯNG ngày thường CÓ người trực thì vẫn
+        giữ lại — trực ngày lễ rơi vào giữa tuần, lọc cứng theo thứ là giấu mất
+        đúng những ca đặc biệt đó.
         """
         if den_ngay < tu_ngay:
             raise LoiNghiepVu("KHOANG_NGAY_SAI",
@@ -164,7 +271,7 @@ class TrucBanService:
                 "id": r.id,
                 "ho_ten": r.ho_ten,
                 "chuc_vu": r.chuc_vu,
-                "so_dien_thoai": r.so_dien_thoai,
+                "so_dien_thoai": chuan_hoa_sdt(r.so_dien_thoai),
                 "cong_chuc_id": r.cong_chuc_id,
                 "ca_truc": r.ca_truc,
                 "loai_truc": r.loai_truc,
@@ -179,10 +286,16 @@ class TrucBanService:
         hang = []
         n = tu_ngay
         while n <= den_ngay:
+            cuoi_tuan = n.weekday() >= 5
+            if chi_cuoi_tuan and not cuoi_tuan:
+                co_nguoi = any((n, c["id"]) in o for c in cot)
+                if not co_nguoi:
+                    n += timedelta(days=1)
+                    continue
             hang.append({
                 "ngay": n,
                 "thu": THU_VN[n.weekday()],
-                "cuoi_tuan": n.weekday() >= 5,
+                "cuoi_tuan": cuoi_tuan,
                 "o": [{
                     "tru_so_id": c["id"],
                     "nguoi": o.get((n, c["id"]), []),
@@ -234,6 +347,8 @@ class TrucBanService:
 
     async def them(self, du_lieu: dict, *, user: TokenPayload) -> dict:
         await self._kiem_tra_sua(du_lieu["tru_so_id"], user)
+        if "so_dien_thoai" in du_lieu:
+            du_lieu["so_dien_thoai"] = chuan_hoa_sdt(du_lieu["so_dien_thoai"])
         await self._chan_khi_da_khoa(du_lieu["ngay_truc"],
                                      du_lieu["tru_so_id"])
 
@@ -254,6 +369,8 @@ class TrucBanService:
         await self._kiem_tra_sua(r.tru_so_id, user)
         await self._chan_khi_da_khoa(r.ngay_truc, r.tru_so_id)
 
+        if "so_dien_thoai" in thay_doi:
+            thay_doi["so_dien_thoai"] = chuan_hoa_sdt(thay_doi["so_dien_thoai"])
         for k, v in thay_doi.items():
             setattr(r, k, v)
         r.updated_by = UUID(user.sub)

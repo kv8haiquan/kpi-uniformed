@@ -74,6 +74,21 @@ async def danh_muc_tru_so(db: DatabaseDep, user: CurrentUserDep):
             "data": await TrucBanService(db).danh_muc_tru_so()}
 
 
+@router.get("/nguoi-goi-y/{tru_so_id}",
+            summary="Công chức có thể phân trực ở trụ sở này")
+async def nguoi_goi_y(
+    tru_so_id: UUID,
+    db: DatabaseDep,
+    user: CurrentUserDep,
+    tu_khoa: Optional[str] = Query(None, alias="tu-khoa"),
+):
+    try:
+        ds = await TrucBanService(db).nguoi_goi_y(tru_so_id, tu_khoa=tu_khoa)
+    except LoiNghiepVu as e:
+        raise _loi(e) from e
+    return {"success": True, "data": ds}
+
+
 @router.get("/ma-tran", summary="Bảng ma trận trực ban")
 async def ma_tran(
     db: DatabaseDep,
@@ -82,11 +97,13 @@ async def ma_tran(
     den_ngay: Optional[date_type] = Query(None, alias="den-ngay"),
     tuan: Optional[str] = Query(None, description="truoc | nay | sau"),
     don_vi_id: Optional[UUID] = Query(None, alias="don-vi-id"),
+    chi_cuoi_tuan: bool = Query(True, alias="chi-cuoi-tuan"),
 ):
     bd, kt = _khoang(tu_ngay, den_ngay, tuan)
     try:
         kq = await TrucBanService(db).ma_tran(bd, kt, user=user,
-                                              don_vi_id=don_vi_id)
+                                              don_vi_id=don_vi_id,
+                                              chi_cuoi_tuan=chi_cuoi_tuan)
     except LoiNghiepVu as e:
         raise _loi(e) from e
     return {"success": True, "data": kq}
@@ -182,11 +199,13 @@ async def xuat_excel(
     tu_ngay: Optional[date_type] = Query(None, alias="tu-ngay"),
     den_ngay: Optional[date_type] = Query(None, alias="den-ngay"),
     tuan: Optional[str] = Query(None),
+    chi_cuoi_tuan: bool = Query(True, alias="chi-cuoi-tuan"),
 ):
     bd, kt = _khoang(tu_ngay, den_ngay, tuan)
     svc = TrucBanService(db)
     try:
-        mt = await svc.ma_tran(bd, kt, user=user)
+        mt = await svc.ma_tran(bd, kt, user=user,
+                               chi_cuoi_tuan=chi_cuoi_tuan)
     except LoiNghiepVu as e:
         raise _loi(e) from e
 

@@ -43,6 +43,7 @@ if not _hkg_logger.handlers:
 from meeting_service.services.rate_limit import limiter
 from meeting_service.api.endpoints.cuoc_hop import router as cuoc_hop_router
 from meeting_service.api.endpoints.lich_cong_tac import router as lich_cong_tac_router
+from meeting_service.api.endpoints.thong_ke_tai_lieu import router as thong_ke_tai_lieu_router
 from meeting_service.api.endpoints.tai_lieu import (
     router as tai_lieu_router,
     router_cuoc_hop as tai_lieu_cuoc_hop_router,
@@ -141,6 +142,7 @@ app.add_middleware(
 # Routers — Module 1 + 3 + 4 + 5
 app.include_router(cuoc_hop_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(lich_cong_tac_router, prefix="/api/v1/hop-khong-giay")
+app.include_router(thong_ke_tai_lieu_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(tai_lieu_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(tai_lieu_cuoc_hop_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(diem_danh_router, prefix="/api/v1/hop-khong-giay")

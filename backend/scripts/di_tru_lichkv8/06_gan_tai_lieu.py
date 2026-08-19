@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import re
 import shutil
 import sys
@@ -41,7 +42,21 @@ HERE = Path(__file__).resolve().parent
 DUMPS = HERE / "dumps"
 KHO_FILE = DUMPS / "drive_files"
 MANIFEST = DUMPS / "drive_files_manifest.json"
-UPLOAD_ROOT = HERE.parents[1] / "uploads" / "meeting"
+
+# Kho đích. Mặc định là `backend/uploads/meeting` của CÂY CHỨA SCRIPT NÀY —
+# đúng cho môi trường phát triển, SAI cho production.
+#
+# Đã vấp 19/08/2026: chạy script từ cây dev nhưng ghi vào DB production. Bản ghi
+# tài liệu vào prod trong khi file nằm lại cây dev, nên 816 tài liệu tra ra thì
+# thấy nhưng bấm tải là hỏng. Phải chỉ định rõ khi chạy cho prod:
+#
+#     HKG_UPLOAD_DIR=/var/data/kpi/uploads/meeting \
+#     CHO_PHEP_PROD=toi_dong_y DB_NAME=kpi_haiquan python 06_gan_tai_lieu.py
+#
+# Cùng tên biến mà meeting_service dùng, nên hai bên không thể lệch nhau.
+UPLOAD_ROOT = Path(
+    os.environ.get("HKG_UPLOAD_DIR") or (HERE.parents[1] / "uploads" / "meeting")
+)
 
 CHO_PHEP = {".doc", ".docx", ".gif", ".jpeg", ".jpg", ".pdf", ".png",
             ".ppt", ".pptx", ".txt", ".webp", ".xls", ".xlsx"}

@@ -132,7 +132,9 @@ export interface ITaiLieu {
   created_by: string;
 }
 
-export interface ITaiLieuListItem extends Omit<ITaiLieu, 'mo_ta' | 'cuoc_hop_id' | 'created_by' | 'minio_bucket' | 'minio_key'> {
+// `mo_ta` CÓ trong phản hồi của backend (schema TaiLieuListItem) — trước đây
+// khai thiếu ở đây nên phía giao diện không đọc được, dù dữ liệu vẫn về.
+export interface ITaiLieuListItem extends Omit<ITaiLieu, 'cuoc_hop_id' | 'created_by' | 'minio_bucket' | 'minio_key'> {
   url_xem?: string;
 }
 

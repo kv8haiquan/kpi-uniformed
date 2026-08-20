@@ -10,11 +10,17 @@
 
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FileText, Loader2, Paperclip, Trash2, X } from 'lucide-react';
 
 import { lichCongTacApi } from '@/services/lich-cong-tac';
-import { errMsg } from '@/lib/hkg-error';
+import { taiLieuApi } from '@/services/hkg';
+import { errApi, errMsg } from '@/lib/hkg-error';
+import type {
+  IMucPhanQuyen,
+  ITaiLieuListItem,
+  PhanQuyenTaiLieu,
+} from '@/types/hkg';
 import type {
   IDanhMucLoai,
   IDonVi,
@@ -38,6 +44,31 @@ type Truong = keyof ILichCongTacGhi;
 
 const oCss =
   'w-full rounded-lg border border-gray-300 px-3 py-1.5 focus:border-blue-500 focus:outline-none';
+
+/**
+ * Loại tài liệu — đúng danh mục FILE_TYPE của lichkv8 (màn hình Quản trị danh
+ * mục). Lưu vào `mo_ta` của tài liệu vì bảng `meeting.tai_lieu` chưa có cột
+ * riêng; đây là NHÃN để người đọc nhận ra nhanh, KHÔNG phải căn cứ phân loại.
+ * Báo cáo Thống kê tài liệu vẫn nhận giấy mời theo tên file như trước.
+ */
+const LOAI_TAI_LIEU = [
+  'Giấy mời',
+  'Tài liệu họp',
+  'Báo cáo',
+  'Chương trình',
+  'Biên bản',
+  'Kết luận',
+  'Tài liệu khác',
+];
+
+const DUOI_CHO_PHEP =
+  '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.txt';
+
+function coDaiFile(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
 
 /**
  * Một ô nhập kèm nhãn.
@@ -94,6 +125,19 @@ export default function FormLich({
   );
   const [thanhPhanIds, setThanhPhanIds] = useState<string[]>(thanhPhanBanDau);
 
+  // ── tài liệu đính kèm ───────────────────────────────────────────────
+  // Lúc TẠO MỚI chưa có id cuộc họp để tải file lên, nên file đứng xếp hàng ở
+  // đây rồi tải lên ngay sau khi lưu xong. Lúc SỬA cũng xếp hàng cho giống
+  // nhau — một đường đi duy nhất, dễ đoán hơn là tải ngay khi chọn.
+  const [fileCho, setFileCho] = useState<File[]>([]);
+  const [daCo, setDaCo] = useState<ITaiLieuListItem[]>([]);
+  const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0]);
+  const [mucList, setMucList] = useState<IMucPhanQuyen[]>([]);
+  const [mucTaiLieu, setMucTaiLieu] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
+  const [dangTaiFile, setDangTaiFile] = useState<string | null>(null);
+  const [keoVao, setKeoVao] = useState(false);
+  const oFile = useRef<HTMLInputElement>(null);
+
   const banDau = useMemo<Record<Truong, string>>(
     () => ({
       tieu_de: banGhi?.tieu_de ?? '',
@@ -124,9 +168,61 @@ export default function FormLich({
     lichCongTacApi.danhMuc().then(setLoai).catch(() => setLoai([]));
     lichCongTacApi.danhMucDonVi().then(setDonVi).catch(() => setDonVi([]));
     lichCongTacApi.danhMucLanhDao().then(setLanhDao).catch(() => setLanhDao([]));
+    taiLieuApi.mucPhanQuyen().then(setMucList).catch(() => setMucList([]));
   }, []);
 
+  useEffect(() => {
+    if (!banGhi) return;
+    taiLieuApi.listByCuocHop(banGhi.id).then(setDaCo).catch(() => setDaCo([]));
+  }, [banGhi]);
+
   const dat = (k: Truong, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const themFile = (ds: FileList | null) => {
+    if (!ds?.length) return;
+    // Trùng tên và trùng cỡ thì coi là cùng một file — kéo thả hai lần là
+    // chuyện thường, mà tải lên hai bản giống hệt thì không ai muốn.
+    setFileCho((truoc) => {
+      const co = new Set(truoc.map((f) => `${f.name}|${f.size}`));
+      return [
+        ...truoc,
+        ...Array.from(ds).filter((f) => !co.has(`${f.name}|${f.size}`)),
+      ];
+    });
+  };
+
+  const xoaFileCho = (i: number) =>
+    setFileCho((truoc) => truoc.filter((_, j) => j !== i));
+
+  const xoaFileDaCo = async (tl: ITaiLieuListItem) => {
+    if (!window.confirm(`Xoá tài liệu "${tl.ten_tai_lieu}"?`)) return;
+    try {
+      await taiLieuApi.xoa(tl.id);
+      setDaCo((truoc) => truoc.filter((x) => x.id !== tl.id));
+    } catch (e) {
+      setLoi(errApi(e, 'Không xoá được tài liệu'));
+    }
+  };
+
+  /** Tải hàng đợi lên sau khi đã có id cuộc họp. Trả về danh sách file hỏng. */
+  const taiFileLen = async (cuocHopId: string): Promise<string[]> => {
+    const hong: string[] = [];
+    for (const f of fileCho) {
+      setDangTaiFile(f.name);
+      try {
+        await taiLieuApi.upload({
+          cuoc_hop_id: cuocHopId,
+          file: f,
+          mo_ta: loaiTaiLieu,
+          phan_quyen: mucTaiLieu,
+        });
+      } catch {
+        hong.push(f.name);
+      }
+    }
+    setDangTaiFile(null);
+    return hong;
+  };
 
   const luu = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,16 +268,36 @@ export default function FormLich({
           thanhPhanIds.some((id, i) => id !== thanhPhanBanDau[i]);
     if (doiThanhPhan) goi.lanh_dao_lien_quan_ids = thanhPhanIds;
 
-    if (dangSua && Object.keys(goi).length === 0) {
+    if (dangSua && Object.keys(goi).length === 0 && fileCho.length === 0) {
       onDong();
       return;
     }
 
     setDangLuu(true);
     try {
-      const sk = dangSua
-        ? await lichCongTacApi.capNhat(banGhi!.id, goi)
-        : await lichCongTacApi.tao(goi);
+      const sk =
+        dangSua && Object.keys(goi).length === 0
+          ? banGhi!
+          : dangSua
+            ? await lichCongTacApi.capNhat(banGhi!.id, goi)
+            : await lichCongTacApi.tao(goi);
+
+      // Tải file SAU khi đã lưu: lúc tạo mới chưa có id cuộc họp để gắn vào.
+      // Lịch đã lưu rồi thì file hỏng cũng không được nuốt lịch — báo đúng
+      // file nào hỏng và giữ form mở để người dùng thử lại.
+      if (fileCho.length > 0) {
+        const hong = await taiFileLen(sk.id);
+        if (hong.length > 0) {
+          setLoi(
+            `Đã lưu lịch, nhưng ${hong.length} file không tải lên được: ` +
+              `${hong.join(', ')}. Thử lại hoặc tải lên ở trang chi tiết.`,
+          );
+          setFileCho((truoc) => truoc.filter((f) => hong.includes(f.name)));
+          setDangLuu(false);
+          return;
+        }
+        setFileCho([]);
+      }
       onXong(sk);
     } catch (e2) {
       setLoi(errMsg(e2, 'Không lưu được lịch'));
@@ -194,7 +310,7 @@ export default function FormLich({
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
       <form
         onSubmit={luu}
-        className="w-full max-w-3xl rounded-xl bg-white shadow-xl my-8"
+        className="w-full max-w-4xl rounded-xl bg-white shadow-xl my-8"
       >
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
           <h2 className="font-semibold text-gray-900">
@@ -212,7 +328,7 @@ export default function FormLich({
         </div>
 
         <div className="grid gap-3 px-5 py-4 sm:grid-cols-2">
-          <O nhan="Nội dung *" rong>
+          <O nhan="Nội dung cuộc họp *" rong>
             <input
               className={oCss}
               value={form.tieu_de}
@@ -378,7 +494,7 @@ export default function FormLich({
             />
           </O>
 
-          <O nhan="Số văn bản">
+          <O nhan="Số văn bản / giấy mời">
             <input
               className={oCss}
               value={form.so_van_ban}
@@ -407,6 +523,167 @@ export default function FormLich({
           </O>
         </div>
 
+        {/* ── Tài liệu đính kèm ─────────────────────────────────────
+            Bản lichkv8 có mục này ngay trong form thêm lịch; thiếu nó thì
+            Văn phòng phải lưu lịch xong, mở lại trang chi tiết rồi mới nộp
+            được tài liệu — hai bước cho một việc.                        */}
+        <div className="border-t border-gray-200 px-5 py-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-gray-400" />
+            <span className="text-sm font-medium text-gray-700">
+              Tài liệu đính kèm
+            </span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1 block text-gray-600">Loại tài liệu</span>
+              <select
+                className={oCss}
+                value={loaiTaiLieu}
+                onChange={(e) => setLoaiTaiLieu(e.target.value)}
+              >
+                {LOAI_TAI_LIEU.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block text-sm">
+              <span className="mb-1 block text-gray-600">Ai được xem</span>
+              <select
+                className={oCss}
+                value={mucTaiLieu}
+                onChange={(e) =>
+                  setMucTaiLieu(e.target.value as PhanQuyenTaiLieu)
+                }
+                title={mucList.find((m) => m.ma === mucTaiLieu)?.mo_ta}
+              >
+                {mucList.map((m) => (
+                  <option key={m.ma} value={m.ma} disabled={!m.dat_duoc}>
+                    {m.ten}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <p className="mt-1 text-xs text-gray-500">
+            Mặc định công khai nội bộ. Người tải lên luôn xem lại được file của
+            chính mình, kể cả khi mức hạn chế được nâng sau đó.
+          </p>
+
+          <input
+            ref={oFile}
+            type="file"
+            multiple
+            accept={DUOI_CHO_PHEP}
+            className="hidden"
+            onChange={(e) => {
+              themFile(e.target.files);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => oFile.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setKeoVao(true);
+            }}
+            onDragLeave={() => setKeoVao(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setKeoVao(false);
+              themFile(e.dataTransfer.files);
+            }}
+            className={`mt-2 w-full rounded-lg border-2 border-dashed px-3 py-5 text-center text-sm ${
+              keoVao
+                ? 'border-blue-400 bg-blue-50 text-blue-700'
+                : 'border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-gray-50'
+            }`}
+          >
+            <span className="block font-medium">
+              Kéo thả file vào đây hoặc bấm để chọn
+            </span>
+            <span className="block text-xs text-gray-500">
+              PDF, Word, Excel, PowerPoint, ảnh… tối đa 100MB mỗi file
+            </span>
+          </button>
+
+          {fileCho.length > 0 && (
+            <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200">
+              {fileCho.map((f, i) => (
+                <li
+                  key={`${f.name}-${f.size}-${i}`}
+                  className="flex items-center gap-2 px-3 py-2 text-sm"
+                >
+                  <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {f.name}
+                    <span className="ml-1.5 text-xs text-gray-500">
+                      {coDaiFile(f.size)}
+                    </span>
+                  </span>
+                  {dangTaiFile === f.name ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  ) : (
+                    <button
+                      type="button"
+                      title="Bỏ khỏi danh sách"
+                      onClick={() => xoaFileCho(i)}
+                      className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {!dangSua && fileCho.length > 0 && (
+            <p className="mt-1 text-xs text-gray-500">
+              File được tải lên ngay sau khi lịch lưu xong.
+            </p>
+          )}
+
+          {dangSua && daCo.length > 0 && (
+            <>
+              <span className="mt-3 mb-1 block text-xs text-gray-500">
+                Đã đính kèm ({daCo.length})
+              </span>
+              <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+                {daCo.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center gap-2 px-3 py-2 text-sm"
+                  >
+                    <FileText className="h-4 w-4 shrink-0 text-gray-400" />
+                    <span className="min-w-0 flex-1 truncate">
+                      {t.ten_tai_lieu}
+                      <span className="ml-1.5 text-xs text-gray-500">
+                        {coDaiFile(t.file_size)}
+                        {t.mo_ta ? ` · ${t.mo_ta}` : ''}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      title="Xoá tài liệu"
+                      onClick={() => void xoaFileDaCo(t)}
+                      className="rounded p-1 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+
         {loi && (
           <div className="mx-5 mb-3 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
             {loi}
@@ -427,7 +704,11 @@ export default function FormLich({
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
           >
             {dangLuu && <Loader2 className="w-4 h-4 animate-spin" />}
-            {dangSua ? 'Lưu thay đổi' : 'Tạo lịch'}
+            {dangTaiFile
+              ? `Đang tải ${dangTaiFile}…`
+              : dangSua
+                ? 'Lưu thay đổi'
+                : 'Tạo lịch'}
           </button>
         </div>
       </form>

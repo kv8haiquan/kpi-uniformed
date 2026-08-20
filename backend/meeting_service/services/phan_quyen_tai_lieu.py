@@ -102,6 +102,36 @@ def muc_dat_duoc(user: TokenPayload) -> list[str]:
     return [m for m in PHAN_QUYEN_VALUES if BAC[m] <= tran]
 
 
+def duoc_quan_ly_tai_lieu(cuoc_hop, user: TokenPayload) -> bool:
+    """Ai được tải lên / sửa / xoá tài liệu của một cuộc họp hoặc sự kiện lịch.
+
+    Cuộc họp Họp Không Giấy: chủ toạ, thư ký, quản trị, TRUONG_CNTT, THU_KY_HOP
+    — giữ nguyên luật cũ.
+
+    Sự kiện lịch công tác: quản trị lịch hoặc người tạo sự kiện. Luật của HKG
+    không dùng được ở đây — sự kiện lịch thường không có thư ký, còn chủ toạ là
+    lãnh đạo chủ trì chứ không phải người đi nộp tài liệu; người nộp là Văn
+    phòng, tức người đã tạo dòng lịch đó. Dùng đúng luật đang áp cho nút Sửa
+    lịch để hai thao tác không lệch nhau.
+    """
+    # Nhập tại chỗ: `lich_cong_tac_service` không phụ thuộc module này, nhập ở
+    # đầu file sẽ tạo vòng nhập khi module kia dùng tới hằng số phân quyền.
+    from meeting_service.services.lich_cong_tac_service import la_quan_tri_lich
+
+    user_id = UUID(user.sub)
+    if getattr(cuoc_hop, "nguon", "HKG") == "LICH_CONG_TAC":
+        return bool(la_quan_tri_lich(user) or cuoc_hop.created_by == user_id)
+
+    return bool(
+        user.is_admin
+        or user.vai_tro in ("SUPER_ADMIN", "ADMIN")
+        or "TRUONG_CNTT" in (user.platform_roles or [])
+        or cuoc_hop.chu_toa_id == user_id
+        or cuoc_hop.thu_ky_id == user_id
+        or "THU_KY_HOP" in (user.platform_roles or [])
+    )
+
+
 def loc_xem_duoc(tai_lieu: list, user: TokenPayload) -> list:
     """Bỏ khỏi danh sách những tài liệu người này không được xem."""
     return [

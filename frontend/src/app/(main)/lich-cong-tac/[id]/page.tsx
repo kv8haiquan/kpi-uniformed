@@ -38,6 +38,7 @@ import {
   type TrangThaiLich,
 } from '@/types/lich-cong-tac';
 import FormLich from '../components/FormLich';
+import TaiLieuLich from '../components/TaiLieuLich';
 import SaoChuanBi from '../components/SaoChuanBi';
 
 const MAU_LOAI: Record<LoaiLich, string> = {
@@ -85,6 +86,9 @@ export default function ChiTietSuKienPage() {
   const [moForm, setMoForm] = useState(false);
   const [suaDuoc, setSuaDuoc] = useState(false);
   const [nhatKy, setNhatKy] = useState<IDongNhatKy[] | null>(null);
+  // Số tài liệu do khối Tài liệu tự đếm sau khi tải danh sách — `sk.so_tai_lieu`
+  // là ảnh chụp lúc mở trang, tải thêm file xong sẽ lệch ngay.
+  const [soTaiLieu, setSoTaiLieu] = useState(0);
   const [dangXuLy, setDangXuLy] = useState(false);
 
   useEffect(() => {
@@ -354,29 +358,19 @@ export default function ChiTietSuKienPage() {
           )}
 
           <Dong icon={<FileText className="w-4 h-4" />} nhan="Tài liệu">
-            {sk.so_tai_lieu > 0 ? (
-              <Link
-                href={`/hop-khong-giay/chi-tiet/${sk.id}/tai-lieu`}
-                className="text-blue-700 hover:underline"
-              >
-                {sk.so_tai_lieu} tài liệu đính kèm
-              </Link>
-            ) : (
-              <Link
-                href={`/hop-khong-giay/chi-tiet/${sk.id}/tai-lieu`}
-                className="text-gray-500 hover:underline"
-              >
-                Chưa có tài liệu — bấm để tải lên
-              </Link>
-            )}
+            <TaiLieuLich
+              cuocHopId={sk.id}
+              quanLyDuoc={suaDuoc}
+              onDoiSoLuong={setSoTaiLieu}
+            />
             {/*
               Không CHẶN tải tài liệu khi thiếu đơn vị chuẩn bị: 141/191 sự
               kiện lịch sử có tài liệu mà không ghi đơn vị, và cuộc họp Họp
               Không Giấy thì không dùng trường này. Nhưng phải nói rõ hậu quả,
               vì báo cáo Thống kê tài liệu phân loại theo đúng trường đó.
             */}
-            {sk.so_tai_lieu > 0 && !sk.don_vi_chuan_bi && (
-              <p className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+            {soTaiLieu > 0 && !sk.don_vi_chuan_bi && (
+              <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
                 Có tài liệu nhưng chưa giao đơn vị chuẩn bị — báo cáo{' '}
                 <Link
                   href="/lich-cong-tac/thong-ke-tai-lieu"

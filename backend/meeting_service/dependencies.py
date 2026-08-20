@@ -157,6 +157,15 @@ async def _can_view_cuoc_hop(
     """Logic phân quyền: ai xem được cuộc họp này."""
     user_id = UUID(user.sub)
 
+    # 0. Sự kiện lịch công tác là lịch CÔNG KHAI NỘI BỘ — cả Chi cục xem được,
+    #    đó là mục đích tồn tại của nó. Luật dưới đây viết cho cuộc họp Họp
+    #    Không Giấy (chỉ người được mời); áp nguyên cho lịch công tác thì công
+    #    chức thường mở tài liệu của chính lịch mình đang xem cũng bị 403.
+    #    Tài liệu nhạy cảm vẫn được chặn ở tầng tài liệu bằng `phan_quyen`
+    #    (G5.4), không chặn ở tầng cuộc họp.
+    if cuoc_hop.nguon == "LICH_CONG_TAC":
+        return True
+
     # 1. Toàn quyền
     if _has_view_all(user):
         return True

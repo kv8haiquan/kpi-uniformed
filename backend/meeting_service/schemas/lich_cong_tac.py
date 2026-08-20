@@ -61,6 +61,14 @@ class LichCongTacItem(BaseModel):
     lanh_dao_lien_quan: list[NguoiTomTat] = Field(default_factory=list)
     so_tai_lieu: int = 0
 
+    # Giao diện dùng để quyết định có hiện nút Sửa ngay trên danh sách không:
+    # người thường chỉ sửa được sự kiện mình tạo.
+    created_by: Optional[UUID] = None
+
+    # Điểm công tác chuẩn bị (G5.3) — None khi chưa ai chấm.
+    diem_chuan_bi: Optional[float] = None
+    so_luot_cham: int = 0
+
     # Sự kiện nguồn HKG mở được sang màn hình Họp Không Giấy (tiêu chí 8.3).
     co_the_mo_hkg: bool = False
 
@@ -69,7 +77,6 @@ class LichCongTacChiTiet(LichCongTacItem):
     mo_ta: Optional[str] = None
     thanh_phan_text: Optional[str] = None
     ly_do_huy: Optional[str] = None
-    created_by: Optional[UUID] = None
 
 
 class LichCongTacCreate(BaseModel):

@@ -79,6 +79,9 @@ export interface ISuKienLich {
   diem_chuan_bi?: number | null;
   so_luot_cham?: number;
 
+  /** Người tạo — để biết có hiện nút Sửa ngay trên danh sách không. */
+  created_by?: string | null;
+
   /** Bấm vào mở được sang chi tiết cuộc họp trong Họp Không Giấy. */
   co_the_mo_hkg: boolean;
 }

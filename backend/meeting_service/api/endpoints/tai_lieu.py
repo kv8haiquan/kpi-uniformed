@@ -40,6 +40,7 @@ from meeting_service.services.phan_quyen_tai_lieu import (
     MO_TA as MO_TA_PHAN_QUYEN,
     NHAN as NHAN_PHAN_QUYEN,
     PHAN_QUYEN_VALUES,
+    duoc_quan_ly_tai_lieu,
     loc_xem_duoc,
     muc_dat_duoc,
     xem_duoc,
@@ -141,17 +142,12 @@ async def upload_tai_lieu(
             detail={"success": False, "error": {"code": "MEETING_CANCELLED",
                     "message": "Cuộc họp đã hủy — không thể upload tài liệu"}},
         )
-    user_id = UUID(user.sub)
-    if not (
-        user.is_admin or user.vai_tro in ("SUPER_ADMIN", "ADMIN")
-        or "TRUONG_CNTT" in (user.platform_roles or [])
-        or ch.chu_toa_id == user_id or ch.thu_ky_id == user_id
-        or "THU_KY_HOP" in (user.platform_roles or [])  # role THU_KY_HOP của đơn vị
-    ):
+    if not duoc_quan_ly_tai_lieu(ch, user):
         raise HTTPException(
             status_code=403,
             detail={"success": False, "error": {"code": "NO_PERMISSION",
-                    "message": "Bạn không có quyền upload tài liệu cho cuộc họp này"}},
+                    "message": "Bạn không có quyền tải tài liệu lên cho cuộc "
+                               "họp / sự kiện này"}},
         )
 
     _kiem_muc_dat_duoc(phan_quyen, user)
@@ -318,12 +314,7 @@ async def xoa_tai_lieu(
     ch = res.scalar_one_or_none()
     if ch is None:
         raise HTTPException(404)
-    user_id = UUID(user.sub)
-    if not (
-        user.is_admin or user.vai_tro in ("SUPER_ADMIN", "ADMIN")
-        or "TRUONG_CNTT" in (user.platform_roles or [])
-        or ch.chu_toa_id == user_id or ch.thu_ky_id == user_id
-    ):
+    if not duoc_quan_ly_tai_lieu(ch, user):
         raise HTTPException(
             status_code=403,
             detail={"success": False, "error": {"code": "NO_PERMISSION",
@@ -365,13 +356,7 @@ async def sua_tai_lieu(
                     "message": "Không tìm thấy cuộc họp của tài liệu"}},
         )
 
-    user_id = UUID(user.sub)
-    if not (
-        user.is_admin or user.vai_tro in ("SUPER_ADMIN", "ADMIN")
-        or "TRUONG_CNTT" in (user.platform_roles or [])
-        or ch.chu_toa_id == user_id or ch.thu_ky_id == user_id
-        or "THU_KY_HOP" in (user.platform_roles or [])
-    ):
+    if not duoc_quan_ly_tai_lieu(ch, user):
         raise HTTPException(
             status_code=403,
             detail={"success": False, "error": {"code": "NO_PERMISSION",

@@ -20,8 +20,14 @@ class TaiLieu(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    cuoc_hop_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("meeting.cuoc_hop.id", ondelete="CASCADE"), nullable=False
+    # Một tài liệu thuộc ĐÚNG MỘT chủ thể: cuộc họp hoặc ghi chú cá nhân
+    # (CHECK `ck_tai_lieu_chu_the` trong CSDL). Trước G5.2 chỉ có cuộc họp nên
+    # model để nullable=False, lệch với CSDL — nay khai đúng cả hai cột.
+    cuoc_hop_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("meeting.cuoc_hop.id", ondelete="CASCADE"), nullable=True
+    )
+    ghi_chu_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("meeting.ghi_chu.id", ondelete="CASCADE"), nullable=True
     )
     ten_tai_lieu: Mapped[str] = mapped_column(String(500), nullable=False)
     mo_ta: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -482,10 +482,13 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 - [x] Duyệt thư mục · breadcrumb · tìm kiếm theo tên/số hiệu · upload · xem trước · tải
 - [x] ⛔ **Không** nhúng iframe Google Drive — kho phải nằm trên nền tảng
 
-### G5.2 — Ghi chú và chia sẻ
+### G5.2 — Ghi chú và chia sẻ ✅ *20/08*
 
-- [ ] CRUD ghi chú (độc lập hoặc gắn cuộc họp), đính kèm file, chia sẻ cho người khác, đếm chưa đọc
-- [ ] Dữ liệu thật rất ít (7 ghi chú, 0 chia sẻ) → làm gọn, không cần tối ưu
+- [x] CRUD ghi chú (độc lập hoặc gắn cuộc họp), đính kèm file, chia sẻ cho người khác, đếm chưa đọc
+- [x] Dữ liệu thật rất ít (6 ghi chú, 0 chia sẻ) → làm gọn, không cần tối ưu
+- [x] 14 endpoint `/ghi-chu/*` · trang `/lich-cong-tac/ghi-chu` · 20 test PASS
+- [x] Đính kèm dùng chung `meeting.tai_lieu` (CHECK `ck_tai_lieu_chu_the`), file ở `uploads/meeting/ghi-chu/{id}/` — **không cần migration**
+- [x] ⚠️ Riêng tư tuyệt đối: **quản trị KHÔNG đọc được** ghi chú người khác. Người ngoài nhận 404 (không lộ ghi chú có tồn tại), người được chia sẻ nhận 403 khi thử sửa
 
 ### G5.3 — Đánh giá cuộc họp
 

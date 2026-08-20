@@ -422,3 +422,82 @@ export interface IDonVi {
   ma_don_vi: string;
   ten_don_vi: string;
 }
+
+// ─── Ghi chú và chia sẻ (G5.2) ─────────────────────────────────────────
+
+/** Một file đính kèm ghi chú. */
+export interface IDinhKemGhiChu {
+  id: string;
+  ten_tai_lieu: string;
+  mo_ta: string | null;
+  file_size: number;
+  extension: string | null;
+  mime_type: string | null;
+  created_at: string;
+}
+
+/** Một lượt chia sẻ — chỉ chủ ghi chú nhìn thấy danh sách này. */
+export interface ILuotChiaSe {
+  id: string;
+  nguoi_nhan_id: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+  loi_nhan: string | null;
+  da_doc: boolean;
+  thoi_diem_doc: string | null;
+  created_at: string;
+}
+
+export interface IGhiChuTomTat {
+  id: string;
+  tieu_de: string;
+  trich_yeu: string | null;
+  is_ghim: boolean;
+  cuoc_hop_id: string | null;
+  ten_cuoc_hop: string | null;
+  ma_lich: string | null;
+  ngay_hop: string | null;
+  la_cua_toi: boolean;
+  nguoi_tao_id: string;
+  nguoi_tao: string;
+  so_tai_lieu: number;
+  so_chia_se: number;
+  /** null khi là ghi chú của chính mình — không có khái niệm đã đọc. */
+  da_doc: boolean | null;
+  nguoi_chia_se: string | null;
+  loi_nhan: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IGhiChuChiTiet {
+  id: string;
+  tieu_de: string;
+  noi_dung: string | null;
+  is_ghim: boolean;
+  la_cua_toi: boolean;
+  nguoi_tao_id: string;
+  nguoi_tao: string | null;
+  cuoc_hop: {
+    id: string;
+    ma_lich: string | null;
+    tieu_de: string;
+    ngay_hop: string;
+  } | null;
+  tai_lieu: IDinhKemGhiChu[];
+  /** Rỗng với người được chia sẻ — họ không biết ghi chú gửi cho ai khác. */
+  chia_se: ILuotChiaSe[];
+  da_doc: boolean | null;
+  loi_nhan: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface INguoiNhanGhiChu {
+  id: string;
+  ma_cc: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+}
+
+export type PhamViGhiChu = 'TAT_CA' | 'CUA_TOI' | 'DUOC_CHIA_SE';

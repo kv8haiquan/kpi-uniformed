@@ -15,6 +15,7 @@ Chạy lại được: file đã tải và còn nguyên vẹn thì bỏ qua.
     python 05_tai_file_drive.py               # tải cả 2 kho
     python 05_tai_file_drive.py --kho thu-vien
     python 05_tai_file_drive.py --lai         # tải lại cả file đã có
+    python 05_tai_file_drive.py --thu-lai-loi # thử lại nhóm file từng hỏng
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ HERE = Path(__file__).resolve().parent
 DUMPS = HERE / "dumps"
 KHO_FILE = DUMPS / "drive_files"
 MANIFEST = DUMPS / "drive_files_manifest.json"
+FILE_LOI = DUMPS / "drive_files_loi.json"
 
 SO_LUONG = 4          # tải song song — vừa đủ nhanh, không dồn ép Google
 SO_LAN_THU = 3
@@ -140,6 +142,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--kho", choices=["tai-lieu", "thu-vien"])
     ap.add_argument("--lai", action="store_true", help="tải lại cả file đã có")
+    ap.add_argument("--thu-lai-loi", action="store_true",
+                    help="thử lại cả những file lần trước tải hỏng")
     args = ap.parse_args()
 
     KHO_FILE.mkdir(parents=True, exist_ok=True)
@@ -164,15 +168,30 @@ def main() -> None:
 
     print(f"Tổng file trong bản quét: {len(can_tai)}", flush=True)
 
+    # File đã hỏng ở lần chạy trước thì bỏ qua, trừ khi bảo thử lại. Hai file
+    # trong kho là Google Docs gốc / trả HTTP 500 vĩnh viễn; mỗi lượt thử tốn
+    # tới 3 lần curl `--max-time 300` rồi thêm một lượt dò loại file, nên để
+    # nguyên là mỗi lần chạy lại treo vài phút cho đúng hai file không bao giờ
+    # tải được.
+    da_loi: dict = {}
+    if FILE_LOI.exists() and not args.thu_lai_loi and not args.lai:
+        da_loi = json.loads(FILE_LOI.read_text(encoding="utf8"))
+
     con_lai = []
     for fid in can_tai:
         p = KHO_FILE / fid
         if not args.lai and p.exists() and p.stat().st_size > 0 \
                 and fid in manifest:
             continue
+        if fid in da_loi:
+            continue
         con_lai.append(fid)
-    print(f"Đã có sẵn: {len(can_tai) - len(con_lai)} · cần tải: {len(con_lai)}\n",
-          flush=True)
+    print(f"Đã có sẵn: {len(can_tai) - len(con_lai) - len(da_loi)} "
+          f"· bỏ qua vì lần trước lỗi: {len(da_loi)} "
+          f"· cần tải: {len(con_lai)}", flush=True)
+    if da_loi:
+        print("  (chạy với --thu-lai-loi nếu muốn thử lại nhóm lỗi)\n",
+              flush=True)
 
     if not con_lai:
         print("Không có gì để tải.")
@@ -213,7 +232,7 @@ def main() -> None:
     for fid, sai in list(loi.items())[:15]:
         print(f"      {can_tai[fid]['ten'][:50]} — {sai}")
     if loi:
-        (DUMPS / "drive_files_loi.json").write_text(
+        FILE_LOI.write_text(
             json.dumps({k: {**can_tai[k], "loi": v} for k, v in loi.items()},
                        ensure_ascii=False, indent=1), encoding="utf8")
         print(f"   → chi tiết ở dumps/drive_files_loi.json")

@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
 import { doiSoatApi } from '@/services/doi-soat';
+import { ghiChuApi } from '@/services/ghi-chu';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { getPlatformRolesFromToken, userCanAccessHkg } from '@/lib/jwt-claims';
 
@@ -37,6 +38,9 @@ export default function LichCongTacLayout({
   const pathname = usePathname();
   const { user, isAuthenticated, isLoading } = useAuthStore();
   const [thayDoiSoat, setThayDoiSoat] = useState(false);
+  // Ghi chú người khác chia sẻ chỉ hiện khi mở đúng tab đó — không có
+  // huy hiệu thì thông báo gửi tới cũng chẳng ai thấy.
+  const [chuaDoc, setChuaDoc] = useState(0);
 
   useEffect(() => {
     if (isLoading) return;
@@ -62,6 +66,13 @@ export default function LichCongTacLayout({
       .then((q) => setThayDoiSoat(q.duoc_xem))
       .catch(() => setThayDoiSoat(false));
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    ghiChuApi.soChuaDoc().then(setChuaDoc).catch(() => setChuaDoc(0));
+    // Đọc lại mỗi lần đổi trang trong module — rẻ hơn nhiều so với hẹn giờ,
+    // và người dùng đang ở trong module thì thao tác nào cũng đổi đường dẫn.
+  }, [isAuthenticated, pathname]);
 
   const tab = thayDoiSoat ? [...TAB, TAB_DOI_SOAT] : TAB;
 
@@ -91,6 +102,11 @@ export default function LichCongTacLayout({
               }`}
             >
               {t.nhan}
+              {t.href === '/lich-cong-tac/ghi-chu' && chuaDoc > 0 && (
+                <span className="ml-1.5 rounded-full bg-red-100 px-1.5 text-xs text-red-700">
+                  {chuaDoc}
+                </span>
+              )}
             </Link>
           );
         })}

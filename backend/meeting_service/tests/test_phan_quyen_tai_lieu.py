@@ -330,3 +330,69 @@ async def test_ha_muc_thi_nguoi_thuong_lai_xem_duoc(
 
     _doi_user("TEST-G3-004", seed_test_users["don_vi_b"])
     assert (await client.get(f"{BASE}/{tl}/xem")).status_code == 200
+
+
+# ── tài liệu của sự kiện lịch công tác ────────────────────────────────
+# Luật của Họp Không Giấy không dùng được cho lịch công tác: sự kiện lịch
+# thường không có thư ký, chủ toạ là lãnh đạo chủ trì chứ không phải người đi
+# nộp tài liệu, và lịch thì cả Chi cục đều xem.
+
+async def _tao_su_kien_lich(db: AsyncSession, nguoi_tao) -> str:
+    row = await db.execute(sa_text("""
+        INSERT INTO meeting.cuoc_hop
+            (tieu_de, ngay_hop, gio_bat_dau, nguon, ma_lich, loai_lich,
+             ngay_hien_thi, trang_thai, created_by)
+        VALUES ('Test G5 — tài liệu lịch công tác', '2026-09-20', '08:00',
+                'LICH_CONG_TAC', 'LHTESTTL', 'HOP', '2026-09-20',
+                'DA_THONG_BAO', :nguoi)
+        RETURNING id
+    """), {"nguoi": str(nguoi_tao)})
+    await db.flush()
+    return str(row.scalar_one())
+
+
+@pytest.mark.asyncio
+async def test_cong_chuc_thuong_xem_duoc_tai_lieu_lich_cong_tac(
+    client: AsyncClient, db_session: AsyncSession, cbcc_user, seed_test_users,
+):
+    """Lịch công tác là lịch công khai nội bộ — không mời ai cả vẫn xem được.
+
+    Trước đây danh sách tài liệu dùng chung luật với cuộc họp HKG nên công
+    chức thường mở tài liệu của chính lịch mình đang xem cũng nhận 403.
+    """
+    from meeting_service.tests.conftest import TEST_USERS
+
+    ch = await _tao_su_kien_lich(db_session, TEST_USERS["TEST-G3-001"])
+    r = await client.get(f"{BASE_CUOC_HOP}/{ch}/tai-lieu")
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == []
+
+
+@pytest.mark.asyncio
+async def test_nguoi_tao_lich_tai_duoc_tai_lieu_len(
+    client: AsyncClient, db_session: AsyncSession, seed_test_users,
+):
+    """Người nộp tài liệu là Văn phòng — tức người đã tạo dòng lịch."""
+    from meeting_service.tests.conftest import TEST_USERS
+
+    nguoi_tao = _doi_user("TEST-G3-004", seed_test_users["don_vi_b"])
+    ch = await _tao_su_kien_lich(db_session, TEST_USERS["TEST-G3-004"])
+
+    tl = await _tai_len(client, ch, "CONG_KHAI", "bao-cao.pdf")
+    ds = (await client.get(f"{BASE_CUOC_HOP}/{ch}/tai-lieu")).json()["data"]
+    assert [x["id"] for x in ds] == [tl]
+    assert nguoi_tao.sub == str(TEST_USERS["TEST-G3-004"])
+
+    # Người khác, không quản trị lịch, không phải người tạo → không nộp được.
+    _doi_user("TEST-G3-002", seed_test_users["don_vi_a"])
+    r = await client.post(
+        BASE + "/upload",
+        data={"cuoc_hop_id": ch, "phan_quyen": "CONG_KHAI"},
+        files={"file": ("x.pdf", io.BytesIO(b"x"), "application/pdf")})
+    assert r.status_code == 403
+    assert r.json()["detail"]["error"]["code"] == "NO_PERMISSION"
+
+    # Quản trị lịch thì nộp được.
+    _doi_user("TEST-G3-003", seed_test_users["don_vi_b"], vai_tro="PCCT",
+              is_lanh_dao=True)
+    assert await _tai_len(client, ch, "CONG_KHAI", "cua-quan-tri.pdf")

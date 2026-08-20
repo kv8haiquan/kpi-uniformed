@@ -20,7 +20,9 @@ import json
 import re
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # Hai kho gốc — hardcode trong Mã.gs của lichkv8 (dòng 32 và 4134)
@@ -48,6 +50,15 @@ OUT_DIR = Path(__file__).resolve().parent / "dumps"
 MAX_DEPTH = 3
 MAX_REQUESTS = 900
 
+# Quét song song theo TỪNG MỨC. Mỗi thư mục là một lượt gọi mạng ~0,9 giây;
+# kho tài liệu có 295 thư mục và thư viện 189, nên quét tuần tự mất khoảng 8
+# phút cho mỗi lần chạy — mà lần nào cũng phải quét lại toàn bộ cây chỉ để
+# phát hiện vài file mới. Tám luồng đưa con số đó xuống khoảng một phút.
+#
+# Tám chứ không nhiều hơn: đây là endpoint công khai không có khoá xác thực,
+# ép mạnh thì Google chặn IP và cả đợt di trú đứng.
+SO_LUONG = 8
+
 
 def liet_ke(folder_id: str, so_lan_thu: int = 2) -> list[dict]:
     """Trả về danh sách mục con trực tiếp của một thư mục."""
@@ -72,34 +83,67 @@ def liet_ke(folder_id: str, so_lan_thu: int = 2) -> list[dict]:
     return []
 
 
-def duyet(folder_id: str, duong_dan: str, do_sau: int,
+def duyet(goc_id: str, goc_duong_dan: str,
           ket_qua: list[dict], quota: list[int]) -> None:
-    if quota[0] <= 0 or do_sau > MAX_DEPTH:
-        return
-    quota[0] -= 1
-    muc = liet_ke(folder_id)
-    files = [x for x in muc if x["loai"] == "file"]
-    thu_muc = [x for x in muc if x["loai"] == "thu_muc"]
-    ket_qua.append({
-        "drive_folder_id": folder_id,
-        "duong_dan": duong_dan,
-        "do_sau": do_sau,
-        "so_file": len(files),
-        "so_thu_muc_con": len(thu_muc),
-        "files": [{"id": f["id"], "ten": f["ten"]} for f in files],
-    })
-    for tm in thu_muc:
-        duyet(tm["id"], f"{duong_dan}/{tm['ten']}", do_sau + 1, ket_qua, quota)
-    time.sleep(0.1)
+    """Duyệt cây theo BỀ RỘNG, mỗi mức quét song song.
+
+    Đổi từ đệ quy theo chiều sâu sang bề rộng chỉ để chạy song song được: các
+    thư mục cùng một mức không phụ thuộc nhau nên gọi mạng cùng lúc được, còn
+    đệ quy thì mỗi lượt phải chờ lượt trước xong.
+
+    Kết quả sắp lại theo đường dẫn ở cuối để hai lần chạy cho ra cùng thứ tự —
+    file JSON này là mốc đối soát, khác thứ tự là mỗi lần so lại một kiểu.
+    """
+    khoa = threading.Lock()
+    muc_nay = [(goc_id, goc_duong_dan)]
+
+    for do_sau in range(MAX_DEPTH + 1):
+        if not muc_nay or quota[0] <= 0:
+            break
+
+        # Cắt theo hạn ngạch TRƯỚC khi gọi mạng, để số lượt gọi không vượt
+        # MAX_REQUESTS chỉ vì nhiều luồng cùng trừ một biến.
+        with khoa:
+            lam = muc_nay[:max(0, quota[0])]
+            quota[0] -= len(lam)
+
+        def mot(cap: tuple[str, str]) -> tuple[str, str, list[dict]]:
+            fid, duong_dan = cap
+            return fid, duong_dan, liet_ke(fid)
+
+        with ThreadPoolExecutor(max_workers=SO_LUONG) as pool:
+            dong = list(pool.map(mot, lam))
+
+        muc_sau: list[tuple[str, str]] = []
+        for fid, duong_dan, muc in dong:
+            files = [x for x in muc if x["loai"] == "file"]
+            thu_muc = [x for x in muc if x["loai"] == "thu_muc"]
+            ket_qua.append({
+                "drive_folder_id": fid,
+                "duong_dan": duong_dan,
+                "do_sau": do_sau,
+                "so_file": len(files),
+                "so_thu_muc_con": len(thu_muc),
+                "files": [{"id": f["id"], "ten": f["ten"]} for f in files],
+            })
+            muc_sau += [(tm["id"], f"{duong_dan}/{tm['ten']}")
+                        for tm in thu_muc]
+
+        print(f"  mức {do_sau}: {len(lam)} thư mục", flush=True)
+        muc_nay = muc_sau
+
+    ket_qua.sort(key=lambda x: x["duong_dan"])
 
 
 def quet(khoa: str) -> dict:
     cfg = KHO[khoa]
     print(f"→ Quét {cfg['ten']} ({cfg['mo_ta']})", flush=True)
     ket_qua: list[dict] = []
-    duyet(cfg["id"], cfg["ten"], 0, ket_qua, [MAX_REQUESTS])
+    bat_dau = time.monotonic()
+    duyet(cfg["id"], cfg["ten"], ket_qua, [MAX_REQUESTS])
     tong_file = sum(x["so_file"] for x in ket_qua)
-    print(f"  {len(ket_qua)} thư mục · {tong_file} file", flush=True)
+    print(f"  {len(ket_qua)} thư mục · {tong_file} file "
+          f"· {time.monotonic() - bat_dau:.0f}s", flush=True)
     return {
         "kho": khoa,
         "drive_folder_id": cfg["id"],

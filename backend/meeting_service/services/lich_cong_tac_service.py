@@ -242,6 +242,11 @@ class LichCongTacService:
             "so_van_ban": r.so_van_ban,
             "lanh_dao_lien_quan": ld_theo_hop.get(r.id, []),
             "so_tai_lieu": so_tl.get(r.id, 0),
+            # Giao diện cần biết ai tạo để quyết định có hiện nút Sửa ngay
+            # trên danh sách hay không — người thường chỉ sửa được lịch mình
+            # tạo. Trước đây chỉ `chi_tiet` trả trường này nên nút Sửa phải
+            # mở trang chi tiết mới hiện ra.
+            "created_by": r.created_by,
             "diem_chuan_bi": diem_cb.get(r.id, (None, 0))[0],
             "so_luot_cham": diem_cb.get(r.id, (None, 0))[1],
             "co_the_mo_hkg": r.nguon == "HKG",

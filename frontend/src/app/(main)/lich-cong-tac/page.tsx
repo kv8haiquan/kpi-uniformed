@@ -24,6 +24,7 @@ import {
   List,
   Loader2,
   MapPin,
+  Pencil,
   Plus,
   Search,
   Star,
@@ -37,6 +38,8 @@ import {
   NHAN_LOAI_LICH,
   NHAN_TRANG_THAI,
   type ILichThang,
+  type IQuyenLich,
+  type ISuKienChiTiet,
   type ISuKienLich,
   type LoaiLich,
   type TrangThaiLich,
@@ -109,6 +112,32 @@ export default function LichCongTacPage() {
   const [moForm, setMoForm] = useState(false);
   const [dangXuat, setDangXuat] = useState(false);
 
+  // Sửa ngay trên danh sách. Mở form cần bản CHI TIẾT (ghi chú, thành phần
+  // ghi tay không có trong danh sách), nên bấm Sửa thì nạp chi tiết trước —
+  // mở bằng dữ liệu danh sách sẽ hiện ô Ghi chú trống trong khi thực tế có
+  // nội dung, người dùng gõ đè lên là mất.
+  const [quyen, setQuyen] = useState<IQuyenLich | null>(null);
+  const [dangSua, setDangSua] = useState<ISuKienChiTiet | null>(null);
+  const [dangMoSua, setDangMoSua] = useState<string | null>(null);
+
+  const suaDuoc = (sk: ISuKienLich) =>
+    sk.nguon === 'LICH_CONG_TAC' &&
+    Boolean(quyen) &&
+    (quyen!.la_quan_tri_lich || quyen!.cong_chuc_id === sk.created_by);
+
+  const moSua = async (sk: ISuKienLich) => {
+    setDangMoSua(sk.id);
+    setLoi(null);
+    try {
+      setDangSua(await lichCongTacApi.chiTiet(sk.id));
+      setMoForm(true);
+    } catch (e) {
+      setLoi(errMsg(e, 'Không mở được sự kiện để sửa'));
+    } finally {
+      setDangMoSua(null);
+    }
+  };
+
   const soDong = 30;
 
   const tai = useCallback(async () => {
@@ -146,6 +175,10 @@ export default function LichCongTacPage() {
   useEffect(() => {
     void tai();
   }, [tai]);
+
+  useEffect(() => {
+    lichCongTacApi.quyenCuaToi().then(setQuyen).catch(() => setQuyen(null));
+  }, []);
 
   const doiThang = (buoc: number) => {
     const m = thang + buoc;
@@ -255,7 +288,10 @@ export default function LichCongTacPage() {
 
           <button
             type="button"
-            onClick={() => setMoForm(true)}
+            onClick={() => {
+              setDangSua(null);
+              setMoForm(true);
+            }}
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700"
           >
             <Plus className="w-4 h-4" />
@@ -514,6 +550,22 @@ export default function LichCongTacPage() {
                           )}
                         </div>
                       </div>
+
+                      {suaDuoc(sk) && (
+                        <button
+                          type="button"
+                          title="Sửa sự kiện"
+                          disabled={dangMoSua === sk.id}
+                          onClick={() => void moSua(sk)}
+                          className="shrink-0 rounded-lg border border-gray-300 p-1.5 text-gray-600 hover:bg-white hover:text-blue-700 disabled:opacity-40"
+                        >
+                          {dangMoSua === sk.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Pencil className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -551,9 +603,14 @@ export default function LichCongTacPage() {
 
       {moForm && (
         <FormLich
-          onDong={() => setMoForm(false)}
+          banGhi={dangSua}
+          onDong={() => {
+            setMoForm(false);
+            setDangSua(null);
+          }}
           onXong={() => {
             setMoForm(false);
+            setDangSua(null);
             void tai();
           }}
         />

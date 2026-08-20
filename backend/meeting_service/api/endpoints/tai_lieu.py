@@ -36,12 +36,68 @@ from meeting_service.services.preview_service import (
     ensure_pdf_preview,
     is_office_extension,
 )
+from meeting_service.services.phan_quyen_tai_lieu import (
+    MO_TA as MO_TA_PHAN_QUYEN,
+    NHAN as NHAN_PHAN_QUYEN,
+    PHAN_QUYEN_VALUES,
+    loc_xem_duoc,
+    muc_dat_duoc,
+    xem_duoc,
+)
 from meeting_service.services.storage_service import StorageService
 from meeting_service.services.tai_lieu_service import TaiLieuService
 
 
 router = APIRouter(prefix="/tai-lieu", tags=["Tài liệu họp"])
 router_cuoc_hop = APIRouter(prefix="/cuoc-hop", tags=["Tài liệu họp"])
+
+
+def _loi_phan_quyen(hanh_dong: str) -> HTTPException:
+    """403 dùng chung cho tài liệu bị hạn chế.
+
+    Cùng một câu chữ cho mọi mức: nói rõ "chỉ lãnh đạo Chi cục" là tiết lộ
+    đúng mức hạn chế của tài liệu, mà mức đó tự nó đã là thông tin.
+    """
+    return HTTPException(
+        status_code=403,
+        detail={"success": False, "error": {
+            "code": "DOC_RESTRICTED",
+            "message": f"Tài liệu này hạn chế người xem — bạn không {hanh_dong} "
+                       "được. Liên hệ Văn phòng nếu cần."}},
+    )
+
+
+def _kiem_muc_dat_duoc(muc: Optional[str], user) -> None:
+    """Chặn đặt mức cao hơn bậc của chính người đặt."""
+    if muc is None:
+        return
+    if muc not in PHAN_QUYEN_VALUES:
+        raise HTTPException(
+            status_code=422,
+            detail={"success": False, "error": {
+                "code": "VALIDATION_ERROR",
+                "message": f"phan_quyen phải thuộc {PHAN_QUYEN_VALUES}"}},
+        )
+    if muc not in muc_dat_duoc(user):
+        raise HTTPException(
+            status_code=403,
+            detail={"success": False, "error": {
+                "code": "DOC_LEVEL_TOO_HIGH",
+                "message": "Bạn không được đặt mức hạn chế cao hơn quyền xem "
+                           "của chính mình — đặt xong sẽ tự mình không mở "
+                           "lại được."}},
+        )
+
+
+@router.get("/muc-phan-quyen", summary="Danh mục mức phân quyền tài liệu")
+async def muc_phan_quyen(user: CurrentUserDep):
+    """Kèm cờ `dat_duoc` để giao diện làm mờ mức người dùng không được chọn."""
+    cho_phep = set(muc_dat_duoc(user))
+    return {"success": True, "data": [
+        {"ma": m, "ten": NHAN_PHAN_QUYEN[m], "mo_ta": MO_TA_PHAN_QUYEN[m],
+         "dat_duoc": m in cho_phep}
+        for m in PHAN_QUYEN_VALUES
+    ]}
 
 
 # ─── 1. UPLOAD ────────────────────────────────────────────────────────
@@ -98,6 +154,8 @@ async def upload_tai_lieu(
                     "message": "Bạn không có quyền upload tài liệu cho cuộc họp này"}},
         )
 
+    _kiem_muc_dat_duoc(phan_quyen, user)
+
     service = TaiLieuService(db)
     tl = await service.upload(
         ch, file, user,
@@ -127,10 +185,13 @@ async def list_tai_lieu(
     service = TaiLieuService(db)
     items = await service.list_for_cuoc_hop(ch.id)
 
+    # G5.4 — lọc TRƯỚC khi phát token. Danh sách này nhúng sẵn `url_xem` kèm
+    # token xem file, nên trả về rồi mới để giao diện ẩn đi là vô nghĩa: token
+    # đã nằm trong tay người không được xem.
+    items = loc_xem_duoc(items, user)
+
     out = []
     for tl in items:
-        # Skip nếu phan_quyen=HAN_CHE và user chưa được chỉ định —
-        # MVP đơn giản: HAN_CHE vẫn cho người được mời xem (do require_can_view_meeting đã pass)
         token = issue_token(
             purpose=PURPOSE_VIEW_DOC,
             subject=str(tl.id),
@@ -171,6 +232,8 @@ async def xem_tai_lieu(
             detail={"success": False, "error": {"code": "NO_PERMISSION",
                     "message": "Không có quyền xem tài liệu này"}},
         )
+    if not xem_duoc(tl.phan_quyen, user, nguoi_tai_len_id=tl.created_by):
+        raise _loi_phan_quyen("xem")
 
     await service.audit_view(tl, UUID(user.sub))
 
@@ -218,6 +281,8 @@ async def tai_tai_lieu(
             detail={"success": False, "error": {"code": "NO_PERMISSION",
                     "message": "Không có quyền tải tài liệu này"}},
         )
+    if not xem_duoc(tl.phan_quyen, user, nguoi_tai_len_id=tl.created_by):
+        raise _loi_phan_quyen("tải")
 
     await service.audit_download(tl, UUID(user.sub))
 
@@ -264,9 +329,64 @@ async def xoa_tai_lieu(
             detail={"success": False, "error": {"code": "NO_PERMISSION",
                     "message": "Bạn không có quyền xóa tài liệu này"}},
         )
+    # Không xem được thì cũng không xoá được: xoá tài liệu mình chưa từng thấy
+    # nội dung là thao tác mù, và là đường vòng để phá tài liệu hạn chế.
+    if not xem_duoc(tl.phan_quyen, user, nguoi_tai_len_id=tl.created_by):
+        raise _loi_phan_quyen("xoá")
 
     await service.soft_delete(tl, user)
     return {"success": True, "data": {"id": str(tl.id), "is_deleted": True}}
+
+
+# ─── 5b. SỬA MỨC PHÂN QUYỀN / METADATA (G5.4) ─────────────────────────
+# Trước G5.4 không có đường nào sửa `phan_quyen` sau khi tải lên — hàm
+# `TaiLieuService.update_metadata` đã có nhưng chưa endpoint nào gọi tới. Mà
+# yêu cầu là "587 file lịch sử mặc định công khai nội bộ; Văn phòng nâng mức
+# từng file nếu cần", nên phải có đường nâng mức.
+@router.patch("/{tai_lieu_id}", summary="Sửa mức phân quyền / metadata tài liệu")
+async def sua_tai_lieu(
+    tai_lieu_id: UUID,
+    du_lieu: TaiLieuMetadataUpdate,
+    db: DatabaseDep,
+    user: CurrentUserDep,
+):
+    service = TaiLieuService(db)
+    tl = await service.get(tai_lieu_id)
+
+    from sqlalchemy import select
+    from meeting_service.models.cuoc_hop import CuocHop as CuocHopModel
+    res = await db.execute(
+        select(CuocHopModel).where(CuocHopModel.id == tl.cuoc_hop_id))
+    ch = res.scalar_one_or_none()
+    if ch is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": {"code": "MEETING_NOT_FOUND",
+                    "message": "Không tìm thấy cuộc họp của tài liệu"}},
+        )
+
+    user_id = UUID(user.sub)
+    if not (
+        user.is_admin or user.vai_tro in ("SUPER_ADMIN", "ADMIN")
+        or "TRUONG_CNTT" in (user.platform_roles or [])
+        or ch.chu_toa_id == user_id or ch.thu_ky_id == user_id
+        or "THU_KY_HOP" in (user.platform_roles or [])
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={"success": False, "error": {"code": "NO_PERMISSION",
+                    "message": "Bạn không có quyền sửa tài liệu này"}},
+        )
+    # Phải xem được mức HIỆN TẠI mới sửa được, và mức MỚI không được vượt bậc
+    # của chính mình.
+    if not xem_duoc(tl.phan_quyen, user, nguoi_tai_len_id=tl.created_by):
+        raise _loi_phan_quyen("sửa")
+    _kiem_muc_dat_duoc(du_lieu.phan_quyen, user)
+
+    tl = await service.update_metadata(tl, du_lieu, user)
+    return {"success": True,
+            "data": TaiLieuResponse.model_validate(tl).model_dump(mode="json"),
+            "message": "Đã cập nhật tài liệu"}
 
 
 # ─── 6. SERVE FILE NỘI DUNG (gateway) ─────────────────────────────────

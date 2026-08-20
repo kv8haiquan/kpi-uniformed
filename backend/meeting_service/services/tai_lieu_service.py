@@ -141,6 +141,11 @@ class TaiLieuService:
         changes = data.model_dump(exclude_unset=True)
         if not changes:
             return tl
+        # Đổi mức phân quyền là thay đổi ai đọc được tài liệu, nên nhật ký
+        # phải giữ cả giá trị CŨ — chỉ ghi giá trị mới thì sau này không dựng
+        # lại được ai đã hạ mức một tài liệu và từ mức nào.
+        muc_cu = tl.phan_quyen if "phan_quyen" in changes else None
+
         for k, v in changes.items():
             setattr(tl, k, v)
         tl.updated_at = datetime.now(timezone.utc)
@@ -151,7 +156,8 @@ class TaiLieuService:
             nguoi_thuc_hien_id=UUID(user.sub),
             doi_tuong_loai="tai_lieu",
             doi_tuong_id=tl.id,
-            chi_tiet={"new_value": changes},
+            chi_tiet={"new_value": changes,
+                      **({"phan_quyen_cu": muc_cu} if muc_cu else {})},
         )
         await self.db.flush()
         return tl

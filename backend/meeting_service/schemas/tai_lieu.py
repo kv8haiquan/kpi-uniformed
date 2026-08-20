@@ -6,15 +6,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
-PHAN_QUYEN_VALUES = ["CONG_KHAI", "HAN_CHE"]
+# Danh mục mức phân quyền nằm ở services/phan_quyen_tai_lieu.py cùng với luật
+# so bậc — một chỗ duy nhất, để schema không trôi khỏi CHECK trong CSDL.
+from meeting_service.services.phan_quyen_tai_lieu import (  # noqa: F401
+    PHAN_QUYEN_VALUES,
+)
 
 
 class TaiLieuResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    cuoc_hop_id: UUID
+    cuoc_hop_id: Optional[UUID]
     ten_tai_lieu: str
     mo_ta: Optional[str]
     minio_bucket: str

@@ -16,7 +16,11 @@ import { Upload, Eye, Download, Trash2, Loader2, Play, StopCircle, RefreshCw } f
 
 import { taiLieuApi } from '@/services/hkg';
 import { errMsg } from '@/lib/hkg-error';
-import type { ITaiLieuListItem } from '@/types/hkg';
+import type {
+  IMucPhanQuyen,
+  ITaiLieuListItem,
+  PhanQuyenTaiLieu,
+} from '@/types/hkg';
 import { useMeeting } from '@/components/hkg/MeetingContext';
 import { usePresentationSync } from '@/hooks/usePresentationSync';
 import { useTabLeader } from '@/hooks/useTabLeader';
@@ -63,6 +67,16 @@ export default function TaiLieuTabPage() {
   // FE_P5: Edge — banner khi cuộc họp kết thúc/hủy giữa session
   const [sessionEnded, setSessionEnded] = useState<null | 'completed' | 'cancelled'>(null);
 
+  // G5.4 — mức hạn chế người xem. Danh mục lấy từ backend kèm cờ `dat_duoc`
+  // theo vai trò, để không bày ra mức người dùng chọn xong sẽ bị 403.
+  const [mucPhanQuyen, setMucPhanQuyen] = useState<IMucPhanQuyen[]>([]);
+  const [mucUpload, setMucUpload] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
+  const [dangDoiMuc, setDangDoiMuc] = useState<string | null>(null);
+
+  const mucDatDuoc = mucPhanQuyen.filter((m) => m.dat_duoc);
+  const nhanMuc = (ma: string) =>
+    mucPhanQuyen.find((m) => m.ma === ma)?.ten ?? ma;
+
   // ────────────────────────────────────────────────────────────
   // Fetch list documents
   // ────────────────────────────────────────────────────────────
@@ -78,6 +92,10 @@ export default function TaiLieuTabPage() {
     }
   };
   useEffect(() => { fetchList(); }, [id]);
+
+  useEffect(() => {
+    taiLieuApi.mucPhanQuyen().then(setMucPhanQuyen).catch(() => setMucPhanQuyen([]));
+  }, []);
 
   // ────────────────────────────────────────────────────────────
   // Re-fetch signed URL khi tài liệu trình chiếu đổi
@@ -134,7 +152,7 @@ export default function TaiLieuTabPage() {
     setUploading(true);
     setError(null);
     try {
-      await taiLieuApi.upload({ cuoc_hop_id: id, file });
+      await taiLieuApi.upload({ cuoc_hop_id: id, file, phan_quyen: mucUpload });
       await fetchList();
     } catch (err: unknown) {
       setError(errMsg(err, 'Upload lỗi'));
@@ -158,6 +176,19 @@ export default function TaiLieuTabPage() {
       const r = await taiLieuApi.taiUrl(taiLieuId);
       window.open(r.url, '_blank');
     } catch (e: unknown) { setError(errMsg(e)); }
+  };
+
+  const handleDoiMuc = async (taiLieuId: string, muc: PhanQuyenTaiLieu) => {
+    setDangDoiMuc(taiLieuId);
+    setError(null);
+    try {
+      await taiLieuApi.suaMetadata(taiLieuId, { phan_quyen: muc });
+      await fetchList();
+    } catch (e: unknown) {
+      setError(errMsg(e, 'Không đổi được mức phân quyền'));
+    } finally {
+      setDangDoiMuc(null);
+    }
   };
 
   const handleDelete = async (taiLieuId: string) => {
@@ -361,11 +392,25 @@ export default function TaiLieuTabPage() {
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">Tài liệu cuộc họp</h3>
           {canEdit && !isLocked && (
-            <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded text-sm cursor-pointer hover:bg-blue-700">
-              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              Upload tài liệu
-              <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
-            </label>
+            <div className="flex items-center gap-2">
+              {mucDatDuoc.length > 1 && (
+                <select
+                  value={mucUpload}
+                  onChange={(e) => setMucUpload(e.target.value as PhanQuyenTaiLieu)}
+                  title={mucPhanQuyen.find((m) => m.ma === mucUpload)?.mo_ta}
+                  className="rounded border border-gray-300 px-2 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                >
+                  {mucDatDuoc.map((m) => (
+                    <option key={m.ma} value={m.ma}>{m.ten}</option>
+                  ))}
+                </select>
+              )}
+              <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded text-sm cursor-pointer hover:bg-blue-700">
+                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                Upload tài liệu
+                <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} />
+              </label>
+            </div>
           )}
         </div>
 
@@ -397,7 +442,12 @@ export default function TaiLieuTabPage() {
                   syncEnabled &&
                   canControlHost &&
                   // chỉ PDF mới render được trong PresentationViewer
-                  tl.extension?.toLowerCase() === 'pdf';
+                  tl.extension?.toLowerCase() === 'pdf' &&
+                  // G5.4: tài liệu hạn chế không trình chiếu được — trình
+                  // chiếu là đẩy nội dung ra cả phòng, trong đó có người
+                  // không đủ mức. Backend cũng chặn; ẩn nút để chủ toạ khỏi
+                  // bấm vào chỗ không có việc gì xảy ra.
+                  tl.phan_quyen === 'CONG_KHAI';
                 return (
                   <tr key={tl.id} className={`hover:bg-gray-50 ${isCurrent ? 'bg-green-50/50' : ''}`}>
                     <td className="px-3 py-2">
@@ -411,13 +461,35 @@ export default function TaiLieuTabPage() {
                     <td className="px-3 py-2 uppercase text-xs">{tl.extension}</td>
                     <td className="px-3 py-2">{(tl.file_size / 1024).toFixed(1)} KB</td>
                     <td className="px-3 py-2">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        tl.phan_quyen === 'CONG_KHAI'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {tl.phan_quyen}
-                      </span>
+                      {canEdit && mucDatDuoc.length > 1 ? (
+                        <select
+                          value={tl.phan_quyen}
+                          disabled={dangDoiMuc === tl.id}
+                          onChange={(e) =>
+                            handleDoiMuc(tl.id, e.target.value as PhanQuyenTaiLieu)
+                          }
+                          title={mucPhanQuyen.find((m) => m.ma === tl.phan_quyen)?.mo_ta}
+                          className={`rounded border px-2 py-1 text-xs disabled:opacity-50 ${
+                            tl.phan_quyen === 'CONG_KHAI'
+                              ? 'border-green-200 bg-green-50 text-green-800'
+                              : 'border-amber-300 bg-amber-50 text-amber-900'
+                          }`}
+                        >
+                          {mucPhanQuyen.map((m) => (
+                            <option key={m.ma} value={m.ma} disabled={!m.dat_duoc}>
+                              {m.ten}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className={`px-2 py-0.5 rounded text-xs ${
+                          tl.phan_quyen === 'CONG_KHAI'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-amber-100 text-amber-900'
+                        }`}>
+                          {nhanMuc(tl.phan_quyen)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 flex flex-wrap gap-2">
                       {canPresent && (

@@ -21,7 +21,23 @@ export type TrangThaiCuocHop =
 export type LoaiThamDu = 'BAT_BUOC' | 'THAM_KHAO';
 export type XacNhan = 'CHUA_PHAN_HOI' | 'THAM_DU' | 'KHONG_THAM_DU' | 'UY_QUYEN';
 
-export type PhanQuyenTaiLieu = 'CONG_KHAI' | 'HAN_CHE';
+/**
+ * Mức hạn chế người xem tài liệu họp (G5.4) — có thứ bậc tăng dần.
+ * `HAN_CHE` của bản cũ đã bị loại bỏ (migration meeting_023): nhãn đó chưa
+ * từng được kiểm ở bất kỳ đâu nên không có hiệu lực.
+ */
+export type PhanQuyenTaiLieu =
+  | 'CONG_KHAI'
+  | 'LANH_DAO_DON_VI'
+  | 'LANH_DAO_CHI_CUC';
+
+export interface IMucPhanQuyen {
+  ma: PhanQuyenTaiLieu;
+  ten: string;
+  mo_ta: string;
+  /** Người đang đăng nhập có được ĐẶT mức này không. */
+  dat_duoc: boolean;
+}
 export type HinhThucDiemDanh = 'QR' | 'BAM_TAY';
 export type TrangThaiDiemDanh = 'CO_MAT' | 'DEN_MUON' | 'VANG_CO_PHEP' | 'VANG_KHONG_PHEP';
 

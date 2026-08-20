@@ -29,6 +29,10 @@ from meeting_service.models.cuoc_hop import CuocHop
 from meeting_service.models.tai_lieu import TaiLieu
 from meeting_service.models.trang_thai_trinh_chieu import TrangThaiTrinhChieu
 from meeting_service.services.audit_log_service import ghi_audit
+from meeting_service.services.phan_quyen_tai_lieu import (
+    CONG_KHAI,
+    chuan_hoa as chuan_hoa_phan_quyen,
+)
 from meeting_service.services.broadcast_backend import BroadcastBackend, WebSocketLike
 
 
@@ -210,11 +214,10 @@ class PresentationManager:
         tai_lieu_id = self._uuid_from(event.get("tai_lieu_id"))
         if tai_lieu_id is None:
             return
-        if not await self._validate_tai_lieu(db, ch.id, tai_lieu_id):
+        loi = await self._kiem_tai_lieu(db, ch.id, tai_lieu_id)
+        if loi is not None:
             await ws.send_json({
-                "type": "error",
-                "code": "DOCUMENT_DELETED",
-                "message": "Tài liệu không tồn tại hoặc không thuộc cuộc họp này",
+                "type": "error", "code": loi[0], "message": loi[1],
             })
             return
 
@@ -384,14 +387,35 @@ class PresentationManager:
         )
         return res.scalar_one_or_none()
 
-    async def _validate_tai_lieu(
+    async def _kiem_tai_lieu(
         self, db: AsyncSession, cuoc_hop_id: UUID, tai_lieu_id: UUID
-    ) -> bool:
+    ) -> Optional[tuple[str, str]]:
+        """Trả None nếu trình chiếu được, ngược lại (mã lỗi, thông điệp).
+
+        Tài liệu hạn chế (G5.4) KHÔNG trình chiếu được, dù chủ toạ có quyền
+        xem nó: trình chiếu là đẩy nội dung ra cả phòng họp, trong đó có người
+        không đủ mức. Chặn ngay tại thao tác của chủ toạ để họ biết mà chọn
+        cách khác, thay vì để cả phòng nhận 403 khi tải nội dung.
+        """
         res = await db.execute(
-            select(TaiLieu.id).where(
+            select(TaiLieu.phan_quyen).where(
                 TaiLieu.id == tai_lieu_id,
                 TaiLieu.cuoc_hop_id == cuoc_hop_id,
                 TaiLieu.is_deleted.is_(False),
             )
         )
-        return res.scalar_one_or_none() is not None
+        muc = res.scalar_one_or_none()
+        if muc is None:
+            return ("DOCUMENT_DELETED",
+                    "Tài liệu không tồn tại hoặc không thuộc cuộc họp này")
+        if chuan_hoa_phan_quyen(muc) != CONG_KHAI:
+            return ("DOCUMENT_RESTRICTED",
+                    "Tài liệu đang ở mức hạn chế người xem nên không trình "
+                    "chiếu được — hạ mức về công khai nội bộ nếu cần chiếu "
+                    "cho cả phòng họp")
+        return None
+
+    async def _validate_tai_lieu(
+        self, db: AsyncSession, cuoc_hop_id: UUID, tai_lieu_id: UUID
+    ) -> bool:
+        return await self._kiem_tai_lieu(db, cuoc_hop_id, tai_lieu_id) is None

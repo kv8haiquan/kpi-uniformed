@@ -500,13 +500,23 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 
 > ⚠️ 82/102 lượt chấm mang sang thuộc cuộc họp **không ghi đơn vị chuẩn bị** → bảng theo đơn vị hiện phần lớn ở dòng "(Không ghi đơn vị chuẩn bị)". Sẽ tự hết khi lịch mới nhập đủ trường này.
 
-### G5.4 — Phân quyền tài liệu 2 mức
+### G5.4 — Phân quyền tài liệu 2 mức ✅ *20/08*
 
 > ⚠️ Đây là **xây mới theo thiết kế**, không phải giữ hành vi cũ: `FILE_VISIBILITY` không có giá trị `LEADER_*` nào trong 587 file (chỉ `PUBLIC`=374, rỗng=213). Cơ chế này chưa từng vận hành thật.
 
-- [ ] 2 mức: `LEADER_CHICUC` (chỉ lãnh đạo Chi cục + quản trị) và `LEADER_PHONGDOI_UP` (thêm lãnh đạo phòng/đội)
-- [ ] Ánh xạ sang RBAC nền tảng qua `vai_tro` + `is_lanh_dao`
-- [ ] 587 file lịch sử mặc định mức công khai nội bộ; Văn phòng nâng mức từng file nếu cần
+- [x] 2 mức hạn chế: `LANH_DAO_CHI_CUC` (= `LEADER_CHICUC`) và `LANH_DAO_DON_VI` (= `LEADER_PHONGDOI_UP`), trên nền `CONG_KHAI`
+- [x] Ánh xạ sang RBAC nền tảng qua `vai_tro` (CCT/PCCT/ADMIN) + `is_lanh_dao`, không dò chuỗi trên chức vụ
+- [x] Toàn bộ tài liệu lịch sử giữ mức công khai nội bộ; thêm `PATCH /tai-lieu/{id}` để Văn phòng nâng mức từng file (trước G5.4 **không có** đường nào sửa `phan_quyen` sau khi tải lên)
+- [x] Migration `meeting_023` — mở rộng CHECK `ck_tai_lieu_phan_quyen`, loại bỏ `HAN_CHE` (0 dòng, nhãn chưa từng được kiểm ở đâu), thêm chỉ mục một phần `idx_tai_lieu_han_che`
+- [x] 11 test PASS — mỗi **đường ra** của tài liệu một test: danh sách (nhúng sẵn token xem), `/xem`, `/tai`, trình chiếu, xoá, sửa siêu dữ liệu
+
+Ba quyết định thiết kế ghi lại để khỏi tranh luận lại:
+
+1. **Người tải lên luôn xem lại được file của mình** — thư ký nâng mức rồi không mở lại được để kiểm tra là vô lý, và họ vốn đã có file trong tay.
+2. **Không ai đặt được mức cao hơn bậc của chính mình** (`DOC_LEVEL_TOO_HIGH`) — đặt xong tự mình không mở lại được là cách chắc chắn nhất để mất tài liệu.
+3. **Tài liệu hạn chế không trình chiếu được** — trình chiếu là đẩy nội dung ra cả phòng họp, trong đó có người không đủ mức. Chặn tại thao tác của chủ toạ (`DOCUMENT_RESTRICTED`), không để cả phòng nhận 403 khi tải nội dung.
+
+> Không xem được thì cũng không xoá/sửa được: thao tác trên tài liệu chưa từng thấy nội dung là mù, và là đường vòng để phá tài liệu hạn chế. Mọi lần đổi mức đều ghi nhật ký kèm **giá trị cũ** (`phan_quyen_cu`).
 
 ### G5.5 — Chặn thả file trực tiếp
 

@@ -13,13 +13,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { CalendarDays, Loader2, Users } from 'lucide-react';
+import { CalendarDays, Loader2, Star, Users } from 'lucide-react';
 
 import { lichCongTacApi } from '@/services/lich-cong-tac';
+import { danhGiaChuanBiApi } from '@/services/danh-gia-chuan-bi';
 import { errMsg } from '@/lib/hkg-error';
 import {
   NHAN_LOAI_LICH,
   type IThongKeLich,
+  type ITongHopChuanBi,
   type LoaiLich,
 } from '@/types/lich-cong-tac';
 
@@ -55,6 +57,7 @@ function The({
 
 export default function TongQuanLichPage() {
   const [dl, setDl] = useState<IThongKeLich | null>(null);
+  const [chuanBi, setChuanBi] = useState<ITongHopChuanBi | null>(null);
   const [dangTai, setDangTai] = useState(true);
   const [loi, setLoi] = useState<string | null>(null);
 
@@ -64,6 +67,12 @@ export default function TongQuanLichPage() {
       .then(setDl)
       .catch((e) => setLoi(errMsg(e, 'Không tải được chỉ số')))
       .finally(() => setDangTai(false));
+  }, []);
+
+  // Điểm chuẩn bị tải riêng: thiếu nó thì các chỉ số còn lại vẫn dùng được,
+  // không nên để một truy vấn phụ làm hỏng cả trang.
+  useEffect(() => {
+    danhGiaChuanBiApi.tongHop().then(setChuanBi).catch(() => setChuanBi(null));
   }, []);
 
   if (dangTai) {
@@ -187,6 +196,36 @@ export default function TongQuanLichPage() {
           )}
         </div>
       </div>
+
+      {chuanBi && chuanBi.so_luot > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <h2 className="mb-1 flex items-center gap-2 font-semibold text-gray-900">
+            <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+            Công tác chuẩn bị — điểm trung bình theo đơn vị
+          </h2>
+          <p className="mb-3 text-xs text-gray-500">
+            {chuanBi.so_luot} lượt chấm trên {chuanBi.so_cuoc_hop} cuộc họp
+            {chuanBi.diem_tb !== null && ` · trung bình ${chuanBi.diem_tb}/5`}.
+            Chỉ lãnh đạo Chi cục và quản trị chấm được điểm này.
+          </p>
+          <ul className="space-y-1.5">
+            {chuanBi.theo_don_vi.slice(0, 12).map((d) => (
+              <li
+                key={d.don_vi}
+                className="flex items-center justify-between rounded px-2 py-1 text-sm"
+              >
+                <span>{d.don_vi}</span>
+                <span className="tabular-nums text-gray-700">
+                  <span className="font-medium text-amber-700">
+                    {d.diem_tb.toFixed(1)}
+                  </span>
+                  <span className="text-gray-400"> /5 · {d.so_cuoc_hop} cuộc họp</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <p className="text-xs text-gray-500">
         Một cuộc họp có nhiều lãnh đạo thì được tính cho từng người, nên tổng ở

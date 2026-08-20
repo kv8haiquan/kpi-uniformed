@@ -75,6 +75,10 @@ export interface ISuKienLich {
   lanh_dao_lien_quan: INguoiTomTat[];
   so_tai_lieu: number;
 
+  /** Điểm chuẩn bị trung bình (G5.3) — null khi chưa ai chấm. */
+  diem_chuan_bi?: number | null;
+  so_luot_cham?: number;
+
   /** Bấm vào mở được sang chi tiết cuộc họp trong Họp Không Giấy. */
   co_the_mo_hkg: boolean;
 }
@@ -501,3 +505,48 @@ export interface INguoiNhanGhiChu {
 }
 
 export type PhamViGhiChu = 'TAT_CA' | 'CUA_TOI' | 'DUOC_CHIA_SE';
+
+// ─── Đánh giá công tác chuẩn bị (G5.3) ─────────────────────────────────
+
+export interface ILuotChamDiem {
+  id: string;
+  cong_chuc_id: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+  diem: number;
+  ghi_chu: string | null;
+  la_cua_toi: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IDanhGiaChuanBi {
+  cuoc_hop_id: string;
+  /** Người đang xem có được chấm không — quyết định hiện sao bấm được hay không. */
+  duoc_cham: boolean;
+  diem_cua_toi: number | null;
+  ghi_chu_cua_toi: string | null;
+  so_luot: number;
+  diem_tb: number | null;
+  danh_sach: ILuotChamDiem[];
+}
+
+export interface ITongHopChuanBi {
+  so_cuoc_hop: number;
+  so_luot: number;
+  diem_tb: number | null;
+  theo_don_vi: {
+    don_vi: string;
+    so_cuoc_hop: number;
+    diem_tb: number;
+  }[];
+  cuoc_hop: {
+    cuoc_hop_id: string;
+    ma_lich: string | null;
+    tieu_de: string;
+    ngay: string | null;
+    don_vi_chuan_bi: string | null;
+    diem_tb: number;
+    so_luot: number;
+  }[];
+}

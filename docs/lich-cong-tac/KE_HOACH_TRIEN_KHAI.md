@@ -490,10 +490,15 @@ sửa `chu_toa_id` ở 103 chỗ** trong 14.221 dòng code HKG.
 - [x] Đính kèm dùng chung `meeting.tai_lieu` (CHECK `ck_tai_lieu_chu_the`), file ở `uploads/meeting/ghi-chu/{id}/` — **không cần migration**
 - [x] ⚠️ Riêng tư tuyệt đối: **quản trị KHÔNG đọc được** ghi chú người khác. Người ngoài nhận 404 (không lộ ghi chú có tồn tại), người được chia sẻ nhận 403 khi thử sửa
 
-### G5.3 — Đánh giá cuộc họp
+### G5.3 — Đánh giá cuộc họp ✅ *20/08*
 
-- [ ] Chấm sao, giới hạn vai trò (lãnh đạo Chi cục + quản trị) theo `canRateMeetingPrep_`
-- [ ] Giữ liên kết user–meeting–rating khi di trú (105 bản ghi)
+- [x] Chấm sao, giới hạn vai trò (lãnh đạo Chi cục + quản trị) theo `canRateMeetingPrep_`
+- [x] Giữ liên kết user–meeting–rating khi di trú (102 bản ghi, 2 người chấm — cả hai là Phó Chi cục trưởng)
+- [x] 5 endpoint `/danh-gia-chuan-bi/*` · sao trên trang chi tiết + huy hiệu trên thẻ lịch · bảng theo đơn vị ở Tổng quan · 13 test PASS
+- [x] Quyền THAY chứ không port: `canRateMeetingPrep_` dò chuỗi trên họ tên + chức vụ + tên đăng nhập; ở đây dùng `vai_tro` (CCT/PCCT + ADMIN/SUPER_ADMIN). Chánh Văn phòng **không** nằm trong nhóm chấm — điểm này chấm chính công tác chuẩn bị của Văn phòng
+- [x] Xem thì ai cũng xem được (giữ `publicPrepRating`); chấm lại là ghi đè nhờ `uq_danh_gia_cuoc_hop_nguoi`; không ai xoá được điểm người khác
+
+> ⚠️ 82/102 lượt chấm mang sang thuộc cuộc họp **không ghi đơn vị chuẩn bị** → bảng theo đơn vị hiện phần lớn ở dòng "(Không ghi đơn vị chuẩn bị)". Sẽ tự hết khi lịch mới nhập đủ trường này.
 
 ### G5.4 — Phân quyền tài liệu 2 mức
 

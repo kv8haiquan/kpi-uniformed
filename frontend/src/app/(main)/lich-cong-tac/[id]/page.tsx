@@ -22,6 +22,7 @@ import {
   Loader2,
   MapPin,
   Pencil,
+  Star,
   Trash2,
   User,
   Users,
@@ -37,6 +38,7 @@ import {
   type TrangThaiLich,
 } from '@/types/lich-cong-tac';
 import FormLich from '../components/FormLich';
+import SaoChuanBi from '../components/SaoChuanBi';
 
 const MAU_LOAI: Record<LoaiLich, string> = {
   HOP: 'bg-blue-100 text-blue-800',
@@ -362,6 +364,10 @@ export default function ChiTietSuKienPage() {
             ) : (
               <span className="text-gray-400">Chưa có tài liệu</span>
             )}
+          </Dong>
+
+          <Dong icon={<Star className="w-4 h-4" />} nhan="Công tác chuẩn bị">
+            <SaoChuanBi cuocHopId={sk.id} />
           </Dong>
         </div>
       </div>

@@ -20,6 +20,7 @@ const TAB = [
   { href: '/lich-cong-tac/tong-quan', nhan: 'Tổng quan' },
   { href: '/lich-cong-tac/tom-tat', nhan: 'Tóm tắt lịch' },
   { href: '/lich-cong-tac/truc-ban', nhan: 'Trực ban' },
+  { href: '/lich-cong-tac/ghi-chu', nhan: 'Ghi chú' },
   { href: '/lich-cong-tac/thong-ke-tai-lieu', nhan: 'Thống kê tài liệu' },
 ];
 

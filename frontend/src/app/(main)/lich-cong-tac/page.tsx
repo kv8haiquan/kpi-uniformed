@@ -26,6 +26,7 @@ import {
   MapPin,
   Plus,
   Search,
+  Star,
   Users,
 } from 'lucide-react';
 
@@ -500,6 +501,15 @@ export default function LichCongTacPage() {
                             <span className="inline-flex items-center gap-1">
                               <FileText className="w-3 h-3" />
                               {sk.so_tai_lieu} tài liệu
+                            </span>
+                          )}
+                          {(sk.so_luot_cham ?? 0) > 0 && (
+                            <span
+                              className="inline-flex items-center gap-1 text-amber-700"
+                              title={`Điểm công tác chuẩn bị — ${sk.so_luot_cham} lượt chấm`}
+                            >
+                              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                              {sk.diem_chuan_bi?.toFixed(1)}
                             </span>
                           )}
                         </div>

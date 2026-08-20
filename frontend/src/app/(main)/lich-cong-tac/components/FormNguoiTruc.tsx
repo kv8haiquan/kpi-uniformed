@@ -16,7 +16,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, X } from 'lucide-react';
+import { Check, Loader2, Search, X } from 'lucide-react';
 
 import { trucBanApi } from '@/services/truc-ban';
 import { errMsg } from '@/lib/hkg-error';
@@ -142,53 +142,70 @@ export default function FormNguoiTruc({
         </div>
 
         <div className="space-y-3 px-5 py-4">
-          <label className="block text-sm">
-            <span className="block text-gray-600 mb-1">
-              Tìm nhanh trong danh sách
-            </span>
-            <input
-              className={oCss}
-              value={tuKhoa}
-              onChange={(e) => setTuKhoa(e.target.value)}
-              placeholder="Gõ tên, mã công chức hoặc chức vụ…"
-              autoFocus
-            />
-          </label>
+          <div className="text-sm">
+            <span className="mb-1 block text-gray-600">Người trực *</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                className="w-full rounded-lg border border-gray-300 py-1.5 pl-9 pr-3 focus:border-blue-500 focus:outline-none"
+                value={tuKhoa}
+                onChange={(e) => setTuKhoa(e.target.value)}
+                placeholder="Tìm theo tên, mã công chức hoặc chức vụ…"
+                autoFocus
+              />
+            </div>
 
-          <label className="block text-sm">
-            <span className="block text-gray-600 mb-1">Người trực *</span>
             {ds === null ? (
-              <div className="flex items-center gap-2 text-gray-500 py-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
+              <div className="flex items-center gap-2 py-3 text-gray-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Đang tải danh sách…
               </div>
             ) : ds.length === 0 ? (
-              <p className="text-sm text-amber-700">
+              <p className="py-2 text-sm text-amber-700">
                 Đơn vị giữ trụ sở này chưa có công chức nào trong hệ thống.
               </p>
             ) : (
-              <select
-                className={oCss}
-                value={chon}
-                onChange={(e) => chonNguoi(e.target.value)}
-                size={Math.min(8, Math.max(3, loc.length))}
-              >
-                {loc.map((x) => (
-                  <option key={x.cong_chuc_id} value={x.cong_chuc_id}>
-                    {x.ho_ten}
-                    {x.chuc_vu ? ` — ${x.chuc_vu}` : ''}
-                    {x.so_dien_thoai ? ` · ${x.so_dien_thoai}` : ''}
-                  </option>
-                ))}
-              </select>
+              <>
+                <div className="mt-1.5 max-h-56 overflow-y-auto rounded-lg border border-gray-200">
+                  {loc.length === 0 ? (
+                    <p className="px-3 py-3 text-sm text-gray-500">
+                      Không ai khớp từ khoá.
+                    </p>
+                  ) : (
+                    loc.map((x) => {
+                      const dangChon = chon === x.cong_chuc_id;
+                      return (
+                        <button
+                          key={x.cong_chuc_id}
+                          type="button"
+                          onClick={() => chonNguoi(x.cong_chuc_id)}
+                          className={`flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-left last:border-b-0 ${
+                            dangChon ? 'bg-blue-50' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium text-gray-900">
+                              {x.ho_ten}
+                            </span>
+                            <span className="block truncate text-xs text-gray-500">
+                              {x.chuc_vu || 'Công chức'}
+                            </span>
+                          </span>
+                          {dangChon && (
+                            <Check className="h-4 w-4 shrink-0 text-blue-600" />
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <span className="mt-1 block text-xs text-gray-500">
+                  {loc.length}/{ds.length} người · xếp theo chức vụ, lãnh đạo
+                  lên trước
+                </span>
+              </>
             )}
-            {ds !== null && ds.length > 0 && (
-              <span className="block text-xs text-gray-500 mt-1">
-                {loc.length}/{ds.length} người · xếp theo chức vụ, lãnh đạo lên
-                trước
-              </span>
-            )}
-          </label>
+          </div>
 
           <label className="block text-sm">
             <span className="block text-gray-600 mb-1">Số điện thoại</span>

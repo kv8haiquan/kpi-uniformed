@@ -39,7 +39,8 @@ class StorageService:
         file: UploadFile,
         *,
         folder: str,
-        cuoc_hop_id: UUID,
+        cuoc_hop_id: Optional[UUID] = None,
+        thu_muc_con: Optional[str] = None,
     ) -> dict:
         """
         Save file lên filesystem. Trả về dict đủ trường để insert DB.
@@ -48,6 +49,8 @@ class StorageService:
             file: UploadFile từ FastAPI
             folder: subfolder trong bucket — vd 'tai-lieu', 'xin-phep', 'y-kien'
             cuoc_hop_id: ID cuộc họp (dùng làm subfolder cấp 2)
+            thu_muc_con: tên subfolder cấp 2 khi chủ thể KHÔNG phải cuộc họp —
+                vd đính kèm ghi chú cá nhân (G5.2) dùng id ghi chú
 
         Returns:
             {
@@ -59,6 +62,11 @@ class StorageService:
                 "original_filename": str,
             }
         """
+        khoa_thu_muc = thu_muc_con or (str(cuoc_hop_id) if cuoc_hop_id else None)
+        if not khoa_thu_muc:
+            self._raise(400, "UPLOAD_003",
+                        "Thiếu chủ thể để xác định thư mục lưu file")
+
         if not file.filename:
             self._raise(400, "UPLOAD_001", "Tên file không hợp lệ")
 
@@ -80,8 +88,8 @@ class StorageService:
                 f"File vượt giới hạn {settings.max_file_size_mb}MB",
             )
 
-        # Tạo path: {bucket_root}/{folder}/{cuoc_hop_id}/{uuid}_{filename}
-        rel_dir = Path(folder) / str(cuoc_hop_id)
+        # Tạo path: {bucket_root}/{folder}/{khoa_thu_muc}/{uuid}_{filename}
+        rel_dir = Path(folder) / khoa_thu_muc
         full_dir = self.bucket_root / rel_dir
         full_dir.mkdir(parents=True, exist_ok=True)
 

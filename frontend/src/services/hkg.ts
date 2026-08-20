@@ -20,6 +20,7 @@ import type {
   IDiemDanhSummary,
   IKetLuan,
   IKetLuanCreate,
+  IMucPhanQuyen,
   INhom,
   INhomChiTiet,
   INhomChiTietInput,
@@ -28,6 +29,7 @@ import type {
   INhomListItem,
   INhomUpdate,
   IQRTokenResponse,
+  PhanQuyenTaiLieu,
   ITaiLieu,
   ITaiLieuListItem,
   IThemTuNhomResponse,
@@ -164,7 +166,7 @@ export interface ITaiLieuUploadInput {
   file: File;
   ten_tai_lieu?: string;
   mo_ta?: string;
-  phan_quyen?: 'CONG_KHAI' | 'HAN_CHE';
+  phan_quyen?: PhanQuyenTaiLieu;
   cho_phep_tai?: boolean;
   cho_phep_in?: boolean;
 }
@@ -189,6 +191,22 @@ export const taiLieuApi = {
 
   listByCuocHop: (cuoc_hop_id: string) =>
     unwrap<ITaiLieuListItem[]>(hkgApi.get(`/cuoc-hop/${cuoc_hop_id}/tai-lieu`)),
+
+  /** Danh mục mức phân quyền, kèm cờ `dat_duoc` theo vai trò người gọi. */
+  mucPhanQuyen: () =>
+    unwrap<IMucPhanQuyen[]>(hkgApi.get('/tai-lieu/muc-phan-quyen')),
+
+  /** Nâng/hạ mức hạn chế hoặc sửa siêu dữ liệu của một tài liệu (G5.4). */
+  suaMetadata: (
+    id: string,
+    thay_doi: {
+      ten_tai_lieu?: string;
+      mo_ta?: string | null;
+      phan_quyen?: PhanQuyenTaiLieu;
+      cho_phep_tai?: boolean;
+      cho_phep_in?: boolean;
+    },
+  ) => unwrap<ITaiLieu>(hkgApi.patch(`/tai-lieu/${id}`, thay_doi)),
 
   xemUrl: (id: string) =>
     unwrap<{ url: string; expires_in_seconds: number }>(

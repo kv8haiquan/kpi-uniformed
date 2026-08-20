@@ -24,7 +24,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from meeting_service.models.base import CongChucRef as CongChuc
 from meeting_service.models.cuoc_hop import CuocHop
-from meeting_service.models.lich_cong_tac import LanhDaoLienQuan, TrucBan, TruSo
+from meeting_service.models.lich_cong_tac import (
+    DanhGiaCuocHop,
+    LanhDaoLienQuan,
+    TrucBan,
+    TruSo,
+)
 from meeting_service.models.tai_lieu import TaiLieu
 from meeting_service.schemas.lich_cong_tac import NHAN_LOAI_LICH
 from meeting_service.services.audit_log_service import ghi_audit
@@ -207,6 +212,16 @@ class LichCongTacService:
              .group_by(TaiLieu.cuoc_hop_id))
         so_tl = {k: v for k, v in (await self.db.execute(q)).all()}
 
+        # Điểm chuẩn bị (G5.3) — gộp một truy vấn theo lô như số tài liệu.
+        # Hệ cũ hiện sao ngay trên thẻ lịch nên giữ đúng chỗ đó; điểm của
+        # riêng người đang xem thì lấy ở /danh-gia-chuan-bi/{id}.
+        q = (select(DanhGiaCuocHop.cuoc_hop_id, func.avg(DanhGiaCuocHop.diem),
+                    func.count())
+             .where(DanhGiaCuocHop.cuoc_hop_id.in_(ids))
+             .group_by(DanhGiaCuocHop.cuoc_hop_id))
+        diem_cb = {k: (round(float(tb), 2), n)
+                   for k, tb, n in (await self.db.execute(q)).all()}
+
         return [{
             "id": r.id,
             "nguon": r.nguon,
@@ -227,6 +242,8 @@ class LichCongTacService:
             "so_van_ban": r.so_van_ban,
             "lanh_dao_lien_quan": ld_theo_hop.get(r.id, []),
             "so_tai_lieu": so_tl.get(r.id, 0),
+            "diem_chuan_bi": diem_cb.get(r.id, (None, 0))[0],
+            "so_luot_cham": diem_cb.get(r.id, (None, 0))[1],
             "co_the_mo_hkg": r.nguon == "HKG",
         } for r in rows]
 

@@ -179,6 +179,35 @@ async def danh_muc_don_vi(db: DatabaseDep, user: CurrentUserDep):
                      for i, m, t in rows]}
 
 
+@router.get("/danh-muc-lanh-dao",
+            summary="Danh mục lãnh đạo (để chọn chủ trì và thành phần)")
+async def danh_muc_lanh_dao(db: DatabaseDep, user: CurrentUserDep):
+    """Chỉ lãnh đạo đang công tác — 55 người, đủ nhỏ để trả trọn một lần.
+
+    Xếp theo cấp bậc chức vụ rồi mới tới tên, dùng chung `bac_chuc_vu` với
+    lịch trực ban để hai màn hình cho ra cùng một thứ tự. Chức vụ là văn bản
+    tự do nên chỉ dùng để SẮP XẾP, không dùng để phân quyền.
+
+    Không kèm số điện thoại: màn hình lịch không dùng tới, mà `public.cong_chuc`
+    cũng chỉ có 6/558 người khai số.
+    """
+    from sqlalchemy import text as sa_text
+    from meeting_service.services.truc_ban_service import bac_chuc_vu
+
+    rows = (await db.execute(sa_text("""
+        SELECT cc.id, cc.ma_cc, cc.ho_ten, cc.chuc_vu, dv.ten_don_vi
+          FROM public.cong_chuc cc
+          LEFT JOIN public.don_vi dv ON dv.id = cc.don_vi_id
+         WHERE cc.is_lanh_dao AND cc.is_active
+    """))).all()
+
+    ds = [{"id": i, "ma_cc": ma, "ho_ten": ht, "chuc_vu": cv,
+           "ten_don_vi": dv}
+          for i, ma, ht, cv, dv in rows]
+    ds.sort(key=lambda x: (bac_chuc_vu(x["chuc_vu"]), x["ho_ten"]))
+    return {"success": True, "data": ds}
+
+
 @router.get("/danh-muc", summary="Danh mục loại lịch")
 async def danh_muc(user: CurrentUserDep):
     return {"success": True,

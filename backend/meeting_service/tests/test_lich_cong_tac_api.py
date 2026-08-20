@@ -188,6 +188,31 @@ async def test_danh_muc_du_sau_loai(client, chu_toa_user):
                   "LICH_KHAC"}
 
 
+async def test_danh_muc_lanh_dao_chi_co_lanh_dao(client, db_session,
+                                                 chu_toa_user):
+    """Ô chọn Chủ trì / Thành phần chỉ được bày ra lãnh đạo, không có công
+    chức thường — chọn nhầm cả 558 người thì ô chọn vô dụng."""
+    resp = await client.get(f"{BASE}/danh-muc-lanh-dao")
+    assert resp.status_code == 200
+    ds = resp.json()["data"]
+    assert ds, "Phải có ít nhất một lãnh đạo trong danh bạ"
+
+    # So khớp trọn bộ thay vì truy vấn theo mảng id: vừa bắt được người lọt
+    # vào, vừa bắt được lãnh đạo bị bỏ sót.
+    dung = {str(r[0]) for r in (await db_session.execute(sa_text(
+        "SELECT id FROM public.cong_chuc WHERE is_lanh_dao AND is_active"
+    ))).all()}
+    assert {x["id"] for x in ds} == dung
+
+    # Không kèm số điện thoại — màn hình lịch không dùng tới.
+    assert set(ds[0]) == {"id", "ma_cc", "ho_ten", "chuc_vu", "ten_don_vi"}
+
+    # Xếp theo cấp bậc chức vụ: Chi cục trưởng đứng trước Phó Đội trưởng.
+    from meeting_service.services.truc_ban_service import bac_chuc_vu
+    bac = [bac_chuc_vu(x["chuc_vu"]) for x in ds]
+    assert bac == sorted(bac), "Danh mục phải xếp theo cấp bậc chức vụ"
+
+
 # ── chi tiết ──────────────────────────────────────────────────────────
 
 async def test_chi_tiet_su_kien(client, db_session, chu_toa_user):

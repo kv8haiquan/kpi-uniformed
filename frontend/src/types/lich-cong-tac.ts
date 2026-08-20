@@ -427,6 +427,18 @@ export interface IDonVi {
   ten_don_vi: string;
 }
 
+/**
+ * Một lãnh đạo trong danh mục chọn chủ trì / thành phần (55 người đang công
+ * tác). Không có số điện thoại: màn hình lịch không dùng tới.
+ */
+export interface ILanhDaoChon {
+  id: string;
+  ma_cc: string;
+  ho_ten: string;
+  chuc_vu: string | null;
+  ten_don_vi: string | null;
+}
+
 // ─── Ghi chú và chia sẻ (G5.2) ─────────────────────────────────────────
 
 /** Một file đính kèm ghi chú. */

@@ -313,7 +313,7 @@ export default function ChiTietSuKienPage() {
           )}
 
           {sk.lanh_dao_lien_quan.length > 0 && (
-            <Dong icon={<Users className="w-4 h-4" />} nhan="Lãnh đạo liên quan">
+            <Dong icon={<Users className="w-4 h-4" />} nhan="Thành phần tham dự">
               <div className="flex flex-wrap gap-1.5">
                 {sk.lanh_dao_lien_quan.map((ld) => (
                   <Link
@@ -330,7 +330,7 @@ export default function ChiTietSuKienPage() {
           )}
 
           {sk.thanh_phan_text && (
-            <Dong icon={<Users className="w-4 h-4" />} nhan="Thành phần">
+            <Dong icon={<Users className="w-4 h-4" />} nhan="Thành phần khác">
               <span className="whitespace-pre-line">{sk.thanh_phan_text}</span>
             </Dong>
           )}
@@ -362,7 +362,31 @@ export default function ChiTietSuKienPage() {
                 {sk.so_tai_lieu} tài liệu đính kèm
               </Link>
             ) : (
-              <span className="text-gray-400">Chưa có tài liệu</span>
+              <Link
+                href={`/hop-khong-giay/chi-tiet/${sk.id}/tai-lieu`}
+                className="text-gray-500 hover:underline"
+              >
+                Chưa có tài liệu — bấm để tải lên
+              </Link>
+            )}
+            {/*
+              Không CHẶN tải tài liệu khi thiếu đơn vị chuẩn bị: 141/191 sự
+              kiện lịch sử có tài liệu mà không ghi đơn vị, và cuộc họp Họp
+              Không Giấy thì không dùng trường này. Nhưng phải nói rõ hậu quả,
+              vì báo cáo Thống kê tài liệu phân loại theo đúng trường đó.
+            */}
+            {sk.so_tai_lieu > 0 && !sk.don_vi_chuan_bi && (
+              <p className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-900">
+                Có tài liệu nhưng chưa giao đơn vị chuẩn bị — báo cáo{' '}
+                <Link
+                  href="/lich-cong-tac/thong-ke-tai-lieu"
+                  className="underline"
+                >
+                  Thống kê tài liệu
+                </Link>{' '}
+                sẽ xếp sự kiện này vào nhóm &ldquo;Chưa giao chuẩn bị&rdquo;.
+                {suaDuoc && ' Bấm Sửa để bổ sung đơn vị.'}
+              </p>
             )}
           </Dong>
 

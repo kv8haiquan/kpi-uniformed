@@ -16,6 +16,7 @@ import type {
   IDanhMucTinhTrang,
   IDonVi,
   IDongNhatKy,
+  ILanhDaoChon,
   ILichCongTacGhi,
   ILichLanhDao,
   ILichThang,
@@ -112,6 +113,12 @@ export const lichCongTacApi = {
 
   /** Danh mục đơn vị — dùng cho ô "đơn vị chuẩn bị". */
   danhMucDonVi: () => unwrap<IDonVi[]>(api.get('/danh-muc-don-vi')),
+
+  /**
+   * Danh mục lãnh đạo để chọn chủ trì và thành phần. Backend đã xếp theo cấp
+   * bậc chức vụ rồi mới tới tên — giữ nguyên thứ tự, đừng sắp lại ở đây.
+   */
+  danhMucLanhDao: () => unwrap<ILanhDaoChon[]>(api.get('/danh-muc-lanh-dao')),
 
   // ── quản lý lịch (G4.3) ────────────────────────────────────────────
 

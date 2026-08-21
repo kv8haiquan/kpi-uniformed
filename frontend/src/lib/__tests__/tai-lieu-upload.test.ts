@@ -44,36 +44,50 @@ function fileListSong(files: File[]) {
   return { ds: ds as unknown as FileList, donDep: () => { hienTai = []; } };
 }
 
+const GIAY_MOI = 'Giấy mời';
+
 describe('gopFile', () => {
   it('chụp FileList ngay, không phụ thuộc danh sách sống', () => {
     // Lỗi cũ: gộp file nằm trong setState(prev => …), React gọi lúc vẽ lại,
     // tức là SAU khi ô chọn file đã bị dọn → không thêm được file nào.
     const { ds, donDep } = fileListSong([taoFile('a.pdf'), taoFile('b.pdf')]);
-    const ketQua = gopFile([], ds);
+    const ketQua = gopFile([], ds, GIAY_MOI);
     donDep(); // trình duyệt dọn `input.value = ''`
 
-    expect(ketQua.map((f) => f.name)).toEqual(['a.pdf', 'b.pdf']);
+    expect(ketQua.map((x) => x.file.name)).toEqual(['a.pdf', 'b.pdf']);
   });
 
   it('nhận nhiều file một lượt', () => {
     const ds = [taoFile('1.pdf'), taoFile('2.docx'), taoFile('3.xlsx')];
-    expect(gopFile([], ds)).toHaveLength(3);
+    expect(gopFile([], ds, GIAY_MOI)).toHaveLength(3);
+  });
+
+  it('gán loại mặc định cho file mới, KHÔNG đụng loại file đã có', () => {
+    // Văn phòng thả giấy mời trước, đổi ô chọn sang Báo cáo rồi thả tiếp:
+    // file cũ phải giữ nguyên loại của nó.
+    const cu = gopFile([], [taoFile('moi.pdf')], GIAY_MOI);
+    const sau = gopFile(cu, [taoFile('bc.docx')], 'Báo cáo');
+
+    expect(sau.map((x) => [x.file.name, x.loai])).toEqual([
+      ['moi.pdf', GIAY_MOI],
+      ['bc.docx', 'Báo cáo'],
+    ]);
   });
 
   it('bỏ trùng theo tên + cỡ, kể cả trùng trong cùng một lượt chọn', () => {
-    const cu = [taoFile('a.pdf', 10)];
+    const cu = gopFile([], [taoFile('a.pdf', 10)], GIAY_MOI);
     const moi = [taoFile('a.pdf', 10), taoFile('a.pdf', 10), taoFile('a.pdf', 99)];
-    const ketQua = gopFile(cu, moi);
+    const ketQua = gopFile(cu, moi, GIAY_MOI);
 
     // Giữ bản cũ, bỏ hai bản trùng hệt, nhận bản khác cỡ.
     expect(ketQua).toHaveLength(2);
-    expect(ketQua[1].size).toBe(99);
+    expect(ketQua[1].file.size).toBe(99);
   });
 
   it('trả về đúng mảng cũ khi không có gì để thêm', () => {
-    const cu = [taoFile('a.pdf')];
-    expect(gopFile(cu, null)).toBe(cu);
-    expect(gopFile(cu, [])).toBe(cu);
+    const cu = gopFile([], [taoFile('a.pdf')], GIAY_MOI);
+    expect(gopFile(cu, null, GIAY_MOI)).toBe(cu);
+    expect(gopFile(cu, [], GIAY_MOI)).toBe(cu);
   });
 });
 
@@ -112,6 +126,39 @@ describe('taiNhieuFile', () => {
       'a.pdf', 'b.pdf', 'c.pdf', 'd.pdf',
     ]);
     expect(upload.mock.calls[0][0].mo_ta).toBe('Giấy mời');
+  });
+
+  it('mỗi file đi kèm LOẠI RIÊNG của nó', async () => {
+    // Trước G4.11 cả hàng đợi dùng chung một loại — nộp giấy mời và báo cáo
+    // trong cùng một lượt thì phải tải hai lần.
+    upload.mockResolvedValue({} as never);
+    const files = [
+      { file: taoFile('giay-moi.pdf'), loai: 'Giấy mời' },
+      { file: taoFile('bao-cao.docx'), loai: 'Báo cáo' },
+      { file: taoFile('bien-ban.pdf'), loai: 'Biên bản' },
+    ];
+
+    const hong = await taiNhieuFile({ cuocHopId: 'ch-1', files });
+
+    expect(hong).toEqual([]);
+    const theoTen = Object.fromEntries(
+      upload.mock.calls.map((c) => [c[0].file.name, c[0].mo_ta]),
+    );
+    expect(theoTen).toEqual({
+      'giay-moi.pdf': 'Giấy mời',
+      'bao-cao.docx': 'Báo cáo',
+      'bien-ban.pdf': 'Biên bản',
+    });
+  });
+
+  it('file không mang loại riêng thì lấy loại dùng chung', async () => {
+    upload.mockResolvedValue({} as never);
+    await taiNhieuFile({
+      cuocHopId: 'ch-1',
+      files: [taoFile('a.pdf')],
+      moTa: 'Tài liệu họp',
+    });
+    expect(upload.mock.calls[0][0].mo_ta).toBe('Tài liệu họp');
   });
 
   it('chạy tối đa 3 file cùng lúc', async () => {

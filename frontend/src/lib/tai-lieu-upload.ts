@@ -31,10 +31,16 @@ export const CO_TOI_DA_MB = 100;
 const SO_SONG_SONG = 3;
 
 /**
- * Loại tài liệu — đúng danh mục FILE_TYPE của lichkv8 (màn hình Quản trị danh
- * mục). Lưu vào `mo_ta` của tài liệu vì bảng `meeting.tai_lieu` chưa có cột
- * riêng; đây là NHÃN để người đọc nhận ra nhanh, KHÔNG phải căn cứ phân loại.
- * Báo cáo Thống kê tài liệu vẫn nhận giấy mời theo tên file như trước.
+ * Loại tài liệu — nhãn dự phòng.
+ *
+ * Từ G4.11 danh sách thật nằm ở `meeting.danh_muc` nhóm `LOAI_TAI_LIEU` để
+ * đơn vị tự quản trị (yêu cầu chuyển đổi mục II.15); gọi
+ * `danhMucLichApi.danhSach({ nhom: 'LOAI_TAI_LIEU' })`. Danh sách dưới đây
+ * chỉ dùng khi chưa gọi được máy chủ, giữ đúng 7 mục FILE_TYPE của hệ cũ.
+ *
+ * Nhãn được lưu vào `mo_ta` của tài liệu vì `meeting.tai_lieu` chưa có cột
+ * riêng. Đây là NHÃN để người đọc nhận ra nhanh, KHÔNG phải căn cứ phân loại:
+ * báo cáo Thống kê tài liệu vẫn nhận giấy mời theo tên file như trước.
  */
 export const LOAI_TAI_LIEU = [
   'Giấy mời',
@@ -45,6 +51,18 @@ export const LOAI_TAI_LIEU = [
   'Kết luận',
   'Tài liệu khác',
 ];
+
+/**
+ * Một file đang chờ tải lên, kèm loại tài liệu của RIÊNG nó.
+ *
+ * Trước G4.11 cả hàng đợi dùng chung một loại — nộp giấy mời và báo cáo trong
+ * cùng một lượt thì phải tải hai lần. Nay mỗi file mang loại riêng, và loại
+ * đó hiện ngay cạnh tên file.
+ */
+export interface FileCho {
+  file: File;
+  loai: string;
+}
 
 export function coDaiFile(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -81,17 +99,22 @@ export function loiFile(f: File): string | null {
  * SAU khi `value` đã bị xoá — nên bấm chọn file không thêm được gì, còn kéo thả
  * vẫn chạy vì `dataTransfer.files` không bị đụng tới.
  */
-export function gopFile(dsCu: File[], them: FileList | File[] | null): File[] {
+export function gopFile(
+  dsCu: FileCho[],
+  them: FileList | File[] | null,
+  loai: string,
+): FileCho[] {
   if (!them) return dsCu;
   const moi = Array.from(them);
   if (moi.length === 0) return dsCu;
-  const daCo = new Set(dsCu.map((f) => `${f.name}|${f.size}`));
-  const themVao = moi.filter((f) => {
+  const daCo = new Set(dsCu.map((x) => `${x.file.name}|${x.file.size}`));
+  const themVao: FileCho[] = [];
+  for (const f of moi) {
     const khoa = `${f.name}|${f.size}`;
-    if (daCo.has(khoa)) return false;
+    if (daCo.has(khoa)) continue;
     daCo.add(khoa); // chống trùng ngay trong chính lượt chọn này
-    return true;
-  });
+    themVao.push({ file: f, loai });
+  }
   return themVao.length === 0 ? dsCu : [...dsCu, ...themVao];
 }
 
@@ -102,12 +125,23 @@ export interface FileHong {
 
 export interface ThamSoTaiNhieu {
   cuocHopId: string;
-  files: File[];
-  /** Loại tài liệu — lưu vào `mo_ta`. */
+  /**
+   * Hàng đợi. Nhận `File[]` thuần thì cả lượt dùng chung `moTa`; nhận
+   * `FileCho[]` thì mỗi file mang loại riêng của nó.
+   */
+  files: Array<File | FileCho>;
+  /** Loại tài liệu dùng chung, cho những file không mang loại riêng. */
   moTa?: string;
   phanQuyen?: PhanQuyenTaiLieu;
   /** Gọi khi một file bắt đầu / kết thúc, để giao diện hiện vòng quay. */
   onDoiDangTai?: (dangTai: string[]) => void;
+}
+
+/** Tách một phần tử hàng đợi thành (file, loại) dù nó ở dạng nào. */
+function tach(x: File | FileCho, macDinh?: string): { f: File; loai?: string } {
+  return x instanceof File
+    ? { f: x, loai: macDinh }
+    : { f: x.file, loai: x.loai || macDinh };
 }
 
 /**
@@ -130,7 +164,7 @@ export async function taiNhieuFile({
     for (;;) {
       const i = ke++;
       if (i >= files.length) return;
-      const f = files[i];
+      const { f, loai } = tach(files[i], moTa);
 
       const loiSom = loiFile(f);
       if (loiSom) {
@@ -144,7 +178,7 @@ export async function taiNhieuFile({
         await taiLieuApi.upload({
           cuoc_hop_id: cuocHopId,
           file: f,
-          mo_ta: moTa,
+          mo_ta: loai,
           phan_quyen: phanQuyen,
         });
       } catch (e) {

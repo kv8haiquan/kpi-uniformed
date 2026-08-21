@@ -136,20 +136,38 @@ async def test_nhieu_dong_hkg_cung_ma_lich_null(db_session: AsyncSession):
 # ════════════════════════════════════════════════════════════════════
 
 @pytest.mark.parametrize(
-    "loai", ["HOP", "TRUC_BAN", "HOI_NGHI", "LAM_VIEC", "CONG_TAC", "LICH_KHAC"])
-async def test_sau_loai_lich_dang_chay_deu_hop_le(db_session: AsyncSession, loai):
+    "loai", ["HOP", "TRUC_BAN", "HOI_NGHI", "LAM_VIEC", "CONG_TAC",
+             "TIEP_DOAN", "LICH_KHAC"])
+async def test_bay_loai_lich_trong_danh_muc_deu_ghi_duoc(
+    db_session: AsyncSession, loai
+):
+    """TIEP_DOAN bổ sung ở meeting_024 — hệ cũ có, đợt chuyển đổi làm sót."""
     row = await _them(db_session, nguon="LICH_CONG_TAC", chu_toa_id=None,
                       don_vi_to_chuc_id=None, ma_lich=f"LH92{loai[:2]}",
                       loai_lich=loai)
     assert row.scalar_one() is not None
 
 
-async def test_loai_lich_ngoai_danh_muc_bi_chan(db_session: AsyncSession):
-    with pytest.raises((IntegrityError, DBAPIError)) as e:
-        await _them(db_session, nguon="LICH_CONG_TAC", chu_toa_id=None,
-                    don_vi_to_chuc_id=None, ma_lich="LH9300",
-                    loai_lich="KHONG_TON_TAI")
-    assert "ck_cuoc_hop_loai_lich" in str(e.value)
+async def test_co_so_du_lieu_khong_con_chan_loai_lich(db_session: AsyncSession):
+    """meeting_024 bỏ CHECK `ck_cuoc_hop_loai_lich` — CÓ CHỦ Ý.
+
+    Giữ CHECK thì quản trị thêm loại lịch mới sẽ bị cơ sở dữ liệu chối, tức
+    là màn hình Quản trị danh mục vô nghĩa. Lưới chặn chuyển xuống tầng dịch
+    vụ (`LichCongTacService._kiem_loai_lich`) — xem
+    `test_lich_cong_tac_crud.py::test_loai_lich_ngoai_danh_muc_bi_tu_choi`.
+
+    Test này chốt lại rằng ràng buộc đã thực sự biến mất, để nếu ai đó dựng
+    lại nó thì biết ngay là đang làm hỏng màn hình quản trị.
+    """
+    con_lai = await db_session.execute(sa_text(
+        "SELECT count(*) FROM pg_constraint WHERE conname = 'ck_cuoc_hop_loai_lich'"
+    ))
+    assert con_lai.scalar_one() == 0
+
+    row = await _them(db_session, nguon="LICH_CONG_TAC", chu_toa_id=None,
+                      don_vi_to_chuc_id=None, ma_lich="LH9300",
+                      loai_lich="DON_VI_TU_THEM")
+    assert row.scalar_one() is not None
 
 
 async def test_ngay_ket_thuc_truoc_ngay_hop_bi_chan(db_session: AsyncSession):

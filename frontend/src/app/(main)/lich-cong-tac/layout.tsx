@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 
+import { danhMucLichApi } from '@/services/danh-muc-lich';
 import { doiSoatApi } from '@/services/doi-soat';
 import { ghiChuApi } from '@/services/ghi-chu';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -29,6 +30,11 @@ const TAB = [
 // và Quản trị viên thấy. Xong việc thì xoá cả mục này lẫn thư mục doi-soat/.
 const TAB_DOI_SOAT = { href: '/lich-cong-tac/doi-soat', nhan: 'Đối soát di trú' };
 
+// Quản trị danh mục (G4.11) — chỉ người sửa được danh mục mới thấy. Người
+// thường vẫn ĐỌC được danh mục qua API (mọi ô chọn cần), chỉ là không có
+// việc gì để làm trên màn hình này.
+const TAB_DANH_MUC = { href: '/lich-cong-tac/danh-muc', nhan: 'Quản trị danh mục' };
+
 export default function LichCongTacLayout({
   children,
 }: {
@@ -41,6 +47,7 @@ export default function LichCongTacLayout({
   // Ghi chú người khác chia sẻ chỉ hiện khi mở đúng tab đó — không có
   // huy hiệu thì thông báo gửi tới cũng chẳng ai thấy.
   const [chuaDoc, setChuaDoc] = useState(0);
+  const [thayDanhMuc, setThayDanhMuc] = useState(false);
 
   useEffect(() => {
     if (isLoading) return;
@@ -69,12 +76,24 @@ export default function LichCongTacLayout({
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    danhMucLichApi
+      .nhom()
+      .then((n) => setThayDanhMuc(n.duoc_sua))
+      .catch(() => setThayDanhMuc(false));
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
     ghiChuApi.soChuaDoc().then(setChuaDoc).catch(() => setChuaDoc(0));
     // Đọc lại mỗi lần đổi trang trong module — rẻ hơn nhiều so với hẹn giờ,
     // và người dùng đang ở trong module thì thao tác nào cũng đổi đường dẫn.
   }, [isAuthenticated, pathname]);
 
-  const tab = thayDoiSoat ? [...TAB, TAB_DOI_SOAT] : TAB;
+  const tab = [
+    ...TAB,
+    ...(thayDanhMuc ? [TAB_DANH_MUC] : []),
+    ...(thayDoiSoat ? [TAB_DOI_SOAT] : []),
+  ];
 
   return (
     <div className="min-h-screen p-6 bg-gray-50">

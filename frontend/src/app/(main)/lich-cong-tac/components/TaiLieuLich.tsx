@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, Eye, FileText, Loader2, Trash2, Upload } from 'lucide-react';
 
+import { danhMucLichApi } from '@/services/danh-muc-lich';
 import { taiLieuApi } from '@/services/hkg';
 import { errApi } from '@/lib/hkg-error';
 import {
@@ -47,6 +48,7 @@ export default function TaiLieuLich({
   const [muc, setMuc] = useState<IMucPhanQuyen[]>([]);
   const [mucUpload, setMucUpload] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
   const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0]);
+  const [dsLoai, setDsLoai] = useState<string[]>(LOAI_TAI_LIEU);
   const [dangTai, setDangTai] = useState<string[]>([]);
   const [conLai, setConLai] = useState(0);
   const [dangXoa, setDangXoa] = useState<string | null>(null);
@@ -77,6 +79,17 @@ export default function TaiLieuLich({
   useEffect(() => {
     if (!quanLyDuoc) return;
     taiLieuApi.mucPhanQuyen().then(setMuc).catch(() => setMuc([]));
+    // Loại tài liệu do đơn vị tự quản trị (G4.11). Gọi hỏng thì giữ 7 mục
+    // gieo sẵn — thà chọn được loại cũ còn hơn ô chọn rỗng.
+    danhMucLichApi
+      .danhSach({ nhom: 'LOAI_TAI_LIEU' })
+      .then((ds) => {
+        if (ds.length === 0) return;
+        const nhan = ds.map((m) => m.nhan);
+        setDsLoai(nhan);
+        setLoaiTaiLieu(nhan[0]);
+      })
+      .catch(() => undefined);
   }, [quanLyDuoc]);
 
   /**
@@ -166,7 +179,7 @@ export default function TaiLieuLich({
             onChange={(e) => setLoaiTaiLieu(e.target.value)}
             className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
           >
-            {LOAI_TAI_LIEU.map((l) => (
+            {dsLoai.map((l) => (
               <option key={l} value={l}>
                 {l}
               </option>

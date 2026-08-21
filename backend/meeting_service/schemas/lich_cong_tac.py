@@ -8,17 +8,25 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# 6 loại đang chạy thật trên lichkv8. Khác trục với `khoi` của HKG.
-LOAI_LICH_VALUES = ["HOP", "TRUC_BAN", "HOI_NGHI", "LAM_VIEC", "CONG_TAC",
-                    "LICH_KHAC"]
 NGUON_VALUES = ["HKG", "LICH_CONG_TAC"]
 
-NHAN_LOAI_LICH = {
+# ⚠️ Loại lịch KHÔNG còn là hằng số. Từ G4.11 nó nằm ở `meeting.danh_muc`
+# nhóm `LOAI_LICH` để đơn vị tự quản trị (yêu cầu chuyển đổi mục II.15), nên
+# việc kiểm tra chuyển xuống tầng dịch vụ — chỗ có phiên làm việc với cơ sở
+# dữ liệu. Pydantic validator không đọc được bảng nên đã gỡ bỏ.
+#
+# Hai hằng số dưới đây CHỈ còn là lưới dự phòng cho lúc bảng danh mục chưa
+# được gieo (cơ sở dữ liệu dựng trước meeting_024). Đừng thêm giá trị mới vào
+# đây — thêm vào danh mục.
+LOAI_LICH_DU_PHONG = ["HOP", "TRUC_BAN", "HOI_NGHI", "LAM_VIEC", "CONG_TAC",
+                      "TIEP_DOAN", "LICH_KHAC"]
+NHAN_LOAI_LICH_DU_PHONG = {
     "HOP": "Họp",
     "TRUC_BAN": "Trực ban",
     "HOI_NGHI": "Hội nghị",
     "LAM_VIEC": "Làm việc",
     "CONG_TAC": "Đi công tác",
+    "TIEP_DOAN": "Tiếp đoàn",
     "LICH_KHAC": "Lịch khác",
 }
 
@@ -96,12 +104,8 @@ class LichCongTacCreate(BaseModel):
     so_van_ban: Optional[str] = Field(default=None, max_length=100)
     lanh_dao_lien_quan_ids: list[UUID] = Field(default_factory=list)
 
-    @field_validator("loai_lich")
-    @classmethod
-    def _check_loai(cls, v: str) -> str:
-        if v not in LOAI_LICH_VALUES:
-            raise ValueError(f"loai_lich phải thuộc {LOAI_LICH_VALUES}")
-        return v
+    # Không kiểm `loai_lich` ở đây — xem ghi chú ở đầu tệp. Tầng dịch vụ đối
+    # chiếu với bảng danh mục.
 
     @field_validator("ngay_ket_thuc")
     @classmethod
@@ -130,12 +134,7 @@ class LichCongTacUpdate(BaseModel):
     so_van_ban: Optional[str] = Field(default=None, max_length=100)
     lanh_dao_lien_quan_ids: Optional[list[UUID]] = None
 
-    @field_validator("loai_lich")
-    @classmethod
-    def _check_loai(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in LOAI_LICH_VALUES:
-            raise ValueError(f"loai_lich phải thuộc {LOAI_LICH_VALUES}")
-        return v
+    # `loai_lich` kiểm ở tầng dịch vụ — xem ghi chú ở đầu tệp.
 
 
 class LichCongTacHuy(BaseModel):

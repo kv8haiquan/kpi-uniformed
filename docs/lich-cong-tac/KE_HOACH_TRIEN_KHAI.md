@@ -518,6 +518,71 @@ Ba quyết định thiết kế ghi lại để khỏi tranh luận lại:
 
 > Không xem được thì cũng không xoá/sửa được: thao tác trên tài liệu chưa từng thấy nội dung là mù, và là đường vòng để phá tài liệu hạn chế. Mọi lần đổi mức đều ghi nhật ký kèm **giá trị cũ** (`phan_quyen_cu`).
 
+### G4.11 — Quản trị danh mục ✅ *21/08*
+
+> 🔴 **Phát hiện khi rà soát hồ sơ nguồn (21/08): kế hoạch đã BỎ SÓT mục này.**
+> Yêu cầu chuyển đổi mục II.15 đòi *“quản lý các danh mục dùng chung của phần mềm
+> như đơn vị, loại lịch, trạng thái và các danh mục cấu hình khác”*, bảng nghiệm thu
+> XI.9 kiểm lại điểm này. Hệ cũ có màn hình `settings` (“QUẢN TRỊ DANH MỤC”) chạy
+> trên sheet `SETUP` với **12 nhóm**. Bên ta viết chết trong mã nguồn — thêm một
+> loại lịch phải gọi người sửa mã, đúng thứ yêu cầu đòi bỏ.
+
+- [x] Bảng `meeting.danh_muc` + migration `meeting_024` — 4 nhóm, 24 mục
+- [x] 6 endpoint `/danh-muc/*` · trang `/lich-cong-tac/danh-muc` · 22 test PASS
+- [x] Nối vào nghiệp vụ: ô Loại lịch, ô Loại tài liệu (cả modal Thêm lịch lẫn
+      trang chi tiết), gợi ý ô Địa điểm
+
+**Chỉ mang 4 trong 12 nhóm.** Tám nhóm còn lại nền tảng đã có nơi quản lý thật,
+đưa vào đây là đẻ ra bản sao thứ hai rồi hai bên lệch nhau:
+
+| Nhóm hệ cũ | Nền tảng quản ở đâu |
+|---|---|
+| `ROLE_LIST`, `SCOPE_LIST` | `public.vai_tro` + RBAC |
+| `DEPT_LIST` (13) | `public.don_vi` (15 đơn vị thật) |
+| `LEADER_LIST` | `cong_chuc.is_lanh_dao` |
+| `USER_STATUS` | `cong_chuc.is_active` |
+| `PARTICIPANT_ROLE`, `PARTICIPANT_PERMISSION` | `thanh_phan.loai_tham_du` + phân quyền tài liệu G5.4 |
+| `YES_NO` | là kiểu dữ liệu, không phải danh mục |
+
+Ba quyết định thiết kế ghi lại để khỏi tranh luận lại:
+
+1. **Cờ `he_thong` tách “đổi tên” khỏi “đổi mã”.** Đếm thực tế: `trang_thai` có
+   **62 điểm rẽ nhánh** trong `meeting_service/`, `loai_lich` có **0**. Nên trạng
+   thái sửa được nhãn (“Đã đăng” → “Đã công bố”) nhưng không đổi mã / xoá / tắt;
+   loại lịch thì tự do, trừ `HOP` là giá trị mặc định nên khoá lại.
+2. **Mã bất biến kể cả với mục thường** (`DM_KHONG_DOI_MA`). Dữ liệu đã ghi tham
+   chiếu bằng mã — đổi là làm mồ côi hàng loạt bản ghi mà không báo ai.
+3. **Đang có bản ghi dùng thì chỉ được TẮT, không xoá** (`DM_DANG_SU_DUNG`, kèm
+   số bản ghi). Thêm lại mã đã tắt thì **bật lại đúng mục cũ**, không báo lỗi cụt
+   và không đẻ mục thứ hai — dữ liệu cũ mang mã đó hiện đúng nhãn trở lại ngay.
+
+> ⚠️ **Bỏ CHECK `ck_cuoc_hop_loai_lich`.** Giữ lại thì đơn vị thêm loại lịch mới
+> sẽ bị cơ sở dữ liệu chối, tức là màn hình quản trị vô nghĩa. Lưới chặn chuyển
+> xuống tầng dịch vụ (`_kiem_loai_lich`). Đổi lại, đường ghi thẳng bằng SQL
+> (script di trú) mất lưới an toàn — chấp nhận, vì đó là đường chỉ người viết mã
+> đi. CHECK của `trang_thai` **giữ nguyên**: mã trạng thái không bao giờ đổi.
+
+**Bổ sung `TIEP_DOAN`** — loại lịch thứ 7 của hệ cũ mà đợt chuyển đổi làm sót.
+Dữ liệu lịch sử không mất gì (490 sự kiện di trú không dùng loại này lần nào),
+nhưng Văn phòng trước đó **không tạo được** lịch tiếp đoàn. Thiếu ở cả ba tầng:
+CHECK cơ sở dữ liệu, từ điển nhãn backend, ô chọn giao diện.
+
+**Bổ sung `PHONG_HOP`** — `ROOM_LIST` của hệ cũ, 5 địa điểm. `dia_diem` vẫn là
+chuỗi tự do (đã có 6 tháng dữ liệu gõ tay, đổi sang lưu mã là phải di trú lại cả
+cột), nên danh mục này đóng vai **gợi ý** qua `datalist` để lần sau mọi người gõ
+giống nhau — không phải ràng buộc.
+
+### G4.12 — Mỗi tài liệu một loại riêng ✅ *21/08*
+
+- [x] Hàng đợi tải lên chuyển từ `File[]` sang `FileCho[]` (`{ file, loai }`)
+- [x] Ô chọn loại phía trên thành **loại mặc định** cho file thả vào tiếp theo;
+      mỗi dòng trong hàng đợi có ô chọn riêng, hiện ngay cạnh tên file
+- [x] Loại đã gán mà đơn vị vừa tắt vẫn hiện trong ô chọn của dòng đó — không
+      thì ô nhảy sang loại khác mà người dùng không hề bấm
+
+> Trước đó cả hàng đợi dùng chung một loại: nộp giấy mời và báo cáo trong cùng
+> một lượt thì phải tải hai lần.
+
 ### G5.5 — Chặn thả file trực tiếp
 
 - [ ] Mọi tài liệu chỉ vào kho qua API upload có xác thực

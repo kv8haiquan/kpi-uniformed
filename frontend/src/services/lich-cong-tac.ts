@@ -120,6 +120,13 @@ export const lichCongTacApi = {
    */
   danhMucLanhDao: () => unwrap<ILanhDaoChon[]>(api.get('/danh-muc-lanh-dao')),
 
+  /**
+   * Gợi ý phòng họp cho ô Địa điểm (G4.11) — trả về NHÃN, không phải mã.
+   * `dia_diem` là chuỗi tự do và đã có 6 tháng dữ liệu gõ tay, nên đây là
+   * gợi ý cho lần nhập sau chứ không phải ràng buộc.
+   */
+  danhMucPhongHop: () => unwrap<string[]>(api.get('/danh-muc-phong-hop')),
+
   // ── quản lý lịch (G4.3) ────────────────────────────────────────────
 
   /** Quyền của người đang đăng nhập — để biết có hiện nút Sửa/Xoá không. */

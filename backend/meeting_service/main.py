@@ -48,6 +48,7 @@ from meeting_service.api.endpoints.truc_ban import router as truc_ban_router
 from meeting_service.api.endpoints.doi_soat import router as doi_soat_router
 from meeting_service.api.endpoints.ghi_chu import router as ghi_chu_router
 from meeting_service.api.endpoints.danh_gia import router as danh_gia_router
+from meeting_service.api.endpoints.danh_muc import router as danh_muc_router
 from meeting_service.api.endpoints.tai_lieu import (
     router as tai_lieu_router,
     router_cuoc_hop as tai_lieu_cuoc_hop_router,
@@ -151,6 +152,7 @@ app.include_router(truc_ban_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(doi_soat_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(ghi_chu_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(danh_gia_router, prefix="/api/v1/hop-khong-giay")
+app.include_router(danh_muc_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(tai_lieu_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(tai_lieu_cuoc_hop_router, prefix="/api/v1/hop-khong-giay")
 app.include_router(diem_danh_router, prefix="/api/v1/hop-khong-giay")

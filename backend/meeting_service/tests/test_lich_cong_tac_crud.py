@@ -106,9 +106,21 @@ async def test_ma_lich_khong_trung_khi_tao_dong_thoi(engine, admin_user,
     assert len(set(ma)) == 5, f"có mã trùng: {ma}"
 
 
-async def test_loai_lich_sai_bi_tu_choi(client, admin_user, don_dep):
+async def test_loai_lich_ngoai_danh_muc_bi_tu_choi(client, admin_user, don_dep):
+    """Lưới chặn nay ở tầng dịch vụ, không còn ở CHECK của cơ sở dữ liệu —
+    xem meeting_024 và `test_lich_cong_tac_schema.py`."""
     resp = await client.post(f"{BASE}/", json=_lich_moi(loai_lich="KHONG_CO"))
     assert resp.status_code == 422
+    assert resp.json()["detail"]["error"]["code"] == "LOAI_LICH_KHONG_HOP_LE"
+
+
+async def test_tiep_doan_tao_duoc(client, admin_user, don_dep):
+    """Loại lịch hệ cũ có mà đợt chuyển đổi làm sót, bổ sung ở meeting_024."""
+    resp = await client.post(f"{BASE}/", json=_lich_moi(loai_lich="TIEP_DOAN"))
+    assert resp.status_code == 201, resp.text
+    data = resp.json()["data"]
+    assert data["loai_lich"] == "TIEP_DOAN"
+    assert data["loai_lich_nhan"] == "Tiếp đoàn"
 
 
 async def test_ngay_ket_thuc_truoc_ngay_bat_dau_bi_tu_choi(client, admin_user,

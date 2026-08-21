@@ -16,6 +16,7 @@ import { FileText, Loader2, Paperclip, Trash2, X } from 'lucide-react';
 import { lichCongTacApi } from '@/services/lich-cong-tac';
 import { taiLieuApi } from '@/services/hkg';
 import { errApi, errMsg } from '@/lib/hkg-error';
+import { danhMucLichApi } from '@/services/danh-muc-lich';
 import {
   ACCEPT_FILE,
   LOAI_TAI_LIEU,
@@ -24,6 +25,7 @@ import {
   loiFile,
   moTaFileHong,
   taiNhieuFile,
+  type FileCho,
 } from '@/lib/tai-lieu-upload';
 import type {
   IMucPhanQuyen,
@@ -95,6 +97,7 @@ export default function FormLich({
   const [loai, setLoai] = useState<IDanhMucLoai[]>([]);
   const [donVi, setDonVi] = useState<IDonVi[]>([]);
   const [lanhDao, setLanhDao] = useState<ILanhDaoChon[]>([]);
+  const [phongHop, setPhongHop] = useState<string[]>([]);
   const [dangLuu, setDangLuu] = useState(false);
   const [loi, setLoi] = useState<string | null>(null);
 
@@ -113,8 +116,12 @@ export default function FormLich({
   // Lúc TẠO MỚI chưa có id cuộc họp để tải file lên, nên file đứng xếp hàng ở
   // đây rồi tải lên ngay sau khi lưu xong. Lúc SỬA cũng xếp hàng cho giống
   // nhau — một đường đi duy nhất, dễ đoán hơn là tải ngay khi chọn.
-  const [fileCho, setFileCho] = useState<File[]>([]);
+  // Mỗi file mang LOẠI RIÊNG của nó (G4.11). Ô chọn phía trên chỉ là loại
+  // mặc định gán cho file mới thả vào — chọn xong vẫn sửa lại từng dòng được,
+  // nên nộp giấy mời và báo cáo trong cùng một lượt là chuyện bình thường.
+  const [fileCho, setFileCho] = useState<FileCho[]>([]);
   const [daCo, setDaCo] = useState<ITaiLieuListItem[]>([]);
+  const [dsLoai, setDsLoai] = useState<string[]>(LOAI_TAI_LIEU);
   const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0]);
   const [mucList, setMucList] = useState<IMucPhanQuyen[]>([]);
   const [mucTaiLieu, setMucTaiLieu] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
@@ -161,7 +168,22 @@ export default function FormLich({
     lichCongTacApi.danhMuc().then(setLoai).catch(() => setLoai([]));
     lichCongTacApi.danhMucDonVi().then(setDonVi).catch(() => setDonVi([]));
     lichCongTacApi.danhMucLanhDao().then(setLanhDao).catch(() => setLanhDao([]));
+    lichCongTacApi
+      .danhMucPhongHop()
+      .then(setPhongHop)
+      .catch(() => setPhongHop([]));
     taiLieuApi.mucPhanQuyen().then(setMucList).catch(() => setMucList([]));
+    // Loại tài liệu nay do đơn vị tự quản trị (G4.11). Gọi hỏng thì giữ 7 mục
+    // gieo sẵn — thà chọn được loại cũ còn hơn ô chọn rỗng.
+    danhMucLichApi
+      .danhSach({ nhom: 'LOAI_TAI_LIEU' })
+      .then((ds) => {
+        if (ds.length === 0) return;
+        const nhan = ds.map((m) => m.nhan);
+        setDsLoai(nhan);
+        setLoaiTaiLieu(nhan[0]);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -193,11 +215,17 @@ export default function FormLich({
     );
 
     const dung = moi.filter((f) => loiFile(f) === null);
-    setFileCho((truoc) => gopFile(truoc, dung));
+    setFileCho((truoc) => gopFile(truoc, dung, loaiTaiLieu));
   };
 
   const xoaFileCho = (i: number) =>
     setFileCho((truoc) => truoc.filter((_, j) => j !== i));
+
+  /** Đổi loại của riêng một file trong hàng đợi. */
+  const doiLoaiFile = (i: number, loai: string) =>
+    setFileCho((truoc) =>
+      truoc.map((x, j) => (j === i ? { ...x, loai } : x)),
+    );
 
   const xoaFileDaCo = async (tl: ITaiLieuListItem) => {
     if (!window.confirm(`Xoá tài liệu "${tl.ten_tai_lieu}"?`)) return;
@@ -290,7 +318,6 @@ export default function FormLich({
         const hong = await taiNhieuFile({
           cuocHopId: sk.id,
           files: fileCho,
-          moTa: loaiTaiLieu,
           phanQuyen: mucTaiLieu,
           onDoiDangTai: setDangTaiFile,
         });
@@ -301,7 +328,7 @@ export default function FormLich({
               `tải lên được: ${moTaFileHong(hong)}. Bấm Lưu lần nữa để thử lại ` +
               '— lịch sẽ không bị tạo trùng.',
           );
-          setFileCho((truoc) => truoc.filter((f) => tenHong.has(f.name)));
+          setFileCho((truoc) => truoc.filter((x) => tenHong.has(x.file.name)));
           setDangLuu(false);
           return;
         }
@@ -410,12 +437,22 @@ export default function FormLich({
           </O>
 
           <O nhan="Địa điểm" rong>
+            {/* Danh mục phòng họp (G4.11) chỉ GỢI Ý, không ràng buộc:
+                `dia_diem` là chuỗi tự do và đã có 6 tháng dữ liệu gõ tay.
+                Dùng datalist để vẫn gõ được địa điểm ngoài danh mục. */}
             <input
               className={oCss}
+              list="dm-phong-hop"
               value={form.dia_diem}
               onChange={(e) => dat('dia_diem', e.target.value)}
               maxLength={300}
+              placeholder="Gõ hoặc chọn từ danh mục phòng họp"
             />
+            <datalist id="dm-phong-hop">
+              {phongHop.map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
           </O>
 
           <O nhan="Chủ trì" rong>
@@ -546,13 +583,15 @@ export default function FormLich({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm">
-              <span className="mb-1 block text-gray-600">Loại tài liệu</span>
+              <span className="mb-1 block text-gray-600">
+                Loại tài liệu <span className="text-gray-400">(mặc định)</span>
+              </span>
               <select
                 className={oCss}
                 value={loaiTaiLieu}
                 onChange={(e) => setLoaiTaiLieu(e.target.value)}
               >
-                {LOAI_TAI_LIEU.map((l) => (
+                {dsLoai.map((l) => (
                   <option key={l} value={l}>
                     {l}
                   </option>
@@ -580,8 +619,10 @@ export default function FormLich({
           </div>
 
           <p className="mt-1 text-xs text-gray-500">
-            Mặc định công khai nội bộ. Người tải lên luôn xem lại được file của
-            chính mình, kể cả khi mức hạn chế được nâng sau đó.
+            Hai ô trên áp cho file thả vào tiếp theo — mỗi file rồi vẫn đổi
+            riêng được loại ở danh sách bên dưới. Mặc định công khai nội bộ;
+            người tải lên luôn xem lại được file của chính mình, kể cả khi mức
+            hạn chế được nâng sau đó.
           </p>
 
           {/* Ô chọn file nằm TRONG nhãn, không dùng nút bấm rồi gọi .click():
@@ -645,19 +686,38 @@ export default function FormLich({
 
           {fileCho.length > 0 && (
             <ul className="mt-1 divide-y divide-gray-100 rounded-lg border border-gray-200">
-              {fileCho.map((f, i) => (
+              {fileCho.map((x, i) => (
                 <li
-                  key={`${f.name}-${f.size}-${i}`}
-                  className="flex items-center gap-2 px-3 py-2 text-sm"
+                  key={`${x.file.name}-${x.file.size}-${i}`}
+                  className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm"
                 >
                   <FileText className="h-4 w-4 shrink-0 text-gray-400" />
                   <span className="min-w-0 flex-1 truncate">
-                    {f.name}
+                    {x.file.name}
                     <span className="ml-1.5 text-xs text-gray-500">
-                      {coDaiFile(f.size)}
+                      {coDaiFile(x.file.size)}
                     </span>
                   </span>
-                  {dangTaiFile.includes(f.name) ? (
+                  {/* Loại của RIÊNG file này, ngay cạnh tên nó. */}
+                  <select
+                    value={x.loai}
+                    disabled={dangLuu}
+                    onChange={(e) => doiLoaiFile(i, e.target.value)}
+                    className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-700 focus:border-blue-500 focus:outline-none disabled:opacity-40"
+                  >
+                    {/* Loại đã gán có thể không còn trong danh mục (đơn vị vừa
+                        tắt nó) — vẫn phải hiện, nếu không ô chọn nhảy sang
+                        loại khác mà người dùng không hề bấm. */}
+                    {(dsLoai.includes(x.loai)
+                      ? dsLoai
+                      : [x.loai, ...dsLoai]
+                    ).map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                  {dangTaiFile.includes(x.file.name) ? (
                     <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                   ) : (
                     <button

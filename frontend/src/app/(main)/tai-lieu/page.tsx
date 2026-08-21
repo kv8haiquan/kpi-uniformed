@@ -9,14 +9,40 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { thuMucApi, taiLieuApi } from '@/services/portal';
+import { taiLieuApi as taiLieuHopApi } from '@/services/hkg';
 import { useCurrentUser } from '@/stores/useAuthStore';
 import type { IThuMucTree, ITaiLieuItem } from '@/types/tai-lieu';
+import type { NguonKhoTaiLieu } from '@/types/hkg';
 import FolderTree from '@/components/portal/FolderTree';
 import FileCard from '@/components/portal/FileCard';
 import FileListItem from '@/components/portal/FileListItem';
+import KhoTaiLieuHop from '@/components/portal/KhoTaiLieuHop';
 import UploadModal from '@/components/portal/UploadModal';
+
+// =============================================================================
+// THƯ MỤC ẢO — kho tài liệu họp
+// =============================================================================
+// Tài liệu họp nằm ở `meeting.tai_lieu`, KHÔNG sao chép sang `portal.tai_lieu`.
+// Ba lý do: nhân đôi 1,6 GB, hai bên lệch nhau khi có tài liệu mới, và portal
+// có mô hình quyền riêng nên sao chép sang là bỏ qua phân quyền G5.4.
+//
+// Nên cây thư mục có thêm ba nút "ảo": khi chọn, trang gọi thẳng meeting_service
+// thay vì portal_service. Id đặt tiền tố `kho:` để không lẫn với UUID thật.
+const KHO_GOC = 'kho:tat-ca';
+const KHO_HKG = 'kho:HKG';
+const KHO_LICH = 'kho:LICH_CONG_TAC';
+
+/** Id thư mục này có phải kho tài liệu họp không. */
+const laKhoHop = (id: string | null) => Boolean(id?.startsWith('kho:'));
+
+/** Nguồn tương ứng; `undefined` nghĩa là cả hai. */
+function nguonCuaKho(id: string | null): NguonKhoTaiLieu | undefined {
+  if (id === KHO_HKG) return 'HKG';
+  if (id === KHO_LICH) return 'LICH_CONG_TAC';
+  return undefined;
+}
 
 // =============================================================================
 // CONSTANTS
@@ -89,6 +115,14 @@ export default function TaiLieuPage() {
   // ---------------------------------------------------------------------------
 
   const fetchFiles = useCallback(async () => {
+    // Kho tài liệu họp do KhoTaiLieuHop tự tải từ meeting_service — gọi
+    // portal_service ở đây chỉ tổ nhấp nháy một danh sách rồi bỏ đi.
+    if (laKhoHop(selectedFolderId)) {
+      setFiles([]);
+      setPagination({ page: 1, total_pages: 1, total_items: 0 });
+      setLoadingFiles(false);
+      return;
+    }
     setLoadingFiles(true);
     try {
       const res = await taiLieuApi.danhSach({
@@ -150,6 +184,48 @@ export default function TaiLieuPage() {
     }
   };
 
+  // Số tài liệu mỗi nguồn, để gắn vào nhãn thư mục ảo.
+  const [khoDem, setKhoDem] = useState<{ HKG: number; LICH_CONG_TAC: number; tong: number } | null>(null);
+  useEffect(() => {
+    taiLieuHopApi.khoThongKe().then(setKhoDem).catch(() => setKhoDem(null));
+  }, []);
+
+  /** Cây hiển thị = thư mục thật + nhánh ảo "HKG + Lịch công tác". */
+  const cayHienThi = useMemo<IThuMucTree[]>(() => {
+    const soLuong = (n: number | undefined) => (n ? ` (${n})` : '');
+    const nhanhKho: IThuMucTree = {
+      id: KHO_GOC,
+      ten: `HKG + Lịch công tác${soLuong(khoDem?.tong)}`,
+      parent_id: null,
+      thu_tu: -1,
+      children: [
+        {
+          id: KHO_HKG,
+          ten: `Họp Không Giấy${soLuong(khoDem?.HKG)}`,
+          parent_id: KHO_GOC,
+          thu_tu: 0,
+          children: [],
+          quyen_truy_cap: 'TAT_CA',
+        },
+        {
+          id: KHO_LICH,
+          ten: `Lịch công tác${soLuong(khoDem?.LICH_CONG_TAC)}`,
+          parent_id: KHO_GOC,
+          thu_tu: 1,
+          children: [],
+          quyen_truy_cap: 'TAT_CA',
+        },
+      ],
+      // `quyen_truy_cap` chỉ có nghĩa với thư mục thật của portal. Nhánh này
+      // là ảo: quyền do meeting_service quyết theo từng cuộc họp và từng tài
+      // liệu (G5.4), không phải theo thư mục.
+      quyen_truy_cap: 'TAT_CA',
+    } as unknown as IThuMucTree;
+    // Đặt lên đầu: đây là kho có dữ liệu thật (866 file), còn thư viện văn
+    // bản pháp quy mới có 22 file.
+    return [nhanhKho, ...folders];
+  }, [folders, khoDem]);
+
   const selectedFolderName = (() => {
     if (!selectedFolderId) return 'Tất cả tài liệu';
     const findNode = (nodes: IThuMucTree[]): string | null => {
@@ -160,7 +236,7 @@ export default function TaiLieuPage() {
       }
       return null;
     };
-    return findNode(folders) ?? 'Thư mục';
+    return findNode(cayHienThi) ?? 'Thư mục';
   })();
 
   // ---------------------------------------------------------------------------
@@ -189,6 +265,13 @@ export default function TaiLieuPage() {
           </div>
           <button
             onClick={() => {
+              if (laKhoHop(selectedFolderId)) {
+                alert(
+                  'Tài liệu họp được nộp ngay trong màn hình cuộc họp hoặc ' +
+                  'lịch công tác, để gắn đúng vào cuộc họp. Mục này chỉ để tra cứu.',
+                );
+                return;
+              }
               if (!selectedFolderId) {
                 alert('Vui lòng chọn thư mục trước khi upload.');
                 return;
@@ -236,7 +319,7 @@ export default function TaiLieuPage() {
               </div>
             ) : (
               <FolderTree
-                folders={folders}
+                folders={cayHienThi}
                 selectedId={selectedFolderId}
                 onSelect={handleFolderSelect}
                 onAdd={isAdmin ? () => alert('Tính năng tạo thư mục sẽ được thêm sau.') : undefined}
@@ -289,7 +372,12 @@ export default function TaiLieuPage() {
             </div>
 
             {/* Files */}
-            {loadingFiles ? (
+            {laKhoHop(selectedFolderId) ? (
+              <KhoTaiLieuHop
+                nguon={nguonCuaKho(selectedFolderId)}
+                timKiem={searchText}
+              />
+            ) : loadingFiles ? (
               viewMode === 'grid' ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
                   {Array.from({ length: 8 }).map((_, i) => (

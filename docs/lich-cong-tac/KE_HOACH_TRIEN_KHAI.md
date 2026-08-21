@@ -518,6 +518,71 @@ Ba quyết định thiết kế ghi lại để khỏi tranh luận lại:
 
 > Không xem được thì cũng không xoá/sửa được: thao tác trên tài liệu chưa từng thấy nội dung là mù, và là đường vòng để phá tài liệu hạn chế. Mọi lần đổi mức đều ghi nhật ký kèm **giá trị cũ** (`phan_quyen_cu`).
 
+### G4.11 — Quản trị danh mục ✅ *21/08*
+
+> 🔴 **Phát hiện khi rà soát hồ sơ nguồn (21/08): kế hoạch đã BỎ SÓT mục này.**
+> Yêu cầu chuyển đổi mục II.15 đòi *“quản lý các danh mục dùng chung của phần mềm
+> như đơn vị, loại lịch, trạng thái và các danh mục cấu hình khác”*, bảng nghiệm thu
+> XI.9 kiểm lại điểm này. Hệ cũ có màn hình `settings` (“QUẢN TRỊ DANH MỤC”) chạy
+> trên sheet `SETUP` với **12 nhóm**. Bên ta viết chết trong mã nguồn — thêm một
+> loại lịch phải gọi người sửa mã, đúng thứ yêu cầu đòi bỏ.
+
+- [x] Bảng `meeting.danh_muc` + migration `meeting_024` — 4 nhóm, 24 mục
+- [x] 6 endpoint `/danh-muc/*` · trang `/lich-cong-tac/danh-muc` · 22 test PASS
+- [x] Nối vào nghiệp vụ: ô Loại lịch, ô Loại tài liệu (cả modal Thêm lịch lẫn
+      trang chi tiết), gợi ý ô Địa điểm
+
+**Chỉ mang 4 trong 12 nhóm.** Tám nhóm còn lại nền tảng đã có nơi quản lý thật,
+đưa vào đây là đẻ ra bản sao thứ hai rồi hai bên lệch nhau:
+
+| Nhóm hệ cũ | Nền tảng quản ở đâu |
+|---|---|
+| `ROLE_LIST`, `SCOPE_LIST` | `public.vai_tro` + RBAC |
+| `DEPT_LIST` (13) | `public.don_vi` (15 đơn vị thật) |
+| `LEADER_LIST` | `cong_chuc.is_lanh_dao` |
+| `USER_STATUS` | `cong_chuc.is_active` |
+| `PARTICIPANT_ROLE`, `PARTICIPANT_PERMISSION` | `thanh_phan.loai_tham_du` + phân quyền tài liệu G5.4 |
+| `YES_NO` | là kiểu dữ liệu, không phải danh mục |
+
+Ba quyết định thiết kế ghi lại để khỏi tranh luận lại:
+
+1. **Cờ `he_thong` tách “đổi tên” khỏi “đổi mã”.** Đếm thực tế: `trang_thai` có
+   **62 điểm rẽ nhánh** trong `meeting_service/`, `loai_lich` có **0**. Nên trạng
+   thái sửa được nhãn (“Đã đăng” → “Đã công bố”) nhưng không đổi mã / xoá / tắt;
+   loại lịch thì tự do, trừ `HOP` là giá trị mặc định nên khoá lại.
+2. **Mã bất biến kể cả với mục thường** (`DM_KHONG_DOI_MA`). Dữ liệu đã ghi tham
+   chiếu bằng mã — đổi là làm mồ côi hàng loạt bản ghi mà không báo ai.
+3. **Đang có bản ghi dùng thì chỉ được TẮT, không xoá** (`DM_DANG_SU_DUNG`, kèm
+   số bản ghi). Thêm lại mã đã tắt thì **bật lại đúng mục cũ**, không báo lỗi cụt
+   và không đẻ mục thứ hai — dữ liệu cũ mang mã đó hiện đúng nhãn trở lại ngay.
+
+> ⚠️ **Bỏ CHECK `ck_cuoc_hop_loai_lich`.** Giữ lại thì đơn vị thêm loại lịch mới
+> sẽ bị cơ sở dữ liệu chối, tức là màn hình quản trị vô nghĩa. Lưới chặn chuyển
+> xuống tầng dịch vụ (`_kiem_loai_lich`). Đổi lại, đường ghi thẳng bằng SQL
+> (script di trú) mất lưới an toàn — chấp nhận, vì đó là đường chỉ người viết mã
+> đi. CHECK của `trang_thai` **giữ nguyên**: mã trạng thái không bao giờ đổi.
+
+**Bổ sung `TIEP_DOAN`** — loại lịch thứ 7 của hệ cũ mà đợt chuyển đổi làm sót.
+Dữ liệu lịch sử không mất gì (490 sự kiện di trú không dùng loại này lần nào),
+nhưng Văn phòng trước đó **không tạo được** lịch tiếp đoàn. Thiếu ở cả ba tầng:
+CHECK cơ sở dữ liệu, từ điển nhãn backend, ô chọn giao diện.
+
+**Bổ sung `PHONG_HOP`** — `ROOM_LIST` của hệ cũ, 5 địa điểm. `dia_diem` vẫn là
+chuỗi tự do (đã có 6 tháng dữ liệu gõ tay, đổi sang lưu mã là phải di trú lại cả
+cột), nên danh mục này đóng vai **gợi ý** qua `datalist` để lần sau mọi người gõ
+giống nhau — không phải ràng buộc.
+
+### G4.12 — Mỗi tài liệu một loại riêng ✅ *21/08*
+
+- [x] Hàng đợi tải lên chuyển từ `File[]` sang `FileCho[]` (`{ file, loai }`)
+- [x] Ô chọn loại phía trên thành **loại mặc định** cho file thả vào tiếp theo;
+      mỗi dòng trong hàng đợi có ô chọn riêng, hiện ngay cạnh tên file
+- [x] Loại đã gán mà đơn vị vừa tắt vẫn hiện trong ô chọn của dòng đó — không
+      thì ô nhảy sang loại khác mà người dùng không hề bấm
+
+> Trước đó cả hàng đợi dùng chung một loại: nộp giấy mời và báo cáo trong cùng
+> một lượt thì phải tải hai lần.
+
 ### G5.5 — Chặn thả file trực tiếp
 
 - [ ] Mọi tài liệu chỉ vào kho qua API upload có xác thực
@@ -531,7 +596,114 @@ Ba quyết định thiết kế ghi lại để khỏi tranh luận lại:
 
 **Ước lượng:** 2 tuần chạy song song · **Chặn bởi:** G3, G4, G5
 
-- [ ] **G6.1** — Chạy migration trên prod `kpi_haiquan` (⚠️ **cần user duyệt từng lần**, xem `CLAUDE.md`)
+- [x] **G6.1** — Chạy migration trên prod `kpi_haiquan` ✅ *21/08 18:55* — `mt_022` → **`mt_024`**
+
+  Chạy **kèm mã nguồn**, không chạy migration đơn lẻ. Lý do: `/opt/kpi-prod` là
+  git worktree riêng trên nhánh `prod`; migration mà cây đó không có file thì
+  lần sau `alembic current` từ prod sẽ báo *"Can't locate revision"*.
+
+  | Bước | Kết quả |
+  |---|---|
+  | Sao lưu trước migration | `db_premig_mt024_20260821_185519.sql.gz` — 41MB, `gzip -t` OK |
+  | Gộp `feature/lich-cong-tac` → `prod` | fast-forward tới `7916a21`, 9 commit |
+  | `alembic upgrade head` | `mt_023` + `mt_024`, một transaction |
+  | `npm run build` | PASS 17,7s |
+  | `pm2 restart meeting-backend kpi-frontend` | cả hai online, `/health` OK, frontend HTTP 200 |
+
+  **Đối soát sau migration:** `cuoc_hop` 507 = 507 · `tai_lieu` 856 = 856 ·
+  `cong_chuc` 558 = 558 — không lệch dòng nào. `danh_muc` 24 mục / 4 nhóm,
+  `TIEP_DOAN` có mặt, `ck_cuoc_hop_loai_lich` đã bỏ, `idx_tai_lieu_han_che` đã tạo.
+  Smoke chỉ-đọc qua API thật: 8/8 endpoint 200.
+
+  > ✅ **Rà rủi ro trước khi chạy:** `mt_023` thu hẹp CHECK `phan_quyen`, bỏ giá
+  > trị `HAN_CHE`. Mã đang chạy lúc đó (`662098f`) vẫn khai
+  > `PHAN_QUYEN_VALUES = ["CONG_KHAI","HAN_CHE"]`, nhưng **không màn hình nào
+  > đặt `HAN_CHE`** — mọi upload đi qua `input.phan_quyen || 'CONG_KHAI'`. Nên
+  > khoảng thời gian mã cũ chạy trên lược đồ mới là an toàn.
+  >
+  > 📌 Vị trí sao lưu đúng là `/var/backup/kpi_haiquan/` (số **ít**), cron
+  > `/etc/cron.d/hkg-backups` chạy 02:00 + 14:00 và vẫn hoạt động bình thường.
+
+- [x] **G6.2** — Di trú phần phát sinh ✅ *21/08 20:15*
+
+  Xuất lại bản sống từ Google Sheets: **165 dòng phát sinh** so với mốc 19/08
+  (MEETING +18, MEETING_FILE +9, MEETING_LOG +114, DUTY_ENTRY +15,
+  DUTY_UNIT_STATUS +9). Chạy `01` → `02` → `03` → `04` → `05` → `06`.
+
+  | Bảng | Sau di trú |
+  |---|---:|
+  | `cuoc_hop` | 514 *(+7)* |
+  | `tai_lieu` | 866 *(+10)* |
+  | `lanh_dao_lien_quan` | 485 |
+  | `truc_ban` | 681 |
+  | `danh_gia_cuoc_hop` | 102 |
+  | `ghi_chu` | 12 |
+
+  Toàn vẹn: 0 tài liệu mồ côi · 0 `ma_lich` trùng · 0 file thiếu trên kho thật ·
+  0 dòng lưu vết mồ côi.
+
+  > 🔴 **Hai sự cố trong lượt chạy, đã xử lý dứt điểm — đọc trước khi chạy lại.**
+  >
+  > **1. `06_gan_tai_lieu.py` không idempotent.** Chạy lại là gắn lại từ đầu
+  > toàn bộ: thêm 819 dòng trong đó **809 là bản sao**. Đã xoá trong transaction
+  > có kiểm điều kiện, về đúng 866. Khoá chống trùng nay là **(tên file, cỡ
+  > file)** chứ không phải (cuộc họp, tên file) — vì hàm khớp thư mục → cuộc họp
+  > **không tất định**: cùng 5 file, lượt trước gán vào `LH0007`/`LH0009`, lượt
+  > sau gán vào `LH0445`. Đã thử khoá theo cuộc họp và vẫn lọt đúng 5 bản sao.
+  >
+  > **2. Ghi lệch kho file.** Quên đặt `HKG_UPLOAD_DIR` → bản ghi vào cơ sở dữ
+  > liệu thật còn file rơi lại `backend/uploads/` của cây làm việc; tài liệu hiện
+  > trên danh sách nhưng bấm tải là hỏng. **Lỗi này đã xảy ra ngày 19/08** và
+  > cách khắc phục lúc đó là viết một dòng ghi chú — không chặn được ai. Nay là
+  > rào cứng: ghi vào `kpi_haiquan` mà chưa đặt `HKG_UPLOAD_DIR` thì thoát ngay.
+  > 10 file đã chép sang kho thật, kiểm lại 866/866 mở được.
+  >
+  > Lệnh đúng để chạy lại:
+  > ```bash
+  > HKG_UPLOAD_DIR=/var/data/kpi/uploads/meeting \
+  > DB_NAME=kpi_haiquan CHO_PHEP_PROD=toi_dong_y python 06_gan_tai_lieu.py
+  > ```
+  >
+  > ⚠️ Còn **54 nhóm trùng** (101 dòng thừa) tồn dư từ các đợt di trú trước
+  > 21/08, cùng nguyên nhân "khớp thư mục không tất định". Chưa dọn theo yêu cầu.
+
+### G6.1c — Nhắc lịch qua Zalo ✅ *21/08 20:15*
+
+Lãnh đạo yêu cầu bổ sung (21/08), **giữ đủ ba mốc** 24h / 1h / 30 phút.
+
+- [x] Bỏ bộ lọc `nguon == 'HKG'` khỏi `nhac_hop_3_tang_logic`
+- [x] Bảng tra `NGUON_NHAC` — mỗi nguồn một bảng người nhận và một đường dẫn:
+      HKG → `meeting.thanh_phan` → `/hop-khong-giay/chi-tiet/{id}`;
+      Lịch công tác → `meeting.lanh_dao_lien_quan` → `/lich-cong-tac/{id}`
+- [x] 9 test mới · toàn bộ meeting_service 390/390 PASS · đã chạy trên prod
+
+Ghi chú cũ trong mã nói *"Lịch công tác không có thành phần dự để gửi nhắc"* —
+đúng vào lúc viết, nhưng G4.3 đã thêm danh sách lãnh đạo: **448/490 sự kiện
+(91%)** nay có người để nhắc, 490/490 có giờ bắt đầu.
+
+**Chi phí** theo dữ liệu thật: 82 sự kiện/tháng × 1,06 lãnh đạo × 3 mốc
+≈ 238 tin ≈ **190.000 đ/tháng**, bằng 10% trần tháng. Muốn rút còn một mốc thì
+bỏ bớt dòng trong `WINDOWS` là xong. Cả ba mốc dùng **chung một template ZNS đã
+được Zalo duyệt** (`623236`), khác nhau ở tham số `moc` — không phải xin duyệt mới.
+
+Chính sách nội dung giữ nguyên: tin Zalo chỉ là **"chuông cửa"**, không mang
+tiêu đề, địa điểm hay thành phần (đã chốt với đơn vị 31/07/2026).
+
+> 🔴 **Sửa kèm một lỗi có sẵn: bộ nhắc chạy lệch 7 tiếng.**
+>
+> `ngay_hop` là DATE và `gio_bat_dau` là TIME, đều không mang múi giờ — người
+> nhập gõ "14:30" nghĩa là 14:30 **giờ ta**. Bộ nhắc ghép hai cột đó với
+> `tzinfo=utc`, tức hiểu thành 21:30 giờ ta.
+>
+> Đo trên dữ liệu thật: tin *"nhắc trước 30 phút"* của cuộc họp 09:00 ngày 17/08
+> được gửi lúc **15:25 cùng ngày — sau khi họp đã tan 6,4 giờ**. Bộ nhắc HKG
+> hỏng lặng lẽ từ trước, không ai để ý vì mới gửi cho vài cuộc họp.
+>
+> Test cũ ghi `hop_time` với `tzinfo=utc`, tức đã **chốt nhầm chính lỗi này
+> thành "hành vi đúng"** — nay sửa sang `GIO_VN`.
+
+- [ ] **G6.1b** — Kiểm tra thực tế trên trình duyệt: Văn phòng tạo thử một lịch
+      *Tiếp đoàn*, đính hai loại tài liệu khác nhau, mở trang Quản trị danh mục
 - [ ] **G6.2** — Di trú lần cuối phần dữ liệu phát sinh từ G1.2 đến nay
 - [ ] **G6.3** — Bà Hà rà 34 thư mục trên màn hình đối soát (ước 1 buổi)
 - [ ] **G6.4** — Mở cho người dùng đối chiếu, chạy song song với lichkv8

@@ -19,6 +19,8 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meeting_service.services.scheduler_helpers import (
+    GIO_VN,
+    gio_bat_dau_utc,
     mark_tre_han_logic,
     nhac_han_ket_luan_logic,
     nhac_hop_3_tang_logic,
@@ -61,8 +63,10 @@ async def test_nhac_hop_3_tang_full_lifecycle(
     """
     reset_cache()
 
-    # Tạo cuộc họp tương lai cố định: 2026-06-15 09:00 UTC
-    hop_time = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+    # Giờ họp là GIỜ VIỆT NAM — người nhập gõ "09:00" nghĩa là 09:00 giờ ta.
+    # Trước 21/08/2026 chỗ này ghi tzinfo=utc, chốt nhầm lỗi lệch 7 tiếng của
+    # scheduler thành "hành vi đúng". Xem GIO_VN trong scheduler_helpers.
+    hop_time = datetime(2026, 6, 15, 9, 0, tzinfo=GIO_VN)
 
     create = await client.post(BASE_CH + "/", json=_meeting_payload(
         seed_test_users["don_vi_a"], chu_toa_user.sub,
@@ -134,7 +138,7 @@ async def test_nhac_hop_skip_outside_window(
     ), {"id": ch_id})
     await db_session.flush()
 
-    hop_time = datetime(2026, 6, 15, 9, 0, tzinfo=timezone.utc)
+    hop_time = datetime(2026, 6, 15, 9, 0, tzinfo=GIO_VN)
     # 12h trước → không trong bất kỳ window nào
     n = await nhac_hop_3_tang_logic(db_session, now=hop_time - timedelta(hours=12))
     assert n == 0

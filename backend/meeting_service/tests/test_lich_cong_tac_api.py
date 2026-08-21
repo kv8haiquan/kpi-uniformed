@@ -39,10 +39,17 @@ async def test_danh_sach_tra_ve_phan_trang(client, db_session: AsyncSession, chu
     assert len(body["data"]) <= 10
 
 
-async def test_loai_lich_sai_bi_tu_choi(client, chu_toa_user):
+async def test_loc_theo_loai_lich_la_ra_danh_sach_rong(client, chu_toa_user):
+    """Bộ lọc KHÔNG còn chối loại lạ (G4.11).
+
+    Trước đây endpoint đối chiếu với hằng số rồi trả 400. Nay đơn vị tự thêm
+    loại lịch được, nên chặn theo hằng số sẽ chối oan loại vừa thêm — cái
+    endpoint không thể biết. Loại không có thật chỉ ra danh sách rỗng, đúng
+    thứ người dùng vừa hỏi.
+    """
     resp = await client.get(f"{BASE}/?loai-lich=KHONG_TON_TAI")
-    assert resp.status_code == 400
-    assert resp.json()["detail"]["error"]["code"] == "LOAI_LICH_KHONG_HOP_LE"
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []
 
 
 @pytest.mark.parametrize(
@@ -180,12 +187,15 @@ async def test_thong_ke_du_chi_so(client, chu_toa_user):
         assert isinstance(d[k], int)
 
 
-async def test_danh_muc_du_sau_loai(client, chu_toa_user):
+async def test_danh_muc_du_bay_loai_doc_tu_bang(client, chu_toa_user):
+    """Bảy loại — hệ cũ (sheet SETUP › MEETING_TYPE) có đủ 7, đợt chuyển đổi
+    làm sót `TIEP_DOAN`; meeting_024 bổ sung. Nguồn nay là bảng danh mục chứ
+    không phải hằng số trong mã (G4.11)."""
     resp = await client.get(f"{BASE}/danh-muc")
     assert resp.status_code == 200
     ma = {x["ma"] for x in resp.json()["data"]}
     assert ma == {"HOP", "TRUC_BAN", "HOI_NGHI", "LAM_VIEC", "CONG_TAC",
-                  "LICH_KHAC"}
+                  "TIEP_DOAN", "LICH_KHAC"}
 
 
 async def test_danh_muc_lanh_dao_chi_co_lanh_dao(client, db_session,

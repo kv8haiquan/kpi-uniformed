@@ -8,13 +8,27 @@
  * — cờ `co_the_mo_hkg` do backend tính sẵn.
  */
 
-export type LoaiLich =
-  | 'HOP'
-  | 'TRUC_BAN'
-  | 'HOI_NGHI'
-  | 'LAM_VIEC'
-  | 'CONG_TAC'
-  | 'LICH_KHAC';
+/**
+ * Loại lịch là chuỗi tự do, KHÔNG phải liên hợp đóng.
+ *
+ * Từ G4.11 danh sách nằm ở bảng `meeting.danh_muc` để đơn vị tự quản trị
+ * (yêu cầu chuyển đổi mục II.15) — khai liên hợp đóng ở đây thì loại lịch
+ * đơn vị vừa thêm sẽ không lọt qua kiểm kiểu, và giao diện lặng lẽ bỏ qua nó.
+ * Nhãn hiển thị lấy từ `loai_lich_nhan` do máy chủ trả kèm, hoặc gọi
+ * `lichCongTacApi.danhMuc()`.
+ */
+export type LoaiLich = string;
+
+/** 7 loại đang gieo sẵn — chỉ để tô màu và làm dự phòng, không phải danh sách đóng. */
+export const LOAI_LICH_GOC = [
+  'HOP',
+  'TRUC_BAN',
+  'HOI_NGHI',
+  'LAM_VIEC',
+  'CONG_TAC',
+  'TIEP_DOAN',
+  'LICH_KHAC',
+] as const;
 
 export type NguonSuKien = 'HKG' | 'LICH_CONG_TAC';
 
@@ -25,13 +39,19 @@ export type TrangThaiLich =
   | 'HOAN_THANH'
   | 'HUY';
 
-/** Nhãn tiếng Việt — giữ đúng cách gọi của lichkv8 để người dùng không phải học lại. */
-export const NHAN_LOAI_LICH: Record<LoaiLich, string> = {
+/**
+ * Nhãn dự phòng cho 7 loại gieo sẵn.
+ *
+ * Chỉ dùng khi chưa gọi được danh mục từ máy chủ. Nguồn thật là
+ * `lichCongTacApi.danhMuc()` — đơn vị đổi cách gọi thì phải đổi theo.
+ */
+export const NHAN_LOAI_LICH: Record<string, string> = {
   HOP: 'Họp',
   TRUC_BAN: 'Trực ban',
   HOI_NGHI: 'Hội nghị',
   LAM_VIEC: 'Làm việc',
   CONG_TAC: 'Đi công tác',
+  TIEP_DOAN: 'Tiếp đoàn',
   LICH_KHAC: 'Lịch khác',
 };
 
@@ -564,4 +584,36 @@ export interface ITongHopChuanBi {
     diem_tb: number;
     so_luot: number;
   }[];
+}
+
+// ── Quản trị danh mục (G4.11) ─────────────────────────────────────────
+// Thay sheet SETUP của lichkv8 — yêu cầu chuyển đổi mục II.15.
+
+export type NhomDanhMuc =
+  | 'LOAI_LICH'
+  | 'TRANG_THAI_LICH'
+  | 'LOAI_TAI_LIEU'
+  | 'PHONG_HOP';
+
+export interface IMucDanhMuc {
+  id: string;
+  nhom: NhomDanhMuc;
+  /** Khoá dữ liệu tham chiếu tới — KHÔNG đổi được sau khi tạo. */
+  ma: string;
+  nhan: string;
+  thu_tu: number;
+  is_active: boolean;
+  /**
+   * Mục hệ thống: mã bị mã nguồn rẽ nhánh theo (62 điểm với trạng thái lịch).
+   * Sửa được nhãn và thứ tự, không tắt / không xoá.
+   */
+  he_thong: boolean;
+  mo_ta: string | null;
+  /** Số bản ghi đang dùng mục này. Chỉ có khi hỏi kèm `dem-su-dung`. */
+  dang_su_dung?: number | null;
+}
+
+export interface INhomDanhMuc {
+  nhom: { ma: NhomDanhMuc; ten: string }[];
+  duoc_sua: boolean;
 }

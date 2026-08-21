@@ -1,6 +1,6 @@
 """Schemas Module 3 — Tài liệu họp."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -63,3 +63,32 @@ class TaiLieuMetadataUpdate(BaseModel):
         if v is not None and v not in PHAN_QUYEN_VALUES:
             raise ValueError(f"phan_quyen must be one of {PHAN_QUYEN_VALUES}")
         return v
+
+
+class TaiLieuKhoItem(BaseModel):
+    """Một tài liệu trong kho chung, kèm cuộc họp mà nó thuộc về.
+
+    Dùng cho màn hình Thư viện tài liệu (`/tai-lieu`) — người dùng duyệt cả
+    kho như duyệt Drive, nên phải thấy tài liệu này của cuộc họp nào; nếu
+    không thì 866 file chỉ là một danh sách tên rời rạc.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ten_tai_lieu: str
+    mo_ta: Optional[str] = None
+    extension: Optional[str] = None
+    file_size: int
+    mime_type: Optional[str] = None
+    phan_quyen: str
+    cho_phep_tai: bool
+    created_at: datetime
+
+    # Ngữ cảnh cuộc họp
+    cuoc_hop_id: UUID
+    nguon: str
+    ma_lich: Optional[str] = None
+    tieu_de: str
+    ngay_hop: Optional[date] = None
+    duong_dan_cuoc_hop: str

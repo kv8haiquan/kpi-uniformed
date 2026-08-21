@@ -370,3 +370,34 @@ export const HKG_UAT_VISIBLE_ROLES = [
   'THU_KY_HOP',
   'BI_THU_CHI_BO',
 ];
+
+// ── Kho tài liệu chung (mục "HKG + Lịch công tác" trong Thư viện tài liệu) ──
+
+export type NguonKhoTaiLieu = 'HKG' | 'LICH_CONG_TAC';
+
+/**
+ * Một tài liệu trong kho chung, kèm cuộc họp mà nó thuộc về.
+ *
+ * Duyệt cả kho thì phải biết file này của cuộc họp nào — nếu không, 866 file
+ * chỉ là một danh sách tên rời rạc không tra cứu được.
+ */
+export interface ITaiLieuKhoItem {
+  id: string;
+  ten_tai_lieu: string;
+  mo_ta: string | null;
+  extension: string | null;
+  file_size: number;
+  mime_type: string | null;
+  phan_quyen: PhanQuyenTaiLieu;
+  cho_phep_tai: boolean;
+  created_at: string;
+
+  cuoc_hop_id: string;
+  nguon: NguonKhoTaiLieu;
+  ma_lich: string | null;
+  tieu_de: string;
+  ngay_hop: string | null;
+  /** Đường dẫn tới màn hình của cuộc họp — khác nhau giữa hai nguồn. */
+  duong_dan_cuoc_hop: string;
+  url_xem?: string;
+}

@@ -31,7 +31,11 @@ from meeting_service.models.lich_cong_tac import (
     TruSo,
 )
 from meeting_service.models.tai_lieu import TaiLieu
-from meeting_service.schemas.lich_cong_tac import NHAN_LOAI_LICH
+from meeting_service.models.danh_muc import NHOM_LOAI_LICH
+from meeting_service.schemas.lich_cong_tac import (
+    LOAI_LICH_DU_PHONG,
+    NHAN_LOAI_LICH_DU_PHONG,
+)
 from meeting_service.services.audit_log_service import ghi_audit
 from shared.auth import TokenPayload
 
@@ -222,13 +226,22 @@ class LichCongTacService:
         diem_cb = {k: (round(float(tb), 2), n)
                    for k, tb, n in (await self.db.execute(q)).all()}
 
+        # Nhãn loại lịch nay lấy từ danh mục (G4.11) chứ không từ hằng số —
+        # đơn vị đổi cách gọi thì cả hệ thống đổi theo. Một truy vấn cho cả lô,
+        # và tra cả mục ĐÃ TẮT để sự kiện cũ không hiện mã trần.
+        from meeting_service.services.danh_muc_service import DanhMucService
+
+        nhan_loai = await DanhMucService(self.db).nhan_theo_ma(NHOM_LOAI_LICH)
+        if not nhan_loai:
+            nhan_loai = NHAN_LOAI_LICH_DU_PHONG
+
         return [{
             "id": r.id,
             "nguon": r.nguon,
             "ma_lich": r.ma_lich,
             "tieu_de": r.tieu_de,
             "loai_lich": r.loai_lich,
-            "loai_lich_nhan": NHAN_LOAI_LICH.get(r.loai_lich or ""),
+            "loai_lich_nhan": nhan_loai.get(r.loai_lich or ""),
             "ngay_hien_thi": r.ngay_hien_thi,
             "ngay_hop": r.ngay_hop,
             "ngay_ket_thuc": r.ngay_ket_thuc,
@@ -423,9 +436,33 @@ class LichCongTacService:
             "KHONG_DU_QUYEN",
             "Chỉ người tạo lịch hoặc người quản trị lịch mới sửa được", 403)
 
+    async def _kiem_loai_lich(self, loai: Optional[str]) -> None:
+        """Đối chiếu loại lịch với danh mục (G4.11).
+
+        Từ meeting_024 cơ sở dữ liệu không còn CHECK cho cột này — đơn vị tự
+        thêm loại lịch được nên danh sách hợp lệ nằm ở bảng, không ở mã nguồn.
+        Đây là lưới chặn duy nhất còn lại trên đường đi của API.
+        """
+        if not loai:
+            return
+        # Nhập khẩu tại chỗ: danh_muc_service nhập LoiNghiepVu từ chính tệp
+        # này, để trên đầu tệp là vòng tròn.
+        from meeting_service.services.danh_muc_service import DanhMucService
+
+        hop_le = await DanhMucService(self.db).ma_hop_le(NHOM_LOAI_LICH)
+        if not hop_le:
+            # Bảng danh mục chưa gieo (cơ sở dữ liệu dựng trước meeting_024).
+            hop_le = set(LOAI_LICH_DU_PHONG)
+        if loai not in hop_le:
+            raise LoiNghiepVu(
+                "LOAI_LICH_KHONG_HOP_LE",
+                f"Loại lịch “{loai}” không có trong danh mục. Thêm nó ở màn "
+                "hình Quản trị danh mục trước, hoặc chọn loại đang có.", 422)
+
     async def tao(self, du_lieu: dict, *, nguoi_id: UUID) -> dict:
         """Tạo một sự kiện lịch mới."""
         ids_lanh_dao = du_lieu.pop("lanh_dao_lien_quan_ids", []) or []
+        await self._kiem_loai_lich(du_lieu.get("loai_lich"))
 
         r = CuocHop(
             nguon=NGUON_LICH,
@@ -465,6 +502,7 @@ class LichCongTacService:
         if (tt := thay_doi.get("trang_thai")) and tt not in TRANG_THAI_VALUES:
             raise LoiNghiepVu("TRANG_THAI_KHONG_HOP_LE",
                               f"trang_thai phải thuộc {TRANG_THAI_VALUES}")
+        await self._kiem_loai_lich(thay_doi.get("loai_lich"))
 
         nhat_ky: list[dict] = []
         for truong, moi in thay_doi.items():

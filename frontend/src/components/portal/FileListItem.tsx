@@ -45,7 +45,12 @@ export default function FileListItem({ file, onDelete }: FileListItemProps) {
 
         {/* Tên + tags */}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-700 transition-colors">
+          {/* `title` để rê chuột đọc đủ tên khi bị cắt — trước đây không có,
+              tên dài là mất hẳn phần đuôi mà không có cách nào xem. */}
+          <p
+            className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-700 transition-colors"
+            title={file.ten_tai_lieu}
+          >
             {file.ten_tai_lieu}
           </p>
           <div className="flex items-center gap-2 mt-0.5">
@@ -67,7 +72,10 @@ export default function FileListItem({ file, onDelete }: FileListItemProps) {
         </div>
 
         {/* Người upload */}
-        <div className="hidden md:block text-xs text-gray-500 w-32 truncate flex-shrink-0">
+        <div
+          className="hidden md:block text-xs text-gray-500 w-32 truncate flex-shrink-0"
+          title={file.nguoi_tai_len.ho_ten}
+        >
           {file.nguoi_tai_len.ho_ten}
         </div>
 

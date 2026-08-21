@@ -17,13 +17,14 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from meeting_service.dependencies import CurrentUserDep, DatabaseDep
+from meeting_service.models.danh_muc import NHOM_LOAI_LICH, NHOM_PHONG_HOP
 from meeting_service.schemas.lich_cong_tac import (
-    LOAI_LICH_VALUES,
-    NHAN_LOAI_LICH,
+    NHAN_LOAI_LICH_DU_PHONG,
     LichCongTacCreate,
     LichCongTacHuy,
     LichCongTacUpdate,
 )
+from meeting_service.services.danh_muc_service import DanhMucService
 from meeting_service.services.lich_cong_tac_service import (
     LichCongTacService,
     LoiNghiepVu,
@@ -62,13 +63,9 @@ async def danh_sach(
     Hệ cũ tải toàn bộ mảng cuộc họp vào bộ nhớ trình duyệt và có ngưỡng cảnh
     báo hiệu năng 3000ms — không lặp lại cách đó.
     """
-    if loai_lich and loai_lich not in LOAI_LICH_VALUES:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail={"success": False, "error": {
-                "code": "LOAI_LICH_KHONG_HOP_LE",
-                "message": f"loai_lich phải thuộc {LOAI_LICH_VALUES}"}})
-
+    # Bộ lọc không cần kiểm loại lịch nữa: danh sách hợp lệ nằm ở bảng danh
+    # mục và đơn vị tự thêm được, nên chặn theo hằng số sẽ chối oan loại mới.
+    # Loại không tồn tại chỉ ra danh sách rỗng — đúng cái người dùng hỏi.
     svc = LichCongTacService(db)
     items, tong = await svc.danh_sach(
         trang=trang, so_dong=so_dong,
@@ -179,6 +176,19 @@ async def danh_muc_don_vi(db: DatabaseDep, user: CurrentUserDep):
                      for i, m, t in rows]}
 
 
+@router.get("/danh-muc-phong-hop",
+            summary="Danh mục phòng họp (gợi ý cho ô Địa điểm)")
+async def danh_muc_phong_hop(db: DatabaseDep, user: CurrentUserDep):
+    """Trả NHÃN chứ không trả mã.
+
+    `cuoc_hop.dia_diem` là chuỗi tự do và đã chứa 6 tháng dữ liệu gõ tay —
+    đổi sang lưu mã bây giờ là phải di trú toàn bộ chỗ đó. Danh mục này đóng
+    vai gợi ý để lần sau mọi người gõ giống nhau, không phải ràng buộc.
+    """
+    muc = await DanhMucService(db).danh_sach(nhom=NHOM_PHONG_HOP)
+    return {"success": True, "data": [m.nhan for m in muc]}
+
+
 @router.get("/danh-muc-lanh-dao",
             summary="Danh mục lãnh đạo (để chọn chủ trì và thành phần)")
 async def danh_muc_lanh_dao(db: DatabaseDep, user: CurrentUserDep):
@@ -209,9 +219,21 @@ async def danh_muc_lanh_dao(db: DatabaseDep, user: CurrentUserDep):
 
 
 @router.get("/danh-muc", summary="Danh mục loại lịch")
-async def danh_muc(user: CurrentUserDep):
+async def danh_muc(db: DatabaseDep, user: CurrentUserDep):
+    """Giữ nguyên đường dẫn cũ để giao diện không phải sửa, nhưng nguồn dữ
+    liệu nay là bảng `meeting.danh_muc` (G4.11) chứ không phải hằng số.
+
+    Chỉ trả mục còn hiệu lực — ô chọn "Loại lịch" không được mời người dùng
+    chọn loại mà đơn vị đã tắt.
+    """
+    muc = await DanhMucService(db).danh_sach(nhom=NHOM_LOAI_LICH)
+    if not muc:
+        # Cơ sở dữ liệu dựng trước meeting_024 — dùng lưới dự phòng.
+        return {"success": True,
+                "data": [{"ma": k, "ten": v}
+                         for k, v in NHAN_LOAI_LICH_DU_PHONG.items()]}
     return {"success": True,
-            "data": [{"ma": k, "ten": v} for k, v in NHAN_LOAI_LICH.items()]}
+            "data": [{"ma": m.ma, "ten": m.nhan} for m in muc]}
 
 
 @router.get("/xuat-excel", summary="Xuất lịch ra Excel")

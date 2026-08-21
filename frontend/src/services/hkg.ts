@@ -29,6 +29,8 @@ import type {
   INhomListItem,
   INhomUpdate,
   IQRTokenResponse,
+  ITaiLieuKhoItem,
+  NguonKhoTaiLieu,
   PhanQuyenTaiLieu,
   ITaiLieu,
   ITaiLieuListItem,
@@ -195,6 +197,40 @@ export const taiLieuApi = {
   /** Danh mục mức phân quyền, kèm cờ `dat_duoc` theo vai trò người gọi. */
   mucPhanQuyen: () =>
     unwrap<IMucPhanQuyen[]>(hkgApi.get('/tai-lieu/muc-phan-quyen')),
+
+  /**
+   * Duyệt CẢ KHO tài liệu họp — cho mục "HKG + Lịch công tác" trong Thư viện
+   * tài liệu. Trả kèm cuộc họp mà mỗi file thuộc về; máy chủ đã lọc theo
+   * quyền xem cuộc họp và mức hạn chế G5.4 trước khi phát token.
+   */
+  kho: (t: {
+    nguon?: NguonKhoTaiLieu;
+    timKiem?: string;
+    tuNgay?: string;
+    denNgay?: string;
+    trang?: number;
+    soDong?: number;
+  } = {}) =>
+    hkgApi.get<{
+      success: boolean;
+      data: ITaiLieuKhoItem[];
+      pagination: { trang: number; so_dong: number; con_nua: boolean };
+    }>('/tai-lieu/kho', {
+      params: {
+        nguon: t.nguon,
+        'tim-kiem': t.timKiem || undefined,
+        'tu-ngay': t.tuNgay || undefined,
+        'den-ngay': t.denNgay || undefined,
+        trang: t.trang ?? 1,
+        'so-dong': t.soDong ?? 24,
+      },
+    }),
+
+  /** Số tài liệu mỗi nguồn — để cây thư mục hiện số bên cạnh tên. */
+  khoThongKe: () =>
+    unwrap<{ HKG: number; LICH_CONG_TAC: number; tong: number }>(
+      hkgApi.get('/tai-lieu/kho/thong-ke'),
+    ),
 
   /** Nâng/hạ mức hạn chế hoặc sửa siêu dữ liệu của một tài liệu (G5.4). */
   suaMetadata: (

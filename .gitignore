@@ -71,3 +71,16 @@ docs/zalo-oa/**/*.xlsx
 docs/zalo-oa/*.jpg
 docs/zalo-oa/*.jpeg
 docs/zalo-oa/*.png
+
+# ── Hồ sơ nguồn lichkv8 (docs/Lich Hop Cong Tac/) ────────────────────────
+# Bản xuất Google Sheets của hệ cũ chứa cột đặt tên là PASSWORD_HASH nhưng
+# 505/548 giá trị chỉ dài 6 ký tự — tức là MẬT KHẨU ĐỂ NGUYÊN, không phải mã
+# băm. Kèm theo là 543 số điện thoại công chức (Nghị định 13/2023/NĐ-CP).
+# Vào git một lần là nằm vĩnh viễn trong lịch sử kho, xoá đi cũng không sạch.
+#
+# Chặn cả thư mục vì hồ sơ nguồn còn có mã nguồn hệ cũ (Mã.gs, index.html)
+# nhúng sẵn ID thư mục Drive đang chia sẻ công khai. Đây là tài liệu tham
+# khảo để đối chiếu khi chuyển đổi, không phải mã nguồn của nền tảng.
+docs/Lich Hop Cong Tac/
+# Bản xuất sống dùng cho di trú — cùng nội dung, cùng lý do.
+backend/scripts/di_tru_lichkv8/dumps/

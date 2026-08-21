@@ -44,11 +44,51 @@ logger = logging.getLogger(__name__)
 
 # Window chấp nhận để trigger: gio_bat_dau − offset ± WINDOW_TOLERANCE
 WINDOW_TOLERANCE = timedelta(minutes=5)
+
+# 🔴 GIỜ HỌP LÀ GIỜ VIỆT NAM, KHÔNG PHẢI UTC.
+#
+# `cuoc_hop.ngay_hop` là DATE và `gio_bat_dau` là TIME, đều KHÔNG mang múi giờ.
+# Người nhập gõ "14:30" nghĩa là 14:30 giờ ta. Cho tới 21/08/2026 chỗ này ghép
+# hai cột đó với `tzinfo=timezone.utc` — tức là hiểu thành 21:30 giờ ta, lệch
+# đúng 7 tiếng. Hậu quả đo được trên dữ liệu thật: tin "nhắc trước 30 phút"
+# của cuộc họp 09:00 ngày 17/08 được gửi lúc 15:25 cùng ngày — SAU khi họp đã
+# tan 6,4 giờ. Nhắc kiểu đó tệ hơn không nhắc.
+#
+# Không sửa được bằng cách đổi `now` sang giờ VN: `now` vốn đã đúng (có múi
+# giờ), sai là ở phía giờ họp. Phải gắn đúng múi cho giờ họp.
+GIO_VN = timezone(timedelta(hours=7))
+
+
+def gio_bat_dau_utc(ngay_hop, gio_bat_dau) -> datetime:
+    """Ghép ngày + giờ họp thành mốc thời gian THẬT (đổi sang UTC để so sánh)."""
+    return datetime.combine(ngay_hop, gio_bat_dau, tzinfo=GIO_VN).astimezone(
+        timezone.utc)
+
+
+# Ba mốc nhắc. Lãnh đạo chốt giữ đủ ba (21/08/2026), có thể rút còn một sau —
+# khi đó bỏ bớt dòng ở đây là xong, không phải sửa chỗ nào khác. Cả ba dùng
+# CHUNG một template ZNS đã được Zalo duyệt, khác nhau ở tham số `moc`.
 WINDOWS = [
     ("NHAC_HOP_24H", timedelta(hours=24)),
     ("NHAC_HOP_1H", timedelta(hours=1)),
     ("NHAC_HOP_30P", timedelta(minutes=30)),
 ]
+
+# Sự kiện Lịch công tác giữ người nhận ở bảng KHÁC với cuộc họp HKG:
+#   HKG           → meeting.thanh_phan       (người được mời, có điểm danh)
+#   LICH_CONG_TAC → meeting.lanh_dao_lien_quan (lãnh đạo có mặt trong chương
+#                                              trình công tác)
+# Đường dẫn trong thông báo cũng khác, vì hai nguồn có hai màn hình riêng.
+NGUON_NHAC = {
+    "HKG": {
+        "bang_nguoi_nhan": "meeting.thanh_phan",
+        "duong_dan": "/hop-khong-giay/chi-tiet/{id}",
+    },
+    "LICH_CONG_TAC": {
+        "bang_nguoi_nhan": "meeting.lanh_dao_lien_quan",
+        "duong_dan": "/lich-cong-tac/{id}",
+    },
+}
 
 
 @dataclass
@@ -110,15 +150,18 @@ async def nhac_hop_3_tang_logic(
         select(CuocHop).where(
             CuocHop.is_deleted.is_(False),
             CuocHop.trang_thai == "DA_THONG_BAO",
-            # Chỉ nhắc cuộc họp HKG. Sự kiện Lịch công tác di trú từ lichkv8
-            # nằm cùng bảng nhưng không có thành phần dự để gửi nhắc.
-            CuocHop.nguon == "HKG",
+            # Nhắc cả cuộc họp HKG lẫn sự kiện Lịch công tác (21/08/2026).
+            # Trước đây chỉ HKG, kèm ghi chú "Lịch công tác không có thành phần
+            # dự để gửi nhắc" — đúng vào lúc viết, nhưng G4.3 đã thêm danh sách
+            # lãnh đạo tham dự: 448/490 sự kiện (91%) nay có người để nhắc.
+            CuocHop.nguon.in_(tuple(NGUON_NHAC)),
         )
     )
     candidates: list[CuocHop] = []
     for ch in result.scalars().all():
-        # Tổ hợp ngay_hop + gio_bat_dau thành datetime UTC
-        gio_bd = datetime.combine(ch.ngay_hop, ch.gio_bat_dau, tzinfo=timezone.utc)
+        if ch.gio_bat_dau is None:
+            continue  # sự kiện cả ngày, không có mốc để đếm ngược
+        gio_bd = gio_bat_dau_utc(ch.ngay_hop, ch.gio_bat_dau)
         if now <= gio_bd <= upper + timedelta(hours=1):  # buffer
             candidates.append(ch)
 
@@ -135,10 +178,12 @@ async def nhac_hop_3_tang_logic(
     # 3. Mỗi cuộc họp × 3 windows: check trong window + chưa gửi
     sent_count = 0
     for ch in candidates:
-        gio_bd = datetime.combine(ch.ngay_hop, ch.gio_bat_dau, tzinfo=timezone.utc)
-        # Lấy danh sách thành phần 1 lần
-        tp_res = await db.execute(sa_text("""
-            SELECT cong_chuc_id FROM meeting.thanh_phan
+        gio_bd = gio_bat_dau_utc(ch.ngay_hop, ch.gio_bat_dau)
+        cau_hinh = NGUON_NHAC[ch.nguon]
+        # Người nhận lấy ở bảng nào là tuỳ nguồn — xem NGUON_NHAC. Tên bảng
+        # lấy từ hằng số trong mã, không phải đầu vào người dùng.
+        tp_res = await db.execute(sa_text(f"""
+            SELECT DISTINCT cong_chuc_id FROM {cau_hinh['bang_nguoi_nhan']}
              WHERE cuoc_hop_id = :ch_id
         """), {"ch_id": str(ch.id)})
         tp_ids = [UUID(str(r[0])) for r in tp_res.fetchall()]
@@ -161,13 +206,16 @@ async def nhac_hop_3_tang_logic(
                 "NHAC_HOP_24H": "24 giờ", "NHAC_HOP_1H": "1 giờ",
                 "NHAC_HOP_30P": "30 phút",
             }[sub_loai]
+            viec = "Cuộc họp" if ch.nguon == "HKG" else "Lịch công tác"
             n = await gui_thong_bao_bulk(
                 db,
                 nguoi_nhan_ids=tp_ids,
-                tieu_de=f"Nhắc họp ({label}): {ch.tieu_de}",
-                noi_dung=f"Cuộc họp bắt đầu lúc {ch.gio_bat_dau} ngày {ch.ngay_hop}.",
+                tieu_de=f"Nhắc lịch ({label}): {ch.tieu_de}",
+                noi_dung=(f"{viec} bắt đầu lúc "
+                          f"{ch.gio_bat_dau.strftime('%H:%M')} ngày "
+                          f"{ch.ngay_hop.strftime('%d/%m/%Y')}."),
                 sub_loai=sub_loai,
-                link_url=f"/hop-khong-giay/chi-tiet/{ch.id}",
+                link_url=cau_hinh["duong_dan"].format(id=ch.id),
                 doi_tuong_id=ch.id,
             )
             sent_count += n

@@ -624,6 +624,84 @@ giống nhau — không phải ràng buộc.
   > 📌 Vị trí sao lưu đúng là `/var/backup/kpi_haiquan/` (số **ít**), cron
   > `/etc/cron.d/hkg-backups` chạy 02:00 + 14:00 và vẫn hoạt động bình thường.
 
+- [x] **G6.2** — Di trú phần phát sinh ✅ *21/08 20:15*
+
+  Xuất lại bản sống từ Google Sheets: **165 dòng phát sinh** so với mốc 19/08
+  (MEETING +18, MEETING_FILE +9, MEETING_LOG +114, DUTY_ENTRY +15,
+  DUTY_UNIT_STATUS +9). Chạy `01` → `02` → `03` → `04` → `05` → `06`.
+
+  | Bảng | Sau di trú |
+  |---|---:|
+  | `cuoc_hop` | 514 *(+7)* |
+  | `tai_lieu` | 866 *(+10)* |
+  | `lanh_dao_lien_quan` | 485 |
+  | `truc_ban` | 681 |
+  | `danh_gia_cuoc_hop` | 102 |
+  | `ghi_chu` | 12 |
+
+  Toàn vẹn: 0 tài liệu mồ côi · 0 `ma_lich` trùng · 0 file thiếu trên kho thật ·
+  0 dòng lưu vết mồ côi.
+
+  > 🔴 **Hai sự cố trong lượt chạy, đã xử lý dứt điểm — đọc trước khi chạy lại.**
+  >
+  > **1. `06_gan_tai_lieu.py` không idempotent.** Chạy lại là gắn lại từ đầu
+  > toàn bộ: thêm 819 dòng trong đó **809 là bản sao**. Đã xoá trong transaction
+  > có kiểm điều kiện, về đúng 866. Khoá chống trùng nay là **(tên file, cỡ
+  > file)** chứ không phải (cuộc họp, tên file) — vì hàm khớp thư mục → cuộc họp
+  > **không tất định**: cùng 5 file, lượt trước gán vào `LH0007`/`LH0009`, lượt
+  > sau gán vào `LH0445`. Đã thử khoá theo cuộc họp và vẫn lọt đúng 5 bản sao.
+  >
+  > **2. Ghi lệch kho file.** Quên đặt `HKG_UPLOAD_DIR` → bản ghi vào cơ sở dữ
+  > liệu thật còn file rơi lại `backend/uploads/` của cây làm việc; tài liệu hiện
+  > trên danh sách nhưng bấm tải là hỏng. **Lỗi này đã xảy ra ngày 19/08** và
+  > cách khắc phục lúc đó là viết một dòng ghi chú — không chặn được ai. Nay là
+  > rào cứng: ghi vào `kpi_haiquan` mà chưa đặt `HKG_UPLOAD_DIR` thì thoát ngay.
+  > 10 file đã chép sang kho thật, kiểm lại 866/866 mở được.
+  >
+  > Lệnh đúng để chạy lại:
+  > ```bash
+  > HKG_UPLOAD_DIR=/var/data/kpi/uploads/meeting \
+  > DB_NAME=kpi_haiquan CHO_PHEP_PROD=toi_dong_y python 06_gan_tai_lieu.py
+  > ```
+  >
+  > ⚠️ Còn **54 nhóm trùng** (101 dòng thừa) tồn dư từ các đợt di trú trước
+  > 21/08, cùng nguyên nhân "khớp thư mục không tất định". Chưa dọn theo yêu cầu.
+
+### G6.1c — Nhắc lịch qua Zalo ✅ *21/08 20:15*
+
+Lãnh đạo yêu cầu bổ sung (21/08), **giữ đủ ba mốc** 24h / 1h / 30 phút.
+
+- [x] Bỏ bộ lọc `nguon == 'HKG'` khỏi `nhac_hop_3_tang_logic`
+- [x] Bảng tra `NGUON_NHAC` — mỗi nguồn một bảng người nhận và một đường dẫn:
+      HKG → `meeting.thanh_phan` → `/hop-khong-giay/chi-tiet/{id}`;
+      Lịch công tác → `meeting.lanh_dao_lien_quan` → `/lich-cong-tac/{id}`
+- [x] 9 test mới · toàn bộ meeting_service 390/390 PASS · đã chạy trên prod
+
+Ghi chú cũ trong mã nói *"Lịch công tác không có thành phần dự để gửi nhắc"* —
+đúng vào lúc viết, nhưng G4.3 đã thêm danh sách lãnh đạo: **448/490 sự kiện
+(91%)** nay có người để nhắc, 490/490 có giờ bắt đầu.
+
+**Chi phí** theo dữ liệu thật: 82 sự kiện/tháng × 1,06 lãnh đạo × 3 mốc
+≈ 238 tin ≈ **190.000 đ/tháng**, bằng 10% trần tháng. Muốn rút còn một mốc thì
+bỏ bớt dòng trong `WINDOWS` là xong. Cả ba mốc dùng **chung một template ZNS đã
+được Zalo duyệt** (`623236`), khác nhau ở tham số `moc` — không phải xin duyệt mới.
+
+Chính sách nội dung giữ nguyên: tin Zalo chỉ là **"chuông cửa"**, không mang
+tiêu đề, địa điểm hay thành phần (đã chốt với đơn vị 31/07/2026).
+
+> 🔴 **Sửa kèm một lỗi có sẵn: bộ nhắc chạy lệch 7 tiếng.**
+>
+> `ngay_hop` là DATE và `gio_bat_dau` là TIME, đều không mang múi giờ — người
+> nhập gõ "14:30" nghĩa là 14:30 **giờ ta**. Bộ nhắc ghép hai cột đó với
+> `tzinfo=utc`, tức hiểu thành 21:30 giờ ta.
+>
+> Đo trên dữ liệu thật: tin *"nhắc trước 30 phút"* của cuộc họp 09:00 ngày 17/08
+> được gửi lúc **15:25 cùng ngày — sau khi họp đã tan 6,4 giờ**. Bộ nhắc HKG
+> hỏng lặng lẽ từ trước, không ai để ý vì mới gửi cho vài cuộc họp.
+>
+> Test cũ ghi `hop_time` với `tzinfo=utc`, tức đã **chốt nhầm chính lỗi này
+> thành "hành vi đúng"** — nay sửa sang `GIO_VN`.
+
 - [ ] **G6.1b** — Kiểm tra thực tế trên trình duyệt: Văn phòng tạo thử một lịch
       *Tiếp đoàn*, đính hai loại tài liệu khác nhau, mở trang Quản trị danh mục
 - [ ] **G6.2** — Di trú lần cuối phần dữ liệu phát sinh từ G1.2 đến nay

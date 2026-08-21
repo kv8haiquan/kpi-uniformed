@@ -596,7 +596,36 @@ giống nhau — không phải ràng buộc.
 
 **Ước lượng:** 2 tuần chạy song song · **Chặn bởi:** G3, G4, G5
 
-- [ ] **G6.1** — Chạy migration trên prod `kpi_haiquan` (⚠️ **cần user duyệt từng lần**, xem `CLAUDE.md`)
+- [x] **G6.1** — Chạy migration trên prod `kpi_haiquan` ✅ *21/08 18:55* — `mt_022` → **`mt_024`**
+
+  Chạy **kèm mã nguồn**, không chạy migration đơn lẻ. Lý do: `/opt/kpi-prod` là
+  git worktree riêng trên nhánh `prod`; migration mà cây đó không có file thì
+  lần sau `alembic current` từ prod sẽ báo *"Can't locate revision"*.
+
+  | Bước | Kết quả |
+  |---|---|
+  | Sao lưu trước migration | `db_premig_mt024_20260821_185519.sql.gz` — 41MB, `gzip -t` OK |
+  | Gộp `feature/lich-cong-tac` → `prod` | fast-forward tới `7916a21`, 9 commit |
+  | `alembic upgrade head` | `mt_023` + `mt_024`, một transaction |
+  | `npm run build` | PASS 17,7s |
+  | `pm2 restart meeting-backend kpi-frontend` | cả hai online, `/health` OK, frontend HTTP 200 |
+
+  **Đối soát sau migration:** `cuoc_hop` 507 = 507 · `tai_lieu` 856 = 856 ·
+  `cong_chuc` 558 = 558 — không lệch dòng nào. `danh_muc` 24 mục / 4 nhóm,
+  `TIEP_DOAN` có mặt, `ck_cuoc_hop_loai_lich` đã bỏ, `idx_tai_lieu_han_che` đã tạo.
+  Smoke chỉ-đọc qua API thật: 8/8 endpoint 200.
+
+  > ✅ **Rà rủi ro trước khi chạy:** `mt_023` thu hẹp CHECK `phan_quyen`, bỏ giá
+  > trị `HAN_CHE`. Mã đang chạy lúc đó (`662098f`) vẫn khai
+  > `PHAN_QUYEN_VALUES = ["CONG_KHAI","HAN_CHE"]`, nhưng **không màn hình nào
+  > đặt `HAN_CHE`** — mọi upload đi qua `input.phan_quyen || 'CONG_KHAI'`. Nên
+  > khoảng thời gian mã cũ chạy trên lược đồ mới là an toàn.
+  >
+  > 📌 Vị trí sao lưu đúng là `/var/backup/kpi_haiquan/` (số **ít**), cron
+  > `/etc/cron.d/hkg-backups` chạy 02:00 + 14:00 và vẫn hoạt động bình thường.
+
+- [ ] **G6.1b** — Kiểm tra thực tế trên trình duyệt: Văn phòng tạo thử một lịch
+      *Tiếp đoàn*, đính hai loại tài liệu khác nhau, mở trang Quản trị danh mục
 - [ ] **G6.2** — Di trú lần cuối phần dữ liệu phát sinh từ G1.2 đến nay
 - [ ] **G6.3** — Bà Hà rà 34 thư mục trên màn hình đối soát (ước 1 buổi)
 - [ ] **G6.4** — Mở cho người dùng đối chiếu, chạy song song với lichkv8

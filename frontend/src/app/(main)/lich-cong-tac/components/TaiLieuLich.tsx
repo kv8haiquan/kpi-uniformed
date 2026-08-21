@@ -17,6 +17,13 @@ import { Download, Eye, FileText, Loader2, Trash2, Upload } from 'lucide-react';
 
 import { taiLieuApi } from '@/services/hkg';
 import { errApi } from '@/lib/hkg-error';
+import {
+  ACCEPT_FILE,
+  LOAI_TAI_LIEU,
+  coDaiFile,
+  moTaFileHong,
+  taiNhieuFile,
+} from '@/lib/tai-lieu-upload';
 import type {
   IMucPhanQuyen,
   ITaiLieuListItem,
@@ -31,12 +38,6 @@ interface Props {
   onDoiSoLuong?: (n: number) => void;
 }
 
-function coDaiFile(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
 export default function TaiLieuLich({
   cuocHopId,
   quanLyDuoc,
@@ -45,11 +46,15 @@ export default function TaiLieuLich({
   const [ds, setDs] = useState<ITaiLieuListItem[] | null>(null);
   const [muc, setMuc] = useState<IMucPhanQuyen[]>([]);
   const [mucUpload, setMucUpload] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
-  const [dangTaiLen, setDangTaiLen] = useState(false);
+  const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0]);
+  const [dangTai, setDangTai] = useState<string[]>([]);
+  const [conLai, setConLai] = useState(0);
   const [dangXoa, setDangXoa] = useState<string | null>(null);
+  const [keoVao, setKeoVao] = useState(false);
   const [loi, setLoi] = useState<string | null>(null);
 
   const oFile = useRef<HTMLInputElement>(null);
+  const dangTaiLen = dangTai.length > 0 || conLai > 0;
 
   const tai = useCallback(async () => {
     try {
@@ -74,22 +79,39 @@ export default function TaiLieuLich({
     taiLieuApi.mucPhanQuyen().then(setMuc).catch(() => setMuc([]));
   }, [quanLyDuoc]);
 
-  const themFile = async (f: File | null) => {
-    if (!f) return;
-    setDangTaiLen(true);
+  /**
+   * Nhận nhiều file một lượt — trước đây chỉ lấy `files[0]`, nên chọn 5 file
+   * thì 4 file lặng lẽ rơi mất mà không báo gì.
+   *
+   * Phải chụp `FileList` thành mảng NGAY, đồng bộ: đây là danh sách sống, ô
+   * chọn file bị đặt lại `value` là nó rỗng theo.
+   */
+  const themFile = async (ds: FileList | File[] | null) => {
+    const files = Array.from(ds ?? []);
+    if (files.length === 0) return;
+
     setLoi(null);
+    setConLai(files.length);
     try {
-      await taiLieuApi.upload({
-        cuoc_hop_id: cuocHopId,
-        file: f,
-        phan_quyen: mucUpload,
+      const hong = await taiNhieuFile({
+        cuocHopId,
+        files,
+        moTa: loaiTaiLieu,
+        phanQuyen: mucUpload,
+        onDoiDangTai: setDangTai,
       });
       await tai();
+      if (hong.length > 0) {
+        setLoi(
+          `${hong.length}/${files.length} file không tải lên được: ` +
+            moTaFileHong(hong),
+        );
+      }
     } catch (e) {
       setLoi(errApi(e, 'Không tải được file lên'));
     } finally {
-      setDangTaiLen(false);
-      if (oFile.current) oFile.current.value = '';
+      setDangTai([]);
+      setConLai(0);
     }
   };
 
@@ -124,7 +146,33 @@ export default function TaiLieuLich({
   return (
     <div className="space-y-2">
       {quanLyDuoc && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setKeoVao(true);
+          }}
+          onDragLeave={() => setKeoVao(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setKeoVao(false);
+            void themFile(e.dataTransfer.files);
+          }}
+          className={`flex flex-wrap items-center gap-2 rounded-lg border-2 border-dashed p-2 ${
+            keoVao ? 'border-blue-400 bg-blue-50' : 'border-transparent'
+          }`}
+        >
+          <select
+            value={loaiTaiLieu}
+            onChange={(e) => setLoaiTaiLieu(e.target.value)}
+            className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+          >
+            {LOAI_TAI_LIEU.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+
           {mucDatDuoc.length > 1 && (
             <select
               value={mucUpload}
@@ -139,25 +187,41 @@ export default function TaiLieuLich({
               ))}
             </select>
           )}
-          <input
-            ref={oFile}
-            type="file"
-            className="hidden"
-            onChange={(e) => void themFile(e.target.files?.[0] ?? null)}
-          />
-          <button
-            type="button"
-            disabled={dangTaiLen}
-            onClick={() => oFile.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
+
+          {/* Ô chọn file nằm trong nhãn — bấm nhãn là trình duyệt tự mở hộp
+              thoại, khỏi phụ thuộc ref và khỏi lệ thuộc vào .click(). */}
+          <label
+            className={`inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 ${
+              dangTaiLen ? 'pointer-events-none opacity-40' : 'cursor-pointer'
+            }`}
           >
+            <input
+              ref={oFile}
+              type="file"
+              multiple
+              accept={ACCEPT_FILE}
+              disabled={dangTaiLen}
+              className="hidden"
+              onChange={(e) => {
+                void themFile(e.target.files);
+                // Dọn sau khi đã chụp mảng — để chọn lại đúng file vừa xoá
+                // vẫn nổ `change`.
+                e.target.value = '';
+              }}
+            />
             {dangTaiLen ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Upload className="h-4 w-4" />
             )}
-            Thêm tài liệu
-          </button>
+            {dangTaiLen
+              ? `Đang tải ${conLai} file…`
+              : 'Thêm tài liệu'}
+          </label>
+
+          <span className="text-xs text-gray-500">
+            Chọn nhiều file một lúc, hoặc kéo thả vào đây
+          </span>
         </div>
       )}
 
@@ -180,6 +244,7 @@ export default function TaiLieuLich({
                 <span className="block truncate">{t.ten_tai_lieu}</span>
                 <span className="text-xs text-gray-500">
                   {coDaiFile(t.file_size)}
+                  {t.mo_ta ? ` · ${t.mo_ta}` : ''}
                   {t.phan_quyen !== 'CONG_KHAI' && (
                     <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
                       {muc.find((m) => m.ma === t.phan_quyen)?.ten ??

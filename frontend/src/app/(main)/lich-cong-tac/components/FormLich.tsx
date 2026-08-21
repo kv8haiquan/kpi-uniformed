@@ -16,6 +16,15 @@ import { FileText, Loader2, Paperclip, Trash2, X } from 'lucide-react';
 import { lichCongTacApi } from '@/services/lich-cong-tac';
 import { taiLieuApi } from '@/services/hkg';
 import { errApi, errMsg } from '@/lib/hkg-error';
+import {
+  ACCEPT_FILE,
+  LOAI_TAI_LIEU,
+  coDaiFile,
+  gopFile,
+  loiFile,
+  moTaFileHong,
+  taiNhieuFile,
+} from '@/lib/tai-lieu-upload';
 import type {
   IMucPhanQuyen,
   ITaiLieuListItem,
@@ -44,31 +53,6 @@ type Truong = keyof ILichCongTacGhi;
 
 const oCss =
   'w-full rounded-lg border border-gray-300 px-3 py-1.5 focus:border-blue-500 focus:outline-none';
-
-/**
- * Loại tài liệu — đúng danh mục FILE_TYPE của lichkv8 (màn hình Quản trị danh
- * mục). Lưu vào `mo_ta` của tài liệu vì bảng `meeting.tai_lieu` chưa có cột
- * riêng; đây là NHÃN để người đọc nhận ra nhanh, KHÔNG phải căn cứ phân loại.
- * Báo cáo Thống kê tài liệu vẫn nhận giấy mời theo tên file như trước.
- */
-const LOAI_TAI_LIEU = [
-  'Giấy mời',
-  'Tài liệu họp',
-  'Báo cáo',
-  'Chương trình',
-  'Biên bản',
-  'Kết luận',
-  'Tài liệu khác',
-];
-
-const DUOI_CHO_PHEP =
-  '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.txt';
-
-function coDaiFile(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
 
 /**
  * Một ô nhập kèm nhãn.
@@ -134,9 +118,18 @@ export default function FormLich({
   const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0]);
   const [mucList, setMucList] = useState<IMucPhanQuyen[]>([]);
   const [mucTaiLieu, setMucTaiLieu] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
-  const [dangTaiFile, setDangTaiFile] = useState<string | null>(null);
+  const [dangTaiFile, setDangTaiFile] = useState<string[]>([]);
   const [keoVao, setKeoVao] = useState(false);
   const oFile = useRef<HTMLInputElement>(null);
+
+  // Sự kiện đã tạo xong nhưng còn file hỏng: giữ lại để bấm Lưu lần nữa là
+  // tải nốt file, KHÔNG đẻ thêm một lịch trùng. Trước đây form vẫn ở chế độ
+  // "tạo mới" sau khi lịch đã lưu, nên thử lại là tạo ra lịch thứ hai.
+  // Để ở state chứ không phải ref vì nhãn nút Lưu đọc giá trị này lúc vẽ.
+  const [daTao, setDaTao] = useState<ISuKienChiTiet | null>(null);
+  /** Ảnh chụp form lúc lịch được tạo xong — mốc so sánh cho lần thử lại. */
+  const mocSoSanh = useRef<Record<Truong, string> | null>(null);
+  const thanhPhanDaLuu = useRef<string[] | null>(null);
 
   const banDau = useMemo<Record<Truong, string>>(
     () => ({
@@ -178,17 +171,29 @@ export default function FormLich({
 
   const dat = (k: Truong, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const themFile = (ds: FileList | null) => {
-    if (!ds?.length) return;
-    // Trùng tên và trùng cỡ thì coi là cùng một file — kéo thả hai lần là
-    // chuyện thường, mà tải lên hai bản giống hệt thì không ai muốn.
-    setFileCho((truoc) => {
-      const co = new Set(truoc.map((f) => `${f.name}|${f.size}`));
-      return [
-        ...truoc,
-        ...Array.from(ds).filter((f) => !co.has(`${f.name}|${f.size}`)),
-      ];
-    });
+  /**
+   * Nhận file từ ô chọn hoặc từ kéo thả.
+   *
+   * Chụp `FileList` thành mảng ngay trong `gopFile`, đồng bộ — xem ghi chú ở
+   * `lib/tai-lieu-upload.ts`: chậm một nhịp là ô chọn file đã tự dọn sạch.
+   */
+  const themFile = (ds: FileList | File[] | null) => {
+    const moi = Array.from(ds ?? []);
+    if (moi.length === 0) return;
+
+    // Báo ngay file nào không nhận, chứ không để người dùng bấm Lưu rồi mới
+    // biết — lúc đó lịch đã tạo, sửa lại phiền hơn nhiều.
+    const hong = moi
+      .map((f) => ({ ten: f.name, loi: loiFile(f) }))
+      .filter((x): x is { ten: string; loi: string } => x.loi !== null);
+    setLoi(
+      hong.length > 0
+        ? `Không nhận ${hong.length} file: ${moTaFileHong(hong)}`
+        : null,
+    );
+
+    const dung = moi.filter((f) => loiFile(f) === null);
+    setFileCho((truoc) => gopFile(truoc, dung));
   };
 
   const xoaFileCho = (i: number) =>
@@ -204,26 +209,6 @@ export default function FormLich({
     }
   };
 
-  /** Tải hàng đợi lên sau khi đã có id cuộc họp. Trả về danh sách file hỏng. */
-  const taiFileLen = async (cuocHopId: string): Promise<string[]> => {
-    const hong: string[] = [];
-    for (const f of fileCho) {
-      setDangTaiFile(f.name);
-      try {
-        await taiLieuApi.upload({
-          cuoc_hop_id: cuocHopId,
-          file: f,
-          mo_ta: loaiTaiLieu,
-          phan_quyen: mucTaiLieu,
-        });
-      } catch {
-        hong.push(f.name);
-      }
-    }
-    setDangTaiFile(null);
-    return hong;
-  };
-
   const luu = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoi(null);
@@ -237,11 +222,13 @@ export default function FormLich({
       return setLoi('Ngày kết thúc không được trước ngày bắt đầu');
     }
 
-    // Chỉ những trường đổi so với lúc mở form.
+    // Chỉ những trường đổi so với mốc: lúc mở form nếu đang sửa, hoặc lúc lịch
+    // được tạo xong nếu đang thử lại file hỏng. Tạo mới lần đầu thì gửi tất.
+    const moc = dangSua ? banDau : mocSoSanh.current;
     const goi: ILichCongTacGhi = {};
     (Object.keys(form) as Truong[]).forEach((k) => {
       if (k === 'lanh_dao_lien_quan_ids') return;
-      if (dangSua && form[k] === banDau[k]) return;
+      if (moc && form[k] === moc[k]) return;
       const v = form[k];
       if (k === 'tieu_de' || k === 'loai_lich' || k === 'ngay_hop') {
         (goi as Record<string, unknown>)[k] = v;
@@ -261,11 +248,12 @@ export default function FormLich({
     // Danh sách lãnh đạo tham dự nằm ở bảng riêng nên so sánh riêng: chỉ gửi
     // khi thật sự đổi, kể cả đổi thứ tự — backend ghi đè cả danh sách và giữ
     // đúng thứ tự người dùng chọn.
+    const mocThanhPhan = dangSua ? thanhPhanBanDau : thanhPhanDaLuu.current;
     const doiThanhPhan =
-      !dangSua
+      mocThanhPhan === null
         ? thanhPhanIds.length > 0
-        : thanhPhanIds.length !== thanhPhanBanDau.length ||
-          thanhPhanIds.some((id, i) => id !== thanhPhanBanDau[i]);
+        : thanhPhanIds.length !== mocThanhPhan.length ||
+          thanhPhanIds.some((id, i) => id !== mocThanhPhan[i]);
     if (doiThanhPhan) goi.lanh_dao_lien_quan_ids = thanhPhanIds;
 
     if (dangSua && Object.keys(goi).length === 0 && fileCho.length === 0) {
@@ -275,24 +263,45 @@ export default function FormLich({
 
     setDangLuu(true);
     try {
-      const sk =
-        dangSua && Object.keys(goi).length === 0
-          ? banGhi!
-          : dangSua
-            ? await lichCongTacApi.capNhat(banGhi!.id, goi)
-            : await lichCongTacApi.tao(goi);
+      // Ba đường: sửa bản có sẵn, thử lại trên lịch vừa tạo ở lần bấm trước,
+      // hoặc tạo mới. Hai đường đầu đều là PATCH nên gộp chung id.
+      const idCoSan = dangSua ? banGhi!.id : daTao?.id;
+      let sk: ISuKienChiTiet;
+      if (idCoSan) {
+        // Vẫn gửi thay đổi nếu người dùng sửa gì đó trước khi thử lại —
+        // bỏ qua thì sửa xong bấm Lưu lại thấy như không có gì xảy ra.
+        sk =
+          Object.keys(goi).length === 0
+            ? ((dangSua ? banGhi : daTao) as ISuKienChiTiet)
+            : await lichCongTacApi.capNhat(idCoSan, goi);
+      } else {
+        sk = await lichCongTacApi.tao(goi);
+      }
+      if (!dangSua) {
+        setDaTao(sk);
+        mocSoSanh.current = { ...form };
+        thanhPhanDaLuu.current = [...thanhPhanIds];
+      }
 
       // Tải file SAU khi đã lưu: lúc tạo mới chưa có id cuộc họp để gắn vào.
       // Lịch đã lưu rồi thì file hỏng cũng không được nuốt lịch — báo đúng
       // file nào hỏng và giữ form mở để người dùng thử lại.
       if (fileCho.length > 0) {
-        const hong = await taiFileLen(sk.id);
+        const hong = await taiNhieuFile({
+          cuocHopId: sk.id,
+          files: fileCho,
+          moTa: loaiTaiLieu,
+          phanQuyen: mucTaiLieu,
+          onDoiDangTai: setDangTaiFile,
+        });
         if (hong.length > 0) {
+          const tenHong = new Set(hong.map((h) => h.ten));
           setLoi(
-            `Đã lưu lịch, nhưng ${hong.length} file không tải lên được: ` +
-              `${hong.join(', ')}. Thử lại hoặc tải lên ở trang chi tiết.`,
+            `Đã lưu lịch, nhưng ${hong.length}/${fileCho.length} file không ` +
+              `tải lên được: ${moTaFileHong(hong)}. Bấm Lưu lần nữa để thử lại ` +
+              '— lịch sẽ không bị tạo trùng.',
           );
-          setFileCho((truoc) => truoc.filter((f) => hong.includes(f.name)));
+          setFileCho((truoc) => truoc.filter((f) => tenHong.has(f.name)));
           setDangLuu(false);
           return;
         }
@@ -575,20 +584,9 @@ export default function FormLich({
             chính mình, kể cả khi mức hạn chế được nâng sau đó.
           </p>
 
-          <input
-            ref={oFile}
-            type="file"
-            multiple
-            accept={DUOI_CHO_PHEP}
-            className="hidden"
-            onChange={(e) => {
-              themFile(e.target.files);
-              e.target.value = '';
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => oFile.current?.click()}
+          {/* Ô chọn file nằm TRONG nhãn, không dùng nút bấm rồi gọi .click():
+              bấm nhãn là trình duyệt tự mở hộp thoại, khỏi phụ thuộc ref. */}
+          <label
             onDragOver={(e) => {
               e.preventDefault();
               setKeoVao(true);
@@ -599,22 +597,54 @@ export default function FormLich({
               setKeoVao(false);
               themFile(e.dataTransfer.files);
             }}
-            className={`mt-2 w-full rounded-lg border-2 border-dashed px-3 py-5 text-center text-sm ${
+            className={`mt-2 block w-full cursor-pointer rounded-lg border-2 border-dashed px-3 py-5 text-center text-sm ${
               keoVao
                 ? 'border-blue-400 bg-blue-50 text-blue-700'
                 : 'border-gray-300 text-gray-600 hover:border-blue-400 hover:bg-gray-50'
             }`}
           >
+            <input
+              ref={oFile}
+              type="file"
+              multiple
+              accept={ACCEPT_FILE}
+              className="hidden"
+              onChange={(e) => {
+                themFile(e.target.files);
+                // Dọn ô chọn để chọn LẠI đúng file vừa bỏ ra vẫn nổ `change`.
+                // Phải đứng sau `themFile` — hàm đó đã chụp danh sách file
+                // thành mảng rồi, xoá bây giờ không mất gì.
+                e.target.value = '';
+              }}
+            />
             <span className="block font-medium">
               Kéo thả file vào đây hoặc bấm để chọn
             </span>
             <span className="block text-xs text-gray-500">
-              PDF, Word, Excel, PowerPoint, ảnh… tối đa 100MB mỗi file
+              Chọn được nhiều file một lúc · PDF, Word, Excel, PowerPoint, ảnh…
+              tối đa 100MB mỗi file
             </span>
-          </button>
+          </label>
 
           {fileCho.length > 0 && (
-            <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200">
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-xs text-gray-500">
+                Chờ tải lên ({fileCho.length})
+              </span>
+              {!dangLuu && (
+                <button
+                  type="button"
+                  onClick={() => setFileCho([])}
+                  className="text-xs text-gray-500 hover:text-red-600"
+                >
+                  Bỏ hết
+                </button>
+              )}
+            </div>
+          )}
+
+          {fileCho.length > 0 && (
+            <ul className="mt-1 divide-y divide-gray-100 rounded-lg border border-gray-200">
               {fileCho.map((f, i) => (
                 <li
                   key={`${f.name}-${f.size}-${i}`}
@@ -627,14 +657,15 @@ export default function FormLich({
                       {coDaiFile(f.size)}
                     </span>
                   </span>
-                  {dangTaiFile === f.name ? (
+                  {dangTaiFile.includes(f.name) ? (
                     <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                   ) : (
                     <button
                       type="button"
                       title="Bỏ khỏi danh sách"
+                      disabled={dangLuu}
                       onClick={() => xoaFileCho(i)}
-                      className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                      className="rounded p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-40"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -704,11 +735,13 @@ export default function FormLich({
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
           >
             {dangLuu && <Loader2 className="w-4 h-4 animate-spin" />}
-            {dangTaiFile
-              ? `Đang tải ${dangTaiFile}…`
+            {dangTaiFile.length > 0
+              ? `Đang tải ${dangTaiFile.length} file…`
               : dangSua
                 ? 'Lưu thay đổi'
-                : 'Tạo lịch'}
+                : daTao
+                  ? 'Tải lại file'
+                  : 'Tạo lịch'}
           </button>
         </div>
       </form>

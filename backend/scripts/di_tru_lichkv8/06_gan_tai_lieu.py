@@ -80,10 +80,65 @@ def kieu_mime(ten: str) -> str | None:
     return mimetypes.guess_type(ten)[0]
 
 
+def _chan_ghi_lech_kho() -> None:
+    """Chặn ghi bản ghi vào prod trong khi file rơi lại kho của cây làm việc.
+
+    Từ 19/08/2026 chỗ này chỉ có một dòng ghi chú nhắc phải đặt
+    `HKG_UPLOAD_DIR`. Ghi chú không chặn được ai — ngày 21/08 lại vấp đúng lỗi
+    đó lần nữa: 10 tài liệu mới vào cơ sở dữ liệu thật còn file nằm lại
+    `backend/uploads/`, tra ra thì thấy mà bấm tải là hỏng. Nay thành rào cứng.
+    """
+    if os.environ.get("DB_NAME") != "kpi_haiquan":
+        return
+    if os.environ.get("HKG_UPLOAD_DIR"):
+        return
+    sys.exit(
+        "⛔ Ghi vào cơ sở dữ liệu THẬT mà chưa chỉ định kho file.\n"
+        f"   Mặc định sẽ ghi file vào {HERE.parents[1] / 'uploads' / 'meeting'},\n"
+        "   tức là bản ghi vào prod còn file nằm lại cây làm việc — tài liệu\n"
+        "   hiện trên danh sách nhưng bấm tải là hỏng.\n\n"
+        "   Chạy lại kèm kho thật:\n"
+        "     HKG_UPLOAD_DIR=/var/data/kpi/uploads/meeting \\\n"
+        "     DB_NAME=kpi_haiquan CHO_PHEP_PROD=toi_dong_y \\\n"
+        "     python 06_gan_tai_lieu.py"
+    )
+
+
+def da_gan(conn) -> set:
+    """Cặp (tên file, cỡ file) ĐÃ có trong kho — khoá chống gắn hai lần.
+
+    Script này KHÔNG idempotent cho tới 21/08/2026: chạy lại là gắn lại từ đầu
+    toàn bộ, đẻ ra 809 bản sao trên cơ sở dữ liệu thật.
+
+    🔴 Khoá phải là NỘI DUNG FILE, không phải (cuộc họp, tên file). Lý do: hàm
+    khớp thư mục → cuộc họp KHÔNG TẤT ĐỊNH. Ngày nào cũng có 2–8 cuộc họp nên
+    không thư mục nào có ứng viên duy nhất (xem G4.9 trong kế hoạch); lượt này
+    script gán 5 file vào LH0445, lượt trước gán đúng 5 file đó vào LH0007 và
+    LH0009. Khoá theo cuộc họp là vô dụng vì cuộc họp đổi mỗi lượt chạy — đã
+    thử và vẫn lọt 5 bản sao.
+
+    Đánh đổi đã chấp nhận: một tài liệu thật sự dùng chung cho hai cuộc họp sẽ
+    chỉ gắn vào cuộc họp bắt được trước. Thà thiếu một liên kết mà sửa tay được
+    còn hơn đẻ bản sao mỗi lần chạy lại.
+
+    Không dùng ràng buộc UNIQUE ở cơ sở dữ liệu được vì dữ liệu di trú vốn đã
+    có 54 nhóm trùng sẵn từ các đợt trước.
+    """
+    with conn.cursor() as cur:
+        cur.execute("""SELECT ten_tai_lieu, file_size FROM meeting.tai_lieu
+                        WHERE is_deleted = false AND ten_tai_lieu IS NOT NULL""")
+        return {(r[0], r[1]) for r in cur.fetchall()}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--thu", action="store_true", help="chỉ thống kê, không ghi")
+    ap.add_argument("--gan-lai", action="store_true",
+                    help="gắn lại cả tài liệu đã có (mặc định bỏ qua)")
     args = ap.parse_args()
+
+    if not args.thu:
+        _chan_ghi_lech_kho()
 
     if not MANIFEST.exists():
         sys.exit("⛔ Chưa có manifest — chạy 05_tai_file_drive.py trước")
@@ -92,6 +147,9 @@ def main() -> None:
 
     conn = ket_noi()
     he_thong = lay_tai_khoan_he_thong(conn)
+    san_co = set() if args.gan_lai else da_gan(conn)
+    if san_co:
+        print(f"Đã gắn từ trước: {len(san_co)} tài liệu — sẽ bỏ qua\n", flush=True)
 
     # Chỉ mục cuộc họp để tra nhanh
     with conn.cursor() as cur:
@@ -171,10 +229,19 @@ def main() -> None:
                 if ext not in CHO_PHEP:
                     ngoai_whitelist[ext or "(không đuôi)"] += 1
 
-                if args.thu:
-                    tk["sẽ gắn"] += 1
+                # Đã gắn rồi thì thôi — xem docstring `da_gan`. Tên file cắt
+                # đúng như lúc ghi để hai bên so được với nhau.
+                khoa = (m["ten"][:500], m["so_byte"])
+                if not args.gan_lai and khoa in san_co:
+                    tk["bỏ qua (đã gắn từ trước)"] += 1
                     continue
 
+                if args.thu:
+                    tk["sẽ gắn"] += 1
+                    san_co.add(khoa)  # để --thu đếm đúng như lúc chạy thật
+                    continue
+
+                san_co.add(khoa)  # cùng một lượt chạy cũng không gắn hai lần
                 ten_dich = f"{uuid_mod.uuid4().hex}_{m['ten']}"
                 rel_key = f"tai-lieu/{cuoc_hop_id}/{ten_dich}"
                 dich = UPLOAD_ROOT / rel_key

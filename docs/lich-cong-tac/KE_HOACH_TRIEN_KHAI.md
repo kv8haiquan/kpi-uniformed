@@ -588,6 +588,58 @@ giống nhau — không phải ràng buộc.
 - [ ] Mọi tài liệu chỉ vào kho qua API upload có xác thực
 - [ ] 📣 **Thông báo trước cho Văn phòng và các đơn vị** — hiện 49% tài liệu (605/1.223 file) vào kho bằng đường thả trực tiếp. Bật lặng lẽ sẽ có người kéo file vào Drive rồi tưởng đã nộp
 
+### G5.6 — Kho tài liệu họp trong Thư viện ✅ *22/08*
+
+Chỗ hổng còn lại sau G5.1: tài liệu họp chỉ mở được khi **biết trước** nó thuộc
+cuộc họp nào. Người dùng nhớ "có văn bản đó đâu hồi tháng 5" nhưng không nhớ
+cuộc họp nào thì đành quay lại Google Drive — đúng thứ dự án này muốn bỏ.
+
+- [x] Mục **HKG + Lịch công tác** trong `/tai-lieu`, chia hai thư mục con `HKG`
+      và `Lịch công tác`, duyệt cả **866 tài liệu** như duyệt Drive
+- [x] `GET /tai-lieu/kho` + `GET /tai-lieu/kho/thong-ke` (meeting_service)
+- [x] Mỗi dòng kèm mã lịch, tiêu đề, ngày họp và **đường dẫn về cuộc họp** — có
+      cái này kho mới tra cứu được, tìm ra file mà không lần về được cuộc họp
+      sinh ra nó thì bằng không
+- [x] 13 test, phần lớn là **test rò rỉ** (xem lý do bên dưới)
+
+> **Đọc thẳng, không sao chép sang `portal.tai_lieu`.** Sao chép sẽ nhân đôi
+> 1,6 GB, lệch nhau khi có tài liệu mới, và nguy hiểm nhất là **bỏ qua phân
+> quyền G5.4** vì portal có mô hình quyền riêng (`quyen_truy_cap`), không hiểu
+> `phan_quyen` của tài liệu họp.
+
+> 🔴 **Đây là màn hình dễ rò rỉ nhất của cả dự án.** Nó gộp mọi tài liệu vào
+> một danh sách, mà mỗi dòng trả về đã **nhúng sẵn `url_xem`** — lọt vào danh
+> sách là mở được file, không cần bấm thêm gì. Phân quyền giữ nguyên hai tầng,
+> không nới một ly:
+>
+> 1. **quyền xem cuộc họp** — họp HKG chỉ người được mời; sự kiện Lịch công tác
+>    là lịch nội bộ nên cả Chi cục xem được
+> 2. **quyền xem tài liệu (G5.4)** — lọc **trước** khi phát token xem
+>
+> Luật tầng 1 phụ thuộc từng cuộc họp nên không viết được thành một câu SQL:
+> phải duyệt theo lô 200 dòng rồi lọc trong Python, lấy dư 1 dòng để biết còn
+> trang sau mà không phải đếm cả kho. Phân trang thẳng trên SQL sẽ ra trang
+> thiếu vì phần bị lọc nằm rải rác.
+>
+> Kiểm trên dữ liệu thật: quản trị thấy `HKG=28 · Lịch công tác=814`; một công
+> chức thường thấy **0 tài liệu HKG** và toàn bộ tài liệu Lịch công tác.
+
+Sửa kèm ba lỗi hiển thị người dùng đã báo:
+
+- Cây thư mục **không tự mở** thư mục cấp 1 — hàm khởi tạo `useState` chỉ chạy
+  một lần, lúc đó cây còn rỗng vì tải bất đồng bộ. Chuyển sang `useEffect` và
+  chỉ **thêm** vào tập đang mở, để lần vẽ lại không đóng sập nhánh người dùng
+  vừa mở tay
+- Tên file dài bị **cắt mất chữ** ở thẻ và dòng tài liệu → `line-clamp-3` +
+  `break-words` + `title`
+- Bảng tài liệu từng cuộc họp bị **đẩy rộng ra ngoài màn hình** →
+  `overflow-x-auto` + `table-fixed` + cột rộng cố định
+
+Test mới bắt được một lỗi có sẵn của chính endpoint: `tu-ngay`/`den-ngay` khai
+là `str` trong khi `ngay_hop` là DATE, asyncpg không tự ép nên truy vấn nổ
+*"operator does not exist: date >= character varying"*. Bộ lọc ngày chưa ai
+dùng nên lỗi nằm im.
+
 **Nghiệm thu G5:** thư viện duyệt/tìm/upload/tải hoạt động không phụ thuộc Drive; phân quyền 2 mức đúng theo vai trò.
 
 ---

@@ -120,6 +120,9 @@ export interface ITaiLieu {
   cuoc_hop_id: string;
   ten_tai_lieu: string;
   mo_ta: string | null;
+  /** MÃ trong danh mục LOAI_TAI_LIEU. Lưu mã chứ không lưu nhãn để đổi tên
+   *  loại trên màn hình Quản trị danh mục không làm mồ côi tài liệu. */
+  loai_tai_lieu: string | null;
   minio_bucket: string;
   minio_key: string;
   file_size: number;
@@ -135,6 +138,9 @@ export interface ITaiLieu {
 // `mo_ta` CÓ trong phản hồi của backend (schema TaiLieuListItem) — trước đây
 // khai thiếu ở đây nên phía giao diện không đọc được, dù dữ liệu vẫn về.
 export interface ITaiLieuListItem extends Omit<ITaiLieu, 'cuoc_hop_id' | 'created_by' | 'minio_bucket' | 'minio_key'> {
+  /** Nhãn của `loai_tai_lieu`, máy chủ tra sẵn để màn hình khỏi gọi thêm một
+   *  lượt danh mục chỉ để dịch mã sang chữ. */
+  loai_nhan: string | null;
   url_xem?: string;
 }
 
@@ -385,6 +391,8 @@ export interface ITaiLieuKhoItem {
   id: string;
   ten_tai_lieu: string;
   mo_ta: string | null;
+  loai_tai_lieu: string | null;
+  loai_nhan: string | null;
   extension: string | null;
   file_size: number;
   mime_type: string | null;

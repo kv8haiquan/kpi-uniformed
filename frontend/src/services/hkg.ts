@@ -168,6 +168,8 @@ export interface ITaiLieuUploadInput {
   file: File;
   ten_tai_lieu?: string;
   mo_ta?: string;
+  /** MÃ trong danh mục LOAI_TAI_LIEU (không phải nhãn — xem meeting_025). */
+  loai_tai_lieu?: string;
   phan_quyen?: PhanQuyenTaiLieu;
   cho_phep_tai?: boolean;
   cho_phep_in?: boolean;
@@ -180,6 +182,7 @@ export const taiLieuApi = {
     fd.append('file', input.file);
     if (input.ten_tai_lieu) fd.append('ten_tai_lieu', input.ten_tai_lieu);
     if (input.mo_ta) fd.append('mo_ta', input.mo_ta);
+    if (input.loai_tai_lieu) fd.append('loai_tai_lieu', input.loai_tai_lieu);
     fd.append('phan_quyen', input.phan_quyen || 'CONG_KHAI');
     fd.append('cho_phep_tai', String(input.cho_phep_tai ?? true));
     fd.append('cho_phep_in', String(input.cho_phep_in ?? true));

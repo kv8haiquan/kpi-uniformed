@@ -140,6 +140,13 @@ export default function KhoTaiLieuHop({ nguon, timKiem }: Props) {
                   </span>
                   <span className="uppercase">{t.extension || '—'}</span>
                   <span>{coDaiFile(t.file_size)}</span>
+                  {/* Nhãn loại do máy chủ tra từ mã; tra không ra (đơn vị vừa
+                      xoá mục danh mục) thì hiện mã trần còn hơn để trống. */}
+                  {(t.loai_nhan || t.loai_tai_lieu) && (
+                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">
+                      {t.loai_nhan || t.loai_tai_lieu}
+                    </span>
+                  )}
                   {t.mo_ta && <span>· {t.mo_ta}</span>}
                   {t.phan_quyen !== 'CONG_KHAI' && (
                     <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">

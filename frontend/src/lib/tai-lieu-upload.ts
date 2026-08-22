@@ -31,25 +31,29 @@ export const CO_TOI_DA_MB = 100;
 const SO_SONG_SONG = 3;
 
 /**
- * Loại tài liệu — nhãn dự phòng.
+ * Loại tài liệu — danh sách dự phòng.
  *
  * Từ G4.11 danh sách thật nằm ở `meeting.danh_muc` nhóm `LOAI_TAI_LIEU` để
  * đơn vị tự quản trị (yêu cầu chuyển đổi mục II.15); gọi
  * `danhMucLichApi.danhSach({ nhom: 'LOAI_TAI_LIEU' })`. Danh sách dưới đây
  * chỉ dùng khi chưa gọi được máy chủ, giữ đúng 7 mục FILE_TYPE của hệ cũ.
  *
- * Nhãn được lưu vào `mo_ta` của tài liệu vì `meeting.tai_lieu` chưa có cột
- * riêng. Đây là NHÃN để người đọc nhận ra nhanh, KHÔNG phải căn cứ phân loại:
+ * Gửi lên máy chủ là **MÃ**, không phải nhãn. Trước meeting_025 gửi nhãn và
+ * lưu vào `mo_ta`; hậu quả là đổi tên một loại trên màn hình Quản trị danh
+ * mục thì mọi tài liệu mang loại đó thành mồ côi, và số "đang dùng" tụt về 0
+ * nên màn hình cho xoá mất một mục vẫn có tài liệu.
+ *
+ * Đây vẫn là NHÃN để người đọc nhận ra nhanh, KHÔNG phải căn cứ phân loại:
  * báo cáo Thống kê tài liệu vẫn nhận giấy mời theo tên file như trước.
  */
-export const LOAI_TAI_LIEU = [
-  'Giấy mời',
-  'Tài liệu họp',
-  'Báo cáo',
-  'Chương trình',
-  'Biên bản',
-  'Kết luận',
-  'Tài liệu khác',
+export const LOAI_TAI_LIEU: Array<{ ma: string; nhan: string }> = [
+  { ma: 'GIAY_MOI', nhan: 'Giấy mời' },
+  { ma: 'TAI_LIEU_HOP', nhan: 'Tài liệu họp' },
+  { ma: 'BAO_CAO', nhan: 'Báo cáo' },
+  { ma: 'CHUONG_TRINH', nhan: 'Chương trình' },
+  { ma: 'BIEN_BAN', nhan: 'Biên bản' },
+  { ma: 'KET_LUAN', nhan: 'Kết luận' },
+  { ma: 'TAI_LIEU_KHAC', nhan: 'Tài liệu khác' },
 ];
 
 /**
@@ -130,7 +134,7 @@ export interface ThamSoTaiNhieu {
    * `FileCho[]` thì mỗi file mang loại riêng của nó.
    */
   files: Array<File | FileCho>;
-  /** Loại tài liệu dùng chung, cho những file không mang loại riêng. */
+  /** MÃ loại tài liệu dùng chung, cho những file không mang loại riêng. */
   moTa?: string;
   phanQuyen?: PhanQuyenTaiLieu;
   /** Gọi khi một file bắt đầu / kết thúc, để giao diện hiện vòng quay. */
@@ -178,7 +182,7 @@ export async function taiNhieuFile({
         await taiLieuApi.upload({
           cuoc_hop_id: cuocHopId,
           file: f,
-          mo_ta: loai,
+          loai_tai_lieu: loai,
           phan_quyen: phanQuyen,
         });
       } catch (e) {

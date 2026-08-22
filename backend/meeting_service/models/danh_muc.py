@@ -44,7 +44,8 @@ COT_SU_DUNG = {
     NHOM_LOAI_LICH: "loai_lich",
     NHOM_TRANG_THAI: "trang_thai",
     NHOM_PHONG_HOP: None,      # địa điểm là chuỗi tự do, đối chiếu theo nhãn
-    NHOM_LOAI_TAI_LIEU: None,  # nằm ở meeting.tai_lieu.mo_ta, không phải cuoc_hop
+    # Nằm ở meeting.tai_lieu.loai_tai_lieu (meeting_025), không phải cuoc_hop
+    NHOM_LOAI_TAI_LIEU: None,
 }
 
 

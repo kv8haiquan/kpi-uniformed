@@ -121,8 +121,10 @@ export default function FormLich({
   // nên nộp giấy mời và báo cáo trong cùng một lượt là chuyện bình thường.
   const [fileCho, setFileCho] = useState<FileCho[]>([]);
   const [daCo, setDaCo] = useState<ITaiLieuListItem[]>([]);
-  const [dsLoai, setDsLoai] = useState<string[]>(LOAI_TAI_LIEU);
-  const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0]);
+  const [dsLoai, setDsLoai] =
+    useState<Array<{ ma: string; nhan: string }>>(LOAI_TAI_LIEU);
+  // Giữ MÃ, không giữ nhãn — nhãn đổi được nên lưu nhãn là mất liên kết.
+  const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0].ma);
   const [mucList, setMucList] = useState<IMucPhanQuyen[]>([]);
   const [mucTaiLieu, setMucTaiLieu] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
   const [dangTaiFile, setDangTaiFile] = useState<string[]>([]);
@@ -179,9 +181,9 @@ export default function FormLich({
       .danhSach({ nhom: 'LOAI_TAI_LIEU' })
       .then((ds) => {
         if (ds.length === 0) return;
-        const nhan = ds.map((m) => m.nhan);
-        setDsLoai(nhan);
-        setLoaiTaiLieu(nhan[0]);
+        const muc = ds.map((m) => ({ ma: m.ma, nhan: m.nhan }));
+        setDsLoai(muc);
+        setLoaiTaiLieu(muc[0].ma);
       })
       .catch(() => undefined);
   }, []);
@@ -592,8 +594,8 @@ export default function FormLich({
                 onChange={(e) => setLoaiTaiLieu(e.target.value)}
               >
                 {dsLoai.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
+                  <option key={l.ma} value={l.ma}>
+                    {l.nhan}
                   </option>
                 ))}
               </select>
@@ -707,13 +709,14 @@ export default function FormLich({
                   >
                     {/* Loại đã gán có thể không còn trong danh mục (đơn vị vừa
                         tắt nó) — vẫn phải hiện, nếu không ô chọn nhảy sang
-                        loại khác mà người dùng không hề bấm. */}
-                    {(dsLoai.includes(x.loai)
+                        loại khác mà người dùng không hề bấm. Tra không ra nhãn
+                        thì hiện mã trần, vẫn hơn là biến mất. */}
+                    {(dsLoai.some((l) => l.ma === x.loai)
                       ? dsLoai
-                      : [x.loai, ...dsLoai]
+                      : [{ ma: x.loai, nhan: x.loai }, ...dsLoai]
                     ).map((l) => (
-                      <option key={l} value={l}>
-                        {l}
+                      <option key={l.ma} value={l.ma}>
+                        {l.nhan}
                       </option>
                     ))}
                   </select>

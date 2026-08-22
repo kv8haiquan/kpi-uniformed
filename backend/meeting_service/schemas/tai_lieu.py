@@ -20,6 +20,9 @@ class TaiLieuResponse(BaseModel):
     cuoc_hop_id: Optional[UUID]
     ten_tai_lieu: str
     mo_ta: Optional[str]
+    # Mã trong danh mục `LOAI_TAI_LIEU`, KHÔNG phải nhãn: nhãn đổi được nên
+    # lưu nhãn là mọi tài liệu thành mồ côi ngay lần đổi tên đầu tiên.
+    loai_tai_lieu: Optional[str] = None
     minio_bucket: str
     minio_key: str
     file_size: int
@@ -39,6 +42,10 @@ class TaiLieuListItem(BaseModel):
     id: UUID
     ten_tai_lieu: str
     mo_ta: Optional[str]
+    loai_tai_lieu: Optional[str] = None
+    # Nhãn tra từ danh mục lúc trả về, để màn hình khỏi phải gọi thêm một
+    # lượt danh mục chỉ để dịch mã sang chữ.
+    loai_nhan: Optional[str] = None
     extension: Optional[str]
     file_size: int
     mime_type: Optional[str]
@@ -53,6 +60,7 @@ class TaiLieuMetadataUpdate(BaseModel):
     """Sửa metadata (không upload lại file)."""
     ten_tai_lieu: Optional[str] = Field(None, min_length=1, max_length=500)
     mo_ta: Optional[str] = None
+    loai_tai_lieu: Optional[str] = None
     phan_quyen: Optional[str] = None
     cho_phep_tai: Optional[bool] = None
     cho_phep_in: Optional[bool] = None
@@ -78,6 +86,8 @@ class TaiLieuKhoItem(BaseModel):
     id: UUID
     ten_tai_lieu: str
     mo_ta: Optional[str] = None
+    loai_tai_lieu: Optional[str] = None
+    loai_nhan: Optional[str] = None
     extension: Optional[str] = None
     file_size: int
     mime_type: Optional[str] = None

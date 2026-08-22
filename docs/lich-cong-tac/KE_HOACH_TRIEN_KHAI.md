@@ -588,6 +588,46 @@ giống nhau — không phải ràng buộc.
 - [ ] Mọi tài liệu chỉ vào kho qua API upload có xác thực
 - [ ] 📣 **Thông báo trước cho Văn phòng và các đơn vị** — hiện 49% tài liệu (605/1.223 file) vào kho bằng đường thả trực tiếp. Bật lặng lẽ sẽ có người kéo file vào Drive rồi tưởng đã nộp
 
+### G4.11b — Loại tài liệu lưu MÃ thay vì nhãn ✅ *22/08*
+
+Người dùng báo "danh mục loại tài liệu có vẻ đang bị lỗi". Danh mục tự nó
+không hỏng — hỏng là **chỗ loại tài liệu được lưu**.
+
+Loại được lưu bằng chính chuỗi NHÃN vào `tai_lieu.mo_ta` (`"Giấy mời"`),
+không phải mã. Dựng lại được trên bản sao dữ liệu thật:
+
+```
+Trước khi đổi tên: 'Giấy mời'     đang dùng = 1
+Sau khi đổi tên  : 'Giấy mời họp' đang dùng = 0
+```
+
+> 🔴 Chỉ cần bấm **"Sửa tên"** một lần trên màn hình Quản trị danh mục là mọi
+> tài liệu mang loại đó thành mồ côi, **và** số "đang dùng" tụt về 0 nên chính
+> màn hình đó cho phép **xoá** một mục vẫn còn tài liệu — không cảnh báo gì.
+> Tức nút Sửa tên là cái làm hỏng dữ liệu.
+
+`meeting_025` thêm cột `loai_tai_lieu` lưu **MÃ**. Mã không đổi được sau khi
+tạo (`DanhMucService.cap_nhat` chối `ma`) nên đổi nhãn bao nhiêu lần liên kết
+vẫn nguyên. Migration kèm chuyển đổi nhãn→mã và trả `mo_ta` về đúng nghĩa mô
+tả tự do, chỉ dọn ở đúng dòng chuyển được.
+
+Chuyển đúng lúc rẻ nhất: **854/854 tài liệu đang có `mo_ta` rỗng** — chưa ai
+tải tài liệu qua giao diện mới, không có dữ liệu nào để mất. Sau migration:
+854 dòng, 0 lỗi, chỉ mục `idx_tai_lieu_loai` đã tạo.
+
+Cố ý KHÔNG đặt khoá ngoại sang `meeting.danh_muc`: đơn vị được xoá một mục, mà
+xoá xong thì tài liệu cũ vẫn phải đọc được với mã cũ — giống cách `loai_lich`
+đang làm. Hợp lệ kiểm ở tầng nghiệp vụ lúc ghi, và chặn cả mục đã **tắt** (tắt
+là để ngừng dùng cho tài liệu MỚI; vẫn đặt được thì nút Tắt vô nghĩa).
+
+Hai việc **cố ý chưa làm**, đã báo và được chốt:
+
+- **Màn hình Họp Không Giấy giữ nguyên** theo yêu cầu — chưa có ô chọn loại,
+  và cột tên "Loại" ở đó vẫn hiện phần mở rộng file (`PDF`, `DOCX`).
+- **Trang Thống kê tài liệu vẫn phân loại giấy mời theo tên file** (quy tắc
+  port nguyên văn từ lichkv8), chưa đọc loại người dùng chọn. Đổi cách đếm là
+  đổi con số Bà Hà đang dùng để đối soát nên phải báo đơn vị trước.
+
 ### G5.6 — Kho tài liệu họp trong Thư viện ✅ *22/08*
 
 Chỗ hổng còn lại sau G5.1: tài liệu họp chỉ mở được khi **biết trước** nó thuộc

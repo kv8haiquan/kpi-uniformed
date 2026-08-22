@@ -140,6 +140,13 @@ class CuocHopResponse(BaseModel):
     chu_toa_id: Optional[UUID] = None
     thu_ky_id: Optional[UUID]
     trang_thai: str
+    # Bảng `cuoc_hop` chứa CẢ cuộc họp HKG lẫn sự kiện Lịch công tác, phân
+    # biệt bằng `nguon`. Trước đây response không trả cột này nên màn hình
+    # HKG không biết mình đang mở nhầm một sự kiện Lịch công tác: nó vẽ đủ
+    # nút "Xác nhận tham dự" / "Huỷ", bấm vào là 403 vì sự kiện Lịch công tác
+    # không có `thanh_phan` và thường không có đơn vị tổ chức / chủ tọa.
+    nguon: str
+    ma_lich: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     created_by: UUID

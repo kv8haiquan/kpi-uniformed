@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, usePathname } from 'next/navigation';
+import { useParams, usePathname, useRouter } from 'next/navigation';
 import { AlertOctagon, ArrowLeft, Lock, ShieldOff } from 'lucide-react';
 import { cuocHopApi } from '@/services/hkg';
 import { errStatus } from '@/lib/hkg-error';
@@ -37,6 +37,7 @@ const TRANG_THAI_LABELS: Record<TrangThaiCuocHop, string> = {
 export default function ChiTietLayout({ children }: { children: React.ReactNode }) {
   const { id } = useParams<{ id: string }>();
   const pathname = usePathname();
+  const router = useRouter();
   const { user } = useAuthStore();
   const [ch, setCh] = useState<ICuocHop | null>(null);
   // Fix 30/07/2026: trước đây catch rỗng → 403/404 bị ăn im, trang vẫn render
@@ -62,6 +63,23 @@ export default function ChiTietLayout({ children }: { children: React.ReactNode 
     refresh();
   }, [refresh]);
 
+  // Sự kiện Lịch công tác mở nhầm bằng đường dẫn HKG → đưa về đúng màn hình.
+  //
+  // Không phải trường hợp hiếm: tin nhắc họp qua Zalo dùng chung mẫu ZNS
+  // 623236 ("Nhắc họp không giấy") cho CẢ hai nguồn, mà mẫu đó chỉ nhận
+  // `ma_hop` nên nút bấm trong tin luôn trỏ về `/hop-khong-giay/chi-tiet/`.
+  // Ngày 22/08 một Phó Chi cục trưởng bấm tin nhắc của LH0503 (Lịch công
+  // tác), rơi vào màn hình này, bấm "Xác nhận tham dự" 5 lần và nhận 403 —
+  // sự kiện Lịch công tác không có `thanh_phan` để xác nhận, người liên quan
+  // nằm ở `lanh_dao_lien_quan`.
+  //
+  // Chuyển hướng ở ĐÂY chứ không chỉ sửa mẫu Zalo: mọi tin đã gửi vẫn nằm
+  // trong lịch sử trò chuyện của người nhận và sẽ còn được bấm lại.
+  const laLichCongTac = ch?.nguon === 'LICH_CONG_TAC';
+  useEffect(() => {
+    if (laLichCongTac) router.replace(`/lich-cong-tac/${id}`);
+  }, [laLichCongTac, id, router]);
+
   const isCancelled = ch?.trang_thai === 'HUY';
   const isLocked = isCancelled || ch?.trang_thai === 'HOAN_THANH';
 
@@ -86,6 +104,16 @@ export default function ChiTietLayout({ children }: { children: React.ReactNode 
     if (ch.chu_toa_id === user.id || ch.thu_ky_id === user.id) return true;
     return false;
   }, [ch, user]);
+
+  // Đang chuyển sang màn hình Lịch công tác — không vẽ khung HKG kèm nút
+  // "Xác nhận tham dự" ra trong lúc chờ, người dùng kịp bấm là lại 403.
+  if (laLichCongTac) {
+    return (
+      <div className="bg-white border rounded p-6 text-sm text-gray-600">
+        Đây là sự kiện Lịch công tác — đang chuyển sang màn hình tương ứng…
+      </div>
+    );
+  }
 
   // Không xem được cuộc họp → chặn hẳn tabs + children để các tab con không
   // bắn tiếp request chắc chắn cùng lỗi (tài liệu, điểm danh, biên bản...).

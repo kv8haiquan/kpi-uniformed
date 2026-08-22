@@ -14,6 +14,7 @@ hiển thị khác ngày bắt đầu thật. Với dòng HKG, trigger
 
 from __future__ import annotations
 
+import re
 from datetime import date, time, timedelta
 from typing import Any, Optional
 from uuid import UUID
@@ -41,6 +42,49 @@ from shared.auth import TokenPayload
 
 THU_VN = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu",
           "Thứ Bảy", "Chủ Nhật"]
+
+
+def chuan_hoa_sdt(v: object) -> Optional[str]:
+    """Đưa số điện thoại về dạng chuẩn `0xxxxxxxxx`.
+
+    Dữ liệu di trú từ lichkv8 hỏng theo hai kiểu, cùng một nguyên nhân là
+    Excel coi số điện thoại như SỐ chứ không phải chuỗi:
+
+      - `9.13264340E8`  → Excel đổi sang số thực, mất số 0 đứng đầu
+      - `0916,382,222`  → Excel chèn dấu phân cách hàng nghìn
+
+    Hàm này cũng chạy khi thêm/nhập mới, để một chỗ sửa là mọi đường vào đều
+    sạch — nếu không thì nhập Excel lần sau lại đẻ ra đúng bộ dữ liệu hỏng này.
+
+    Đặt ở đây chứ không ở `truc_ban_service` vì tóm tắt lịch cũng cần, mà
+    `truc_ban_service` đã import module này rồi — để bên kia thì vòng nhau.
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s:
+        return None
+
+    # Dạng khoa học: 9.13264340E8 → 913264340
+    if re.fullmatch(r"[0-9]+\.?[0-9]*[Ee][+]?[0-9]+", s):
+        try:
+            s = str(int(float(s)))
+        except (ValueError, OverflowError):
+            return s
+
+    so = re.sub(r"[^0-9+]", "", s)
+
+    # +84 / 84 đứng đầu là mã quốc gia — đưa về dạng nội địa.
+    if so.startswith("+84"):
+        so = "0" + so[3:]
+    elif so.startswith("84") and len(so) == 11:
+        so = "0" + so[2:]
+
+    # 9 chữ số là đã rụng số 0 đứng đầu.
+    if len(so) == 9 and not so.startswith("0"):
+        so = "0" + so
+
+    return so or None
 
 # Nguồn của dòng do module Lịch công tác quản lý. Dòng `HKG` đi qua nghiệp vụ
 # Họp Không Giấy nên KHÔNG được sửa bằng các hàm dưới đây.
@@ -331,8 +375,15 @@ class LichCongTacService:
                  .order_by(TruSo.thu_tu))
             for ngay, tru_so, ho_ten, chuc_vu, sdt in (
                     await self.db.execute(q)).all():
-                truc.setdefault(ngay, []).append(
-                    " · ".join(filter(None, [tru_so, ho_ten, chuc_vu, sdt])))
+                truc.setdefault(ngay, []).append(" · ".join(filter(
+                    None, [tru_so, ho_ten, chuc_vu, chuan_hoa_sdt(sdt)])))
+
+            # 333 ca trực bị ghi hai lần khi chạy lại script di trú, hai bản
+            # giống hệt nhau. Sau khi chuẩn hoá số thì hai dòng thành một chuỗi
+            # y hệt — lặp lại nguyên văn một dòng thì không bao giờ có ích cho
+            # người đọc. Đây chỉ là lưới an toàn, dữ liệu trùng vẫn phải dọn.
+            for ngay in truc:
+                truc[ngay] = list(dict.fromkeys(truc[ngay]))
 
         theo_ngay: dict[date, list] = {}
         for it in items:

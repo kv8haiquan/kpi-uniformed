@@ -29,7 +29,28 @@ from chuyen_doi import doc_bool, doc_ngay, doc_thoi_diem, gon
 from doc_sheet import doc_bang
 from ket_noi import BangTraCongChuc, ghi_nguon, ket_noi
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from meeting_service.services.lich_cong_tac_service import chuan_hoa_sdt
+
 XLSX = Path(__file__).resolve().parent / "dumps" / "lichkv8_live.xlsx"
+
+
+def da_co(conn) -> set:
+    """Ca trực ĐÃ có trong CSDL — khoá chống ghi hai lần.
+
+    `ghi_nguon` ghi ánh xạ nhưng vòng lặp INSERT không hề TRA ánh xạ đó, nên
+    chạy lại script là đẻ thêm một bộ bản ghi mới rồi trỏ ánh xạ sang bộ mới —
+    bộ cũ thành mồ côi, không ai biết. Đã xảy ra thật: 333 ca trực bị nhân đôi
+    trên cơ sở dữ liệu thật, mỗi người hiện hai lần trong lịch trực.
+
+    Khoá theo NỘI DUNG (ngày, trụ sở, họ tên) chứ không theo `DUTY_ID`: đúng
+    bài học của `06_gan_tai_lieu.py` — ánh xạ có thể bị ghi đè, còn nội dung
+    trùng thì người dùng nhìn thấy ngay.
+    """
+    with conn.cursor() as cur:
+        cur.execute("""SELECT ngay_truc, tru_so_id, ho_ten
+                         FROM meeting.truc_ban WHERE is_deleted = false""")
+        return {(r[0], r[1], r[2]) for r in cur.fetchall()}
 
 
 def main() -> None:
@@ -48,6 +69,8 @@ def main() -> None:
 
     tk = collections.Counter()
     ma_la: collections.Counter = collections.Counter()
+    co_san = da_co(conn)
+    print(f"Ca trực đã có trong CSDL: {len(co_san)}\n", flush=True)
 
     # ── DUTY_ENTRY → meeting.truc_ban ────────────────────────────────────
     idx, rows = doc_bang(XLSX, "DUTY_ENTRY", "DUTY_ID")
@@ -73,6 +96,10 @@ def main() -> None:
                 tk["bỏ qua (không có họ tên)"] += 1
                 continue
 
+            if (ngay, ts_id, ho_ten) in co_san:
+                tk["bỏ qua (đã có trong CSDL)"] += 1
+                continue
+
             cc_id = tra.tim(ho_ten)
             tk["khớp công chức" if cc_id else "không khớp công chức"] += 1
 
@@ -80,7 +107,10 @@ def main() -> None:
             gia_tri = (
                 ngay, ts_id, unit, cc_id, ho_ten,
                 gon(r.get(idx["POSITION"], ""), 100),
-                gon(r.get(idx["PHONE"], ""), 20),
+                # Bản xuất XLSX ghi 691/724 số dạng khoa học `9.13264387E8` —
+                # Google Sheets coi số điện thoại là SỐ nên rụng số 0 đứng
+                # đầu. Ghi thẳng là toàn bộ lịch trực hiện sai số điện thoại.
+                gon(chuan_hoa_sdt(r.get(idx["PHONE"], "")), 20),
                 gon(r.get(idx["NOTE"], "")),
                 "DA_NOP" if (r.get(idx["STATUS"], "") or "").strip().upper()
                 == "SUBMITTED" else "NHAP",
@@ -89,6 +119,9 @@ def main() -> None:
                 doc_thoi_diem(r.get(idx["UPDATED_AT"], "")),
             )
             tk["hợp lệ"] += 1
+            # Nhớ ngay, kể cả ở chế độ --thu: bản xuất có thể tự chứa hai dòng
+            # cùng ca trực, khoá chỉ tra CSDL sẽ để lọt cặp trùng nội bộ.
+            co_san.add((ngay, ts_id, ho_ten))
             if args.thu:
                 continue
 

@@ -33,6 +33,9 @@ from meeting_service.services.audit_log_service import ghi_audit
 from meeting_service.services.lich_cong_tac_service import (
     THU_VN,
     LoiNghiepVu,
+    # Ở nhờ `lich_cong_tac_service` vì tóm tắt lịch cũng phải chuẩn hoá số
+    # điện thoại trực ban; để lại đây thì hai module import vòng nhau.
+    chuan_hoa_sdt,
     la_quan_tri_lich,
 )
 from shared.auth import TokenPayload
@@ -84,46 +87,6 @@ def bac_chuc_vu(chuc_vu: Optional[str]) -> int:
         if re.search(mau, s):
             return bac
     return 9
-
-
-def chuan_hoa_sdt(v: object) -> Optional[str]:
-    """Đưa số điện thoại về dạng chuẩn `0xxxxxxxxx`.
-
-    Dữ liệu di trú từ lichkv8 hỏng theo hai kiểu, cùng một nguyên nhân là
-    Excel coi số điện thoại như SỐ chứ không phải chuỗi:
-
-      - `9.13264340E8`  → Excel đổi sang số thực, mất số 0 đứng đầu
-      - `0916,382,222`  → Excel chèn dấu phân cách hàng nghìn
-
-    Hàm này cũng chạy khi thêm/nhập mới, để một chỗ sửa là mọi đường vào đều
-    sạch — nếu không thì nhập Excel lần sau lại đẻ ra đúng bộ dữ liệu hỏng này.
-    """
-    if v is None:
-        return None
-    s = str(v).strip()
-    if not s:
-        return None
-
-    # Dạng khoa học: 9.13264340E8 → 913264340
-    if re.fullmatch(r"[0-9]+\.?[0-9]*[Ee][+]?[0-9]+", s):
-        try:
-            s = str(int(float(s)))
-        except (ValueError, OverflowError):
-            return s
-
-    so = re.sub(r"[^0-9+]", "", s)
-
-    # +84 / 84 đứng đầu là mã quốc gia — đưa về dạng nội địa.
-    if so.startswith("+84"):
-        so = "0" + so[3:]
-    elif so.startswith("84") and len(so) == 11:
-        so = "0" + so[2:]
-
-    # 9 chữ số là đã rụng số 0 đứng đầu.
-    if len(so) == 9 and not so.startswith("0"):
-        so = "0" + so
-
-    return so or None
 
 
 class TrucBanService:
@@ -335,7 +298,10 @@ class TrucBanService:
             "id": r.id, "ngay_truc": r.ngay_truc, "thu": THU_VN[r.ngay_truc.weekday()],
             "tru_so_id": r.tru_so_id, "ten_tru_so": ten,
             "ho_ten": r.ho_ten, "chuc_vu": r.chuc_vu,
-            "so_dien_thoai": r.so_dien_thoai, "ca_truc": r.ca_truc,
+            # Chuẩn hoá lúc ĐỌC, không chỉ lúc ghi: 331 ca trực đã di trú từ
+            # lichkv8 mang số dạng khoa học `9.13264387E8` sẵn trong CSDL.
+            "so_dien_thoai": chuan_hoa_sdt(r.so_dien_thoai),
+            "ca_truc": r.ca_truc,
             "loai_truc": r.loai_truc, "ghi_chu": r.ghi_chu,
             "trang_thai": r.trang_thai,
         } for r, ten, _ in rows]
@@ -525,7 +491,8 @@ class TrucBanService:
                 "thu": THU_VN[r.ngay_truc.weekday()],
                 "tru_so_id": r.tru_so_id, "ten_tru_so": ten,
                 "ho_ten": r.ho_ten, "chuc_vu": r.chuc_vu,
-                "so_dien_thoai": r.so_dien_thoai, "ca_truc": r.ca_truc,
+                "so_dien_thoai": chuan_hoa_sdt(r.so_dien_thoai),
+                "ca_truc": r.ca_truc,
                 "loai_truc": r.loai_truc, "ghi_chu": r.ghi_chu,
                 "trang_thai": r.trang_thai}
 

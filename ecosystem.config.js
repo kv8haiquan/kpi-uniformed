@@ -20,6 +20,21 @@
  */
 
 const REPO_ROOT = '/root/kpi-haiquan';
+
+/**
+ * Múi giờ — GHIM CỨNG, không dựa vào múi giờ của máy chủ.
+ *
+ * Toàn bộ nghiệp vụ chạy theo giờ Việt Nam: `ngay_hop` là DATE và
+ * `gio_bat_dau` là TIME, đều KHÔNG mang múi giờ — người nhập gõ "14:30" nghĩa
+ * là 14:30 giờ ta. Điểm danh và cửa sổ trình chiếu so sánh `datetime.now()`
+ * naive với hai cột đó, tức phụ thuộc thẳng vào múi giờ của tiến trình.
+ *
+ * Máy chủ hiện tại đang là Asia/Ho_Chi_Minh nên chạy đúng, nhưng không chỗ
+ * nào ghim lại. Dựng lại máy chủ với múi giờ UTC là MỌI giờ lệch 7 tiếng mà
+ * không có lỗi nào nổ ra — đúng loại hỏng lặng lẽ đã xảy ra với bộ nhắc họp
+ * (tin "nhắc trước 30 phút" của cuộc họp 09:00 gửi lúc 15:25 cùng ngày).
+ */
+const TZ_VN = 'Asia/Ho_Chi_Minh';
 const BACKEND_CWD = `${REPO_ROOT}/backend`;
 const FRONTEND_CWD = `${REPO_ROOT}/frontend`;
 
@@ -34,6 +49,7 @@ function fastapiService(name, module, port, { host = '0.0.0.0' } = {}) {
     exec_mode: 'fork',
     autorestart: true,
     max_restarts: 10,
+    env: { TZ: TZ_VN },
     out_file: `/root/.pm2/logs/${name}-out.log`,
     error_file: `/root/.pm2/logs/${name}-error.log`,
     merge_logs: true,
@@ -61,6 +77,7 @@ module.exports = {
       exec_mode: 'fork',
       autorestart: true,
       max_restarts: 10,
+      env: { TZ: TZ_VN },
       out_file: '/root/.pm2/logs/kpi-frontend-out.log',
       error_file: '/root/.pm2/logs/kpi-frontend-error.log',
       merge_logs: true,
@@ -105,6 +122,7 @@ module.exports = {
       instances: 1,
       autorestart: true,
       max_restarts: 10,
+      env: { TZ: TZ_VN },
       out_file: '/root/.pm2/logs/zalo-worker-out.log',
       error_file: '/root/.pm2/logs/zalo-worker-error.log',
       merge_logs: true,

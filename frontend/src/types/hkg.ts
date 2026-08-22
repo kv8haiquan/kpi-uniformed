@@ -101,6 +101,10 @@ export interface ICuocHop {
   chu_toa_id: string;
   thu_ky_id: string | null;
   trang_thai: TrangThaiCuocHop;
+  /** Bảng `cuoc_hop` chứa cả cuộc họp HKG lẫn sự kiện Lịch công tác. Màn hình
+   *  HKG phải biết để không vẽ nút của mình lên một sự kiện Lịch công tác. */
+  nguon: 'HKG' | 'LICH_CONG_TAC';
+  ma_lich: string | null;
   created_at: string;
   updated_at: string;
   created_by: string;

@@ -33,6 +33,9 @@ from meeting_service.services.audit_log_service import ghi_audit
 from meeting_service.services.lich_cong_tac_service import (
     THU_VN,
     LoiNghiepVu,
+    # Ở nhờ `lich_cong_tac_service` vì tóm tắt lịch cũng phải chuẩn hoá số
+    # điện thoại trực ban; để lại đây thì hai module import vòng nhau.
+    chuan_hoa_sdt,
     la_quan_tri_lich,
 )
 from shared.auth import TokenPayload
@@ -49,6 +52,36 @@ NHAN_LOAI_TRUC = {
 }
 CA_TRUC_VALUES = ["CA_NGAY", "SANG", "CHIEU", "DEM"]
 TRANG_THAI_VALUES = ["NHAP", "DA_NOP"]
+
+# Số điện thoại của một công chức — dùng chung cho ô chọn người trên màn hình,
+# nhập Excel và danh bạ in vào file mẫu. Ba chỗ này mà tra ba kiểu thì cùng
+# một người ra ba số khác nhau tuỳ đường vào.
+#
+# Thứ tự nguồn (biểu thức giả định có sẵn bí danh `cc` cho public.cong_chuc):
+#   1. `common.zalo_lien_ket` — đợt đơn vị nộp danh sách số cho Zalo OA
+#      (08/2026), phủ 534/544 công chức đang hoạt động. Cột `so_dien_thoai`
+#      lưu dạng Zalo `84…`, `so_goc` giữ dạng nội địa `0…` nên ưu tiên `so_goc`.
+#   2. `public.cong_chuc.so_dien_thoai` — chỉ 6/544 người khai.
+#   3. Lượt trực gần nhất của chính người đó.
+#
+# Zalo đứng TRƯỚC lịch trực cũ dù lịch trực nhìn sát nghiệp vụ hơn: đối chiếu
+# 34 người từng trực thì 6 người lệch, trong đó có HAI người khác nhau cùng
+# mang một số trong lịch trực — tức lỗi nằm ở lịch trực. Số Zalo do chính đơn
+# vị rà và nộp nên nguồn gốc rõ hơn.
+SDT_UU_TIEN = """
+    COALESCE(
+      (SELECT COALESCE(NULLIF(btrim(z.so_goc), ''),
+                       NULLIF(btrim(z.so_dien_thoai), ''))
+         FROM common.zalo_lien_ket z
+        WHERE z.cong_chuc_id = cc.id
+        ORDER BY z.updated_at DESC LIMIT 1),
+      NULLIF(btrim(cc.so_dien_thoai), ''),
+      (SELECT tb.so_dien_thoai FROM meeting.truc_ban tb
+        WHERE tb.cong_chuc_id = cc.id
+          AND tb.is_deleted = false
+          AND tb.so_dien_thoai IS NOT NULL
+        ORDER BY tb.ngay_truc DESC LIMIT 1))
+"""
 
 
 # ── thứ tự chức vụ ────────────────────────────────────────────────────
@@ -86,46 +119,6 @@ def bac_chuc_vu(chuc_vu: Optional[str]) -> int:
     return 9
 
 
-def chuan_hoa_sdt(v: object) -> Optional[str]:
-    """Đưa số điện thoại về dạng chuẩn `0xxxxxxxxx`.
-
-    Dữ liệu di trú từ lichkv8 hỏng theo hai kiểu, cùng một nguyên nhân là
-    Excel coi số điện thoại như SỐ chứ không phải chuỗi:
-
-      - `9.13264340E8`  → Excel đổi sang số thực, mất số 0 đứng đầu
-      - `0916,382,222`  → Excel chèn dấu phân cách hàng nghìn
-
-    Hàm này cũng chạy khi thêm/nhập mới, để một chỗ sửa là mọi đường vào đều
-    sạch — nếu không thì nhập Excel lần sau lại đẻ ra đúng bộ dữ liệu hỏng này.
-    """
-    if v is None:
-        return None
-    s = str(v).strip()
-    if not s:
-        return None
-
-    # Dạng khoa học: 9.13264340E8 → 913264340
-    if re.fullmatch(r"[0-9]+\.?[0-9]*[Ee][+]?[0-9]+", s):
-        try:
-            s = str(int(float(s)))
-        except (ValueError, OverflowError):
-            return s
-
-    so = re.sub(r"[^0-9+]", "", s)
-
-    # +84 / 84 đứng đầu là mã quốc gia — đưa về dạng nội địa.
-    if so.startswith("+84"):
-        so = "0" + so[3:]
-    elif so.startswith("84") and len(so) == 11:
-        so = "0" + so[2:]
-
-    # 9 chữ số là đã rụng số 0 đứng đầu.
-    if len(so) == 9 and not so.startswith("0"):
-        so = "0" + so
-
-    return so or None
-
-
 class TrucBanService:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -161,6 +154,52 @@ class TrucBanService:
 
     # ── danh mục ──────────────────────────────────────────────────────
 
+    async def tra_cuu_ma_cc(self, ds_ma: list[str]) -> dict[str, dict]:
+        """Tra một loạt mã công chức → hồ sơ để điền sẵn vào lịch trực.
+
+        Dùng cho nhập Excel: đơn vị chỉ gõ mã công chức, hệ thống tự lấy họ
+        tên và chức vụ — bớt được ba cột gõ tay và bớt luôn sai chính tả tên.
+        Số điện thoại theo `SDT_UU_TIEN`.
+        """
+        if not ds_ma:
+            return {}
+        rows = (await self.db.execute(sa_text(f"""
+            SELECT upper(cc.ma_cc) AS ma, cc.id, cc.ho_ten, cc.chuc_vu,
+                   cc.is_active, {SDT_UU_TIEN} AS sdt
+              FROM public.cong_chuc cc
+             WHERE upper(cc.ma_cc) = ANY(:ds)
+        """), {"ds": sorted({m.strip().upper() for m in ds_ma if m})})).all()
+
+        return {r.ma: {"cong_chuc_id": r.id, "ma_cc": r.ma,
+                       "ho_ten": r.ho_ten, "chuc_vu": r.chuc_vu,
+                       "is_active": r.is_active,
+                       "so_dien_thoai": chuan_hoa_sdt(r.sdt)}
+                for r in rows}
+
+    async def danh_ba_cho_mau(self) -> list[dict]:
+        """Danh bạ công chức để in vào sheet tra cứu của file mẫu.
+
+        Cố tình KHÔNG in số điện thoại, chỉ in việc hệ thống đã biết số hay
+        chưa: người xếp lịch cần biết mã nào phải tự điền số, chứ không cần
+        cầm cả 544 số trong một file gửi qua lại.
+        """
+        rows = (await self.db.execute(sa_text(f"""
+            SELECT cc.ma_cc, cc.ho_ten, cc.chuc_vu, cc.is_lanh_dao,
+                   dv.ten_don_vi,
+                   ({SDT_UU_TIEN}) IS NOT NULL AS he_thong_co_sdt
+              FROM public.cong_chuc cc
+              LEFT JOIN public.don_vi dv ON dv.id = cc.don_vi_id
+             WHERE cc.is_active
+        """))).all()
+        ds = [{"ma_cc": r.ma_cc, "ho_ten": r.ho_ten, "chuc_vu": r.chuc_vu,
+               "ten_don_vi": r.ten_don_vi or "",
+               "he_thong_co_sdt": r.he_thong_co_sdt} for r in rows]
+        # Lãnh đạo lên trước trong từng đơn vị: trực ban hiện 100% là lãnh đạo
+        # nên người xếp lịch tìm thấy ngay ở đầu nhóm.
+        ds.sort(key=lambda x: (x["ten_don_vi"], bac_chuc_vu(x["chuc_vu"]),
+                               x["ho_ten"]))
+        return ds
+
     async def danh_muc_tru_so(self) -> list[dict]:
         rows = (await self.db.execute(
             select(TruSo).where(TruSo.is_active.is_(True))
@@ -174,9 +213,9 @@ class TrucBanService:
                           gioi_han: int = 200) -> list[dict]:
         """Công chức có thể phân trực ở trụ sở này, kèm số điện thoại gợi ý.
 
-        Số điện thoại KHÔNG lấy từ `public.cong_chuc`: bảng đó chỉ có 6/544
-        người khai số. Nguồn thật là chính lịch trực cũ — lichkv8 ghi số theo
-        từng lượt trực, nên lấy lượt gần nhất của người đó.
+        Số điện thoại theo `SDT_UU_TIEN` — cùng nguồn với nhập Excel, để ô
+        chọn người trên màn hình và file nhập không ra hai số khác nhau cho
+        cùng một người.
 
         Trụ sở Chi cục không gắn với đơn vị nào (`don_vi_id` rỗng) nên trả toàn
         Chi cục; lịch trực trụ sở Chi cục do Văn phòng xếp, người trực có thể
@@ -197,12 +236,7 @@ class TrucBanService:
 
         rows = (await self.db.execute(sa_text(f"""
             SELECT cc.id, cc.ma_cc, cc.ho_ten, cc.chuc_vu, cc.is_lanh_dao,
-                   (SELECT tb.so_dien_thoai
-                      FROM meeting.truc_ban tb
-                     WHERE tb.cong_chuc_id = cc.id
-                       AND tb.so_dien_thoai IS NOT NULL
-                     ORDER BY tb.ngay_truc DESC
-                     LIMIT 1) AS sdt_goi_y
+                   {SDT_UU_TIEN} AS sdt_goi_y
               FROM public.cong_chuc cc
              WHERE {dieu_kien}
              ORDER BY cc.is_lanh_dao DESC, cc.ho_ten
@@ -335,7 +369,10 @@ class TrucBanService:
             "id": r.id, "ngay_truc": r.ngay_truc, "thu": THU_VN[r.ngay_truc.weekday()],
             "tru_so_id": r.tru_so_id, "ten_tru_so": ten,
             "ho_ten": r.ho_ten, "chuc_vu": r.chuc_vu,
-            "so_dien_thoai": r.so_dien_thoai, "ca_truc": r.ca_truc,
+            # Chuẩn hoá lúc ĐỌC, không chỉ lúc ghi: 331 ca trực đã di trú từ
+            # lichkv8 mang số dạng khoa học `9.13264387E8` sẵn trong CSDL.
+            "so_dien_thoai": chuan_hoa_sdt(r.so_dien_thoai),
+            "ca_truc": r.ca_truc,
             "loai_truc": r.loai_truc, "ghi_chu": r.ghi_chu,
             "trang_thai": r.trang_thai,
         } for r, ten, _ in rows]
@@ -525,7 +562,8 @@ class TrucBanService:
                 "thu": THU_VN[r.ngay_truc.weekday()],
                 "tru_so_id": r.tru_so_id, "ten_tru_so": ten,
                 "ho_ten": r.ho_ten, "chuc_vu": r.chuc_vu,
-                "so_dien_thoai": r.so_dien_thoai, "ca_truc": r.ca_truc,
+                "so_dien_thoai": chuan_hoa_sdt(r.so_dien_thoai),
+                "ca_truc": r.ca_truc,
                 "loai_truc": r.loai_truc, "ghi_chu": r.ghi_chu,
                 "trang_thai": r.trang_thai}
 

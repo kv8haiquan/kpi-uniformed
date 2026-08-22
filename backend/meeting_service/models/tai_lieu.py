@@ -31,6 +31,11 @@ class TaiLieu(Base):
     )
     ten_tai_lieu: Mapped[str] = mapped_column(String(500), nullable=False)
     mo_ta: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Mã trong danh mục `LOAI_TAI_LIEU` (meeting_025). Lưu MÃ chứ không lưu
+    # nhãn: nhãn sửa được trên màn hình Quản trị danh mục, lưu nhãn thì lần
+    # đổi tên đầu tiên là mọi tài liệu mang loại đó thành mồ côi. Không đặt
+    # khoá ngoại — xoá một mục danh mục thì tài liệu cũ vẫn phải đọc được.
+    loai_tai_lieu: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     minio_bucket: Mapped[str] = mapped_column(String(100), server_default="meeting", nullable=False)
     minio_key: Mapped[str] = mapped_column(String(500), nullable=False)

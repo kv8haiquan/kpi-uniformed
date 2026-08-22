@@ -47,8 +47,10 @@ export default function TaiLieuLich({
   const [ds, setDs] = useState<ITaiLieuListItem[] | null>(null);
   const [muc, setMuc] = useState<IMucPhanQuyen[]>([]);
   const [mucUpload, setMucUpload] = useState<PhanQuyenTaiLieu>('CONG_KHAI');
-  const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0]);
-  const [dsLoai, setDsLoai] = useState<string[]>(LOAI_TAI_LIEU);
+  // Giữ MÃ, không giữ nhãn — nhãn đổi được nên lưu nhãn là mất liên kết.
+  const [loaiTaiLieu, setLoaiTaiLieu] = useState(LOAI_TAI_LIEU[0].ma);
+  const [dsLoai, setDsLoai] =
+    useState<Array<{ ma: string; nhan: string }>>(LOAI_TAI_LIEU);
   const [dangTai, setDangTai] = useState<string[]>([]);
   const [conLai, setConLai] = useState(0);
   const [dangXoa, setDangXoa] = useState<string | null>(null);
@@ -85,9 +87,9 @@ export default function TaiLieuLich({
       .danhSach({ nhom: 'LOAI_TAI_LIEU' })
       .then((ds) => {
         if (ds.length === 0) return;
-        const nhan = ds.map((m) => m.nhan);
-        setDsLoai(nhan);
-        setLoaiTaiLieu(nhan[0]);
+        const muc = ds.map((m) => ({ ma: m.ma, nhan: m.nhan }));
+        setDsLoai(muc);
+        setLoaiTaiLieu(muc[0].ma);
       })
       .catch(() => undefined);
   }, [quanLyDuoc]);
@@ -180,8 +182,8 @@ export default function TaiLieuLich({
             className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
           >
             {dsLoai.map((l) => (
-              <option key={l} value={l}>
-                {l}
+              <option key={l.ma} value={l.ma}>
+                {l.nhan}
               </option>
             ))}
           </select>
@@ -257,7 +259,7 @@ export default function TaiLieuLich({
                 <span className="block truncate">{t.ten_tai_lieu}</span>
                 <span className="text-xs text-gray-500">
                   {coDaiFile(t.file_size)}
-                  {t.mo_ta ? ` · ${t.mo_ta}` : ''}
+                  {t.loai_nhan ? ` · ${t.loai_nhan}` : ''}
                   {t.phan_quyen !== 'CONG_KHAI' && (
                     <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
                       {muc.find((m) => m.ma === t.phan_quyen)?.ten ??

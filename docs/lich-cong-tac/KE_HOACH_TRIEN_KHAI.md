@@ -588,6 +588,98 @@ giống nhau — không phải ràng buộc.
 - [ ] Mọi tài liệu chỉ vào kho qua API upload có xác thực
 - [ ] 📣 **Thông báo trước cho Văn phòng và các đơn vị** — hiện 49% tài liệu (605/1.223 file) vào kho bằng đường thả trực tiếp. Bật lặng lẽ sẽ có người kéo file vào Drive rồi tưởng đã nộp
 
+### G4.11b — Loại tài liệu lưu MÃ thay vì nhãn ✅ *22/08*
+
+Người dùng báo "danh mục loại tài liệu có vẻ đang bị lỗi". Danh mục tự nó
+không hỏng — hỏng là **chỗ loại tài liệu được lưu**.
+
+Loại được lưu bằng chính chuỗi NHÃN vào `tai_lieu.mo_ta` (`"Giấy mời"`),
+không phải mã. Dựng lại được trên bản sao dữ liệu thật:
+
+```
+Trước khi đổi tên: 'Giấy mời'     đang dùng = 1
+Sau khi đổi tên  : 'Giấy mời họp' đang dùng = 0
+```
+
+> 🔴 Chỉ cần bấm **"Sửa tên"** một lần trên màn hình Quản trị danh mục là mọi
+> tài liệu mang loại đó thành mồ côi, **và** số "đang dùng" tụt về 0 nên chính
+> màn hình đó cho phép **xoá** một mục vẫn còn tài liệu — không cảnh báo gì.
+> Tức nút Sửa tên là cái làm hỏng dữ liệu.
+
+`meeting_025` thêm cột `loai_tai_lieu` lưu **MÃ**. Mã không đổi được sau khi
+tạo (`DanhMucService.cap_nhat` chối `ma`) nên đổi nhãn bao nhiêu lần liên kết
+vẫn nguyên. Migration kèm chuyển đổi nhãn→mã và trả `mo_ta` về đúng nghĩa mô
+tả tự do, chỉ dọn ở đúng dòng chuyển được.
+
+Chuyển đúng lúc rẻ nhất: **854/854 tài liệu đang có `mo_ta` rỗng** — chưa ai
+tải tài liệu qua giao diện mới, không có dữ liệu nào để mất. Sau migration:
+854 dòng, 0 lỗi, chỉ mục `idx_tai_lieu_loai` đã tạo.
+
+Cố ý KHÔNG đặt khoá ngoại sang `meeting.danh_muc`: đơn vị được xoá một mục, mà
+xoá xong thì tài liệu cũ vẫn phải đọc được với mã cũ — giống cách `loai_lich`
+đang làm. Hợp lệ kiểm ở tầng nghiệp vụ lúc ghi, và chặn cả mục đã **tắt** (tắt
+là để ngừng dùng cho tài liệu MỚI; vẫn đặt được thì nút Tắt vô nghĩa).
+
+Hai việc **cố ý chưa làm**, đã báo và được chốt:
+
+- **Màn hình Họp Không Giấy giữ nguyên** theo yêu cầu — chưa có ô chọn loại,
+  và cột tên "Loại" ở đó vẫn hiện phần mở rộng file (`PDF`, `DOCX`).
+- **Trang Thống kê tài liệu vẫn phân loại giấy mời theo tên file** (quy tắc
+  port nguyên văn từ lichkv8), chưa đọc loại người dùng chọn. Đổi cách đếm là
+  đổi con số Bà Hà đang dùng để đối soát nên phải báo đơn vị trước.
+
+### G5.6 — Kho tài liệu họp trong Thư viện ✅ *22/08*
+
+Chỗ hổng còn lại sau G5.1: tài liệu họp chỉ mở được khi **biết trước** nó thuộc
+cuộc họp nào. Người dùng nhớ "có văn bản đó đâu hồi tháng 5" nhưng không nhớ
+cuộc họp nào thì đành quay lại Google Drive — đúng thứ dự án này muốn bỏ.
+
+- [x] Mục **HKG + Lịch công tác** trong `/tai-lieu`, chia hai thư mục con `HKG`
+      và `Lịch công tác`, duyệt cả **866 tài liệu** như duyệt Drive
+- [x] `GET /tai-lieu/kho` + `GET /tai-lieu/kho/thong-ke` (meeting_service)
+- [x] Mỗi dòng kèm mã lịch, tiêu đề, ngày họp và **đường dẫn về cuộc họp** — có
+      cái này kho mới tra cứu được, tìm ra file mà không lần về được cuộc họp
+      sinh ra nó thì bằng không
+- [x] 13 test, phần lớn là **test rò rỉ** (xem lý do bên dưới)
+
+> **Đọc thẳng, không sao chép sang `portal.tai_lieu`.** Sao chép sẽ nhân đôi
+> 1,6 GB, lệch nhau khi có tài liệu mới, và nguy hiểm nhất là **bỏ qua phân
+> quyền G5.4** vì portal có mô hình quyền riêng (`quyen_truy_cap`), không hiểu
+> `phan_quyen` của tài liệu họp.
+
+> 🔴 **Đây là màn hình dễ rò rỉ nhất của cả dự án.** Nó gộp mọi tài liệu vào
+> một danh sách, mà mỗi dòng trả về đã **nhúng sẵn `url_xem`** — lọt vào danh
+> sách là mở được file, không cần bấm thêm gì. Phân quyền giữ nguyên hai tầng,
+> không nới một ly:
+>
+> 1. **quyền xem cuộc họp** — họp HKG chỉ người được mời; sự kiện Lịch công tác
+>    là lịch nội bộ nên cả Chi cục xem được
+> 2. **quyền xem tài liệu (G5.4)** — lọc **trước** khi phát token xem
+>
+> Luật tầng 1 phụ thuộc từng cuộc họp nên không viết được thành một câu SQL:
+> phải duyệt theo lô 200 dòng rồi lọc trong Python, lấy dư 1 dòng để biết còn
+> trang sau mà không phải đếm cả kho. Phân trang thẳng trên SQL sẽ ra trang
+> thiếu vì phần bị lọc nằm rải rác.
+>
+> Kiểm trên dữ liệu thật: quản trị thấy `HKG=28 · Lịch công tác=814`; một công
+> chức thường thấy **0 tài liệu HKG** và toàn bộ tài liệu Lịch công tác.
+
+Sửa kèm ba lỗi hiển thị người dùng đã báo:
+
+- Cây thư mục **không tự mở** thư mục cấp 1 — hàm khởi tạo `useState` chỉ chạy
+  một lần, lúc đó cây còn rỗng vì tải bất đồng bộ. Chuyển sang `useEffect` và
+  chỉ **thêm** vào tập đang mở, để lần vẽ lại không đóng sập nhánh người dùng
+  vừa mở tay
+- Tên file dài bị **cắt mất chữ** ở thẻ và dòng tài liệu → `line-clamp-3` +
+  `break-words` + `title`
+- Bảng tài liệu từng cuộc họp bị **đẩy rộng ra ngoài màn hình** →
+  `overflow-x-auto` + `table-fixed` + cột rộng cố định
+
+Test mới bắt được một lỗi có sẵn của chính endpoint: `tu-ngay`/`den-ngay` khai
+là `str` trong khi `ngay_hop` là DATE, asyncpg không tự ép nên truy vấn nổ
+*"operator does not exist: date >= character varying"*. Bộ lọc ngày chưa ai
+dùng nên lỗi nằm im.
+
 **Nghiệm thu G5:** thư viện duyệt/tìm/upload/tải hoạt động không phụ thuộc Drive; phân quyền 2 mức đúng theo vai trò.
 
 ---
@@ -666,6 +758,49 @@ giống nhau — không phải ràng buộc.
   >
   > ⚠️ Còn **54 nhóm trùng** (101 dòng thừa) tồn dư từ các đợt di trú trước
   > 21/08, cùng nguyên nhân "khớp thư mục không tất định". Chưa dọn theo yêu cầu.
+
+### G6.2b — Số điện thoại trực ban và ca trực nhân đôi ✅ *22/08*
+
+Người dùng báo trang tóm tắt lịch hiện số điện thoại sai. Truy nguyên ra hai
+lỗi chồng nhau, cùng gốc là **`03_truc_ban.py` mắc đúng bệnh của
+`06_gan_tai_lieu.py`**.
+
+**Lỗi 1 — số điện thoại dạng khoa học.** Google Sheets coi số điện thoại là
+SỐ chứ không phải chuỗi, nên bản xuất XLSX ghi **691/724** số dưới dạng
+`9.13264387E8` (rụng số 0 đứng đầu) hoặc `0946,076,999` (dấu phân cách hàng
+nghìn). Hàm `chuan_hoa_sdt` đã có sẵn nhưng **chỉ chạy ở đường ghi** và ở ma
+trận lịch trực; ba đường đọc còn lại trả thẳng giá trị thô — trong đó có đúng
+trang người dùng báo. Nay chuẩn hoá cả lúc đọc, và ETL chuẩn hoá trước khi ghi.
+
+**Lỗi 2 — 333 ca trực bị nhân đôi.** `ghi_nguon` ghi ánh xạ nguồn nhưng vòng
+lặp `INSERT` **không hề tra ánh xạ đó**. Lượt chạy thứ hai đẻ một bộ bản ghi
+mới rồi trỏ ánh xạ sang bộ mới, bộ cũ thành mồ côi — mỗi người hiện hai lần
+trên lịch trực. Khoá chống trùng nay theo **nội dung** (ngày, trụ sở, họ tên),
+đúng bài học của `06_gan_tai_lieu.py`. Chạy thử `--thu` trên prod sau khi vá:
+348 bỏ qua, **0 dòng sẽ ghi thêm**.
+
+Dọn dữ liệu trên cơ sở dữ liệu thật (được duyệt 22/08, sau khi sao lưu bảng
+riêng và diễn tập trên bản sao):
+
+| | Trước | Sau |
+|---|---:|---:|
+| Ca trực còn hiệu lực | 681 | **348** |
+| Số sai khuôn `0xxxxxxxxx` | 348 | **0** |
+| Dòng thừa do trùng | 333 | **0** |
+
+Cách làm: **xoá mềm** (`is_deleted = true`) 333 dòng xấu — hoàn tác được, không
+xoá cứng — giữ lại dòng sạch; sửa tại chỗ 15 dòng không có bản sao sạch (14 ca
+trực 23/08 dạng khoa học + 1 dòng người dùng gõ tay `034 3468299`); trỏ lại 333
+ánh xạ di trú đang chỉ vào dòng sắp xoá. Toàn bộ trong một giao dịch có chốt
+kiểm tra ở cả ba bước, lệch một con số là tự huỷ.
+
+Đối chiếu sau khi dọn: **0** ca trực bị mất (mọi khoá ngày/trụ sở/họ tên đều
+còn đúng một dòng), **0** ánh xạ trỏ vào dòng đã xoá.
+
+> 🔴 **Đây là lần thứ hai cùng một loại lỗi.** `06_gan_tai_lieu.py` (21/08) và
+> `03_truc_ban.py` (22/08) đều ghi ánh xạ mà không tra ánh xạ. **Còn hai script
+> chưa rà: `01_cuoc_hop.py`, `02_lanh_dao_lien_quan.py`, `04_danh_gia_ghi_chu.py`
+> và `08_thu_vien.py`** — phải kiểm cùng câu hỏi trước lần chạy lại kế tiếp.
 
 ### G6.1c — Nhắc lịch qua Zalo ✅ *21/08 20:15*
 

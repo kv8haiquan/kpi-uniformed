@@ -115,12 +115,14 @@ class DanhMucService:
             return int(res.scalar_one())
 
         if dm.nhom == NHOM_LOAI_TAI_LIEU:
-            # Loại tài liệu lưu ở `tai_lieu.mo_ta` dưới dạng NHÃN (bảng chưa
-            # có cột riêng — xem G4.11 trong kế hoạch), nên đối chiếu nhãn.
+            # Đối chiếu theo MÃ (meeting_025). Trước đây đối chiếu theo nhãn
+            # vì loại nằm trong `tai_lieu.mo_ta` — hậu quả là đổi tên một loại
+            # xong thì hàm này trả 0, màn hình quản trị tưởng không ai dùng và
+            # cho xoá mất một mục vẫn đang có tài liệu.
             res = await self.db.execute(sa_text("""
                 SELECT count(*) FROM meeting.tai_lieu
-                 WHERE mo_ta = :nhan AND is_deleted = false
-            """), {"nhan": dm.nhan})
+                 WHERE loai_tai_lieu = :ma AND is_deleted = false
+            """), {"ma": dm.ma})
             return int(res.scalar_one())
 
         if dm.nhom == NHOM_PHONG_HOP:

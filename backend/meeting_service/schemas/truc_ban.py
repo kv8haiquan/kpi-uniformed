@@ -82,6 +82,11 @@ class DongNhapExcel(BaseModel):
     ma_tru_so: Optional[str] = None
     tru_so_id: Optional[UUID] = None
     ten_tru_so: Optional[str] = None
+    # Người trực nhận diện bằng mã công chức; họ tên và chức vụ bên dưới là
+    # thứ hệ thống TRA RA để người dùng đối chiếu ở bảng xem trước, không
+    # phải thứ đơn vị gõ vào nữa.
+    ma_cc: Optional[str] = None
+    cong_chuc_id: Optional[UUID] = None
     ho_ten: Optional[str] = None
     chuc_vu: Optional[str] = None
     so_dien_thoai: Optional[str] = None

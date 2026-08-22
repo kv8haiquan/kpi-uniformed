@@ -7,6 +7,7 @@ Spec: §5 HKG_API_SPECS.md (đã cập nhật MVP filesystem + JWT short-lived).
 """
 
 import os
+from datetime import date
 from typing import Optional
 from uuid import UUID
 
@@ -91,6 +92,39 @@ def _kiem_muc_dat_duoc(muc: Optional[str], user) -> None:
         )
 
 
+async def _kiem_loai_tai_lieu(db, ma: Optional[str]) -> None:
+    """Loại tài liệu phải là mã còn hiệu lực trong danh mục.
+
+    Bỏ trống vẫn cho qua: tài liệu không bắt buộc mang loại, và 854 tài liệu
+    đã di trú đều chưa có loại.
+    """
+    if not ma:
+        return
+    from meeting_service.models.danh_muc import NHOM_LOAI_TAI_LIEU
+    from meeting_service.services.danh_muc_service import DanhMucService
+
+    if ma not in await DanhMucService(db).ma_hop_le(NHOM_LOAI_TAI_LIEU):
+        raise HTTPException(
+            status_code=422,
+            detail={"success": False, "error": {
+                "code": "LOAI_TAI_LIEU_KHONG_HOP_LE",
+                "message": f"Loại tài liệu '{ma}' không có trong danh mục "
+                           "hoặc đã bị tắt"}},
+        )
+
+
+async def _nhan_loai(db) -> dict:
+    """Từ điển mã → nhãn loại tài liệu, kể cả mục đã tắt.
+
+    Tra một lượt cho cả danh sách: dữ liệu cũ vẫn mang mã của mục đã tắt, tra
+    không ra thì màn hình đành hiện mã trần cho người dùng đọc.
+    """
+    from meeting_service.models.danh_muc import NHOM_LOAI_TAI_LIEU
+    from meeting_service.services.danh_muc_service import DanhMucService
+
+    return await DanhMucService(db).nhan_theo_ma(NHOM_LOAI_TAI_LIEU)
+
+
 @router.get("/kho", summary="Duyệt cả kho tài liệu họp (cho Thư viện tài liệu)")
 async def kho_tai_lieu(
     db: DatabaseDep,
@@ -98,8 +132,11 @@ async def kho_tai_lieu(
     nguon: Optional[str] = Query(
         None, description="HKG | LICH_CONG_TAC. Bỏ trống là cả hai."),
     tim_kiem: Optional[str] = Query(None, alias="tim-kiem"),
-    tu_ngay: Optional[str] = Query(None, alias="tu-ngay"),
-    den_ngay: Optional[str] = Query(None, alias="den-ngay"),
+    # Phải khai kiểu `date`, không phải `str`: cột `ngay_hop` là DATE và
+    # asyncpg không tự ép chuỗi sang ngày — để `str` là câu truy vấn nổ
+    # "operator does not exist: date >= character varying".
+    tu_ngay: Optional[date] = Query(None, alias="tu-ngay"),
+    den_ngay: Optional[date] = Query(None, alias="den-ngay"),
     trang: int = Query(1, ge=1),
     so_dong: int = Query(24, ge=1, le=100, alias="so-dong"),
 ):
@@ -175,6 +212,7 @@ async def kho_tai_lieu(
     con_nua = len(duoc_xem) > can
     trang_nay = duoc_xem[bo_qua:can]
 
+    nhan_loai = await _nhan_loai(db) if trang_nay else {}
     out = []
     for tl, ch in trang_nay:
         token = issue_token(
@@ -183,8 +221,10 @@ async def kho_tai_lieu(
         )
         item = TaiLieuKhoItem.model_validate({
             **{c: getattr(tl, c) for c in (
-                "id", "ten_tai_lieu", "mo_ta", "extension", "file_size",
-                "mime_type", "phan_quyen", "cho_phep_tai", "created_at")},
+                "id", "ten_tai_lieu", "mo_ta", "loai_tai_lieu", "extension",
+                "file_size", "mime_type", "phan_quyen", "cho_phep_tai",
+                "created_at")},
+            "loai_nhan": nhan_loai.get(tl.loai_tai_lieu),
             "cuoc_hop_id": ch.id, "nguon": ch.nguon, "ma_lich": ch.ma_lich,
             "tieu_de": ch.tieu_de, "ngay_hop": ch.ngay_hop,
             "duong_dan_cuoc_hop": (
@@ -253,6 +293,7 @@ async def upload_tai_lieu(
     file: UploadFile = File(...),
     ten_tai_lieu: Optional[str] = Form(None),
     mo_ta: Optional[str] = Form(None),
+    loai_tai_lieu: Optional[str] = Form(None),
     phan_quyen: str = Form("CONG_KHAI"),
     cho_phep_tai: bool = Form(True),
     cho_phep_in: bool = Form(True),
@@ -289,12 +330,14 @@ async def upload_tai_lieu(
         )
 
     _kiem_muc_dat_duoc(phan_quyen, user)
+    await _kiem_loai_tai_lieu(db, loai_tai_lieu)
 
     service = TaiLieuService(db)
     tl = await service.upload(
         ch, file, user,
         ten_tai_lieu=ten_tai_lieu,
         mo_ta=mo_ta,
+        loai_tai_lieu=loai_tai_lieu,
         phan_quyen=phan_quyen,
         cho_phep_tai=cho_phep_tai,
         cho_phep_in=cho_phep_in,
@@ -324,6 +367,7 @@ async def list_tai_lieu(
     # đã nằm trong tay người không được xem.
     items = loc_xem_duoc(items, user)
 
+    nhan_loai = await _nhan_loai(db) if items else {}
     out = []
     for tl in items:
         token = issue_token(
@@ -333,6 +377,7 @@ async def list_tai_lieu(
             ttl_seconds=3600,
         )
         item = TaiLieuListItem.model_validate(tl).model_dump(mode="json")
+        item["loai_nhan"] = nhan_loai.get(tl.loai_tai_lieu)
         item["url_xem"] = f"/api/v1/hop-khong-giay/tai-lieu/{tl.id}/xem-noi-dung?t={token}"
         out.append(item)
 
@@ -505,6 +550,7 @@ async def sua_tai_lieu(
     if not xem_duoc(tl.phan_quyen, user, nguoi_tai_len_id=tl.created_by):
         raise _loi_phan_quyen("sửa")
     _kiem_muc_dat_duoc(du_lieu.phan_quyen, user)
+    await _kiem_loai_tai_lieu(db, du_lieu.loai_tai_lieu)
 
     tl = await service.update_metadata(tl, du_lieu, user)
     return {"success": True,

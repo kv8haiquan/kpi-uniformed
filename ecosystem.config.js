@@ -19,7 +19,14 @@
  *   pm2 jlist | python3 -c "import sys,json; ..."
  */
 
-const REPO_ROOT = '/root/kpi-haiquan';
+// Lấy theo vị trí CHÍNH FILE NÀY, không ghi cứng đường dẫn.
+//
+// Production chạy từ `/opt/kpi-prod` (git worktree nhánh `prod`), còn cây làm
+// việc là `/root/kpi-haiquan`. File này từng ghi cứng `/root/kpi-haiquan`, tức
+// một lệnh `pm2 reload ecosystem.config.js` chạy từ cây prod sẽ ĐẨY TOÀN BỘ
+// PRODUCTION SANG CÂY LÀM VIỆC — mã chưa kiểm thử phục vụ người dùng thật mà
+// không có dấu hiệu gì. Dùng `__dirname` thì chạy từ cây nào ăn đúng cây đó.
+const REPO_ROOT = __dirname;
 
 /**
  * Múi giờ — GHIM CỨNG, không dựa vào múi giờ của máy chủ.

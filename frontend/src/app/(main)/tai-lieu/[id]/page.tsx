@@ -162,7 +162,11 @@ export default function TaiLieuDetailPage() {
               {icon}
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold text-gray-900 leading-tight">{taiLieu.ten_tai_lieu}</h1>
+              {/* `break-words`: tên tài liệu tiếng Việt có thể rất dài, không
+                  cho xuống dòng thì tiêu đề tràn ra ngoài khung. */}
+              <h1 className="text-xl font-bold text-gray-900 leading-tight break-words">
+                {taiLieu.ten_tai_lieu}
+              </h1>
               <p className="text-sm text-gray-500 mt-1">
                 {taiLieu.thu_muc.ten}
               </p>

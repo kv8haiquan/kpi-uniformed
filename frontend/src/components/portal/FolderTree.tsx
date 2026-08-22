@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { IThuMucTree } from '@/types/tai-lieu';
 
 // =============================================================================
@@ -79,7 +79,9 @@ function FolderNode({
         </span>
 
         {/* Tên thư mục */}
-        <span className="text-sm font-medium truncate flex-1">{node.ten}</span>
+        <span className="text-sm font-medium truncate flex-1" title={node.ten}>
+          {node.ten}
+        </span>
 
         {/* Nút thêm con */}
         {onAdd && (
@@ -127,10 +129,23 @@ export default function FolderTree({
   onSelect,
   onAdd,
 }: FolderTreeProps) {
-  // Mở rộng tất cả folder cấp 1 mặc định
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(
-    () => new Set(folders.map((f) => f.id))
-  );
+  // Mở rộng tất cả thư mục cấp 1 mặc định.
+  //
+  // Phải theo dõi `folders` bằng useEffect: hàm khởi tạo của useState chỉ chạy
+  // MỘT LẦN, mà lúc đó danh sách còn rỗng (cây tải bất đồng bộ) — nên trước
+  // đây không thư mục nào tự mở, người dùng phải tự bấm từng mũi tên mới thấy
+  // thư mục con. Chỉ THÊM vào tập đang mở, không ghi đè, để lần vẽ lại không
+  // đóng sập những nhánh người dùng vừa mở tay.
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (folders.length === 0) return;
+    setExpandedIds((truoc) => {
+      const moi = new Set(truoc);
+      folders.forEach((f) => moi.add(f.id));
+      return moi;
+    });
+  }, [folders]);
 
   const handleToggle = (id: string) => {
     setExpandedIds((prev) => {

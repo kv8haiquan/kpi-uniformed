@@ -46,8 +46,16 @@ export default function FileCard({ file, onDelete }: FileCardProps) {
           {icon}
         </div>
 
-        {/* Tên tài liệu */}
-        <p className="text-sm font-semibold text-gray-800 line-clamp-2 mb-auto leading-snug group-hover:text-blue-700 transition-colors">
+        {/* Tên tài liệu.
+            `line-clamp-3` + `break-words`: tên tài liệu tiếng Việt thường rất
+            dài (có file 130 ký tự). Trước đây kẹp 2 dòng và KHÔNG có tooltip
+            nên phần đuôi biến mất hẳn — người dùng không đọc được tên file
+            mình đang mở. Nay ba dòng, tự xuống dòng giữa từ dài, và luôn có
+            `title` để rê chuột đọc đủ. */}
+        <p
+          className="text-sm font-semibold text-gray-800 line-clamp-3 break-words mb-auto leading-snug group-hover:text-blue-700 transition-colors"
+          title={file.ten_tai_lieu}
+        >
           {file.ten_tai_lieu}
         </p>
 
@@ -75,7 +83,9 @@ export default function FileCard({ file, onDelete }: FileCardProps) {
             <span>{size}</span>
           </div>
           <div className="flex items-center justify-between text-xs text-gray-400">
-            <span className="truncate">{file.nguoi_tai_len.ho_ten}</span>
+            <span className="truncate" title={file.nguoi_tai_len.ho_ten}>
+              {file.nguoi_tai_len.ho_ten}
+            </span>
             <span className="flex-shrink-0 ml-1">v{file.phien_ban}</span>
           </div>
           <div className="text-xs text-gray-300">{date}</div>

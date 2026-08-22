@@ -7,6 +7,7 @@ Spec: §5 HKG_API_SPECS.md (đã cập nhật MVP filesystem + JWT short-lived).
 """
 
 import os
+from datetime import date
 from typing import Optional
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from meeting_service.dependencies import (
 from meeting_service.services.rate_limit import limiter
 from meeting_service.models.cuoc_hop import CuocHop
 from meeting_service.schemas.tai_lieu import (
+    TaiLieuKhoItem,
     TaiLieuListItem,
     TaiLieuMetadataUpdate,
     TaiLieuResponse,
@@ -88,6 +90,146 @@ def _kiem_muc_dat_duoc(muc: Optional[str], user) -> None:
                            "của chính mình — đặt xong sẽ tự mình không mở "
                            "lại được."}},
         )
+
+
+@router.get("/kho", summary="Duyệt cả kho tài liệu họp (cho Thư viện tài liệu)")
+async def kho_tai_lieu(
+    db: DatabaseDep,
+    user: CurrentUserDep,
+    nguon: Optional[str] = Query(
+        None, description="HKG | LICH_CONG_TAC. Bỏ trống là cả hai."),
+    tim_kiem: Optional[str] = Query(None, alias="tim-kiem"),
+    # Phải khai kiểu `date`, không phải `str`: cột `ngay_hop` là DATE và
+    # asyncpg không tự ép chuỗi sang ngày — để `str` là câu truy vấn nổ
+    # "operator does not exist: date >= character varying".
+    tu_ngay: Optional[date] = Query(None, alias="tu-ngay"),
+    den_ngay: Optional[date] = Query(None, alias="den-ngay"),
+    trang: int = Query(1, ge=1),
+    so_dong: int = Query(24, ge=1, le=100, alias="so-dong"),
+):
+    """Kho tài liệu họp, duyệt như duyệt thư mục Drive.
+
+    Trước màn hình này, tài liệu chỉ mở được khi biết trước nó thuộc cuộc họp
+    nào — muốn tìm một văn bản mà quên mất họp hôm nào thì chịu. Đây là chỗ
+    duy nhất xem được cả kho.
+
+    Phân quyền giữ nguyên hai tầng đang có, KHÔNG nới:
+      1. Cuộc họp — `_can_view_cuoc_hop`. Sự kiện Lịch công tác là lịch công
+         khai nội bộ nên cả Chi cục xem được; cuộc họp HKG chỉ người được mời.
+      2. Tài liệu — `loc_xem_duoc` (G5.4). Lọc TRƯỚC khi phát token xem, vì
+         danh sách này nhúng sẵn `url_xem`.
+
+    Vì luật quyền của tầng 1 phụ thuộc từng cuộc họp, không viết được thành
+    một câu SQL — phải duyệt theo lô rồi lọc trong Python. Lấy dư một ít mỗi
+    lô để bù phần bị lọc, thay vì phân trang thẳng trên SQL (sẽ ra trang thiếu).
+    """
+    from sqlalchemy import String, and_, cast, desc, func, or_, select
+
+    from meeting_service.dependencies import _can_view_cuoc_hop
+    from meeting_service.models.cuoc_hop import CuocHop as CH
+    from meeting_service.models.tai_lieu import TaiLieu
+
+    if nguon and nguon not in ("HKG", "LICH_CONG_TAC"):
+        raise HTTPException(422, detail={"success": False, "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "nguon phải là HKG hoặc LICH_CONG_TAC"}})
+
+    dk = [TaiLieu.is_deleted.is_(False), TaiLieu.cuoc_hop_id.isnot(None),
+          CH.is_deleted.is_(False)]
+    if nguon:
+        dk.append(CH.nguon == nguon)
+    if tu_ngay:
+        dk.append(CH.ngay_hop >= tu_ngay)
+    if den_ngay:
+        dk.append(CH.ngay_hop <= den_ngay)
+    if tim_kiem:
+        tu = f"%{tim_kiem.strip()}%"
+        # Tìm cả trên tên file lẫn nội dung cuộc họp và mã lịch: người dùng
+        # nhớ "họp giao ban tháng 5" nhiều hơn là nhớ tên file.
+        dk.append(or_(TaiLieu.ten_tai_lieu.ilike(tu), CH.tieu_de.ilike(tu),
+                      CH.ma_lich.ilike(tu)))
+
+    cau = (select(TaiLieu, CH).join(CH, CH.id == TaiLieu.cuoc_hop_id)
+           .where(and_(*dk))
+           .order_by(desc(CH.ngay_hop), desc(TaiLieu.created_at)))
+
+    bo_qua = (trang - 1) * so_dong
+    can = bo_qua + so_dong
+    duoc_xem: list[tuple] = []
+    quyen_hop: dict = {}      # nhớ kết quả theo cuộc họp, đỡ hỏi lại
+    offset, LO = 0, 200
+    het = False
+
+    while len(duoc_xem) < can + 1 and not het:
+        rows = (await db.execute(cau.offset(offset).limit(LO))).all()
+        if len(rows) < LO:
+            het = True
+        offset += LO
+        for tl, ch in rows:
+            if ch.id not in quyen_hop:
+                quyen_hop[ch.id] = await _can_view_cuoc_hop(ch, user, db)
+            if not quyen_hop[ch.id]:
+                continue
+            if not xem_duoc(tl.phan_quyen, user,
+                            nguoi_tai_len_id=tl.created_by):
+                continue
+            duoc_xem.append((tl, ch))
+
+    # `+1` ở trên để biết còn trang sau hay không mà không phải đếm cả kho.
+    con_nua = len(duoc_xem) > can
+    trang_nay = duoc_xem[bo_qua:can]
+
+    out = []
+    for tl, ch in trang_nay:
+        token = issue_token(
+            purpose=PURPOSE_VIEW_DOC, subject=str(tl.id),
+            extra_claims={"viewer_id": user.sub}, ttl_seconds=3600,
+        )
+        item = TaiLieuKhoItem.model_validate({
+            **{c: getattr(tl, c) for c in (
+                "id", "ten_tai_lieu", "mo_ta", "extension", "file_size",
+                "mime_type", "phan_quyen", "cho_phep_tai", "created_at")},
+            "cuoc_hop_id": ch.id, "nguon": ch.nguon, "ma_lich": ch.ma_lich,
+            "tieu_de": ch.tieu_de, "ngay_hop": ch.ngay_hop,
+            "duong_dan_cuoc_hop": (
+                f"/lich-cong-tac/{ch.id}" if ch.nguon == "LICH_CONG_TAC"
+                else f"/hop-khong-giay/chi-tiet/{ch.id}"),
+        }).model_dump(mode="json")
+        item["url_xem"] = (
+            f"/api/v1/hop-khong-giay/tai-lieu/{tl.id}/xem-noi-dung?t={token}")
+        out.append(item)
+
+    return {"success": True, "data": out,
+            "pagination": {"trang": trang, "so_dong": so_dong,
+                           "con_nua": con_nua}}
+
+
+@router.get("/kho/thong-ke", summary="Số tài liệu mỗi nguồn (cho cây thư mục)")
+async def kho_thong_ke(db: DatabaseDep, user: CurrentUserDep):
+    """Đếm nhanh để cây thư mục hiện được số bên cạnh tên.
+
+    Cố tình KHÔNG lọc theo quyền: đây chỉ là con số trên nhãn thư mục, mà đếm
+    đúng theo quyền thì phải duyệt cả kho cho mỗi lần vẽ cây. Số hiển thị có
+    thể lớn hơn số tài liệu người dùng thật sự mở được — chấp nhận, vì bản
+    thân con số không tiết lộ gì.
+    """
+    from sqlalchemy import func, select
+
+    from meeting_service.models.cuoc_hop import CuocHop as CH
+    from meeting_service.models.tai_lieu import TaiLieu
+
+    rows = (await db.execute(
+        select(CH.nguon, func.count())
+        .join(TaiLieu, TaiLieu.cuoc_hop_id == CH.id)
+        .where(TaiLieu.is_deleted.is_(False), CH.is_deleted.is_(False))
+        .group_by(CH.nguon)
+    )).all()
+    theo_nguon = {n: c for n, c in rows}
+    return {"success": True, "data": {
+        "HKG": theo_nguon.get("HKG", 0),
+        "LICH_CONG_TAC": theo_nguon.get("LICH_CONG_TAC", 0),
+        "tong": sum(theo_nguon.values()),
+    }}
 
 
 @router.get("/muc-phan-quyen", summary="Danh mục mức phân quyền tài liệu")

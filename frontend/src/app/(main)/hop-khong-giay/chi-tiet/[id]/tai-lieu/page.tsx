@@ -425,14 +425,19 @@ export default function TaiLieuTabPage() {
         ) : items.length === 0 ? (
           <div className="text-gray-500 text-center py-8">Chưa có tài liệu nào.</div>
         ) : (
-          <table className="w-full text-sm">
+          // `table-fixed` + bề rộng cột cố định: để bảng tự co giãn thì một
+          // tên file dài (kho có file 130 ký tự) đẩy cả bảng rộng hơn màn hình,
+          // người dùng phải cuộn ngang cả trang mới thấy nút thao tác. Khung
+          // `overflow-x-auto` giữ phần cuộn nằm trong bảng, không lan ra trang.
+          <div className="overflow-x-auto">
+          <table className="w-full table-fixed text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-2 text-left">Tên file</th>
-                <th className="px-3 py-2 text-left">Loại</th>
-                <th className="px-3 py-2 text-left">Kích thước</th>
-                <th className="px-3 py-2 text-left">Phân quyền</th>
-                <th className="px-3 py-2 text-left">Hành động</th>
+                <th className="px-3 py-2 text-left w-[40%] min-w-56">Tên file</th>
+                <th className="px-3 py-2 text-left w-20">Loại</th>
+                <th className="px-3 py-2 text-left w-28">Kích thước</th>
+                <th className="px-3 py-2 text-left w-44">Phân quyền</th>
+                <th className="px-3 py-2 text-left w-32">Hành động</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -450,7 +455,7 @@ export default function TaiLieuTabPage() {
                   tl.phan_quyen === 'CONG_KHAI';
                 return (
                   <tr key={tl.id} className={`hover:bg-gray-50 ${isCurrent ? 'bg-green-50/50' : ''}`}>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 break-words" title={tl.ten_tai_lieu}>
                       {tl.ten_tai_lieu}
                       {isCurrent && (
                         <span className="ml-2 px-1.5 py-0.5 bg-green-600 text-white text-[10px] rounded">
@@ -521,6 +526,7 @@ export default function TaiLieuTabPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

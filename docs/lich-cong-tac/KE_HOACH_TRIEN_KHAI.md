@@ -719,6 +719,49 @@ dùng nên lỗi nằm im.
   > ⚠️ Còn **54 nhóm trùng** (101 dòng thừa) tồn dư từ các đợt di trú trước
   > 21/08, cùng nguyên nhân "khớp thư mục không tất định". Chưa dọn theo yêu cầu.
 
+### G6.2b — Số điện thoại trực ban và ca trực nhân đôi ✅ *22/08*
+
+Người dùng báo trang tóm tắt lịch hiện số điện thoại sai. Truy nguyên ra hai
+lỗi chồng nhau, cùng gốc là **`03_truc_ban.py` mắc đúng bệnh của
+`06_gan_tai_lieu.py`**.
+
+**Lỗi 1 — số điện thoại dạng khoa học.** Google Sheets coi số điện thoại là
+SỐ chứ không phải chuỗi, nên bản xuất XLSX ghi **691/724** số dưới dạng
+`9.13264387E8` (rụng số 0 đứng đầu) hoặc `0946,076,999` (dấu phân cách hàng
+nghìn). Hàm `chuan_hoa_sdt` đã có sẵn nhưng **chỉ chạy ở đường ghi** và ở ma
+trận lịch trực; ba đường đọc còn lại trả thẳng giá trị thô — trong đó có đúng
+trang người dùng báo. Nay chuẩn hoá cả lúc đọc, và ETL chuẩn hoá trước khi ghi.
+
+**Lỗi 2 — 333 ca trực bị nhân đôi.** `ghi_nguon` ghi ánh xạ nguồn nhưng vòng
+lặp `INSERT` **không hề tra ánh xạ đó**. Lượt chạy thứ hai đẻ một bộ bản ghi
+mới rồi trỏ ánh xạ sang bộ mới, bộ cũ thành mồ côi — mỗi người hiện hai lần
+trên lịch trực. Khoá chống trùng nay theo **nội dung** (ngày, trụ sở, họ tên),
+đúng bài học của `06_gan_tai_lieu.py`. Chạy thử `--thu` trên prod sau khi vá:
+348 bỏ qua, **0 dòng sẽ ghi thêm**.
+
+Dọn dữ liệu trên cơ sở dữ liệu thật (được duyệt 22/08, sau khi sao lưu bảng
+riêng và diễn tập trên bản sao):
+
+| | Trước | Sau |
+|---|---:|---:|
+| Ca trực còn hiệu lực | 681 | **348** |
+| Số sai khuôn `0xxxxxxxxx` | 348 | **0** |
+| Dòng thừa do trùng | 333 | **0** |
+
+Cách làm: **xoá mềm** (`is_deleted = true`) 333 dòng xấu — hoàn tác được, không
+xoá cứng — giữ lại dòng sạch; sửa tại chỗ 15 dòng không có bản sao sạch (14 ca
+trực 23/08 dạng khoa học + 1 dòng người dùng gõ tay `034 3468299`); trỏ lại 333
+ánh xạ di trú đang chỉ vào dòng sắp xoá. Toàn bộ trong một giao dịch có chốt
+kiểm tra ở cả ba bước, lệch một con số là tự huỷ.
+
+Đối chiếu sau khi dọn: **0** ca trực bị mất (mọi khoá ngày/trụ sở/họ tên đều
+còn đúng một dòng), **0** ánh xạ trỏ vào dòng đã xoá.
+
+> 🔴 **Đây là lần thứ hai cùng một loại lỗi.** `06_gan_tai_lieu.py` (21/08) và
+> `03_truc_ban.py` (22/08) đều ghi ánh xạ mà không tra ánh xạ. **Còn hai script
+> chưa rà: `01_cuoc_hop.py`, `02_lanh_dao_lien_quan.py`, `04_danh_gia_ghi_chu.py`
+> và `08_thu_vien.py`** — phải kiểm cùng câu hỏi trước lần chạy lại kế tiếp.
+
 ### G6.1c — Nhắc lịch qua Zalo ✅ *21/08 20:15*
 
 Lãnh đạo yêu cầu bổ sung (21/08), **giữ đủ ba mốc** 24h / 1h / 30 phút.

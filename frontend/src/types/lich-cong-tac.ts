@@ -344,6 +344,10 @@ export interface IDongNhapExcel {
   ma_tru_so: string | null;
   tru_so_id: string | null;
   ten_tru_so: string | null;
+  /** Mã công chức trong file. Họ tên/chức vụ/SĐT bên dưới là thứ hệ thống
+   *  TRA RA từ mã này, không phải thứ đơn vị gõ vào. */
+  ma_cc: string | null;
+  cong_chuc_id: string | null;
   ho_ten: string | null;
   chuc_vu: string | null;
   so_dien_thoai: string | null;

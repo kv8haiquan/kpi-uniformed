@@ -137,6 +137,7 @@ export default function NhapTrucBanExcel({ onDong, onXong }: Props) {
                       <th className="px-3 py-2 text-left font-medium">Dòng</th>
                       <th className="px-3 py-2 text-left font-medium">Ngày</th>
                       <th className="px-3 py-2 text-left font-medium">Trụ sở</th>
+                      <th className="px-3 py-2 text-left font-medium">Mã CC</th>
                       <th className="px-3 py-2 text-left font-medium">Họ tên</th>
                       <th className="px-3 py-2 text-left font-medium">Chức vụ</th>
                       <th className="px-3 py-2 text-left font-medium">
@@ -162,6 +163,11 @@ export default function NhapTrucBanExcel({ onDong, onXong }: Props) {
                         <td className="px-3 py-1.5">
                           {d.ten_tru_so ?? d.ma_tru_so ?? '—'}
                         </td>
+                        <td className="px-3 py-1.5 font-mono text-xs text-gray-600">
+                          {d.ma_cc ?? '—'}
+                        </td>
+                        {/* Họ tên/chức vụ/SĐT do hệ thống tra từ mã — đây là
+                            chỗ người duyệt đối chiếu trước khi bấm ghi. */}
                         <td className="px-3 py-1.5">{d.ho_ten ?? '—'}</td>
                         <td className="px-3 py-1.5 text-gray-600">
                           {d.chuc_vu ?? ''}

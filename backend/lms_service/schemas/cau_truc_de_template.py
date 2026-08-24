@@ -27,6 +27,23 @@ class CauTrucDeTemplateCreate(BaseModel):
     cau_truc: list[CauTrucDeTemplateItem] = Field(..., min_length=1)
 
 
+class CauTrucDeTemplateUpdate(BaseModel):
+    """Schema sua mau truc tiep (tab Mau cau truc de).
+
+    Moi field deu optional — chi gui field can doi. Rieng `cau_truc` neu gui thi
+    THAY THE toan bo danh sach dong (client gui anh chup day du sau khi sua).
+    """
+    ten_template: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    mo_ta: Optional[str] = None
+    cau_truc: Optional[list[CauTrucDeTemplateItem]] = Field(default=None, min_length=1)
+
+
+class CauTrucDeTemplateNhanBan(BaseModel):
+    """Schema nhan ban mau — chi can ten moi."""
+    ten_template: str = Field(..., min_length=1, max_length=200)
+    mo_ta: Optional[str] = None
+
+
 class CauTrucDeTemplateResponse(BaseModel):
     """Response 1 template."""
     model_config = ConfigDict(from_attributes=True)

@@ -147,6 +147,14 @@ class CauTrucDeCreate(BaseModel):
     cau_truc: list[CauTrucDeItem] = Field(..., min_length=1)
 
 
+class ApDungMauRequest(BaseModel):
+    """Schema ap dung mau cau truc de vao ky thi (nguyen tu, 1 transaction)."""
+    template_id: UUID
+    # True: xoa sach cau truc cu cua ky thi roi ghi theo mau (ke ca vi tri khong
+    # co trong mau). False (mac dinh): chi ghi de cac vi tri co trong mau.
+    ghi_de_toan_bo: bool = False
+
+
 class CauTrucDeResponse(BaseModel):
     """Schema response 1 dong cau truc de."""
     model_config = ConfigDict(from_attributes=True)

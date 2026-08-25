@@ -33,7 +33,11 @@ DB_NAME="${DB_NAME:-kpi_haiquan}"
 DB_USER="${DB_USER:-kpi_user}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
-HKG_UPLOAD_DIR="${HKG_UPLOAD_DIR:-/var/data/hkg/uploads}"
+# 18/08/2026 uploads chuyển sang /var/data/kpi/uploads (gồm cả LMS, portal,
+# legal chứ không riêng HKG). Mặc định cũ /var/data/hkg/uploads đã không còn
+# tồn tại — chỉ dòng HKG_UPLOAD_DIR trong /etc/cron.d/hkg-backups giữ đường dẫn
+# đúng. Chạy tay không có biến đó thì rsync bị bỏ qua trong im lặng.
+HKG_UPLOAD_DIR="${HKG_UPLOAD_DIR:-/var/data/kpi/uploads}"
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backup/kpi_haiquan}"
 
 DAILY_DIR="${BACKUP_ROOT}/daily"
@@ -120,9 +124,13 @@ if [ -d "$HKG_UPLOAD_DIR" ]; then
     rsync -a --delete \
         --exclude='_preview_cache/' \
         "${HKG_UPLOAD_DIR}/" "${UPLOADS_DIR}/"
-    log "rsync OK"
+    log "rsync OK ($(find "$UPLOADS_DIR" -type f | wc -l) file trong gương)"
 else
-    log "WARN: HKG_UPLOAD_DIR không tồn tại ($HKG_UPLOAD_DIR), skip rsync"
+    # Trước đây chỉ WARN rồi chạy tiếp và báo "completed successfully" — backup
+    # bỏ qua 6,9 GB uploads mà vẫn báo thành công là kiểu hỏng nguy hiểm nhất,
+    # vì không ai biết cho tới lúc cần khôi phục. Dump DB ở bước 1 đã ghi xong
+    # và vẫn dùng được; chỉ mã thoát khác 0 để log và cảnh báo bắt được.
+    die "Thư mục uploads không tồn tại ($HKG_UPLOAD_DIR) — KHÔNG sao lưu được uploads"
 fi
 
 # ─── 4. Monthly snapshot ngày 1 ──────────────────────────────────────

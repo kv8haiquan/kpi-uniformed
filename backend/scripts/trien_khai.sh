@@ -29,6 +29,13 @@ loi() { echo "⛔ $*" >&2; exit 1; }
 
 cd "$CAY_PROD"
 
+# ── 0a. Không triển khai khi đang có người thi ───────────────────────────
+# Sự cố 25/08/2026: build chạy đè lên kỳ thi ĐGNL đang diễn ra, cả máy đóng
+# băng 12 phút, 13 thí sinh mất 12 phút cuối bài thi 45 phút. Bước này chặn
+# từ đầu — trước cả `git checkout` — để không bỏ cây prod ở trạng thái dở dang.
+"$CAY_PROD/backend/scripts/kiem_tra_ky_thi.sh" \
+    || loi "Có người đang thi. Đợi thi xong, hoặc BO_QUA_KIEM_TRA_KY_THI=1 $0 $DICH"
+
 # ── 0. Ghi mốc để quay lui ───────────────────────────────────────────────
 TRUOC=$(git rev-parse HEAD)
 log "Đang chạy : $(git rev-parse --short HEAD)"
@@ -61,7 +68,9 @@ log "Alembic sau khi chạy: $(cd backend && venv/bin/alembic current 2>/dev/nul
 # ── 4. Build frontend ────────────────────────────────────────────────────
 if ! git diff --quiet "$TRUOC" HEAD -- frontend/; then
     log "Frontend có thay đổi → build"
-    (cd frontend && npm run build)
+    # Qua build_frontend.sh để build bị nhốt trong cgroup có trần bộ nhớ.
+    # `npm run build` trần đã làm sập máy ngày 25/08/2026.
+    "$CAY_PROD/backend/scripts/build_frontend.sh" "$CAY_PROD"
 fi
 
 # ── 5. Nạp code mới ──────────────────────────────────────────────────────

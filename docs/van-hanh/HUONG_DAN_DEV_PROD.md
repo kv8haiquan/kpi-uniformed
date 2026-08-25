@@ -109,7 +109,7 @@ Script tự đặt `DB_NAME=kpi_haiquan_test` nên không có đường ghi nh�
 
 ---
 
-## 3. Hai chốt an toàn
+## 3. Ba chốt an toàn
 
 **Chốt 1 — script từ chối chạy trên DB prod.**
 Nếu `DB_NAME` là `kpi_haiquan`, `dev.sh` dừng ngay:
@@ -124,6 +124,49 @@ Nếu `DB_NAME` là `kpi_haiquan`, `dev.sh` dừng ngay:
 Nếu bật lên, môi trường dev sẽ **gửi nhắc họp và tin nhắn Zalo THẬT** tới công
 chức, trùng với prod — người dùng nhận hai lần. Chỉ bật khi cố ý kiểm thử và
 biết rõ hậu quả.
+
+**Chốt 3 — không build khi đang có người thi.**
+
+> ⛔ **DÙNG `backend/scripts/build_frontend.sh` THAY CHO `npm run build`.**
+> Cây dev và cây prod nằm trên CÙNG một máy (79.108.216.189). Build ở dev vẫn
+> giết prod.
+
+```bash
+backend/scripts/kiem_tra_ky_thi.sh      # chỉ hỏi: có ai đang thi không?
+backend/scripts/build_frontend.sh       # kiểm tra + build có trần bộ nhớ
+```
+
+`trien_khai.sh` gọi chốt này ngay từ đầu, trước cả `git checkout`.
+
+Đường thoát khi buộc phải làm gấp — dùng có ý thức, nó bỏ qua đúng cái chốt
+sinh ra từ một sự cố thật:
+
+```bash
+BO_QUA_KIEM_TRA_KY_THI=1 backend/scripts/trien_khai.sh <sha>
+```
+
+**Sự cố gốc — 25/08/2026, 10:04–10:17.** `npm run build` chạy trần lúc 10:03:43
+trong khi 13 thí sinh đang ở phút thứ 30 của bài ĐGNL 45 phút. Build ngốn
+~1,4GB trên máy 7,8GB **không có swap**; vùng Normal của kernel tụt xuống
+free 37.396kB < min 42.312kB. Dưới ngưỡng đó thì `fork()` treo và cấp phát
+nguyên tử của tầng mạng thất bại: SSH không vào được, nginx gần như câm suốt
+12 phút, journald bị watchdog giết, OOM-killer bắn chết next-server. nginx ghi
+59 request 499 trên `/luu-nhap`, `/nop-bai`, `/xac-nhan`. Không ai mất bài,
+nhưng đó là may — thí sinh nộp được ngay khi RAM giải phóng lúc 10:16:52.
+
+Máy nay đã có swap 8GB và `vm.min_free_kbytes` nâng lên 128MB
+(`/etc/sysctl.d/99-kpi-oom.conf`), nên cùng tình huống sẽ chỉ chậm chứ không
+đóng băng. Chốt 3 là để nó đừng xảy ra ngay từ đầu.
+
+**Lưu ý khi đọc chốt này:** nó KHÔNG chặn theo `ky_thi.trang_thai='DANG_MO'`
+(có tới 15 kỳ mở cùng lúc, chặn thế là chặn vĩnh viễn) và cũng không chặn thuần
+theo `thi_sinh.trang_thai='DANG_THI'` (bản ghi kẹt lại mãi khi thí sinh bỏ
+ngang — trong DB có bản ghi DANG_THI từ 2 tháng trước). Tín hiệu thật là
+`lms.phien_thi.last_seen`, cộng vế dự phòng có giới hạn thời lượng bài thi.
+
+**Ping KHÔNG dùng để kiểm tra máy sống.** ICMP tới 79.108.216.189 bị chặn ở
+tầng nhà cung cấp — `/proc/net/snmp` cho thấy `InEchos = 0` suốt 182 ngày.
+Ping luôn timeout kể cả lúc máy hoàn toàn khoẻ. Dùng `curl -I https://kpihaiquan.vn`.
 
 ---
 

@@ -5,6 +5,59 @@ Các file scripts trong repo CHƯA hoạt động cho tới khi làm các bướ
 
 ---
 
+## ⚠️ `/opt/kpi/scripts/` KHÔNG do `trien_khai.sh` quản
+
+Cron chạy bản ở `/opt/kpi/scripts/`, không phải bản trong cây git. Phát hành
+code bình thường **không** cập nhật nó. Sửa script backup xong phải cài tay:
+
+```bash
+cp -a /opt/kpi/scripts/backup_daily.sh /opt/kpi/scripts/backup_daily.sh.truoc-$(date +%Y%m%d)
+sudo install -m 700 -o root -g root /opt/kpi-prod/scripts/backup_daily.sh /opt/kpi/scripts/backup_daily.sh
+diff -q /opt/kpi/scripts/backup_daily.sh /opt/kpi-prod/scripts/backup_daily.sh && echo KHỚP
+```
+
+Kiểm định kỳ xem bản đang chạy có lệch repo không:
+
+```bash
+for f in backup_daily.sh backup_to_github.sh backup_source.sh cleanup_preview_cache.sh; do
+    diff -q "/opt/kpi/scripts/$f" "/opt/kpi-prod/scripts/$f" >/dev/null 2>&1 \
+        && echo "  $f KHỚP" || echo "  $f ⚠️ LỆCH repo"
+done
+```
+
+---
+
+## Lịch sử phiên bản uploads
+
+Từ 25/08/2026 `backup_daily.sh` chụp ảnh hardlink gương uploads **trước** mỗi
+lần rsync, giữ 60 bản (= 30 ngày ở nhịp 2 lần/ngày):
+
+```
+/var/backup/kpi_haiquan/uploads/                gương hiện tại (rsync --delete)
+/var/backup/kpi_haiquan/uploads_snapshots/<ts>/ ảnh trước mỗi lần chạy
+```
+
+**Khôi phục một file bị xóa nhầm hoặc ghi đè hỏng:**
+
+```bash
+ls /var/backup/kpi_haiquan/uploads_snapshots/          # chọn mốc TRƯỚC lúc hỏng
+SNAP=/var/backup/kpi_haiquan/uploads_snapshots/20260825_0933
+find "$SNAP" -name '<tên-file>*'                       # tìm đúng đường dẫn
+cp -a "$SNAP/<đường/dẫn>" /var/data/kpi/uploads/<đường/dẫn>
+```
+
+> Ảnh dùng hardlink nên `du -sh` từng thư mục sẽ **cộng dồn sai** (mỗi ảnh trông
+> như 6,9 GB). Xem dung lượng thật của cả kho:
+> `du -sh --one-file-system /var/backup/kpi_haiquan`
+
+Đổi số bản giữ lại bằng biến `UPLOADS_SNAPSHOT_KEEP` (mặc định 60).
+
+⚠️ **Không bao giờ thêm cờ `--inplace` vào lệnh rsync** trong script. Lịch sử an
+toàn được là nhờ rsync ghi file tạm rồi đổi tên (tạo inode mới); `--inplace` ghi
+đè thẳng vào inode đang được các ảnh chia sẻ và làm hỏng toàn bộ lịch sử.
+
+---
+
 ## 1. Backup daily — `backup_daily.sh`
 
 ### 1.1. Tạo target directory + permission

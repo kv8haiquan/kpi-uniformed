@@ -7,8 +7,8 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `902e711` |
-| **Ngắn** | `902e711` |
+| **Commit** | `e005660` |
+| **Ngắn** | `e005660` |
 | **Nhánh nguồn** | `prod` (fast-forward từ `feature/lms-dgnl-mau-cau-truc`) |
 | **Ngày ghi mốc** | 25/08/2026 |
 | **Alembic** | `mt_025_loai_tai_lieu_20260822` (không đổi — đợt này không có migration) |
@@ -39,6 +39,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 25/08/2026 | `8653f0e` | ĐGNL: thư viện mẫu cấu trúc đề, sửa cấu trúc trực tiếp, áp mẫu nguyên tử — không migration |
 | 25/08/2026 | `40de07e` | LMS: sửa `POST /cau-hoi` trả 500 khi thêm câu vào bài kiểm tra đã có — không migration |
 | 25/08/2026 | `902e711` | Công cụ: `trien_khai.sh` tự gắn nhánh `prod` — chỉ script + tài liệu, không chạm code dịch vụ, không restart |
+| 25/08/2026 | `e005660` | Backup: lịch sử phiên bản uploads (ảnh hardlink, giữ 60 bản) + sửa mặc định đường dẫn uploads đã chết. Cần cài tay vào `/opt/kpi/scripts/` — xem `scripts/INSTALL_CRON.md` |
 
 ## Quy ước giữ nhánh khớp code đang chạy
 

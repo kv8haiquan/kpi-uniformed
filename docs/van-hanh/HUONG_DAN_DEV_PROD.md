@@ -138,17 +138,21 @@ biết rõ hậu quả.
          ├─ ./scripts/dev.sh test      test trên DB test
          │
          ▼
-   git commit  →  git push  →  merge vào nhánh main
+   git commit  →  git push origin <nhánh feature>
          │
          ▼
-   /opt/kpi-prod/backend/scripts/trien_khai.sh <commit|tag>
+   /opt/kpi-prod/backend/scripts/trien_khai.sh <sha|tag>
          │
          ├─ lấy code
          ├─ cài thư viện nếu requirements/package-lock đổi
          ├─ CHẠY MIGRATION          ← trước khi nạp code
          ├─ build frontend nếu đổi
          ├─ pm2 reload
-         └─ kiểm /health từng dịch vụ, lỗi thì dừng và in lệnh quay lui
+         ├─ kiểm /health từng dịch vụ, lỗi thì dừng và in lệnh quay lui
+         └─ dời nhánh prod về commit vừa nạp, gắn cây vào nhánh
+         │
+         ▼
+   git push origin prod   →   ff main theo prod   →   ghi PHIEN_BAN_PROD.md
 ```
 
 ### 4.2. Các bước cụ thể
@@ -163,17 +167,38 @@ git commit
 git push origin <nhánh>
 ```
 
-**Bước 2 — gộp vào `main`.** Qua Pull Request trên GitHub, hoặc merge cục bộ.
-
-**Bước 3 — triển khai.**
+**Bước 2 — triển khai.** Truyền **SHA cụ thể** của commit muốn lên, không truyền
+tên nhánh:
 
 ```bash
-/opt/kpi-prod/backend/scripts/trien_khai.sh main
-# hoặc chốt một mốc cụ thể:
+/opt/kpi-prod/backend/scripts/trien_khai.sh <sha>
+# hoặc chốt một mốc đã gắn tag:
 /opt/kpi-prod/backend/scripts/trien_khai.sh v2026.08.20
 ```
 
+> Truyền SHA để biết chính xác cái gì đang chạy. Script tự dời nhánh `prod` về
+> đúng commit vừa nạp và gắn cây làm việc vào nhánh đó, nên không còn detached
+> HEAD như sự cố 25/08/2026.
+
+**Bước 3 — đẩy nhánh lên remote.** Script KHÔNG tự push:
+
+```bash
+cd /opt/kpi-prod  && git push origin prod
+cd /root/kpi-haiquan && git branch -f main prod && git push origin main
+```
+
+`main` chỉ fast-forward theo `prod` sau khi prod đã chạy thật — đây là đồng bộ
+hậu kiểm, không tạo commit nào trên `main`, nên không phạm quy tắc "không commit
+trực tiếp vào main" ở CLAUDE.md.
+
 **Bước 4 — cập nhật `docs/van-hanh/PHIEN_BAN_PROD.md`** với commit vừa lên.
+
+**Kiểm tra nhanh bất cứ lúc nào** — phải ra `## prod...origin/prod`, nếu thấy
+`HEAD (no branch)` là đang lệch:
+
+```bash
+cd /opt/kpi-prod && git status -sb | head -1
+```
 
 ### 4.3. Thứ tự migration — điều quan trọng nhất
 
@@ -299,7 +324,8 @@ giờ sáng. Đây là lỗi có sẵn của test, không phải code hỏng.
 | Xem trạng thái | `./scripts/dev.sh trang-thai` |
 | Làm mới DB test | `./scripts/dev.sh lam-moi-db` |
 | Chạy test | `./scripts/dev.sh test <đường dẫn>` |
-| Triển khai lên prod | `/opt/kpi-prod/backend/scripts/trien_khai.sh main` |
+| Triển khai lên prod | `/opt/kpi-prod/backend/scripts/trien_khai.sh <sha>` |
+| Kiểm cây prod có lệch nhánh không | `cd /opt/kpi-prod && git status -sb \| head -1` |
 | Prod đang chạy gì | `git -C /opt/kpi-prod log --oneline -1` |
 | Log prod | `pm2 logs <tên> --lines 50` |
 | Log dev | `tail -f /tmp/kpi-dev-logs/<tên>.log` |

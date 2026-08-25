@@ -94,7 +94,27 @@ if [ "$that_bai" -gt 0 ]; then
     loi "$that_bai dịch vụ không lên. Quay lui: $0 $TRUOC"
 fi
 
-# ── 7. Ghi mốc ───────────────────────────────────────────────────────────
+# ── 7. Gắn nhánh prod vào đúng code vừa nạp ──────────────────────────────
+# Triển khai bằng SHA/tag thì `git checkout` ở bước 1 để lại detached HEAD —
+# code phục vụ người dùng nằm NGOÀI mọi nhánh. Sự cố 25/08/2026: cây prod ở
+# 40de07e trong khi nhánh prod còn 73c994f; lần `git checkout prod` kế tiếp
+# sẽ âm thầm quay lui, mất bản vá đang chạy.
+MOI=$(git rev-parse HEAD)
+if [ "$(git rev-parse --verify --quiet prod || true)" != "$MOI" ]; then
+    if git merge-base --is-ancestor prod "$MOI" 2>/dev/null; then
+        log "Dời nhánh prod tới $(git rev-parse --short "$MOI") (fast-forward)"
+    else
+        log "⚠️  $(git rev-parse --short "$MOI") KHÔNG phải hậu duệ của prod —"
+        log "    đây là quay lui hoặc rẽ nhánh. Nhánh prod sẽ trỏ lại mốc này."
+    fi
+    git branch -f prod "$MOI"
+fi
+git checkout --quiet prod
+log "Đã gắn nhánh: $(git rev-parse --abbrev-ref HEAD) → $(git rev-parse --short HEAD)"
+
+# ── 8. Ghi mốc ───────────────────────────────────────────────────────────
 log "✅ Triển khai xong: $(git rev-parse --short HEAD)"
-log "Nhớ cập nhật docs/van-hanh/PHIEN_BAN_PROD.md"
+log "Còn 2 việc thủ công:"
+log "  1. git push origin prod   (và ff main theo prod)"
+log "  2. cập nhật docs/van-hanh/PHIEN_BAN_PROD.md"
 pm2 save >/dev/null 2>&1 || true

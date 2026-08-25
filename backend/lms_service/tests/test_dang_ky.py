@@ -43,7 +43,15 @@ class TestDangKyTuNguyen:
         assert resp.status_code == 201
         data = resp.json()["data"]
         assert data["loai_dang_ky"] == "TU_NGUYEN"
-        assert data["trang_thai"] == "CHUA_BAT_DAU"
+        # Tu bac5ea1 (17/04/2026) dang ky tu nguyen phai qua phe duyet
+        assert data["trang_thai"] == "CHO_PHE_DUYET"
+
+        # Duyet xong moi chuyen sang CHUA_BAT_DAU
+        _set_user(_make_user("SUPER_ADMIN", ["QT_DAO_TAO"], idx=0))
+        pd = await client.post(f"/api/v1/lms/dang-ky/{data['id']}/phe-duyet",
+                               json={"phe_duyet": True})
+        assert pd.status_code == 200, pd.json()
+        assert pd.json()["data"]["trang_thai"] == "CHUA_BAT_DAU"
 
     async def test_dang_ky_trung(self, client, admin_user):
         """Dang ky lan 2 — 409."""

@@ -134,6 +134,28 @@ def cbcc_user():
 # =========================================================================
 # DATA HELPERS
 # =========================================================================
+async def dang_ky_va_duyet(client, kh_id, hoc_vien: TokenPayload) -> dict:
+    """Dang ky khoa hoc CHO hoc_vien roi duyet luon, tra ve ban ghi dang ky.
+
+    Tu bac5ea1 (17/04/2026) dang ky TU_NGUYEN vao thang CHO_PHE_DUYET, chua
+    duyet thi hoc/thi deu bi 403. Cac test khong kiem thu rieng luong phe duyet
+    thi dung helper nay de di thang toi phan can kiem.
+
+    Ket thuc voi user = hoc_vien (khong de lai quyen admin).
+    """
+    _set_user(hoc_vien)
+    resp = await client.post(f"/api/v1/lms/khoa-hoc/{kh_id}/dang-ky")
+    dk = (resp.json() or {}).get("data") or {}
+
+    if dk.get("trang_thai") == "CHO_PHE_DUYET":
+        _set_user(_make_user("SUPER_ADMIN", ["QT_DAO_TAO"], idx=0))
+        await client.post(f"/api/v1/lms/dang-ky/{dk['id']}/phe-duyet",
+                          json={"phe_duyet": True})
+        _set_user(hoc_vien)
+
+    return dk
+
+
 @pytest_asyncio.fixture
 async def created_chuyen_de(client: AsyncClient, admin_user):
     resp = await client.post("/api/v1/lms/chuyen-de", json={

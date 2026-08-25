@@ -6,6 +6,8 @@ import uuid
 
 import pytest
 
+from lms_service.tests.conftest import _set_user
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -34,6 +36,11 @@ class TestKhoaHocCRUD:
 
     async def test_danh_sach_cbcc_chi_thay_da_xuat_ban(self, client, cbcc_user, published_khoa_hoc):
         """CBCC thuong chi thay khoa DA_XUAT_BAN."""
+        # published_khoa_hoc keo theo fixture admin_user de dung du lieu, va
+        # admin_user ghi de user hien tai — pytest dung fixture theo thu tu
+        # tham so nen cbcc_user bi de mat. Dat lai truoc khi goi, neu khong
+        # request se chay bang quyen SUPER_ADMIN va thay ca khoa NHAP.
+        _set_user(cbcc_user)
         resp = await client.get("/api/v1/lms/khoa-hoc")
         assert resp.status_code == 200
         for item in resp.json()["data"]:

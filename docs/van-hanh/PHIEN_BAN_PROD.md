@@ -7,20 +7,31 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `e005660` |
-| **Ngắn** | `e005660` |
-| **Nhánh nguồn** | `prod` (fast-forward từ `feature/lms-dgnl-mau-cau-truc`) |
-| **Ngày ghi mốc** | 25/08/2026 |
+| **Commit** | `2137a32` |
+| **Ngắn** | `2137a32` |
+| **Nhánh nguồn** | `prod` (fast-forward từ `feature/van-hanh-chan-build-khi-thi`) |
+| **Ngày ghi mốc** | 25/08/2026 11:23 |
 | **Alembic** | `mt_025_loai_tai_lieu_20260822` (không đổi — đợt này không có migration) |
 
-Nội dung: **Sửa lỗi thêm câu hỏi vào bài kiểm tra đã có**. `POST /api/v1/lms/cau-hoi`
-luôn trả 500 do đếm số câu bằng `count(BaiKiemTraCauHoi.id)`, trong khi bảng nối
-dùng khóa chính ghép và không có cột `id`. Lỗi bị test cũ che vì payload thiếu
-`bai_kiem_tra_id` nên dừng ở 422 trước khi chạm dòng hỏng. Kèm dọn 16 test đỏ
-tồn từ 17/04/2026 (câu hỏi nay bắt buộc gắn bài kiểm tra; đăng ký tự nguyện vào
-`CHO_PHE_DUYET` nên phải duyệt trước khi học/thi).
+Nội dung: **Chặn build/triển khai khi đang có người thi**. Sinh ra từ sự cố cùng
+ngày 10:04–10:17: `npm run build` chạy trần đúng lúc 13 thí sinh đang ở phút thứ
+30 của bài ĐGNL 45 phút, RAM 7,8GB cạn sạch trên máy **không có swap**, cả máy
+đóng băng 12 phút — SSH không vào được, nginx gần như câm, OOM-killer bắn chết
+next-server. Thêm `kiem_tra_ky_thi.sh` (chốt chặn) và `build_frontend.sh` (dùng
+thay `npm run build`, nhốt build trong cgroup có trần RAM **và** trần swap).
+`trien_khai.sh` gọi chốt trước cả `git checkout`.
 
-### Mốc trước — `8653f0e`
+Kèm theo, đã áp thẳng lên máy và **không nằm trong git**: swapfile 8GB +
+`/etc/fstab`, và `/etc/sysctl.d/99-kpi-oom.conf` (`vm.swappiness=10`,
+`vm.min_free_kbytes=131072`, `vm.watermark_scale_factor=100`).
+
+### Mốc trước — `cc254be`
+
+**Quy trình khôi phục file từ ảnh uploads**, kèm cảnh báo `/opt/kpi/scripts` nằm
+ngoài `trien_khai.sh`. Trước đó là `e005660` (sửa mặc định uploads sai trong sao
+lưu) và `b6f805c` (lịch sử phiên bản cho uploads bằng ảnh hardlink).
+
+### Mốc trước nữa — `8653f0e`
 
 **ĐGNL — thư viện mẫu cấu trúc đề**. Tab "Mẫu cấu trúc đề" cho sửa
 mẫu trực tiếp trên lưới (trước chỉ tạo được bằng cách lưu từ kỳ thi, không sửa
@@ -38,6 +49,13 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 19/08/2026 | `be0670b` | Lịch công tác G4 + migration `meeting_016`→`022` + di trú dữ liệu |
 | 25/08/2026 | `8653f0e` | ĐGNL: thư viện mẫu cấu trúc đề, sửa cấu trúc trực tiếp, áp mẫu nguyên tử — không migration |
 | 25/08/2026 | `40de07e` | LMS: sửa `POST /cau-hoi` trả 500 khi thêm câu vào bài kiểm tra đã có — không migration |
+| 25/08/2026 | `cc254be` | Sao lưu: lịch sử phiên bản uploads bằng ảnh hardlink + quy trình khôi phục — không migration |
+| 25/08/2026 | `2137a32` | Vận hành: chặn build/triển khai khi đang có người thi (sau sự cố OOM 10:04–10:17) — không migration |
+
+> Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
+> tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng
+> `git -C /opt/kpi-prod rev-parse HEAD` và bổ sung các mốc còn thiếu. Kiểm tra
+> nhanh bất cứ lúc nào: `git -C /opt/kpi-prod rev-parse --short HEAD`.
 | 25/08/2026 | `902e711` | Công cụ: `trien_khai.sh` tự gắn nhánh `prod` — chỉ script + tài liệu, không chạm code dịch vụ, không restart |
 | 25/08/2026 | `e005660` | Backup: lịch sử phiên bản uploads (ảnh hardlink, giữ 60 bản) + sửa mặc định đường dẫn uploads đã chết. Cần cài tay vào `/opt/kpi/scripts/` — xem `scripts/INSTALL_CRON.md` |
 

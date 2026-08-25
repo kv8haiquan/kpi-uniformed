@@ -41,7 +41,12 @@ import { lichCongTacApi } from '@/services/lich-cong-tac';
 import FormLich from './components/FormLich';
 import LichNgay from './components/LichNgay';
 import LichTuan from './components/LichTuan';
-import { MAU_TRANG_THAI, chuTri, mauLoai } from './components/lich-mau';
+import {
+  MAU_TRANG_THAI,
+  chuTri,
+  mauLoai,
+  suaDuocLich,
+} from './components/lich-mau';
 import { errMsg } from '@/lib/hkg-error';
 import {
   dauTuan,
@@ -124,10 +129,7 @@ export default function LichCongTacPage() {
   const [dangSua, setDangSua] = useState<ISuKienChiTiet | null>(null);
   const [dangMoSua, setDangMoSua] = useState<string | null>(null);
 
-  const suaDuoc = (sk: ISuKienLich) =>
-    sk.nguon === 'LICH_CONG_TAC' &&
-    Boolean(quyen) &&
-    (quyen!.la_quan_tri_lich || quyen!.cong_chuc_id === sk.created_by);
+  const suaDuoc = (sk: ISuKienLich) => suaDuocLich(sk, quyen);
 
   const moSua = async (sk: ISuKienLich) => {
     setDangMoSua(sk.id);
@@ -500,34 +502,42 @@ export default function LichCongTacPage() {
               return (
                 <div
                   key={d}
-                  className={`min-h-[7rem] border-b border-r border-gray-100 p-1.5 ${
+                  className={`group relative min-h-[7rem] border-b border-r border-gray-100 p-1.5 ${
                     trongThang ? 'bg-white' : 'bg-gray-50/60'
                   }`}
                 >
-                  {/* Số ngày là nút mở lịch ngày. Sự kiện bên dưới vẫn là link
-                      riêng sang chi tiết — bấm nhầm cả ô sẽ cướp mất thao tác
-                      quen thuộc đó, nên chỉ số ngày mới bấm được. */}
+                  {/*
+                    Cả ô ngày bấm được để xem lịch ngày đó. Nút phủ kín ô nằm
+                    DƯỚI phần nội dung: lồng link sự kiện vào trong một nút là
+                    sai ngữ nghĩa và bàn phím không đi qua được, còn để nút phủ
+                    lên trên thì lại chặn mất link. Cách này giữ cả hai — bấm
+                    chỗ trống mở cả ngày, bấm đúng sự kiện sang chi tiết.
+                  */}
                   <button
                     type="button"
                     onClick={() => moNgay(d)}
+                    aria-label={`Xem lịch ngày ${ngayVN(d)}`}
                     title={`Xem lịch ngày ${ngayVN(d)}`}
-                    className={`text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                    className="absolute inset-0 z-0 w-full cursor-pointer hover:bg-blue-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                  />
+                  <div
+                    className={`pointer-events-none relative z-10 text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
                       laHomNay
                         ? 'bg-blue-600 text-white font-semibold'
                         : trongThang
-                          ? 'text-gray-700 hover:bg-blue-50 hover:text-blue-700'
-                          : 'text-gray-400 hover:bg-blue-50 hover:text-blue-700'
+                          ? 'text-gray-700 group-hover:text-blue-700'
+                          : 'text-gray-400 group-hover:text-blue-700'
                     }`}
                   >
                     {Number(d.slice(8, 10))}
-                  </button>
-                  <div className="space-y-1">
+                  </div>
+                  <div className="pointer-events-none relative z-10 space-y-1">
                     {suKien.slice(0, 3).map((sk) => (
                       <Link
                         key={`${sk.id}-${d}`}
                         href={`/lich-cong-tac/${sk.id}`}
                         title={sk.tieu_de}
-                        className={`block truncate rounded border px-1.5 py-0.5 text-[11px] leading-tight hover:brightness-95 ${mauLoai(
+                        className={`pointer-events-auto block truncate rounded border px-1.5 py-0.5 text-[11px] leading-tight hover:brightness-95 ${mauLoai(
                           sk.loai_lich,
                         )}`}
                       >
@@ -538,13 +548,9 @@ export default function LichCongTacPage() {
                       </Link>
                     ))}
                     {suKien.length > 3 && (
-                      <button
-                        type="button"
-                        onClick={() => moNgay(d)}
-                        className="text-[11px] text-gray-500 pl-1 hover:text-blue-700 hover:underline"
-                      >
-                        +{suKien.length - 3} nữa
-                      </button>
+                      <div className="pl-1 text-[11px] text-gray-500 group-hover:text-blue-700 group-hover:underline">
+                        +{suKien.length - 3} nữa — xem cả ngày
+                      </div>
                     )}
                   </div>
                 </div>
@@ -564,9 +570,8 @@ export default function LichCongTacPage() {
           ngay={ngayChon}
           suKien={suKienKhoang}
           homNay={homNay}
-          suaDuoc={suaDuoc}
-          onSua={(sk) => void moSua(sk)}
-          dangMoSua={dangMoSua}
+          quyen={quyen}
+          onLamMoi={() => void tai()}
         />
       ) : (
         <>

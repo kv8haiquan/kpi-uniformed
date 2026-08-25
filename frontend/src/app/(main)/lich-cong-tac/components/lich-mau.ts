@@ -4,7 +4,12 @@
  * đây chỉ có lưới tháng nên bảng màu nằm ngay trong trang.
  */
 
-import type { ISuKienLich, LoaiLich, TrangThaiLich } from '@/types/lich-cong-tac';
+import type {
+  IQuyenLich,
+  ISuKienLich,
+  LoaiLich,
+  TrangThaiLich,
+} from '@/types/lich-cong-tac';
 
 export const MAU_LOAI: Record<LoaiLich, string> = {
   HOP: 'bg-blue-100 text-blue-800 border-blue-200',
@@ -31,4 +36,19 @@ export function mauLoai(loai?: string | null): string {
 /** Khớp được công chức thì lấy họ tên, không thì đọc phần ghi tay. */
 export function chuTri(sk: ISuKienLich): string {
   return sk.chu_toa?.ho_ten || sk.chu_tri_text || '';
+}
+
+/**
+ * Người đang xem có được sửa sự kiện này không: quản trị lịch sửa được tất cả,
+ * người thường chỉ sửa lịch mình tạo, và cuộc họp nguồn HKG thì sửa bên đó.
+ *
+ * Backend mới là nơi quyết định — hàm này chỉ để ẩn nút cho đỡ rối. Gom về một
+ * chỗ vì trước đây luật này chép ở ba màn hình, sửa một chỗ là lệch.
+ */
+export function suaDuocLich(
+  sk: Pick<ISuKienLich, 'nguon' | 'created_by'>,
+  quyen: IQuyenLich | null,
+): boolean {
+  if (sk.nguon !== 'LICH_CONG_TAC' || !quyen) return false;
+  return quyen.la_quan_tri_lich || quyen.cong_chuc_id === sk.created_by;
 }

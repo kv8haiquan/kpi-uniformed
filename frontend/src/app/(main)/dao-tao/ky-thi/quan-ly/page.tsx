@@ -2,7 +2,7 @@
  * src/app/(main)/dao-tao/ky-thi/quan-ly/page.tsx
  * ===============================================
  * Trang quan ly ky thi DGNL — QT_DAO_TAO.
- * Tabs: Danh sach ky thi | Tao moi.
+ * Tabs: Danh sach ky thi | Ngan hang de | Linh vuc | Mau cau truc de | Tao moi.
  */
 
 'use client';
@@ -13,6 +13,7 @@ import { kyThiApi, linhVucApi, viTriApi, nganHangDgnlApi, cbccApi, cauTrucDeTemp
 import { useAuthStore } from '@/stores/useAuthStore';
 import type { IKyThi, ILinhVuc, IViTriViecLam, ICauTrucDeByViTri, IDgnlValidateResponse, ICauHoiDgnl, IThongKeNganHang, ICauTrucDeTemplate } from '@/types/lms';
 import DonViCongChucPicker from '@/components/lms/DonViCongChucPicker';
+import MauCauTrucDeManager, { SoCauInput, useTonKhoNganHang } from '@/components/lms/MauCauTrucDeManager';
 
 const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
   NHAP: { label: 'Nháp', bg: 'bg-gray-100', text: 'text-gray-600' },
@@ -21,7 +22,7 @@ const TRANG_THAI_CONFIG: Record<string, { label: string; bg: string; text: strin
   DA_DONG: { label: 'Đã đóng', bg: 'bg-red-100', text: 'text-red-600' },
 };
 
-type Tab = 'danh-sach' | 'ngan-hang' | 'linh-vuc' | 'tao-moi';
+type Tab = 'danh-sach' | 'ngan-hang' | 'linh-vuc' | 'mau-cau-truc' | 'tao-moi';
 
 export default function QuanLyKyThiPage() {
   const { user } = useAuthStore();
@@ -205,6 +206,7 @@ export default function QuanLyKyThiPage() {
           { key: 'danh-sach' as Tab, label: 'Danh sách kỳ thi' },
           { key: 'ngan-hang' as Tab, label: 'Ngân hàng đề' },
           { key: 'linh-vuc' as Tab, label: 'Lĩnh vực' },
+          { key: 'mau-cau-truc' as Tab, label: 'Mẫu cấu trúc đề' },
           { key: 'tao-moi' as Tab, label: 'Tạo kỳ thi mới' },
         ].map(t => (
           <button
@@ -311,6 +313,11 @@ export default function QuanLyKyThiPage() {
       {/* TAB: Linh vuc */}
       {tab === 'linh-vuc' && (
         <LinhVucTab linhVucList={linhVucList} onReload={loadData} />
+      )}
+
+      {/* TAB: Mau cau truc de */}
+      {tab === 'mau-cau-truc' && (
+        <MauCauTrucDeManager linhVucList={linhVucList} viTriList={viTriList} />
       )}
 
       {tab === 'tao-moi' && (
@@ -491,12 +498,32 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
   const [tenMau, setTenMau] = useState('');
   const [tplBusy, setTplBusy] = useState(false);
   const [tplMsg, setTplMsg] = useState<string | null>(null);
+  // Tồn kho ngân hàng câu hỏi — hiện ngay cạnh ô nhập
+  const tonKho = useTonKhoNganHang();
 
   useEffect(() => {
-    cauTrucDeTemplateApi.danhSach()
+    cauTrucDeTemplateApi.danhSach({ page_size: 100 })
       .then(res => setTemplates(res.data.data || []))
       .catch(() => { /* khong co quyen / loi mang — an phan mau */ });
   }, []);
+
+  /** Nạp cấu trúc HIỆN CÓ của vị trí vào form khi chọn.
+   *
+   *  BE upsert coi payload là ảnh chụp đầy đủ: dòng không gửi lên bị xóa. Trước
+   *  đây form luôn rỗng nên sửa 1 lĩnh vực là mất sạch các lĩnh vực còn lại —
+   *  đó là lý do người dùng phải đi đường vòng "lưu thành mẫu rồi áp dụng".
+   */
+  const handleChonViTri = (viTriId: string) => {
+    setSelectedViTri(viTriId);
+    setError(null);
+    const hienCo = data.find(d => d.vi_tri_id === viTriId);
+    setItems((hienCo?.chi_tiet || []).map(ct => ({
+      linh_vuc_id: ct.linh_vuc_id,
+      so_cau_de: ct.so_cau_de || 0,
+      so_cau_trung_binh: ct.so_cau_trung_binh || 0,
+      so_cau_kho: ct.so_cau_kho || 0,
+    })));
+  };
 
   // Luu toan bo cau truc hien tai (moi vi tri x linh vuc) thanh mau
   const handleLuuThanhMau = async () => {
@@ -517,44 +544,26 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
       });
       setTenMau('');
       setTplMsg('✅ Đã lưu cấu trúc hiện tại thành mẫu');
-      const res = await cauTrucDeTemplateApi.danhSach();
+      const res = await cauTrucDeTemplateApi.danhSach({ page_size: 100 });
       setTemplates(res.data.data || []);
     } catch (err: any) {
       setError(err?.response?.data?.detail?.error?.message || 'Lỗi lưu mẫu');
     } finally { setTplBusy(false); }
   };
 
-  // Ap dung mau: upsert cau truc theo tung vi tri (endpoint san co)
+  /** Áp dụng mẫu — 1 request nguyên tử, BE validate hết rồi ghi trong 1 transaction. */
   const handleApDungMau = async () => {
     const tpl = templates.find(t => t.id === selectedTpl);
     if (!tpl) return;
     if (!confirm(`Áp dụng mẫu "${tpl.ten_template}"? Cấu trúc của các vị trí trong mẫu sẽ được GHI ĐÈ.`)) return;
     setTplBusy(true); setTplMsg(null); setError(null);
     try {
-      // Nhom cau_truc theo vi_tri_id (endpoint upsert nhan 1 vi tri / lan goi)
-      const byViTri = new Map<string, typeof tpl.cau_truc>();
-      for (const row of tpl.cau_truc) {
-        if (!byViTri.has(row.vi_tri_id)) byViTri.set(row.vi_tri_id, []);
-        byViTri.get(row.vi_tri_id)!.push(row);
-      }
-      let lastData: ICauTrucDeByViTri[] | null = null;
-      for (const [viTriId, rows] of byViTri) {
-        const res = await kyThiApi.upsertCauTrucDe(kyThi.id, {
-          vi_tri_id: viTriId,
-          cau_truc: rows.map(r => ({
-            linh_vuc_id: r.linh_vuc_id,
-            so_cau_de: r.so_cau_de,
-            so_cau_trung_binh: r.so_cau_trung_binh,
-            so_cau_kho: r.so_cau_kho,
-          })),
-        });
-        lastData = res.data.data || null;
-      }
-      if (lastData) setData(lastData);
-      setTplMsg(`✅ Đã áp dụng mẫu "${tpl.ten_template}" (${byViTri.size} vị trí)`);
+      const res = await kyThiApi.apDungMauCauTruc(kyThi.id, { template_id: tpl.id });
+      setData(res.data.data || []);
+      setSelectedViTri(''); setItems([]);
+      setTplMsg(`✅ Đã áp dụng mẫu "${tpl.ten_template}"`);
     } catch (err: any) {
-      setError(err?.response?.data?.detail?.error?.message
-        || 'Lỗi áp dụng mẫu (vị trí/lĩnh vực trong mẫu có thể đã bị xóa)');
+      setError(err?.response?.data?.detail?.error?.message || 'Lỗi áp dụng mẫu');
     } finally { setTplBusy(false); }
   };
 
@@ -572,6 +581,22 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
       setError('Vui lòng chọn lĩnh vực');
       return;
     }
+    const khoa = validItems.map(i => i.linh_vuc_id);
+    if (new Set(khoa).size !== khoa.length) {
+      setError('Có lĩnh vực bị lặp — vui lòng gộp lại thành 1 dòng');
+      return;
+    }
+    // Payload là ảnh chụp đầy đủ: cảnh báo khi số dòng ít hơn cấu trúc đang có
+    const hienCo = data.find(d => d.vi_tri_id === selectedViTri);
+    const soDongCu = hienCo?.chi_tiet.length || 0;
+    if (soDongCu > validItems.length) {
+      const ok = confirm(
+        `Vị trí này đang có ${soDongCu} lĩnh vực, bạn chỉ giữ lại ${validItems.length}.\n\n`
+        + `${soDongCu - validItems.length} lĩnh vực còn lại sẽ bị XÓA khỏi cấu trúc đề. Tiếp tục?`
+      );
+      if (!ok) return;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -589,14 +614,26 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
     }
   };
 
-  const handleDeleteViTri = async (viTriId: string) => {
+  const handleDeleteViTri = async (viTriId: string, viTriTen: string, soCau: number) => {
+    if (!confirm(`Xóa toàn bộ cấu trúc đề của "${viTriTen}" (${soCau} câu)?`)) return;
     try {
       await kyThiApi.xoaCauTrucDe(kyThi.id, viTriId);
       setData(data.filter(d => d.vi_tri_id !== viTriId));
+      if (selectedViTri === viTriId) { setSelectedViTri(''); setItems([]); }
     } catch (err: any) {
       setError(err?.response?.data?.detail?.error?.message || 'Lỗi xóa');
     }
   };
+
+  const soOVuot = items.filter(i => i.linh_vuc_id).reduce((n, i) => {
+    const cap: ['de' | 'trung_binh' | 'kho', number][] = [
+      ['de', i.so_cau_de], ['trung_binh', i.so_cau_trung_binh], ['kho', i.so_cau_kho],
+    ];
+    return n + cap.filter(([dk, v]) => {
+      const co = tonKho.lay(i.linh_vuc_id, dk);
+      return co !== null && v > co;
+    }).length;
+  }, 0);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -608,6 +645,13 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
 
         {error && <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">{error}</div>}
         {tplMsg && <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded text-green-700 text-sm">{tplMsg}</div>}
+
+        {kyThi.trang_thai === 'DANG_MO' && (
+          <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-sm">
+            ⚠️ Kỳ thi <strong>đang mở</strong>. Chỉ sửa được cấu trúc của các vị trí <strong>chưa có thí sinh làm bài</strong> —
+            vị trí đã có người thi sẽ bị hệ thống từ chối.
+          </div>
+        )}
 
         {/* Mau cau truc de: ap dung mau co san / luu cau truc hien tai thanh mau */}
         <div className="mb-4 p-3 bg-indigo-50/60 border border-indigo-100 rounded-lg">
@@ -632,22 +676,6 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
             >
               {tplBusy ? 'Đang xử lý...' : 'Áp dụng mẫu'}
             </button>
-            {selectedTpl && (
-              <button
-                onClick={async () => {
-                  const tpl = templates.find(t => t.id === selectedTpl);
-                  if (!tpl || !confirm(`Xóa mẫu "${tpl.ten_template}"?`)) return;
-                  try {
-                    await cauTrucDeTemplateApi.xoa(selectedTpl);
-                    setTemplates(templates.filter(t => t.id !== selectedTpl));
-                    setSelectedTpl('');
-                  } catch { setError('Lỗi xóa mẫu'); }
-                }}
-                className="px-2 py-1.5 text-xs text-red-600 hover:underline"
-              >
-                Xóa mẫu
-              </button>
-            )}
             <span className="mx-1 text-gray-300">|</span>
             <input
               value={tenMau}
@@ -664,6 +692,9 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
               💾 Lưu thành mẫu
             </button>
           </div>
+          <div className="mt-2 text-[11px] text-gray-500">
+            Sửa/xóa mẫu tại tab <strong>Mẫu cấu trúc đề</strong>.
+          </div>
         </div>
 
         {/* Cau truc hien tai */}
@@ -671,10 +702,26 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
           <div className="mb-6">
             <h4 className="text-sm font-semibold text-gray-600 mb-2">Cấu trúc hiện tại:</h4>
             {data.map(vt => (
-              <div key={vt.vi_tri_id} className="border rounded-lg p-3 mb-2">
+              <div
+                key={vt.vi_tri_id}
+                className={`border rounded-lg p-3 mb-2 ${selectedViTri === vt.vi_tri_id ? 'border-blue-400 bg-blue-50/40' : ''}`}
+              >
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium text-sm">{vt.vi_tri_ten} — {vt.tong_cau} câu</span>
-                  <button onClick={() => handleDeleteViTri(vt.vi_tri_id)} className="text-red-500 text-xs hover:underline">Xóa</button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => handleChonViTri(vt.vi_tri_id)}
+                      className="text-blue-600 text-xs hover:underline"
+                    >
+                      Sửa
+                    </button>
+                    <button
+                      onClick={() => handleDeleteViTri(vt.vi_tri_id, vt.vi_tri_ten, vt.tong_cau)}
+                      className="text-red-500 text-xs hover:underline"
+                    >
+                      Xóa
+                    </button>
+                  </div>
                 </div>
                 <div className="text-xs text-gray-500 space-y-1">
                   {vt.chi_tiet.map(ct => (
@@ -683,7 +730,7 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
                       <span>Dễ: {ct.so_cau_de}</span>
                       <span>TB: {ct.so_cau_trung_binh}</span>
                       <span>Khó: {ct.so_cau_kho}</span>
-                      <span className="font-medium">= {ct.so_cau_de + ct.so_cau_trung_binh + ct.so_cau_kho}</span>
+                      <span className="font-medium">= {(ct.so_cau_de || 0) + (ct.so_cau_trung_binh || 0) + (ct.so_cau_kho || 0)}</span>
                     </div>
                   ))}
                 </div>
@@ -698,15 +745,25 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
           <div className="mb-3">
             <select
               value={selectedViTri}
-              onChange={e => setSelectedViTri(e.target.value)}
+              onChange={e => handleChonViTri(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm"
             >
               <option value="">-- Chọn vị trí --</option>
               {viTriList.map(vt => (
-                <option key={vt.id} value={vt.id}>{vt.ten_vi_tri}</option>
+                <option key={vt.id} value={vt.id}>
+                  {vt.ten_vi_tri}
+                  {data.some(d => d.vi_tri_id === vt.id) ? ' (đã có cấu trúc)' : ''}
+                </option>
               ))}
             </select>
           </div>
+
+          {soOVuot > 0 && (
+            <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-xs">
+              ⚠️ {soOVuot} ô vượt quá số câu sẵn có trong ngân hàng (ô tô đỏ). Thí sinh sẽ không bắt đầu thi được
+              cho tới khi bổ sung câu hỏi.
+            </div>
+          )}
 
           {items.map((item, idx) => (
             <div key={idx} className="grid grid-cols-5 gap-2 mb-2 items-end">
@@ -717,28 +774,34 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
                   className="w-full border rounded px-2 py-1 text-sm">
                   <option value="">-- Chọn --</option>
                   {linhVucList.map(lv => (
-                    <option key={lv.id} value={lv.id}>{lv.ten_linh_vuc}</option>
+                    <option
+                      key={lv.id}
+                      value={lv.id}
+                      disabled={lv.id !== item.linh_vuc_id && items.some(x => x.linh_vuc_id === lv.id)}
+                    >
+                      {lv.ten_linh_vuc}
+                    </option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="text-xs text-gray-500">Dễ</label>
-                <input type="number" value={item.so_cau_de} min={0}
-                  onChange={e => { const n = [...items]; n[idx].so_cau_de = +e.target.value; setItems(n); }}
-                  className="w-full border rounded px-2 py-1 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">TB</label>
-                <input type="number" value={item.so_cau_trung_binh} min={0}
-                  onChange={e => { const n = [...items]; n[idx].so_cau_trung_binh = +e.target.value; setItems(n); }}
-                  className="w-full border rounded px-2 py-1 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500">Khó</label>
-                <input type="number" value={item.so_cau_kho} min={0}
-                  onChange={e => { const n = [...items]; n[idx].so_cau_kho = +e.target.value; setItems(n); }}
-                  className="w-full border rounded px-2 py-1 text-sm" />
-              </div>
+              <SoCauInput
+                nhan="Dễ"
+                value={item.so_cau_de}
+                onChange={v => { const n = [...items]; n[idx].so_cau_de = v; setItems(n); }}
+                tonKho={tonKho.lay(item.linh_vuc_id, 'de')}
+              />
+              <SoCauInput
+                nhan="TB"
+                value={item.so_cau_trung_binh}
+                onChange={v => { const n = [...items]; n[idx].so_cau_trung_binh = v; setItems(n); }}
+                tonKho={tonKho.lay(item.linh_vuc_id, 'trung_binh')}
+              />
+              <SoCauInput
+                nhan="Khó"
+                value={item.so_cau_kho}
+                onChange={v => { const n = [...items]; n[idx].so_cau_kho = v; setItems(n); }}
+                tonKho={tonKho.lay(item.linh_vuc_id, 'kho')}
+              />
               <button onClick={() => setItems(items.filter((_, i) => i !== idx))} className="text-red-500 text-sm pb-1">Xóa</button>
             </div>
           ))}
@@ -748,10 +811,16 @@ function CauTrucDeModal({ kyThi, linhVucList, viTriList, cauTrucDe, onClose }: {
               + Thêm lĩnh vực
             </button>
             {items.length > 0 && (
-              <button onClick={handleSave} disabled={saving}
-                className="px-4 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Đang lưu...' : 'Lưu cấu trúc'}
-              </button>
+              <>
+                <button onClick={handleSave} disabled={saving}
+                  className="px-4 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {saving ? 'Đang lưu...' : 'Lưu cấu trúc'}
+                </button>
+                <button onClick={() => { setSelectedViTri(''); setItems([]); setError(null); }}
+                  className="px-3 py-1.5 text-xs border rounded-lg hover:bg-gray-50">
+                  Hủy
+                </button>
+              </>
             )}
           </div>
         </div>

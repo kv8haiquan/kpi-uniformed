@@ -270,15 +270,21 @@ class TestKyThiCRUD:
         })
         assert resp.status_code == 400
 
-    async def test_cap_nhat_ky_thi_khong_phai_nhap(self, client, admin_user):
-        """Khong duoc sua ky thi khi khong o trang thai NHAP."""
+    async def test_cap_nhat_ky_thi_khi_khong_phai_nhap(self, client, admin_user):
+        """Sua THONG TIN ky thi duoc o moi trang thai (khac voi sua CAU TRUC DE).
+
+        Rang buoc "chi sua khi NHAP" da duoc go tu 17/04/2026 (bac5ea1) — FE cung
+        hien nut "Sua" o moi trang thai. Test nay giu nguyen assert cu tu do nen
+        do lien tuc; nay sua lai cho khop hanh vi that.
+        """
         data = await _setup_full_exam(client, admin_user)
         kt = data["ky_thi"]
         # Chuyen sang CHO_DUYET
         await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "CHO_DUYET"})
-        # Thu cap nhat
+        # Van sua duoc thong tin ky thi
         resp = await client.put(f"{BASE}/ky-thi/{kt['id']}", json={"ten_ky_thi": "Moi"})
-        assert resp.status_code == 400
+        assert resp.status_code == 200, resp.json()
+        assert resp.json()["data"]["ten_ky_thi"] == "Moi"
 
 
 class TestKyThiTrangThai:
@@ -931,6 +937,384 @@ class TestCauTrucDeTemplate:
     async def test_cbcc_khong_duoc_xem_template(self, client, cbcc_user):
         resp = await client.get(f"{BASE}/cau-truc-de-template")
         assert resp.status_code == 403
+
+
+# =========================================================================
+# SUA MAU CAU TRUC DE TRUC TIEP (tab "Mau cau truc de")
+# =========================================================================
+
+class TestSuaMauCauTrucDe:
+    """PUT / nhan-ban / chan trung ten — thay cho vong 'luu mau roi ap dung'."""
+
+    async def _setup(self, client) -> dict:
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-EDT-{uid}")
+        lv2 = await _create_linh_vuc(client, f"LV-EDT2-{uid}")
+        vt = await _create_vi_tri(client, f"VT-EDT-{uid}")
+        return {"lv": lv, "lv2": lv2, "vt": vt, "uid": uid}
+
+    async def _tao_mau(self, client, data: dict, ten: str) -> dict:
+        resp = await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": ten,
+            "cau_truc": [{
+                "vi_tri_id": data["vt"]["id"], "linh_vuc_id": data["lv"]["id"],
+                "so_cau_de": 2, "so_cau_trung_binh": 1, "so_cau_kho": 1,
+            }],
+        })
+        assert resp.status_code == 201, resp.json()
+        return resp.json()["data"]
+
+    async def test_sua_mau_thay_the_toan_bo_cau_truc(self, client, admin_user):
+        data = await self._setup(client)
+        tpl = await self._tao_mau(client, data, f"Mẫu sửa {data['uid']}")
+
+        resp = await client.put(f"{BASE}/cau-truc-de-template/{tpl['id']}", json={
+            "ten_template": f"Mẫu sửa {data['uid']} (v2)",
+            "mo_ta": "Đã chỉnh",
+            "cau_truc": [
+                {"vi_tri_id": data["vt"]["id"], "linh_vuc_id": data["lv"]["id"],
+                 "so_cau_de": 5, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+                {"vi_tri_id": data["vt"]["id"], "linh_vuc_id": data["lv2"]["id"],
+                 "so_cau_de": 1, "so_cau_trung_binh": 2, "so_cau_kho": 3},
+            ],
+        })
+        assert resp.status_code == 200, resp.json()
+        moi = resp.json()["data"]
+        assert moi["ten_template"] == f"Mẫu sửa {data['uid']} (v2)"
+        assert moi["mo_ta"] == "Đã chỉnh"
+        assert len(moi["cau_truc"]) == 2
+        assert moi["cau_truc"][0]["so_cau_de"] == 5
+
+    async def test_sua_mau_chi_doi_ten_giu_nguyen_cau_truc(self, client, admin_user):
+        data = await self._setup(client)
+        tpl = await self._tao_mau(client, data, f"Mẫu giữ {data['uid']}")
+
+        resp = await client.put(f"{BASE}/cau-truc-de-template/{tpl['id']}", json={
+            "ten_template": f"Mẫu giữ {data['uid']} đổi tên",
+        })
+        assert resp.status_code == 200
+        assert len(resp.json()["data"]["cau_truc"]) == 1
+
+    async def test_chan_trung_ten_khi_tao(self, client, admin_user):
+        data = await self._setup(client)
+        ten = f"Mẫu trùng {data['uid']}"
+        await self._tao_mau(client, data, ten)
+
+        resp = await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"  {ten.upper()}  ",  # khac hoa/thuong + khoang trang
+            "cau_truc": [{
+                "vi_tri_id": data["vt"]["id"], "linh_vuc_id": data["lv"]["id"],
+                "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0,
+            }],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_071"
+
+    async def test_chan_trung_ten_khi_sua(self, client, admin_user):
+        data = await self._setup(client)
+        a = await self._tao_mau(client, data, f"Mẫu A {data['uid']}")
+        b = await self._tao_mau(client, data, f"Mẫu B {data['uid']}")
+
+        resp = await client.put(f"{BASE}/cau-truc-de-template/{b['id']}", json={
+            "ten_template": a["ten_template"],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_071"
+
+    async def test_sua_mau_giu_nguyen_ten_cua_chinh_no(self, client, admin_user):
+        """Gui lai dung ten cu khong bi coi la trung."""
+        data = await self._setup(client)
+        tpl = await self._tao_mau(client, data, f"Mẫu tự {data['uid']}")
+
+        resp = await client.put(f"{BASE}/cau-truc-de-template/{tpl['id']}", json={
+            "ten_template": tpl["ten_template"], "mo_ta": "chỉ sửa mô tả",
+        })
+        assert resp.status_code == 200
+
+    async def test_ten_da_xoa_mem_dung_lai_duoc(self, client, admin_user):
+        data = await self._setup(client)
+        ten = f"Mẫu tái dùng {data['uid']}"
+        tpl = await self._tao_mau(client, data, ten)
+        await client.delete(f"{BASE}/cau-truc-de-template/{tpl['id']}")
+
+        lai = await self._tao_mau(client, data, ten)
+        assert lai["id"] != tpl["id"]
+
+    async def test_nhan_ban_mau(self, client, admin_user):
+        data = await self._setup(client)
+        tpl = await self._tao_mau(client, data, f"Mẫu gốc {data['uid']}")
+
+        resp = await client.post(f"{BASE}/cau-truc-de-template/{tpl['id']}/nhan-ban", json={
+            "ten_template": f"Mẫu bản sao {data['uid']}",
+        })
+        assert resp.status_code == 201, resp.json()
+        ban_sao = resp.json()["data"]
+        assert ban_sao["id"] != tpl["id"]
+        assert ban_sao["cau_truc"] == tpl["cau_truc"]
+
+    async def test_nhan_ban_chan_trung_ten(self, client, admin_user):
+        data = await self._setup(client)
+        tpl = await self._tao_mau(client, data, f"Mẫu NB {data['uid']}")
+
+        resp = await client.post(f"{BASE}/cau-truc-de-template/{tpl['id']}/nhan-ban", json={
+            "ten_template": tpl["ten_template"],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_071"
+
+    async def test_sua_mau_khong_ton_tai(self, client, admin_user):
+        resp = await client.put(f"{BASE}/cau-truc-de-template/{uuid.uuid4()}", json={
+            "ten_template": "Không tồn tại",
+        })
+        assert resp.status_code == 404
+
+    async def test_cbcc_khong_duoc_sua_mau(self, client, cbcc_user):
+        resp = await client.put(f"{BASE}/cau-truc-de-template/{uuid.uuid4()}", json={
+            "ten_template": "X",
+        })
+        assert resp.status_code == 403
+
+
+# =========================================================================
+# AP DUNG MAU VAO KY THI — NGUYEN TU (1 transaction)
+# =========================================================================
+
+class TestApDungMauCauTruc:
+    async def test_ap_dung_mau_nhieu_vi_tri(self, client, admin_user):
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-APD-{uid}")
+        vt1 = await _create_vi_tri(client, f"VT-APD1-{uid}")
+        vt2 = await _create_vi_tri(client, f"VT-APD2-{uid}")
+        kt = await _create_ky_thi(client, f"KT-APD-{uid}")
+
+        tpl = (await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu áp {uid}",
+            "cau_truc": [
+                {"vi_tri_id": vt1["id"], "linh_vuc_id": lv["id"],
+                 "so_cau_de": 3, "so_cau_trung_binh": 2, "so_cau_kho": 1},
+                {"vi_tri_id": vt2["id"], "linh_vuc_id": lv["id"],
+                 "so_cau_de": 4, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+            ],
+        })).json()["data"]
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de/ap-dung-mau", json={
+            "template_id": tpl["id"],
+        })
+        assert resp.status_code == 201, resp.json()
+        data = resp.json()["data"]
+        assert len(data) == 2
+        assert {d["vi_tri_id"] for d in data} == {vt1["id"], vt2["id"]}
+        assert {d["tong_cau"] for d in data} == {6, 4}
+
+    async def test_ap_dung_mau_giu_vi_tri_ngoai_mau(self, client, admin_user):
+        """Mac dinh chi ghi de vi tri co trong mau — vi tri khac giu nguyen."""
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-KEEP-{uid}")
+        vt_mau = await _create_vi_tri(client, f"VT-KEEP1-{uid}")
+        vt_ngoai = await _create_vi_tri(client, f"VT-KEEP2-{uid}")
+        kt = await _create_ky_thi(client, f"KT-KEEP-{uid}")
+
+        await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt_ngoai["id"],
+            "cau_truc": [{"linh_vuc_id": lv["id"], "so_cau_de": 7, "so_cau_trung_binh": 0, "so_cau_kho": 0}],
+        })
+        tpl = (await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu keep {uid}",
+            "cau_truc": [{"vi_tri_id": vt_mau["id"], "linh_vuc_id": lv["id"],
+                          "so_cau_de": 1, "so_cau_trung_binh": 1, "so_cau_kho": 1}],
+        })).json()["data"]
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de/ap-dung-mau", json={
+            "template_id": tpl["id"],
+        })
+        assert resp.status_code == 201
+        theo_vt = {d["vi_tri_id"]: d["tong_cau"] for d in resp.json()["data"]}
+        assert theo_vt[vt_ngoai["id"]] == 7
+        assert theo_vt[vt_mau["id"]] == 3
+
+    async def test_ap_dung_mau_ghi_de_toan_bo(self, client, admin_user):
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-WIPE-{uid}")
+        vt_mau = await _create_vi_tri(client, f"VT-WIPE1-{uid}")
+        vt_ngoai = await _create_vi_tri(client, f"VT-WIPE2-{uid}")
+        kt = await _create_ky_thi(client, f"KT-WIPE-{uid}")
+
+        await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt_ngoai["id"],
+            "cau_truc": [{"linh_vuc_id": lv["id"], "so_cau_de": 7, "so_cau_trung_binh": 0, "so_cau_kho": 0}],
+        })
+        tpl = (await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu wipe {uid}",
+            "cau_truc": [{"vi_tri_id": vt_mau["id"], "linh_vuc_id": lv["id"],
+                          "so_cau_de": 2, "so_cau_trung_binh": 0, "so_cau_kho": 0}],
+        })).json()["data"]
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de/ap-dung-mau", json={
+            "template_id": tpl["id"], "ghi_de_toan_bo": True,
+        })
+        assert resp.status_code == 201
+        data = resp.json()["data"]
+        assert [d["vi_tri_id"] for d in data] == [vt_mau["id"]]
+
+    async def test_ap_dung_mau_co_linh_vuc_da_xoa_khong_ghi_gi(self, client, admin_user):
+        """Mau tro toi linh vuc da xoa -> 400 va KHONG dung vao cau truc dang co."""
+        uid = uuid.uuid4().hex[:6]
+        lv_ok = await _create_linh_vuc(client, f"LV-OK-{uid}")
+        lv_xoa = await _create_linh_vuc(client, f"LV-DEL-{uid}")
+        vt1 = await _create_vi_tri(client, f"VT-ATM1-{uid}")
+        vt2 = await _create_vi_tri(client, f"VT-ATM2-{uid}")
+        kt = await _create_ky_thi(client, f"KT-ATM-{uid}")
+
+        # Cau truc dang co cua vt1 — phai con nguyen sau khi ap dung that bai
+        await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt1["id"],
+            "cau_truc": [{"linh_vuc_id": lv_ok["id"], "so_cau_de": 9, "so_cau_trung_binh": 0, "so_cau_kho": 0}],
+        })
+
+        tpl = (await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu hỏng {uid}",
+            "cau_truc": [
+                {"vi_tri_id": vt1["id"], "linh_vuc_id": lv_ok["id"],
+                 "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+                {"vi_tri_id": vt2["id"], "linh_vuc_id": lv_xoa["id"],
+                 "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+            ],
+        })).json()["data"]
+
+        await client.delete(f"{BASE}/linh-vuc/{lv_xoa['id']}")
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de/ap-dung-mau", json={
+            "template_id": tpl["id"],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_073"
+
+        # KHONG co ghi nao xay ra — vt1 van 9 cau, vt2 chua ton tai
+        ctd = (await client.get(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de")).json()["data"]
+        theo_vt = {d["vi_tri_id"]: d["tong_cau"] for d in ctd}
+        assert theo_vt == {vt1["id"]: 9}
+
+    async def test_ap_dung_mau_trung_linh_vuc_bi_chan(self, client, admin_user):
+        """Mau khai trung linh vuc trong 1 vi tri -> 400, khong de vo unique constraint."""
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-DUP-{uid}")
+        vt = await _create_vi_tri(client, f"VT-DUP-{uid}")
+        kt = await _create_ky_thi(client, f"KT-DUP-{uid}")
+
+        tpl = (await client.post(f"{BASE}/cau-truc-de-template", json={
+            "ten_template": f"Mẫu trùng lv {uid}",
+            "cau_truc": [
+                {"vi_tri_id": vt["id"], "linh_vuc_id": lv["id"],
+                 "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+                {"vi_tri_id": vt["id"], "linh_vuc_id": lv["id"],
+                 "so_cau_de": 2, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+            ],
+        })).json()["data"]
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de/ap-dung-mau", json={
+            "template_id": tpl["id"],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_073"
+
+    async def test_upsert_trung_linh_vuc_bi_chan(self, client, admin_user):
+        uid = uuid.uuid4().hex[:6]
+        lv = await _create_linh_vuc(client, f"LV-DUP2-{uid}")
+        vt = await _create_vi_tri(client, f"VT-DUP2-{uid}")
+        kt = await _create_ky_thi(client, f"KT-DUP2-{uid}")
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt["id"],
+            "cau_truc": [
+                {"linh_vuc_id": lv["id"], "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+                {"linh_vuc_id": lv["id"], "so_cau_de": 2, "so_cau_trung_binh": 0, "so_cau_kho": 0},
+            ],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_021"
+
+    async def test_ap_dung_mau_khong_ton_tai(self, client, admin_user):
+        kt = await _create_ky_thi(client)
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de/ap-dung-mau", json={
+            "template_id": str(uuid.uuid4()),
+        })
+        assert resp.status_code == 404
+
+    async def test_cbcc_khong_duoc_ap_dung_mau(self, client, cbcc_user):
+        resp = await client.post(f"{BASE}/ky-thi/{uuid.uuid4()}/cau-truc-de/ap-dung-mau", json={
+            "template_id": str(uuid.uuid4()),
+        })
+        assert resp.status_code == 403
+
+
+# =========================================================================
+# NOI KHOA TRANG THAI KHI SUA CAU TRUC DE
+# =========================================================================
+
+class TestKhoaSuaCauTrucDe:
+    """Cho sua o NHAP/CHO_DUYET; DANG_MO chi chan vi tri da co nguoi thi."""
+
+    async def test_sua_duoc_khi_cho_duyet(self, client, admin_user):
+        data = await _setup_full_exam(client, admin_user)
+        kt, vt, lv = data["ky_thi"], data["vi_tri"], data["linh_vuc"]
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "CHO_DUYET"})
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt["id"],
+            "cau_truc": [{"linh_vuc_id": lv["id"], "so_cau_de": 3, "so_cau_trung_binh": 1, "so_cau_kho": 1}],
+        })
+        assert resp.status_code == 201, resp.json()
+
+    async def test_sua_duoc_khi_dang_mo_va_chua_ai_thi(self, client, admin_user):
+        data = await _setup_full_exam(client, admin_user)
+        kt, vt, lv = data["ky_thi"], data["vi_tri"], data["linh_vuc"]
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "CHO_DUYET"})
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "DANG_MO"})
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt["id"],
+            "cau_truc": [{"linh_vuc_id": lv["id"], "so_cau_de": 1, "so_cau_trung_binh": 1, "so_cau_kho": 1}],
+        })
+        assert resp.status_code == 201, resp.json()
+
+    async def test_chan_khi_dang_mo_va_da_co_nguoi_thi(self, client, admin_user):
+        data = await _setup_full_exam(client, admin_user)
+        kt, vt, lv = data["ky_thi"], data["vi_tri"], data["linh_vuc"]
+        cc_id = "00327c43-c9a3-44d7-8306-7084e75cb2b5"  # admin_user idx=0
+
+        await client.post(f"{BASE}/ky-thi/{kt['id']}/thi-sinh", json={
+            "danh_sach": [{"cong_chuc_id": cc_id, "vi_tri_id": vt["id"]}],
+        })
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "CHO_DUYET"})
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "DANG_MO"})
+
+        bat_dau = await client.post(f"{BASE}/ky-thi/{kt['id']}/bat-dau")
+        assert bat_dau.status_code == 200, bat_dau.json()
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt["id"],
+            "cau_truc": [{"linh_vuc_id": lv["id"], "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0}],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_019"
+
+        # Xoa cung bi chan
+        xoa = await client.delete(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de/{vt['id']}")
+        assert xoa.status_code == 400
+
+    async def test_chan_khi_da_dong(self, client, admin_user):
+        data = await _setup_full_exam(client, admin_user)
+        kt, vt, lv = data["ky_thi"], data["vi_tri"], data["linh_vuc"]
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "CHO_DUYET"})
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "DANG_MO"})
+        await client.patch(f"{BASE}/ky-thi/{kt['id']}/trang-thai", json={"trang_thai": "DA_DONG"})
+
+        resp = await client.post(f"{BASE}/ky-thi/{kt['id']}/cau-truc-de", json={
+            "vi_tri_id": vt["id"],
+            "cau_truc": [{"linh_vuc_id": lv["id"], "so_cau_de": 1, "so_cau_trung_binh": 0, "so_cau_kho": 0}],
+        })
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_019"
 
 
 # =========================================================================

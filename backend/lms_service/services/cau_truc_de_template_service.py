@@ -3,11 +3,12 @@ lms_service/services/cau_truc_de_template_service.py
 ====================================================
 Business logic CRUD mau cau truc de thi DGNL.
 
-Ap dung template vao ky thi: FE lay `cau_truc` tu template roi goi endpoint
-upsert san co POST /ky-thi/{id}/cau-truc-de (validate vi_tri/linh_vuc o do).
+Ap dung template vao ky thi: dung endpoint nguyen tu
+POST /ky-thi/{id}/cau-truc-de/ap-dung-mau (validate het roi ghi 1 transaction).
 """
 
 import uuid
+from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -16,7 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lms_service.core.timezone import now_vn
 from lms_service.models.base import CongChucRef
 from lms_service.models.cau_truc_de_template import CauTrucDeTemplate
-from lms_service.schemas.cau_truc_de_template import CauTrucDeTemplateCreate
+from lms_service.schemas.cau_truc_de_template import (
+    CauTrucDeTemplateCreate,
+    CauTrucDeTemplateNhanBan,
+    CauTrucDeTemplateUpdate,
+)
 from shared.auth import TokenPayload
 
 
@@ -25,6 +30,35 @@ class CauTrucDeTemplateService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _check_trung_ten(
+        self, ten_template: str, tru_id: Optional[uuid.UUID] = None
+    ) -> None:
+        """Chan trung ten giua cac mau DANG hoat dong.
+
+        Chi xet mau is_active=True — mau da xoa mem khong chan tao lai cung ten.
+        `tru_id` de bo qua chinh mau dang sua.
+        """
+        stmt = select(CauTrucDeTemplate.id).where(
+            func.lower(func.trim(CauTrucDeTemplate.ten_template)) == ten_template.strip().lower(),
+            CauTrucDeTemplate.is_active == True,  # noqa: E712
+        )
+        if tru_id is not None:
+            stmt = stmt.where(CauTrucDeTemplate.id != tru_id)
+
+        r = await self.db.execute(stmt.limit(1))
+        if r.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "DGNL_071",
+                        "message": f'Đã có mẫu cấu trúc đề tên "{ten_template.strip()}". '
+                                   f"Vui lòng đặt tên khác hoặc sửa trực tiếp mẫu đang có.",
+                    },
+                },
+            )
 
     async def danh_sach(self, page: int = 1, page_size: int = 50) -> dict:
         """Danh sach template dang hoat dong (kem ten nguoi tao)."""
@@ -71,8 +105,9 @@ class CauTrucDeTemplateService:
 
     async def tao_moi(self, data: CauTrucDeTemplateCreate, user: TokenPayload) -> CauTrucDeTemplate:
         """Tao template moi tu cau truc de dang soan."""
+        await self._check_trung_ten(data.ten_template)
         tpl = CauTrucDeTemplate(
-            ten_template=data.ten_template,
+            ten_template=data.ten_template.strip(),
             mo_ta=data.mo_ta,
             nguoi_tao_id=uuid.UUID(user.sub),
             cau_truc=[item.model_dump(mode="json") for item in data.cau_truc],
@@ -96,6 +131,49 @@ class CauTrucDeTemplateService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={"success": False, "error": {"code": "DGNL_070", "message": "Mẫu cấu trúc đề không tồn tại"}},
             )
+        return tpl
+
+    async def cap_nhat(
+        self, template_id: uuid.UUID, data: CauTrucDeTemplateUpdate
+    ) -> CauTrucDeTemplate:
+        """Sua mau truc tiep — dung cho tab 'Mau cau truc de'.
+
+        Chi ghi field duoc gui len. Rieng `cau_truc` la THAY THE toan bo danh
+        sach dong (FE gui anh chup day du sau khi sua tren luoi).
+        """
+        tpl = await self.chi_tiet(template_id)
+
+        if data.ten_template is not None:
+            await self._check_trung_ten(data.ten_template, tru_id=template_id)
+            tpl.ten_template = data.ten_template.strip()
+
+        if data.mo_ta is not None:
+            tpl.mo_ta = data.mo_ta
+
+        if data.cau_truc is not None:
+            tpl.cau_truc = [item.model_dump(mode="json") for item in data.cau_truc]
+
+        tpl.updated_at = now_vn()
+        await self.db.commit()
+        await self.db.refresh(tpl)
+        return tpl
+
+    async def nhan_ban(
+        self, template_id: uuid.UUID, data: CauTrucDeTemplateNhanBan, user: TokenPayload
+    ) -> CauTrucDeTemplate:
+        """Nhan ban mau thanh mau moi (giu nguyen cau truc, doi ten)."""
+        goc = await self.chi_tiet(template_id)
+        await self._check_trung_ten(data.ten_template)
+
+        tpl = CauTrucDeTemplate(
+            ten_template=data.ten_template.strip(),
+            mo_ta=data.mo_ta if data.mo_ta is not None else f"Nhân bản từ mẫu {goc.ten_template}",
+            nguoi_tao_id=uuid.UUID(user.sub),
+            cau_truc=list(goc.cau_truc or []),
+        )
+        self.db.add(tpl)
+        await self.db.commit()
+        await self.db.refresh(tpl)
         return tpl
 
     async def xoa(self, template_id: uuid.UUID) -> None:

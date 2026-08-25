@@ -16,13 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lms_service.models.base import CongChucRef, DonViRef
 from lms_service.models.ky_thi import KyThi
 from lms_service.models.cau_truc_de import CauTrucDe
+from lms_service.models.cau_truc_de_template import CauTrucDeTemplate
 from lms_service.models.thi_sinh import ThiSinh
 from lms_service.models.linh_vuc import LinhVuc
 from lms_service.models.vi_tri_viec_lam import ViTriViecLam
 from lms_service.models.cau_hoi_dgnl import CauHoiDgnl
 from lms_service.schemas.ky_thi import (
     KyThiCreate, KyThiUpdate, KyThiTrangThaiUpdate,
-    CauTrucDeCreate, CauTrucDeResponse, CauTrucDeByViTri,
+    CauTrucDeCreate, CauTrucDeResponse, CauTrucDeByViTri, ApDungMauRequest,
     ValidateItem, ValidateViTri, ValidateResponse,
     TRANG_THAI_TRANSITIONS,
 )
@@ -437,15 +438,72 @@ class KyThiService:
 
         return list(vi_tri_map.values())
 
+    async def _check_co_the_sua_cau_truc(
+        self, kt: KyThi, vi_tri_ids: list[uuid.UUID]
+    ) -> None:
+        """Chan sua cau truc de khi khong con an toan.
+
+        De thi duoc sinh tai thoi diem thi sinh bam "Bat dau thi" (_tao_de_thi),
+        nen sua cau truc chi nguy hiem khi DA co nguoi thi o chinh vi tri do —
+        luc do nguoi vao sau se nhan de khac nguoi vao truoc, khong so sanh duoc.
+
+          NHAP / CHO_DUYET  -> sua tu do (chua ai thi duoc)
+          DANG_MO           -> chi chan vi tri da co thi sinh bat dau thi
+          DA_DONG / khac    -> chan
+        """
+        if kt.trang_thai in ("NHAP", "CHO_DUYET"):
+            return
+
+        if kt.trang_thai != "DANG_MO":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_019", "message": "Kỳ thi đã đóng — không thể sửa cấu trúc đề"}},
+            )
+
+        # DANG_MO: do dem thi sinh DA bat dau thi o cac vi tri bi tac dong
+        stmt = (
+            select(ViTriViecLam.ten_vi_tri, func.count(ThiSinh.id))
+            .join(ViTriViecLam, ThiSinh.vi_tri_id == ViTriViecLam.id)
+            .where(
+                ThiSinh.ky_thi_id == kt.id,
+                ThiSinh.vi_tri_id.in_(vi_tri_ids),
+                ThiSinh.thoi_gian_bat_dau.isnot(None),
+            )
+            .group_by(ViTriViecLam.ten_vi_tri)
+        )
+        rows = (await self.db.execute(stmt)).all()
+        if rows:
+            chi_tiet = ", ".join(f"{ten} ({so} thí sinh)" for ten, so in rows)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "DGNL_019",
+                        "message": f"Kỳ thi đang mở và đã có thí sinh làm bài ở vị trí: {chi_tiet}. "
+                                   f"Không thể sửa cấu trúc đề của các vị trí này.",
+                    },
+                },
+            )
+
     async def upsert_cau_truc_de(
         self, ky_thi_id: uuid.UUID, data: CauTrucDeCreate, user: TokenPayload
     ) -> list[CauTrucDeByViTri]:
-        """Tao hoac cap nhat cau truc de cho 1 vi tri (bulk upsert)."""
+        """Tao hoac cap nhat cau truc de cho 1 vi tri (bulk upsert).
+
+        LUU Y: payload la ANH CHUP DAY DU cau truc cua vi tri — cac dong khong
+        gui len se bi xoa. FE phai nap san cau truc hien co vao form truoc khi sua.
+        """
         kt = await self.chi_tiet(ky_thi_id)
-        if kt.trang_thai not in ("NHAP",):
+        await self._check_co_the_sua_cau_truc(kt, [data.vi_tri_id])
+
+        # Trung linh vuc trong cung 1 vi tri se vi pham uq_cau_truc_de_kt_vt_lv
+        # -> IntegrityError 500. Chan som bang 400 co thong diep ro.
+        lv_ids = [item.linh_vuc_id for item in data.cau_truc]
+        if len(set(lv_ids)) != len(lv_ids):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"success": False, "error": {"code": "DGNL_019", "message": "Chỉ được cấu hình cấu trúc đề khi kỳ thi ở trạng thái NHÁP"}},
+                detail={"success": False, "error": {"code": "DGNL_021", "message": "Một lĩnh vực chỉ được khai báo 1 dòng trong cùng vị trí"}},
             )
 
         # Validate vi_tri ton tai
@@ -495,16 +553,123 @@ class KyThiService:
         await self.db.commit()
         return await self.lay_cau_truc_de(ky_thi_id)
 
+    async def ap_dung_mau_cau_truc(
+        self, ky_thi_id: uuid.UUID, data: ApDungMauRequest, user: TokenPayload
+    ) -> list[CauTrucDeByViTri]:
+        """Ap dung mau cau truc de vao ky thi — NGUYEN TU.
+
+        Validate toan bo mau truoc (vi tri/linh vuc con hieu luc, trang thai ky
+        thi), roi xoa + ghi trong CUNG 1 transaction. Truoc day FE goi N request
+        tuan tu theo tung vi tri: loi giua chung -> cau truc ap dung do dang,
+        khong rollback duoc.
+        """
+        kt = await self.chi_tiet(ky_thi_id)
+
+        tpl_r = await self.db.execute(
+            select(CauTrucDeTemplate).where(
+                CauTrucDeTemplate.id == data.template_id,
+                CauTrucDeTemplate.is_active == True,  # noqa: E712
+            )
+        )
+        tpl = tpl_r.scalar_one_or_none()
+        if not tpl:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"success": False, "error": {"code": "DGNL_070", "message": "Mẫu cấu trúc đề không tồn tại"}},
+            )
+
+        rows = tpl.cau_truc or []
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_072", "message": "Mẫu cấu trúc đề rỗng"}},
+            )
+
+        # Gom theo vi tri + ep kieu UUID
+        try:
+            by_vi_tri: dict[uuid.UUID, list[dict]] = {}
+            for row in rows:
+                vt_id = uuid.UUID(str(row["vi_tri_id"]))
+                by_vi_tri.setdefault(vt_id, []).append(row)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"success": False, "error": {"code": "DGNL_072", "message": f"Mẫu cấu trúc đề hỏng dữ liệu: {exc}"}},
+            )
+
+        # Kiem tra trang thai TRUOC khi ghi bat ky thu gi
+        await self._check_co_the_sua_cau_truc(kt, list(by_vi_tri.keys()))
+
+        # Validate TAT CA vi tri / linh vuc trong mau con hieu luc — gom loi 1 lan
+        vt_hop_le = set((await self.db.execute(
+            select(ViTriViecLam.id).where(
+                ViTriViecLam.id.in_(by_vi_tri.keys()),
+                ViTriViecLam.is_active == True,  # noqa: E712
+            )
+        )).scalars().all())
+        lv_ids = {uuid.UUID(str(r["linh_vuc_id"])) for r in rows}
+        lv_hop_le = set((await self.db.execute(
+            select(LinhVuc.id).where(
+                LinhVuc.id.in_(lv_ids),
+                LinhVuc.is_active == True,  # noqa: E712
+            )
+        )).scalars().all())
+
+        loi: list[str] = []
+        for vt_id, items in by_vi_tri.items():
+            ds = [str(i["linh_vuc_id"]) for i in items]
+            if len(set(ds)) != len(ds):
+                loi.append("có lĩnh vực bị khai trùng trong cùng một vị trí")
+                break
+        if len(vt_hop_le) < len(by_vi_tri):
+            loi.append(f"{len(by_vi_tri) - len(vt_hop_le)} vị trí việc làm đã bị xóa/vô hiệu hóa")
+        if len(lv_hop_le) < len(lv_ids):
+            loi.append(f"{len(lv_ids) - len(lv_hop_le)} lĩnh vực đã bị xóa/vô hiệu hóa")
+        if loi:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "DGNL_073",
+                        "message": f"Không áp dụng được mẫu \"{tpl.ten_template}\": " + "; ".join(loi)
+                                   + ". Vui lòng mở tab Mẫu cấu trúc đề để gỡ các dòng không còn hiệu lực.",
+                    },
+                },
+            )
+
+        # Ghi de: xoa cau truc cu roi insert lai — CUNG 1 transaction
+        if data.ghi_de_toan_bo:
+            xoa_stmt = select(CauTrucDe).where(CauTrucDe.ky_thi_id == ky_thi_id)
+        else:
+            xoa_stmt = select(CauTrucDe).where(
+                CauTrucDe.ky_thi_id == ky_thi_id,
+                CauTrucDe.vi_tri_id.in_(by_vi_tri.keys()),
+            )
+        for old in (await self.db.execute(xoa_stmt)).scalars().all():
+            await self.db.delete(old)
+        await self.db.flush()
+
+        for vt_id, items in by_vi_tri.items():
+            for item in items:
+                self.db.add(CauTrucDe(
+                    ky_thi_id=ky_thi_id,
+                    vi_tri_id=vt_id,
+                    linh_vuc_id=uuid.UUID(str(item["linh_vuc_id"])),
+                    so_cau_de=int(item.get("so_cau_de") or 0),
+                    so_cau_trung_binh=int(item.get("so_cau_trung_binh") or 0),
+                    so_cau_kho=int(item.get("so_cau_kho") or 0),
+                ))
+
+        await self.db.commit()
+        return await self.lay_cau_truc_de(ky_thi_id)
+
     async def xoa_cau_truc_de_vi_tri(
         self, ky_thi_id: uuid.UUID, vi_tri_id: uuid.UUID, user: TokenPayload
     ) -> None:
         """Xoa cau truc de cua 1 vi tri."""
         kt = await self.chi_tiet(ky_thi_id)
-        if kt.trang_thai != "NHAP":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"success": False, "error": {"code": "DGNL_019", "message": "Chỉ được xóa cấu trúc đề khi kỳ thi ở trạng thái NHÁP"}},
-            )
+        await self._check_co_the_sua_cau_truc(kt, [vi_tri_id])
 
         existing = await self.db.execute(
             select(CauTrucDe).where(

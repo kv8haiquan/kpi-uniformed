@@ -384,6 +384,9 @@ export const kyThiApi = {
   // Cau truc de
   layCauTrucDe: (id: string) => lmsApi.get(`/ky-thi/${id}/cau-truc-de`),
   upsertCauTrucDe: (id: string, data: any) => lmsApi.post(`/ky-thi/${id}/cau-truc-de`, data),
+  /** Áp dụng mẫu vào kỳ thi — BE validate hết rồi ghi trong 1 transaction. */
+  apDungMauCauTruc: (id: string, data: { template_id: string; ghi_de_toan_bo?: boolean }) =>
+    lmsApi.post(`/ky-thi/${id}/cau-truc-de/ap-dung-mau`, data),
   xoaCauTrucDe: (id: string, viTriId: string) =>
     lmsApi.delete(`/ky-thi/${id}/cau-truc-de/${viTriId}`),
   // Thi sinh
@@ -463,6 +466,11 @@ export const cauTrucDeTemplateApi = {
   chiTiet: (id: string) => lmsApi.get(`/cau-truc-de-template/${id}`),
   taoMoi: (data: { ten_template: string; mo_ta?: string; cau_truc: any[] }) =>
     lmsApi.post('/cau-truc-de-template', data),
+  /** Sửa mẫu trực tiếp — `cau_truc` nếu gửi là THAY THẾ toàn bộ danh sách dòng. */
+  capNhat: (id: string, data: { ten_template?: string; mo_ta?: string; cau_truc?: any[] }) =>
+    lmsApi.put(`/cau-truc-de-template/${id}`, data),
+  nhanBan: (id: string, data: { ten_template: string; mo_ta?: string }) =>
+    lmsApi.post(`/cau-truc-de-template/${id}/nhan-ban`, data),
   xoa: (id: string) => lmsApi.delete(`/cau-truc-de-template/${id}`),
 };
 

@@ -13,7 +13,8 @@ API endpoints ky thi DGNL + cau truc de + validate + thong ke.
   POST   /ky-thi/{id}/validate              Validate ngan hang cau hoi
   GET    /ky-thi/{id}/thong-ke              Thong ke ket qua
   GET    /ky-thi/{id}/cau-truc-de           Lay cau truc de
-  POST   /ky-thi/{id}/cau-truc-de           Upsert cau truc de
+  POST   /ky-thi/{id}/cau-truc-de           Upsert cau truc de 1 vi tri
+  POST   /ky-thi/{id}/cau-truc-de/ap-dung-mau  Ap dung mau (nguyen tu)
   DELETE /ky-thi/{id}/cau-truc-de/{vi_tri_id}  Xoa cau truc de 1 vi tri
 """
 
@@ -26,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lms_service.dependencies import get_db, get_current_user, require_platform_role
 from lms_service.schemas.ky_thi import (
     KyThiCreate, KyThiUpdate, KyThiTrangThaiUpdate, KyThiResponse,
-    CauTrucDeCreate, CauTrucDeByViTri,
+    CauTrucDeCreate, CauTrucDeByViTri, ApDungMauRequest,
     ValidateResponse, ThongKeKyThi,
 )
 from lms_service.services.ky_thi_service import KyThiService
@@ -208,6 +209,23 @@ async def upsert_cau_truc_de(
         "success": True,
         "data": [item.model_dump(mode="json") for item in result],
         "message": "Cập nhật cấu trúc đề thành công",
+    }
+
+
+@router.post("/{ky_thi_id}/cau-truc-de/ap-dung-mau", status_code=201)
+async def ap_dung_mau_cau_truc(
+    ky_thi_id: UUID,
+    data: ApDungMauRequest,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
+):
+    """Ap dung mau cau truc de vao ky thi — validate het roi ghi 1 transaction."""
+    service = KyThiService(db)
+    result = await service.ap_dung_mau_cau_truc(ky_thi_id, data, user)
+    return {
+        "success": True,
+        "data": [item.model_dump(mode="json") for item in result],
+        "message": "Áp dụng mẫu cấu trúc đề thành công",
     }
 
 

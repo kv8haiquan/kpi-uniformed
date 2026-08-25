@@ -7,11 +7,33 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `2137a32` |
-| **Ngắn** | `2137a32` |
-| **Nhánh nguồn** | `prod` (fast-forward từ `feature/van-hanh-chan-build-khi-thi`) |
-| **Ngày ghi mốc** | 25/08/2026 11:23 |
+| **Commit** | `97264ae` |
+| **Ngắn** | `97264ae` |
+| **Nhánh nguồn** | `prod` (fast-forward từ `feature/lich-cong-tac-xem-tuan-ngay`) |
+| **Ngày ghi mốc** | 25/08/2026 11:32 |
 | **Alembic** | `mt_025_loai_tai_lieu_20260822` (không đổi — đợt này không có migration) |
+
+Nội dung: **Lịch công tác — xem theo TUẦN và theo NGÀY**. Tab Lịch trước chỉ có
+lưới tháng (cắt còn 3 sự kiện mỗi ô) và danh sách trộn mọi ngày. Nay thêm lưới
+tuần hiện hết sự kiện từng ngày, và màn hình một ngày xếp nối nhau chi tiết
+ĐẦY ĐỦ của mọi cuộc họp hôm đó — thành phần, đơn vị chuẩn bị, số văn bản, ghi
+chú, tài liệu, chấm sao — kèm nguyên bộ nút Sửa / Huỷ / Xoá / Nhật ký. Ngày
+đông nhất trong sáu tháng dữ liệu có 8 cuộc, trước phải vào–ra 8 lần mới đọc
+hết. Bấm bất cứ đâu trong ô ngày ở lưới tháng là mở cả ngày đó.
+
+Phần hiển thị của trang chi tiết tách thành `components/ChiTietSuKien.tsx`, cả
+trang `/lich-cong-tac/[id]` lẫn màn hình một ngày cùng dùng — hai bên không thể
+lệch nhau. Thuần frontend, **không đụng backend, không thêm endpoint**: API
+danh sách vốn đã lọc theo khoảng ngày và tính cả sự kiện nhiều ngày giao với
+khoảng đó.
+
+> Ghi chú quy trình: nhánh feature tạo ra lúc prod còn ở `e005660`, đến khi
+> triển khai thì prod đã ở `58bf940`. Truyền thẳng SHA cũ sẽ **lùi production**,
+> mất luôn `kiem_tra_ky_thi.sh` của mốc trước. Đã rebase nhánh lên `origin/prod`
+> rồi mới triển khai — `git log <nhánh>..origin/prod` phải RỖNG trước khi chạy
+> `trien_khai.sh`.
+
+### Mốc trước — `2137a32`
 
 Nội dung: **Chặn build/triển khai khi đang có người thi**. Sinh ra từ sự cố cùng
 ngày 10:04–10:17: `npm run build` chạy trần đúng lúc 13 thí sinh đang ở phút thứ
@@ -25,13 +47,13 @@ Kèm theo, đã áp thẳng lên máy và **không nằm trong git**: swapfile 8
 `/etc/fstab`, và `/etc/sysctl.d/99-kpi-oom.conf` (`vm.swappiness=10`,
 `vm.min_free_kbytes=131072`, `vm.watermark_scale_factor=100`).
 
-### Mốc trước — `cc254be`
+### Mốc trước nữa — `cc254be`
 
 **Quy trình khôi phục file từ ảnh uploads**, kèm cảnh báo `/opt/kpi/scripts` nằm
 ngoài `trien_khai.sh`. Trước đó là `e005660` (sửa mặc định uploads sai trong sao
 lưu) và `b6f805c` (lịch sử phiên bản cho uploads bằng ảnh hardlink).
 
-### Mốc trước nữa — `8653f0e`
+### Mốc cũ hơn — `8653f0e`
 
 **ĐGNL — thư viện mẫu cấu trúc đề**. Tab "Mẫu cấu trúc đề" cho sửa
 mẫu trực tiếp trên lưới (trước chỉ tạo được bằng cách lưu từ kỳ thi, không sửa
@@ -51,13 +73,18 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 25/08/2026 | `40de07e` | LMS: sửa `POST /cau-hoi` trả 500 khi thêm câu vào bài kiểm tra đã có — không migration |
 | 25/08/2026 | `cc254be` | Sao lưu: lịch sử phiên bản uploads bằng ảnh hardlink + quy trình khôi phục — không migration |
 | 25/08/2026 | `2137a32` | Vận hành: chặn build/triển khai khi đang có người thi (sau sự cố OOM 10:04–10:17) — không migration |
+| 25/08/2026 | `902e711` | Công cụ: `trien_khai.sh` tự gắn nhánh `prod` — chỉ script + tài liệu, không chạm code dịch vụ, không restart |
+| 25/08/2026 | `e005660` | Backup: lịch sử phiên bản uploads (ảnh hardlink, giữ 60 bản) + sửa mặc định đường dẫn uploads đã chết. Cần cài tay vào `/opt/kpi/scripts/` — xem `scripts/INSTALL_CRON.md` |
+| 25/08/2026 | `97264ae` | Lịch công tác: xem theo tuần và theo ngày, một ngày hiện chi tiết đầy đủ mọi cuộc họp — thuần frontend, không migration |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng
 > `git -C /opt/kpi-prod rev-parse HEAD` và bổ sung các mốc còn thiếu. Kiểm tra
 > nhanh bất cứ lúc nào: `git -C /opt/kpi-prod rev-parse --short HEAD`.
-| 25/08/2026 | `902e711` | Công cụ: `trien_khai.sh` tự gắn nhánh `prod` — chỉ script + tài liệu, không chạm code dịch vụ, không restart |
-| 25/08/2026 | `e005660` | Backup: lịch sử phiên bản uploads (ảnh hardlink, giữ 60 bản) + sửa mặc định đường dẫn uploads đã chết. Cần cài tay vào `/opt/kpi/scripts/` — xem `scripts/INSTALL_CRON.md` |
+>
+> Chú thích này trước nằm CHEN GIỮA bảng, cắt bảng làm đôi nên hai dòng
+> `902e711` và `e005660` hiện ra thành văn bản thường, không phải hàng bảng.
+> Đã chuyển xuống dưới bảng.
 
 ## Quy ước giữ nhánh khớp code đang chạy
 

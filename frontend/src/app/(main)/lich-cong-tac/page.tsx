@@ -1,9 +1,13 @@
 /**
  * /lich-cong-tac/ — màn hình trung tâm của module Lịch công tác.
  *
- * Hai chế độ xem như lichkv8: lưới tháng và danh sách. Sự kiện nguồn HKG có
- * nhãn riêng và bấm được sang chi tiết cuộc họp trong Họp Không Giấy — đó là
- * tiêu chí 8.3 của yêu cầu chuyển đổi.
+ * Bốn chế độ xem: lưới THÁNG, lưới TUẦN, chương trình một NGÀY và DANH SÁCH.
+ * lichkv8 chỉ có tháng và danh sách; tuần/ngày thêm vào vì Văn phòng đọc
+ * chương trình công tác theo tuần, còn lãnh đạo hỏi "hôm nay có gì" theo ngày.
+ * Bấm vào một ngày ở lưới tháng hoặc lưới tuần là mở thẳng lịch ngày đó.
+ *
+ * Sự kiện nguồn HKG có nhãn riêng và bấm được sang chi tiết cuộc họp trong
+ * Họp Không Giấy — đó là tiêu chí 8.3 của yêu cầu chuyển đổi.
  *
  * Lọc và phân trang chạy phía máy chủ; hệ cũ tải hết vào bộ nhớ trình duyệt
  * nên chậm dần theo số lượng lịch.
@@ -15,7 +19,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
+  CalendarClock,
   CalendarDays,
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -33,7 +39,25 @@ import {
 
 import { lichCongTacApi } from '@/services/lich-cong-tac';
 import FormLich from './components/FormLich';
+import LichNgay from './components/LichNgay';
+import LichTuan from './components/LichTuan';
+import {
+  MAU_TRANG_THAI,
+  chuTri,
+  mauLoai,
+  suaDuocLich,
+} from './components/lich-mau';
 import { errMsg } from '@/lib/hkg-error';
+import {
+  dauTuan,
+  gioNgan,
+  homNayKhoa,
+  ngayThangVN,
+  ngayVN,
+  nhanThu,
+  themNgay,
+  thuTrongTuan,
+} from '@/lib/lich-ngay';
 import {
   NHAN_LOAI_LICH,
   NHAN_TRANG_THAI,
@@ -42,43 +66,18 @@ import {
   type ISuKienChiTiet,
   type ISuKienLich,
   type LoaiLich,
-  type TrangThaiLich,
 } from '@/types/lich-cong-tac';
-
-const MAU_LOAI: Record<LoaiLich, string> = {
-  HOP: 'bg-blue-100 text-blue-800 border-blue-200',
-  TRUC_BAN: 'bg-amber-100 text-amber-800 border-amber-200',
-  HOI_NGHI: 'bg-purple-100 text-purple-800 border-purple-200',
-  LAM_VIEC: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  CONG_TAC: 'bg-cyan-100 text-cyan-800 border-cyan-200',
-  LICH_KHAC: 'bg-gray-100 text-gray-700 border-gray-200',
-};
-
-const MAU_TRANG_THAI: Record<TrangThaiLich, string> = {
-  LEN_KE_HOACH: 'bg-gray-100 text-gray-700',
-  DA_THONG_BAO: 'bg-blue-100 text-blue-800',
-  DANG_DIEN_RA: 'bg-yellow-100 text-yellow-800',
-  HOAN_THANH: 'bg-green-100 text-green-800',
-  HUY: 'bg-red-100 text-red-800',
-};
 
 const THU_NGAN = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
-/** Thứ Hai đầu tuần — lịch Việt Nam, khác mặc định của Date (Chủ nhật). */
-function thuTrongTuan(d: Date): number {
-  return (d.getDay() + 6) % 7;
-}
+type CheDo = 'thang' | 'tuan' | 'ngay' | 'danh-sach';
 
-function gioNgan(gio?: string | null): string {
-  return gio ? gio.slice(0, 5) : '';
-}
-
-function chuTri(sk: ISuKienLich): string {
-  return sk.chu_toa?.ho_ten || sk.chu_tri_text || '';
-}
+const CHE_DO_HOP_LE: CheDo[] = ['thang', 'tuan', 'ngay', 'danh-sach'];
 
 export default function LichCongTacPage() {
-  const homNay = useMemo(() => new Date(), []);
+  // Khoá ngày `YYYY-MM-DD` chứ không phải Date: chế độ tuần/ngày so sánh và
+  // cộng ngày trên chuỗi, giữ nguyên một kiểu dữ liệu cho cả trang.
+  const homNay = useMemo(() => homNayKhoa(), []);
 
   // Trang Tổng quan trỏ về đây kèm khoảng ngày trên URL ("hôm nay", "trong
   // tuần"…). Đọc một lần lúc mở trang; sau đó người dùng đổi bộ lọc thì URL
@@ -87,15 +86,25 @@ export default function LichCongTacPage() {
   const qs = useSearchParams();
   const qsTuNgay = qs.get('tu-ngay') ?? '';
   const qsDenNgay = qs.get('den-ngay') ?? '';
+  const qsCheDo = qs.get('che-do') as CheDo | null;
+  const qsNgay = qs.get('ngay') ?? '';
 
-  const [cheDo, setCheDo] = useState<'thang' | 'danh-sach'>(
-    qs.get('che-do') === 'danh-sach' ? 'danh-sach' : 'thang',
+  const [cheDo, setCheDo] = useState<CheDo>(
+    qsCheDo && CHE_DO_HOP_LE.includes(qsCheDo) ? qsCheDo : 'thang',
   );
-  const [nam, setNam] = useState(homNay.getFullYear());
-  const [thang, setThang] = useState(homNay.getMonth() + 1);
+
+  /** Ngày đang xem ở chế độ tuần/ngày — tuần lấy trọn tuần chứa ngày này. */
+  const [ngayChon, setNgayChon] = useState(
+    /^\d{4}-\d{2}-\d{2}$/.test(qsNgay) ? qsNgay : homNay,
+  );
+
+  const [nam, setNam] = useState(Number(homNay.slice(0, 4)));
+  const [thang, setThang] = useState(Number(homNay.slice(5, 7)));
 
   const [lichThang, setLichThang] = useState<ILichThang | null>(null);
   const [danhSach, setDanhSach] = useState<ISuKienLich[]>([]);
+  /** Sự kiện thô của khoảng đang xem ở chế độ tuần/ngày. */
+  const [suKienKhoang, setSuKienKhoang] = useState<ISuKienLich[]>([]);
   const [tong, setTong] = useState(0);
   const [trang, setTrang] = useState(1);
 
@@ -120,10 +129,7 @@ export default function LichCongTacPage() {
   const [dangSua, setDangSua] = useState<ISuKienChiTiet | null>(null);
   const [dangMoSua, setDangMoSua] = useState<string | null>(null);
 
-  const suaDuoc = (sk: ISuKienLich) =>
-    sk.nguon === 'LICH_CONG_TAC' &&
-    Boolean(quyen) &&
-    (quyen!.la_quan_tri_lich || quyen!.cong_chuc_id === sk.created_by);
+  const suaDuoc = (sk: ISuKienLich) => suaDuocLich(sk, quyen);
 
   const moSua = async (sk: ISuKienLich) => {
     setDangMoSua(sk.id);
@@ -140,6 +146,15 @@ export default function LichCongTacPage() {
 
   const soDong = 30;
 
+  /** Khoảng ngày của chế độ tuần/ngày — cũng là phạm vi xuất Excel. */
+  const khoangDangXem = useMemo(() => {
+    if (cheDo === 'tuan') {
+      const bd = dauTuan(ngayChon);
+      return { tu: bd, den: themNgay(bd, 6) };
+    }
+    return { tu: ngayChon, den: ngayChon };
+  }, [cheDo, ngayChon]);
+
   const tai = useCallback(async () => {
     setDangTai(true);
     setLoi(null);
@@ -150,6 +165,17 @@ export default function LichCongTacPage() {
             'loai-lich': locLoai || undefined,
           }),
         );
+      } else if (cheDo === 'tuan' || cheDo === 'ngay') {
+        // Một tuần nhiều nhất vài chục sự kiện — lấy trọn một lần rồi gom
+        // theo ngày phía trình duyệt, không phân trang cho khỏi vỡ lưới.
+        const resp = await lichCongTacApi.danhSach({
+          'loai-lich': locLoai || undefined,
+          'tu-ngay': khoangDangXem.tu,
+          'den-ngay': khoangDangXem.den,
+          trang: 1,
+          'so-dong': 500,
+        });
+        setSuKienKhoang(resp.data.data);
       } else {
         const resp = await lichCongTacApi.danhSach({
           'loai-lich': locLoai || undefined,
@@ -170,7 +196,8 @@ export default function LichCongTacPage() {
     } finally {
       setDangTai(false);
     }
-  }, [cheDo, nam, thang, locLoai, tuKhoaGui, tuNgay, denNgay, trang]);
+  }, [cheDo, nam, thang, locLoai, tuKhoaGui, tuNgay, denNgay, trang,
+      khoangDangXem]);
 
   useEffect(() => {
     void tai();
@@ -193,41 +220,54 @@ export default function LichCongTacPage() {
     }
   };
 
+  /** Lùi/tiến một tuần (chế độ tuần) hoặc một ngày (chế độ ngày). */
+  const doiNgay = (buoc: number) =>
+    setNgayChon(themNgay(ngayChon, cheDo === 'tuan' ? buoc * 7 : buoc));
+
+  /**
+   * Bấm một ngày ở lưới tháng hoặc lưới tuần → mở lịch ngày đó. Đồng thời kéo
+   * tháng đang xem theo, để bấm "Lịch tháng" quay lại là thấy đúng tháng chứa
+   * ngày vừa xem chứ không nhảy về tháng cũ.
+   */
+  const moNgay = (khoa: string) => {
+    setNgayChon(khoa);
+    setNam(Number(khoa.slice(0, 4)));
+    setThang(Number(khoa.slice(5, 7)));
+    setCheDo('ngay');
+  };
+
   /** Lưới tháng luôn bắt đầu từ thứ Hai của tuần chứa ngày 1. */
   const oLich = useMemo(() => {
-    const dau = new Date(nam, thang - 1, 1);
-    const lui = thuTrongTuan(dau);
-    const batDau = new Date(nam, thang - 1, 1 - lui);
-    return Array.from({ length: 42 }, (_, i) => {
-      const d = new Date(batDau);
-      d.setDate(batDau.getDate() + i);
-      return d;
-    });
+    const dau = `${nam}-${String(thang).padStart(2, '0')}-01`;
+    const batDau = themNgay(dau, -thuTrongTuan(dau));
+    return Array.from({ length: 42 }, (_, i) => themNgay(batDau, i));
   }, [nam, thang]);
 
-  const khoaNgay = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-      d.getDate(),
-    ).padStart(2, '0')}`;
-
-  /** Xuất đúng phạm vi đang xem: chế độ tháng thì cả tháng, danh sách thì
-   *  theo bộ lọc và từ khoá hiện tại. */
+  /** Xuất đúng phạm vi đang xem: tháng/tuần/ngày thì theo khoảng ngày tương
+   *  ứng, danh sách thì theo bộ lọc và từ khoá hiện tại. */
   const xuatExcel = async () => {
     setDangXuat(true);
     setLoi(null);
     try {
       const cuoiThang = new Date(nam, thang, 0).getDate();
+      const dauThang = `${nam}-${String(thang).padStart(2, '0')}-01`;
       await lichCongTacApi.xuatExcel(
         cheDo === 'thang'
           ? {
-              'tu-ngay': `${nam}-${String(thang).padStart(2, '0')}-01`,
+              'tu-ngay': dauThang,
               'den-ngay': `${nam}-${String(thang).padStart(2, '0')}-${cuoiThang}`,
               'loai-lich': locLoai || undefined,
             }
-          : {
-              'loai-lich': locLoai || undefined,
-              'tim-kiem': tuKhoaGui || undefined,
-            },
+          : cheDo === 'tuan' || cheDo === 'ngay'
+            ? {
+                'tu-ngay': khoangDangXem.tu,
+                'den-ngay': khoangDangXem.den,
+                'loai-lich': locLoai || undefined,
+              }
+            : {
+                'loai-lich': locLoai || undefined,
+                'tim-kiem': tuKhoaGui || undefined,
+              },
       );
     } catch (e) {
       setLoi(errMsg(e, 'Không xuất được Excel'));
@@ -244,30 +284,28 @@ export default function LichCongTacPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setCheDo('thang')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm ${
-                cheDo === 'thang'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <CalendarDays className="w-4 h-4" />
-              Lịch tháng
-            </button>
-            <button
-              type="button"
-              onClick={() => setCheDo('danh-sach')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm ${
-                cheDo === 'danh-sach'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              <List className="w-4 h-4" />
-              Danh sách
-            </button>
+            {(
+              [
+                { ma: 'thang', nhan: 'Lịch tháng', Icon: CalendarDays },
+                { ma: 'tuan', nhan: 'Lịch tuần', Icon: CalendarRange },
+                { ma: 'ngay', nhan: 'Lịch ngày', Icon: CalendarClock },
+                { ma: 'danh-sach', nhan: 'Danh sách', Icon: List },
+              ] as { ma: CheDo; nhan: string; Icon: typeof CalendarDays }[]
+            ).map(({ ma, nhan, Icon }) => (
+              <button
+                key={ma}
+                type="button"
+                onClick={() => setCheDo(ma)}
+                className={`flex items-center gap-1.5 border-l border-gray-300 px-3 py-1.5 text-sm first:border-l-0 ${
+                  cheDo === ma
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {nhan}
+              </button>
+            ))}
           </div>
 
           <select
@@ -338,13 +376,55 @@ export default function LichCongTacPage() {
             <button
               type="button"
               onClick={() => {
-                setNam(homNay.getFullYear());
-                setThang(homNay.getMonth() + 1);
+                setNam(Number(homNay.slice(0, 4)));
+                setThang(Number(homNay.slice(5, 7)));
               }}
               className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50"
             >
               Hôm nay
             </button>
+          </div>
+        ) : cheDo === 'tuan' || cheDo === 'ngay' ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => doiNgay(-1)}
+              aria-label={cheDo === 'tuan' ? 'Tuần trước' : 'Ngày trước'}
+              className="p-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="min-w-[15rem] text-center font-semibold">
+              {cheDo === 'tuan'
+                ? `Tuần ${ngayThangVN(khoangDangXem.tu)} – ${ngayVN(
+                    khoangDangXem.den,
+                  )}`
+                : `${nhanThu(ngayChon)}, ${ngayVN(ngayChon)}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => doiNgay(1)}
+              aria-label={cheDo === 'tuan' ? 'Tuần sau' : 'Ngày sau'}
+              className="p-1.5 rounded-lg border border-gray-300 hover:bg-gray-50"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setNgayChon(homNay)}
+              className="px-3 py-1.5 text-sm rounded-lg border border-gray-300 hover:bg-gray-50"
+            >
+              Hôm nay
+            </button>
+            {/* Nhảy thẳng tới một ngày bất kỳ — nhanh hơn bấm mũi tên hàng
+                chục lần khi cần xem lịch tháng sau. */}
+            <input
+              type="date"
+              value={ngayChon}
+              onChange={(e) => e.target.value && setNgayChon(e.target.value)}
+              aria-label="Chọn ngày"
+              className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+            />
           </div>
         ) : (
           <form
@@ -416,36 +496,50 @@ export default function LichCongTacPage() {
           </div>
           <div className="grid grid-cols-7">
             {oLich.map((d) => {
-              const trongThang = d.getMonth() + 1 === thang;
-              const laHomNay = khoaNgay(d) === khoaNgay(homNay);
-              const suKien = lichThang?.theo_ngay[khoaNgay(d)] ?? [];
+              const trongThang = Number(d.slice(5, 7)) === thang;
+              const laHomNay = d === homNay;
+              const suKien = lichThang?.theo_ngay[d] ?? [];
               return (
                 <div
-                  key={d.toISOString()}
-                  className={`min-h-[7rem] border-b border-r border-gray-100 p-1.5 ${
+                  key={d}
+                  className={`group relative min-h-[7rem] border-b border-r border-gray-100 p-1.5 ${
                     trongThang ? 'bg-white' : 'bg-gray-50/60'
                   }`}
                 >
+                  {/*
+                    Cả ô ngày bấm được để xem lịch ngày đó. Nút phủ kín ô nằm
+                    DƯỚI phần nội dung: lồng link sự kiện vào trong một nút là
+                    sai ngữ nghĩa và bàn phím không đi qua được, còn để nút phủ
+                    lên trên thì lại chặn mất link. Cách này giữ cả hai — bấm
+                    chỗ trống mở cả ngày, bấm đúng sự kiện sang chi tiết.
+                  */}
+                  <button
+                    type="button"
+                    onClick={() => moNgay(d)}
+                    aria-label={`Xem lịch ngày ${ngayVN(d)}`}
+                    title={`Xem lịch ngày ${ngayVN(d)}`}
+                    className="absolute inset-0 z-0 w-full cursor-pointer hover:bg-blue-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                  />
                   <div
-                    className={`text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                    className={`pointer-events-none relative z-10 text-xs mb-1 inline-flex items-center justify-center w-6 h-6 rounded-full ${
                       laHomNay
                         ? 'bg-blue-600 text-white font-semibold'
                         : trongThang
-                          ? 'text-gray-700'
-                          : 'text-gray-400'
+                          ? 'text-gray-700 group-hover:text-blue-700'
+                          : 'text-gray-400 group-hover:text-blue-700'
                     }`}
                   >
-                    {d.getDate()}
+                    {Number(d.slice(8, 10))}
                   </div>
-                  <div className="space-y-1">
+                  <div className="pointer-events-none relative z-10 space-y-1">
                     {suKien.slice(0, 3).map((sk) => (
                       <Link
-                        key={`${sk.id}-${khoaNgay(d)}`}
+                        key={`${sk.id}-${d}`}
                         href={`/lich-cong-tac/${sk.id}`}
                         title={sk.tieu_de}
-                        className={`block truncate rounded border px-1.5 py-0.5 text-[11px] leading-tight hover:brightness-95 ${
-                          MAU_LOAI[sk.loai_lich ?? 'LICH_KHAC']
-                        }`}
+                        className={`pointer-events-auto block truncate rounded border px-1.5 py-0.5 text-[11px] leading-tight hover:brightness-95 ${mauLoai(
+                          sk.loai_lich,
+                        )}`}
                       >
                         <span className="font-medium">
                           {gioNgan(sk.gio_bat_dau)}
@@ -454,8 +548,8 @@ export default function LichCongTacPage() {
                       </Link>
                     ))}
                     {suKien.length > 3 && (
-                      <div className="text-[11px] text-gray-500 pl-1">
-                        +{suKien.length - 3} nữa
+                      <div className="pl-1 text-[11px] text-gray-500 group-hover:text-blue-700 group-hover:underline">
+                        +{suKien.length - 3} nữa — xem cả ngày
                       </div>
                     )}
                   </div>
@@ -464,6 +558,21 @@ export default function LichCongTacPage() {
             })}
           </div>
         </div>
+      ) : cheDo === 'tuan' ? (
+        <LichTuan
+          ngay={ngayChon}
+          suKien={suKienKhoang}
+          homNay={homNay}
+          onChonNgay={moNgay}
+        />
+      ) : cheDo === 'ngay' ? (
+        <LichNgay
+          ngay={ngayChon}
+          suKien={suKienKhoang}
+          homNay={homNay}
+          quyen={quyen}
+          onLamMoi={() => void tai()}
+        />
       ) : (
         <>
           <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
@@ -479,9 +588,9 @@ export default function LichCongTacPage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2 mb-1">
                           <span
-                            className={`rounded border px-1.5 py-0.5 text-[11px] ${
-                              MAU_LOAI[sk.loai_lich ?? 'LICH_KHAC']
-                            }`}
+                            className={`rounded border px-1.5 py-0.5 text-[11px] ${mauLoai(
+                              sk.loai_lich,
+                            )}`}
                           >
                             {sk.loai_lich_nhan ?? 'Lịch khác'}
                           </span>

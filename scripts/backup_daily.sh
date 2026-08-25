@@ -4,6 +4,17 @@
 # Backup hàng ngày: pg_dump DB kpi_haiquan + rsync HKG_UPLOAD_DIR.
 # Daily retention 30 ngày + monthly snapshot 12 tháng.
 #
+# Uploads có 2 lớp:
+#   uploads/                      gương hiện tại (rsync --delete)
+#   uploads_snapshots/<ts>/       ảnh hardlink TRƯỚC mỗi lần rsync, giữ 60 bản
+#                                 (= 30 ngày ở nhịp 2 lần/ngày)
+# Khôi phục 1 file đã xóa nhầm:
+#   ls /var/backup/kpi_haiquan/uploads_snapshots/            # chọn mốc thời gian
+#   cp -a /var/backup/kpi_haiquan/uploads_snapshots/<ts>/<đường/dẫn/file> \
+#         /var/data/kpi/uploads/<đường/dẫn/file>
+# Ảnh dùng hardlink nên `du -sh` từng thư mục sẽ CỘNG DỒN sai; xem dung lượng
+# thật của cả kho bằng: du -sh --one-file-system /var/backup/kpi_haiquan
+#
 # Cron: 0 2 * * * root /opt/kpi/scripts/backup_daily.sh >> /var/log/backup_kpi.log 2>&1
 #
 # Required env vars (override khi gọi để test ở local):
@@ -22,15 +33,21 @@ DB_NAME="${DB_NAME:-kpi_haiquan}"
 DB_USER="${DB_USER:-kpi_user}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-5432}"
-HKG_UPLOAD_DIR="${HKG_UPLOAD_DIR:-/var/data/hkg/uploads}"
+# 18/08/2026 uploads chuyển sang /var/data/kpi/uploads (gồm cả LMS, portal,
+# legal chứ không riêng HKG). Mặc định cũ /var/data/hkg/uploads đã không còn
+# tồn tại — chỉ dòng HKG_UPLOAD_DIR trong /etc/cron.d/hkg-backups giữ đường dẫn
+# đúng. Chạy tay không có biến đó thì rsync bị bỏ qua trong im lặng.
+HKG_UPLOAD_DIR="${HKG_UPLOAD_DIR:-/var/data/kpi/uploads}"
 BACKUP_ROOT="${BACKUP_ROOT:-/var/backup/kpi_haiquan}"
 
 DAILY_DIR="${BACKUP_ROOT}/daily"
 MONTHLY_DIR="${BACKUP_ROOT}/monthly"
 UPLOADS_DIR="${BACKUP_ROOT}/uploads"
+UPLOADS_SNAP_DIR="${BACKUP_ROOT}/uploads_snapshots"
 
 DAILY_RETENTION_DAYS=30
 MONTHLY_RETENTION_DAYS=400  # ~12 tháng + buffer
+UPLOADS_SNAPSHOT_KEEP="${UPLOADS_SNAPSHOT_KEEP:-60}"  # 2 lần/ngày × 30 ngày
 
 TIMESTAMP="$(date +%Y%m%d_%H%M)"
 DAY_OF_MONTH="$(date +%d)"
@@ -45,7 +62,7 @@ if [ -z "${PGPASSWORD:-}" ] && [ ! -f "$HOME/.pgpass" ]; then
     die "Thiếu auth: set PGPASSWORD env HOẶC tạo $HOME/.pgpass (chmod 600)"
 fi
 
-mkdir -p "$DAILY_DIR" "$MONTHLY_DIR" "$UPLOADS_DIR"
+mkdir -p "$DAILY_DIR" "$MONTHLY_DIR" "$UPLOADS_DIR" "$UPLOADS_SNAP_DIR"
 
 # ─── Pre-check: disk space ───────────────────────────────────────────
 log "Pre-check disk space..."
@@ -77,29 +94,68 @@ if [ "$DUMP_SIZE" -lt 1048576 ]; then
 fi
 log "pg_dump OK (${DUMP_SIZE}B, gzip integrity OK)"
 
-# ─── 2. rsync uploads (loại trừ preview cache) ───────────────────────
+# ─── 2. Chụp ảnh gương uploads TRƯỚC khi ghi đè ──────────────────────
+# rsync --delete biến $UPLOADS_DIR thành GƯƠNG, không phải kho lưu trữ: file bị
+# xóa nhầm hay ghi đè hỏng lúc 08:00 thì 14:00 backup mất theo, không có bản cũ
+# để quay lui. Chụp ảnh bằng hardlink (cp -al) trước mỗi lần rsync: file không
+# đổi chỉ tốn thêm inode + mục thư mục, nên 30 ngày lịch sử gần như miễn phí đĩa.
+#
+# An toàn được là nhờ rsync ghi ra file tạm rồi đổi tên (inode MỚI), không sửa
+# tại chỗ — ảnh cũ giữ nguyên nội dung. TUYỆT ĐỐI không thêm cờ --inplace vào
+# lệnh rsync bên dưới: nó sẽ ghi đè thẳng vào inode đang được ảnh chia sẻ và
+# làm hỏng toàn bộ lịch sử.
+if [ -d "$UPLOADS_DIR" ] && find "$UPLOADS_DIR" -mindepth 1 -print -quit | grep -q .; then
+    SNAP_DEST="${UPLOADS_SNAP_DIR}/${TIMESTAMP}"
+    if [ -e "$SNAP_DEST" ]; then
+        log "WARN: ảnh $TIMESTAMP đã tồn tại, bỏ qua (script chạy 2 lần trong cùng phút?)"
+    elif cp -al "$UPLOADS_DIR" "$SNAP_DEST" 2>/dev/null; then
+        log "Ảnh uploads → $SNAP_DEST ($(find "$SNAP_DEST" -type f | wc -l) file, hardlink)"
+    else
+        log "WARN: không tạo được ảnh hardlink ($SNAP_DEST) — vẫn tiếp tục rsync"
+        rm -rf "$SNAP_DEST" 2>/dev/null || true
+    fi
+else
+    log "Gương uploads còn rỗng — lần chạy đầu, chưa có gì để chụp ảnh"
+fi
+
+# ─── 3. rsync uploads (loại trừ preview cache) ───────────────────────
 if [ -d "$HKG_UPLOAD_DIR" ]; then
     log "rsync $HKG_UPLOAD_DIR → $UPLOADS_DIR"
     rsync -a --delete \
         --exclude='_preview_cache/' \
         "${HKG_UPLOAD_DIR}/" "${UPLOADS_DIR}/"
-    log "rsync OK"
+    log "rsync OK ($(find "$UPLOADS_DIR" -type f | wc -l) file trong gương)"
 else
-    log "WARN: HKG_UPLOAD_DIR không tồn tại ($HKG_UPLOAD_DIR), skip rsync"
+    # Trước đây chỉ WARN rồi chạy tiếp và báo "completed successfully" — backup
+    # bỏ qua 6,9 GB uploads mà vẫn báo thành công là kiểu hỏng nguy hiểm nhất,
+    # vì không ai biết cho tới lúc cần khôi phục. Dump DB ở bước 1 đã ghi xong
+    # và vẫn dùng được; chỉ mã thoát khác 0 để log và cảnh báo bắt được.
+    die "Thư mục uploads không tồn tại ($HKG_UPLOAD_DIR) — KHÔNG sao lưu được uploads"
 fi
 
-# ─── 3. Monthly snapshot ngày 1 ──────────────────────────────────────
+# ─── 4. Monthly snapshot ngày 1 ──────────────────────────────────────
 if [ "$DAY_OF_MONTH" = "01" ]; then
     MONTHLY_FILE="${MONTHLY_DIR}/db_$(date +%Y%m).sql.gz"
     log "Tạo monthly snapshot → $MONTHLY_FILE"
     cp "$DUMP_FILE" "$MONTHLY_FILE"
 fi
 
-# ─── 4. Retention ────────────────────────────────────────────────────
+# ─── 5. Retention ────────────────────────────────────────────────────
 DAILY_DELETED=$(find "$DAILY_DIR" -name 'db_*.sql.gz' -mtime "+${DAILY_RETENTION_DAYS}" -delete -print | wc -l)
 log "Cleanup daily older than ${DAILY_RETENTION_DAYS} days: deleted ${DAILY_DELETED} file(s)"
 
 MONTHLY_DELETED=$(find "$MONTHLY_DIR" -name 'db_*.sql.gz' -mtime "+${MONTHLY_RETENTION_DAYS}" -delete -print | wc -l)
 log "Cleanup monthly older than ${MONTHLY_RETENTION_DAYS} days: deleted ${MONTHLY_DELETED} file(s)"
+
+# Ảnh uploads: cắt theo SỐ LƯỢNG, sắp theo TÊN — không dùng -mtime vì cp -al giữ
+# nguyên mtime của thư mục nguồn, ngày sửa không phản ánh lúc chụp ảnh.
+SNAP_DELETED=0
+while IFS= read -r old_snap; do
+    [ -n "$old_snap" ] || continue
+    rm -rf "${UPLOADS_SNAP_DIR:?}/${old_snap}"
+    SNAP_DELETED=$((SNAP_DELETED + 1))
+done < <(ls -1 "$UPLOADS_SNAP_DIR" 2>/dev/null | sort | head -n "-${UPLOADS_SNAPSHOT_KEEP}")
+SNAP_LEFT=$(ls -1 "$UPLOADS_SNAP_DIR" 2>/dev/null | wc -l)
+log "Cleanup ảnh uploads (giữ ${UPLOADS_SNAPSHOT_KEEP} bản gần nhất): xóa ${SNAP_DELETED}, còn ${SNAP_LEFT}"
 
 log "Backup completed successfully"

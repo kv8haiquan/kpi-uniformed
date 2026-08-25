@@ -29,6 +29,13 @@ loi() { echo "⛔ $*" >&2; exit 1; }
 
 cd "$CAY_PROD"
 
+# ── 0a. Không triển khai khi đang có người thi ───────────────────────────
+# Sự cố 25/08/2026: build chạy đè lên kỳ thi ĐGNL đang diễn ra, cả máy đóng
+# băng 12 phút, 13 thí sinh mất 12 phút cuối bài thi 45 phút. Bước này chặn
+# từ đầu — trước cả `git checkout` — để không bỏ cây prod ở trạng thái dở dang.
+"$CAY_PROD/backend/scripts/kiem_tra_ky_thi.sh" \
+    || loi "Có người đang thi. Đợi thi xong, hoặc BO_QUA_KIEM_TRA_KY_THI=1 $0 $DICH"
+
 # ── 0. Ghi mốc để quay lui ───────────────────────────────────────────────
 TRUOC=$(git rev-parse HEAD)
 log "Đang chạy : $(git rev-parse --short HEAD)"
@@ -61,7 +68,9 @@ log "Alembic sau khi chạy: $(cd backend && venv/bin/alembic current 2>/dev/nul
 # ── 4. Build frontend ────────────────────────────────────────────────────
 if ! git diff --quiet "$TRUOC" HEAD -- frontend/; then
     log "Frontend có thay đổi → build"
-    (cd frontend && npm run build)
+    # Qua build_frontend.sh để build bị nhốt trong cgroup có trần bộ nhớ.
+    # `npm run build` trần đã làm sập máy ngày 25/08/2026.
+    "$CAY_PROD/backend/scripts/build_frontend.sh" "$CAY_PROD"
 fi
 
 # ── 5. Nạp code mới ──────────────────────────────────────────────────────
@@ -94,7 +103,27 @@ if [ "$that_bai" -gt 0 ]; then
     loi "$that_bai dịch vụ không lên. Quay lui: $0 $TRUOC"
 fi
 
-# ── 7. Ghi mốc ───────────────────────────────────────────────────────────
+# ── 7. Gắn nhánh prod vào đúng code vừa nạp ──────────────────────────────
+# Triển khai bằng SHA/tag thì `git checkout` ở bước 1 để lại detached HEAD —
+# code phục vụ người dùng nằm NGOÀI mọi nhánh. Sự cố 25/08/2026: cây prod ở
+# 40de07e trong khi nhánh prod còn 73c994f; lần `git checkout prod` kế tiếp
+# sẽ âm thầm quay lui, mất bản vá đang chạy.
+MOI=$(git rev-parse HEAD)
+if [ "$(git rev-parse --verify --quiet prod || true)" != "$MOI" ]; then
+    if git merge-base --is-ancestor prod "$MOI" 2>/dev/null; then
+        log "Dời nhánh prod tới $(git rev-parse --short "$MOI") (fast-forward)"
+    else
+        log "⚠️  $(git rev-parse --short "$MOI") KHÔNG phải hậu duệ của prod —"
+        log "    đây là quay lui hoặc rẽ nhánh. Nhánh prod sẽ trỏ lại mốc này."
+    fi
+    git branch -f prod "$MOI"
+fi
+git checkout --quiet prod
+log "Đã gắn nhánh: $(git rev-parse --abbrev-ref HEAD) → $(git rev-parse --short HEAD)"
+
+# ── 8. Ghi mốc ───────────────────────────────────────────────────────────
 log "✅ Triển khai xong: $(git rev-parse --short HEAD)"
-log "Nhớ cập nhật docs/van-hanh/PHIEN_BAN_PROD.md"
+log "Còn 2 việc thủ công:"
+log "  1. git push origin prod   (và ff main theo prod)"
+log "  2. cập nhật docs/van-hanh/PHIEN_BAN_PROD.md"
 pm2 save >/dev/null 2>&1 || true

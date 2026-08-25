@@ -163,6 +163,87 @@ alembic stamp head
 
 ---
 
+## Quy trình Git — nhánh, commit, phát hành
+
+### Mô hình nhánh
+
+Kho dùng **`prod` làm trunk**, không phải `main`. Chỉ tồn tại 3 loại nhánh:
+
+| Nhánh | Vai trò | Ai dời |
+|---|---|---|
+| `prod` | Code ĐANG phục vụ người dùng. Cây `/opt/kpi-prod` bám nhánh này. | `trien_khai.sh` khi phát hành |
+| `main` | Nhánh mặc định trên GitHub. Chỉ **fast-forward theo `prod`** sau khi prod chạy thật. | tay, sau mỗi lần phát hành |
+| `feature/<module>-<viec>` | Nơi làm việc. Xong thì phát hành rồi xóa. | người phát triển |
+| `auto-backup` | Ảnh chụp cây làm việc do cron ghi. **Không đụng vào.** | cron `backup_source.sh` |
+
+`main` KHÔNG phải nơi tích hợp — nó chỉ phản chiếu `prod`. Dời `main` bằng
+`git branch -f main prod` là fast-forward, không tạo commit, nên **không phạm**
+quy tắc "không commit trực tiếp vào main" ở mục QUY TẮC TUYỆT ĐỐI bên dưới.
+
+> **Bài học 25/08/2026:** trước đó không ai đồng bộ `main`, nó tụt sau `prod` 38
+> commit suốt 6 tháng. Hệ quả: tài liệu ghi `trien_khai.sh main` — chạy đúng
+> lệnh đó sẽ LÙI production, mất toàn bộ Lịch công tác/HKG/LMS.
+
+### Vòng đời một thay đổi
+
+```
+1. git checkout -b feature/<module>-<viec>     ← LUÔN tạo nhánh, không sửa thẳng trên prod/main
+2. code + test    DB_NAME=kpi_haiquan_test pytest <thư mục test>
+3. git add <file cụ thể>                        ← KHÔNG `git add -A`
+   git commit                                   ← xem quy ước commit bên dưới
+   git push origin feature/<module>-<viec>
+4. /opt/kpi-prod/backend/scripts/trien_khai.sh <sha>    ← truyền SHA, KHÔNG truyền tên nhánh
+5. cd /opt/kpi-prod  && git push origin prod
+   cd /root/kpi-haiquan && git branch -f main prod && git push origin main
+6. cập nhật docs/van-hanh/PHIEN_BAN_PROD.md
+7. nhánh feature đã lên prod → xóa (local + remote)
+```
+
+Bước 4 truyền **SHA** để biết chính xác cái gì đang chạy. Script tự dời `prod`
+về commit vừa nạp và gắn cây làm việc vào nhánh đó. Chi tiết và cách quay lui:
+`docs/van-hanh/HUONG_DAN_DEV_PROD.md`.
+
+### Quy ước commit
+
+```
+<loại>(<phạm vi>): <mô tả tiếng Việt, thể mệnh lệnh, không dấu chấm cuối>
+
+<thân bài — BẮT BUỘC khi sửa lỗi: nêu GỐC RỄ, không chỉ triệu chứng;
+ nêu cách đã kiểm chứng; nêu ảnh hưởng tới dữ liệu đang chạy nếu có>
+```
+
+Loại: `feat` | `fix` | `docs` | `refactor` | `test` | `chore`
+Phạm vi: tên module — `kpi`, `lms`, `hkg`, `chi-tieu`, `deploy`, `van-hanh`, …
+
+Ví dụ đạt yêu cầu: `fix(deploy): trien_khai.sh tự gắn nhánh prod, không để lại detached HEAD`
+
+### Dọn nhánh định kỳ
+
+```bash
+git fetch --prune
+git branch --merged prod | grep -vE '^\*|^\s*(main|prod|auto-backup)$'   # đã vào prod → xóa được
+xargs -a <(...) git branch -d && git push origin --delete <tên>
+```
+
+Nhánh **chưa** vào `prod` mà muốn bỏ: gắn tag lưu trữ trước, nếu không commit sẽ
+mồ côi và bị GC dọn mất.
+
+```bash
+git tag -a attic/<tên>-<YYYYMMDD> <nhánh> -m "lý do bỏ + đối chứng nội dung đã có trong prod"
+git push origin attic/<tên>-<YYYYMMDD>
+git branch -D <nhánh> && git push origin --delete <nhánh>
+```
+
+### Kiểm tra sức khỏe kho
+
+```bash
+cd /opt/kpi-prod && git status -sb | head -1    # PHẢI ra "## prod...origin/prod"
+                                                 # thấy "HEAD (no branch)" là cây prod đang lệch nhánh
+git rev-parse main prod | uniq | wc -l           # ra 1 nghĩa là main đã khớp prod
+```
+
+---
+
 # ═══════════════════════════════════════════════════════════
 # PHẦN MỞ RỘNG — NỀN TẢNG SỐ THỐNG NHẤT (Digital Learning Platform)
 # ═══════════════════════════════════════════════════════════
@@ -173,7 +254,10 @@ alembic stamp head
 ⛔ KHÔNG BAO GIỜ sửa/xóa code trong backend/app/ (KPI production)
 ⛔ KHÔNG BAO GIỜ sửa/xóa bảng trong schema public (cong_chuc, vai_tro, don_vi, ...)
 ⛔ KHÔNG BAO GIỜ chạy migration trên production database (27.71.229.103)
-⛔ KHÔNG BAO GIỜ commit trực tiếp vào branch main hoặc develop
+⛔ KHÔNG BAO GIỜ commit trực tiếp vào branch main, prod hoặc develop
+   (dời `main` bằng `git branch -f main prod` KHÔNG tạo commit → được phép,
+    xem mục "Quy trình Git" bên trên)
+⛔ KHÔNG BAO GIỜ truyền tên nhánh cho trien_khai.sh — luôn truyền SHA cụ thể
 ⛔ KHÔNG BAO GIỜ hardcode SECRET_KEY, password, hoặc database credential
 ⛔ KHÔNG BAO GIỜ chạy smoke test / E2E test trên server cloud production 79.108.216.189
 ⛔ NẾU LỠ tạo smoke test trên production (localhost:5432 hoặc 79.108.216.189): PHẢI cleanup NGAY trong cùng session — không để dữ liệu rác qua đêm

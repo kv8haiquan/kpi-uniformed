@@ -8,7 +8,7 @@ import pytest
 
 from lms_service.main import app
 from lms_service.dependencies import get_current_user
-from lms_service.tests.conftest import _make_user, _set_user
+from lms_service.tests.conftest import _make_user, _set_user, dang_ky_va_duyet
 
 
 pytestmark = pytest.mark.asyncio
@@ -31,8 +31,7 @@ async def _setup_completed(client) -> dict:
 
     # Switch sang cbcc, dang ky + hoan thanh
     cbcc = _make_user("CHUYEN_VIEN", [], idx=4)
-    _set_user(cbcc)
-    await client.post(f"/api/v1/lms/khoa-hoc/{kh_id}/dang-ky")
+    await dang_ky_va_duyet(client, kh_id, cbcc)
     await client.patch(f"/api/v1/lms/bai-hoc/{bh_id}/tien-do", json={
         "thoi_gian_xem_giay": 600, "hoan_thanh": True,
     })

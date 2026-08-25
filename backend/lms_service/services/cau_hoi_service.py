@@ -136,8 +136,11 @@ class CauHoiService:
 
         # Tao junction record lien ket cau hoi voi bai kiem tra
         # Tinh thu_tu = so cau hoi hien tai + 1
+        # BaiKiemTraCauHoi dung composite PK (bai_kiem_tra_id + cau_hoi_id),
+        # KHONG co cot `id` — count(BaiKiemTraCauHoi.id) nem AttributeError va
+        # lam POST /cau-hoi tra 500.
         count_r = await self.db.execute(
-            select(func.count(BaiKiemTraCauHoi.id)).where(
+            select(func.count()).select_from(BaiKiemTraCauHoi).where(
                 BaiKiemTraCauHoi.bai_kiem_tra_id == data.bai_kiem_tra_id
             )
         )

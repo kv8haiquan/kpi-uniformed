@@ -30,6 +30,7 @@ from lms_service.api.endpoints.ky_thi import router as ky_thi_router
 from lms_service.api.endpoints.thi_sinh import router as thi_sinh_router
 from lms_service.api.endpoints.cau_truc_de_template import router as cau_truc_de_template_router
 from lms_service.api.endpoints.cau_hoi_dgnl import router as cau_hoi_dgnl_router
+from lms_service.api.endpoints.dgnl_cong_khai import router as dgnl_cong_khai_router
 
 # Tao thu muc uploads truoc khi mount StaticFiles (tranh loi khoi dong)
 os.makedirs(settings.upload_dir, exist_ok=True)
@@ -84,6 +85,7 @@ app.include_router(ky_thi_router, prefix="/api/v1/lms")
 app.include_router(thi_sinh_router, prefix="/api/v1/lms")
 app.include_router(cau_truc_de_template_router, prefix="/api/v1/lms")
 app.include_router(cau_hoi_dgnl_router, prefix="/api/v1/lms")
+app.include_router(dgnl_cong_khai_router, prefix="/api/v1/lms")
 
 
 @app.get("/health")

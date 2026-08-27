@@ -81,9 +81,12 @@ async def cau_hoi_hang_ngay(
 
 @router.get("/dap-an")
 async def dap_an(
-    cau_hoi_id: UUID = Query(..., description="Lay tu `cau_hoi_id` cua cau hoi"),
+    cau_hoi_id: Optional[UUID] = Query(
+        None,
+        description="Lay tu payload cua nut. De trong = cau phat gan nhat.",
+    ),
     chon: Optional[str] = Query(
-        None, description="Phuong an nguoi dung bam (A/B/C/D) — de cham dung/sai"
+        None, description="Phuong an nguoi dung chon (A/B/C/D) — de cham dung/sai"
     ),
     dinh_dang: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -91,8 +94,11 @@ async def dap_an(
 ):
     """Dap an dung + giai thich cua mot cau DA PHAT.
 
-    Tra theo `cau_hoi_id` chu khong theo ngay: nguoi dung co the bam tra loi
-    luc dem hoac sang hom sau, tra theo ngay se ra nham cau khac.
+    Hai duong goi:
+      - CO `cau_hoi_id` (nguoi dung BAM NUT): tra dung cau ho da nhan. Khong
+        tra theo ngay vi ho co the bam luc dem hoac sang hom sau.
+      - KHONG co `cau_hoi_id` (nguoi dung GO TAY "A"/"B" tren Zalo may tinh,
+        noi khong hien nut): lay cau phat gan nhat.
     """
     service = CauHoiHangNgayService(db)
     kq = await service.lay_dap_an(cau_hoi_id, chon)

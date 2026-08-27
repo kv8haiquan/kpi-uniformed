@@ -158,10 +158,31 @@ class CauHoiHangNgayService:
     # DAP AN
     # ==================================================================
 
+    @staticmethod
+    def _chuan_hoa_chon(chon: Optional[str]) -> Optional[str]:
+        """Lay ra dung mot ky tu phuong an tu thu nguoi dung go.
+
+        Nguoi dung Zalo may tinh khong thay nut nen phai go tay: "a", "A.",
+        "(B)", "c " ... deu phai hieu duoc. Bo het ky tu khong phai chu/so roi
+        lay ky tu dau.
+        """
+        if not chon:
+            return None
+        sach = "".join(c for c in chon if c.isalnum()).upper()
+        return sach[0] if sach else None
+
     async def lay_dap_an(
-        self, cau_hoi_id: uuid.UUID, chon: Optional[str] = None
+        self,
+        cau_hoi_id: Optional[uuid.UUID] = None,
+        chon: Optional[str] = None,
     ) -> dict:
         """Tra dap an dung cua mot cau ĐÃ PHAT.
+
+        `cau_hoi_id` de trong -> lay cau PHAT GAN NHAT. Duong nay danh cho
+        nguoi go tay "A"/"B" tren Zalo may tinh: kich ban chatbot chi bat duoc
+        chu cai, khong co cach nao biet cau_hoi_id.
+        Dung "phat gan nhat" chu khong phai "hom nay" de khong hong khi nguoi
+        ta tra loi luc qua nua dem, hoac khi hom nay chua ai goi lay cau hoi.
 
         Chan chinh o day: cau chua tung phat thi tra 404. Nho vay du lo khoa
         bot thi nguoi cam khoa cung chi xem duoc nhung cau da gui ra ngoai,
@@ -170,10 +191,11 @@ class CauHoiHangNgayService:
         stmt = (
             select(CauHoiHangNgay.ngay, CauHoiDgnl)
             .join(CauHoiDgnl, CauHoiHangNgay.cau_hoi_id == CauHoiDgnl.id)
-            .where(CauHoiHangNgay.cau_hoi_id == cau_hoi_id)
             .order_by(CauHoiHangNgay.ngay.desc())
             .limit(1)
         )
+        if cau_hoi_id is not None:
+            stmt = stmt.where(CauHoiHangNgay.cau_hoi_id == cau_hoi_id)
         row = (await self.db.execute(stmt)).first()
         if row is None:
             raise HTTPException(
@@ -196,7 +218,7 @@ class CauHoiHangNgayService:
             "",
         )
 
-        da_chon = chon.strip().upper() if chon else None
+        da_chon = self._chuan_hoa_chon(chon)
         la_dung = (da_chon == dung_key) if da_chon else None
 
         return {
@@ -251,7 +273,9 @@ class CauHoiHangNgayService:
             "",
         ]
         dong += [f"{lc['key']}. {lc['noi_dung']}" for lc in lua_chon]
-        dong += ["", "👇 Chọn đáp án bên dưới"]
+        # Zalo may tinh KHONG hien nut bam (han che cua Zalo, khong sua duoc
+        # tu phia minh) — nen luon chi them duong go tay, chay o moi nen tang.
+        dong += ["", "👇 Bấm nút bên dưới, hoặc nhắn A/B/C/D nếu bạn dùng Zalo máy tính"]
         return self._cat("\n".join(dong), ZALO_MAX_TEXT)
 
     def _text_dap_an(
@@ -293,9 +317,9 @@ class CauHoiHangNgayService:
         for lc in kq["lua_chon"]:
             nut.append(
                 {
-                    "title": self._cat(
-                        f"{lc['key']}. {lc['noi_dung']}", ZALO_MAX_BUTTON_TITLE
-                    ),
+                    # Chi dat chu cai: noi dung phuong an da nam o than tin roi,
+                    # lap lai lan hai lam khung chat dai gap doi.
+                    "title": self._cat(lc["key"], ZALO_MAX_BUTTON_TITLE),
                     "type": "oa.query.hide",
                     "payload": {
                         # Webhook / kich ban doc lai chuoi nay de biet cham cau nao

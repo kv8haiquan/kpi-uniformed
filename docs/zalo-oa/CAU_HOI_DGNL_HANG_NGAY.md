@@ -29,12 +29,18 @@ Cả hai đều là `GET`, xác thực bằng header `X-Bot-Key`.
 
 | Tham số | Bắt buộc | Ý nghĩa |
 |---|---|---|
-| `cau_hoi_id` | **có** | Lấy từ `cau_hoi_id` của câu hỏi (hoặc từ payload nút). |
-| `chon` | không | `A`/`B`/`C`/`D`. Có thì mới chấm đúng/sai; chữ thường cũng được. |
+| `cau_hoi_id` | không | Lấy từ payload nút. **Để trống = câu phát gần nhất.** |
+| `chon` | không | `A`/`B`/`C`/`D`. Có thì mới chấm đúng/sai. |
 | `dinh_dang` | không | `zalo` |
 
-Tra theo `cau_hoi_id` chứ **không** theo ngày: người dùng có thể bấm trả lời
-lúc nửa đêm hoặc sáng hôm sau, tra theo ngày sẽ ra nhầm câu.
+Hai đường gọi:
+
+- **Người bấm nút** → có `cau_hoi_id`, trả đúng câu họ đã nhận. Không tra theo
+  ngày vì họ có thể bấm lúc nửa đêm hoặc sáng hôm sau.
+- **Người gõ tay `A`/`B`** → không có `cau_hoi_id`, lấy **câu phát gần nhất**.
+  Kịch bản chatbot chỉ bắt được chữ cái, không có cách nào biết id.
+
+`chon` được chuẩn hoá rộng tay: `a`, `A.`, `(a)`, `A)`, ` a ` đều hiểu là `A`.
 
 ---
 
@@ -58,7 +64,7 @@ Bấm **Test the Request** để đối chứng. Endpoint trả về đúng hìn
     "type": "template",
     "payload": {
       "buttons": [
-        {"title": "A. …", "type": "oa.query.hide",
+        {"title": "A", "type": "oa.query.hide",
          "payload": {"content": "DGNL|<cau_hoi_id>|A"}}
       ]
     }
@@ -79,14 +85,18 @@ Kết quả trả về cũng là object `message`, gửi thẳng cho người d�
 {"text": "❌ Chưa đúng. Bạn chọn A, đáp án đúng là D.\n…\n\n📖 Giải thích: …"}
 ```
 
-### ⚠️ Chưa đối chứng
+### ✅ Đã đối chứng 27/08/2026
 
-Hình dạng `attachment` ở trên dựng theo tài liệu tin tư vấn dạng button của
-Zalo, **chưa chạy thật qua khối động**. Endpoint mẫu Zalo gợi ý
-(`chatbot.zalo.me/json-api?option=V_OPENAPI`) chỉ trả `{"text": "..."}` nên
-phần `text` là chắc, phần nút là suy luận. Nếu **Test the Request** báo sai
-định dạng thì chỉ sửa hai hàm `zalo_cau_hoi()` / `zalo_dap_an()` trong
-`lms_service/services/cau_hoi_hang_ngay_service.py`, không đụng phần còn lại.
+Chạy thật qua khối động: Zalo hiểu JSON này là một tin nhắn thật, hiện đúng nội
+dung câu hỏi kèm 4 nút A/B/C/D trên **Zalo điện thoại**. Định dạng ở trên là
+đúng, không phải sửa.
+
+Hai lưu ý rút ra từ lần chạy đầu:
+
+- **Không để dòng header trống** trong hộp thoại Edit Request. Zalo vẫn gửi
+  chúng đi, tạo dòng header rỗng, và nginx trả **400 Bad Request** trước khi
+  request chạm tới ứng dụng. Bấm nút thùng rác đỏ xoá hết dòng trống.
+- **Zalo máy tính không hiện nút** — xem mục 3b.
 
 ---
 
@@ -103,6 +113,23 @@ phần `text` là chắc, phần nút là suy luận. Nếu **Test the Request**
 - **9 lĩnh vực khai tường minh**, không cắt tiền tố số của mã: cột `thu_tu`
   của mọi lĩnh vực trong DB đều bằng 0, và các mã `10.`/`11.`/`13.`/`14.` cũng
   bắt đầu bằng chữ số.
+
+## 3b. Zalo máy tính không hiện nút
+
+Quan sát thực tế 27/08/2026: tin nhắn kèm nút hiện đúng trên **Zalo điện
+thoại**, nhưng **Zalo máy tính không hiện nút**. Đây là hạn chế phía Zalo,
+không sửa được từ phía mình.
+
+Cách vá: thân tin luôn có dòng *"Bấm nút bên dưới, hoặc nhắn A/B/C/D nếu bạn
+dùng Zalo máy tính"*, và `/dap-an` chấp nhận gọi **không kèm `cau_hoi_id`**.
+Chatbot chỉ cần một quy tắc bắt từ khoá `A`/`B`/`C`/`D` rồi gọi:
+
+```
+…/dgnl/cong-khai/dap-an?chon=<chữ người dùng gõ>&dinh_dang=zalo
+```
+
+Nhãn nút cũng đã rút gọn còn `A`/`B`/`C`/`D` — nội dung phương án đã nằm ở
+thân tin, để cả câu trên nút làm khung chat dài gấp đôi.
 
 ## 4. Bảo mật
 
@@ -137,14 +164,17 @@ cd backend && source venv/bin/activate
 DB_NAME=kpi_haiquan_test pytest lms_service/tests/test_dgnl_cong_khai.py -v
 ```
 
-16 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (2), đáp án (6).
+24 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (13).
 
 ⚠️ Service tự gọi `commit()` nên test **ghi thật** vào DB đang trỏ tới —
 bắt buộc `DB_NAME=kpi_haiquan_test`.
 
 ## 7. Còn nợ
 
-- Đối chứng định dạng `attachment` bằng **Test the Request** (mục 2).
+- ✅ ~~Đối chứng định dạng `attachment`~~ — đã chạy thật 27/08, tin hiện đúng
+  kèm 4 nút trên Zalo điện thoại.
+- Dựng quy tắc bắt payload nút (`DGNL|<id>|<key>`) để gọi `/dap-an`. Bấm nút
+  hiện chưa có phản hồi vì chưa có quy tắc nào bắt chuỗi đó.
 - Xác nhận khối động đặt được trong quy tắc hẹn giờ hằng ngày.
 - Nếu khối động truyền được `user_id`: thêm bảng ghi nhận ai trả lời gì để
   làm thống kê/xếp hạng theo đơn vị.

@@ -28,9 +28,12 @@ KHOA = "khoa-bot-dung-cho-test"
 URL_CAU_HOI = "/api/v1/lms/dgnl/cong-khai/cau-hoi-hang-ngay"
 URL_DAP_AN = "/api/v1/lms/dgnl/cong-khai/dap-an"
 
-# Ngay gia dinh trong qua khu — khong dung ngay that de khoi de len du lieu that
-NGAY_TEST = date(1999, 3, 17)
-NGAY_TEST_2 = date(1999, 3, 18)
+# Ngay gia dinh trong TUONG LAI XA — hai ly do:
+#   - khong de len ban ghi cua ngay that
+#   - la ban ghi MOI NHAT, nen test duoc duong "khong truyen cau_hoi_id thi
+#     lay cau phat gan nhat" ma khong phu thuoc DB dang co san gi
+NGAY_TEST = date(2099, 3, 17)
+NGAY_TEST_2 = date(2099, 3, 18)
 
 
 @pytest.fixture(autouse=True)
@@ -357,3 +360,72 @@ async def test_dap_an_dinh_dang_zalo(client):
     assert "success" not in body
     assert body["text"]
     assert len(body["text"]) <= 2000
+
+
+# =========================================================================
+# GO TAY THAY VI BAM NUT (Zalo may tinh khong hien nut)
+# =========================================================================
+
+@pytest.mark.asyncio
+async def test_dap_an_khong_truyen_id_lay_cau_phat_gan_nhat(client):
+    """Nguoi go 'A' tren Zalo may tinh: kich ban khong biet cau_hoi_id."""
+    moi_nhat = await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST_2.isoformat()},
+        headers={"X-Bot-Key": KHOA},
+    )
+    cau_moi_nhat = moi_nhat.json()["data"]["cau_hoi_id"]
+
+    r = await client.get(
+        URL_DAP_AN, params={"chon": "A"}, headers={"X-Bot-Key": KHOA}
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["cau_hoi_id"] == cau_moi_nhat
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("go", ["a", "A.", "(a)", " a ", "A)"])
+async def test_dap_an_chap_nhan_cac_kieu_go_tay(client, db_session, go):
+    """Nguoi dung go tay kieu gi cung phai cham dung."""
+    hoi = await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat()},
+        headers={"X-Bot-Key": KHOA},
+    )
+    cau_hoi_id = hoi.json()["data"]["cau_hoi_id"]
+    ch = (
+        await db_session.execute(
+            select(CauHoiDgnl).where(CauHoiDgnl.id == uuid.UUID(cau_hoi_id))
+        )
+    ).scalar_one()
+
+    r = await client.get(
+        URL_DAP_AN,
+        params={"cau_hoi_id": cau_hoi_id, "chon": go},
+        headers={"X-Bot-Key": KHOA},
+    )
+    assert r.json()["data"]["da_chon"] == "A"
+    assert r.json()["data"]["dung"] is (ch.dap_an["dap_an_dung"] == "A")
+
+
+@pytest.mark.asyncio
+async def test_nhan_nut_chi_con_chu_cai(client):
+    """Nhan nut rut gon: noi dung phuong an da co o than tin, khong lap lai."""
+    r = await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat(), "dinh_dang": "zalo"},
+        headers={"X-Bot-Key": KHOA},
+    )
+    for n in r.json()["attachment"]["payload"]["buttons"]:
+        assert len(n["title"]) == 1
+        assert n["title"].isalnum()
+
+
+@pytest.mark.asyncio
+async def test_text_nhac_go_tay_cho_nguoi_dung_may_tinh(client):
+    r = await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat()},
+        headers={"X-Bot-Key": KHOA},
+    )
+    assert "máy tính" in r.json()["data"]["text_zalo"]

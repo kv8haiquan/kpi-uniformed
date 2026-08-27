@@ -346,7 +346,9 @@ class CauHoiHangNgayService:
     # ⚠️ CHUA DOI CHUNG bang khoi dong that. Neu "Test the Request" bao sai
     # dinh dang thi CHI sua hai ham nay, khong dung den phan con lai.
 
-    def zalo_cau_hoi(self, kq: dict, kieu_nut: str = "object") -> dict:
+    def zalo_cau_hoi(
+        self, kq: dict, kieu_nut: str = "object", loai_nut: str = "hide"
+    ) -> dict:
         """Doi ket qua cau hoi -> object message Zalo kem nut chon dap an.
 
         `kieu_nut` quyet dinh hinh dang truong `payload` cua nut:
@@ -358,6 +360,13 @@ class CauHoiHangNgayService:
             ra CUNG mot gia tri, buoc dieu kien chi con mot dang de khop.
             CHUA doi chung Zalo co dung nut voi dang nay khong, nen de tuy chon
             thay vi doi thang.
+
+        `loai_nut` quyet dinh nut gui tin KIEU AN hay KIEU HIEN:
+          - "hide" (oa.query.hide, mac dinh): tin gui ve OA nhung KHONG hien
+            trong khung chat cua nguoi dung.
+          - "show" (oa.query.show): tin hien nhu chinh nguoi dung vua nhan.
+            Dung khi bo may tu khoa cua chatbot khong nhin thay tin an —
+            tu khoa go tay thi khop, bam nut thi khong (quan sat 27/08/2026).
         """
         nut = []
         for lc in kq["lua_chon"]:
@@ -366,7 +375,9 @@ class CauHoiHangNgayService:
                     # Chi dat chu cai: noi dung phuong an da nam o than tin roi,
                     # lap lai lan hai lam khung chat dai gap doi.
                     "title": self._cat(lc["key"], ZALO_MAX_BUTTON_TITLE),
-                    "type": "oa.query.hide",
+                    "type": (
+                        "oa.query.show" if loai_nut == "show" else "oa.query.hide"
+                    ),
                     # Payload CHI la chu cai (khong kem cau_hoi_id), co y: buoc
                     # dieu kien trong kich ban chi so sanh duoc chuoi tinh, co
                     # them id vao la khong khop duoc nhanh nao.

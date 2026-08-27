@@ -559,3 +559,18 @@ async def test_kieu_nut_mac_dinh_van_la_object(client):
     )
     for n in r.json()["attachment"]["payload"]["buttons"]:
         assert n["payload"] == {"content": n["title"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "loai_nut,mong_doi",
+    [(None, "oa.query.hide"), ("hide", "oa.query.hide"), ("show", "oa.query.show")],
+)
+async def test_loai_nut_an_hay_hien(client, loai_nut, mong_doi):
+    """`show` de bo may tu khoa cua chatbot nhin thay duoc tin do nut sinh ra."""
+    params = {"ngay": NGAY_TEST.isoformat(), "dinh_dang": "zalo"}
+    if loai_nut:
+        params["loai_nut"] = loai_nut
+    r = await client.get(URL_CAU_HOI, params=params, headers={"X-Bot-Key": KHOA})
+    for n in r.json()["attachment"]["payload"]["buttons"]:
+        assert n["type"] == mong_doi

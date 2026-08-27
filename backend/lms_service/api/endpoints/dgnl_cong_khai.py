@@ -68,6 +68,14 @@ async def cau_hoi_hang_ngay(
             "gia tri, buoc dieu kien trong kich ban chi con mot dang de khop."
         ),
     ),
+    loai_nut: str = Query(
+        "hide",
+        description=(
+            "`hide` = oa.query.hide (mac dinh, tin gui ve OA nhung an voi "
+            "nguoi dung). `show` = oa.query.show — tin hien nhu chinh nguoi "
+            "dung vua nhan; dung khi bo may tu khoa khong nhin thay tin an."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(xac_thuc_bot),
 ):
@@ -80,7 +88,7 @@ async def cau_hoi_hang_ngay(
     kq = await service.lay_cau_hoi(ngay)
 
     if (dinh_dang or "").lower() == "zalo":
-        return service.zalo_cau_hoi(kq, kieu_nut=kieu_nut)
+        return service.zalo_cau_hoi(kq, kieu_nut=kieu_nut, loai_nut=loai_nut)
 
     return {
         "success": True,

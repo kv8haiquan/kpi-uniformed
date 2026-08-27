@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # Để TRỐNG = tắt hẳn tính năng (fail closed), không phải mở toang.
     zalo_bot_api_key: str = ""  # đặt qua .env (ZALO_BOT_API_KEY)
 
+    # Ghi log toàn bộ header + query của mỗi lần gọi 2 endpoint công khai —
+    # dùng để soi xem Zalo có tự đính kèm danh tính người dùng không.
+    # CHỈ bật ở DEV. Khoá bot luôn bị che kể cả khi bật.
+    dgnl_soi_yeu_cau: bool = False
+
     # 9 lĩnh vực đầu được phép lấy câu hỏi hằng ngày, khai theo `ma_linh_vuc`.
     # KHÔNG suy ra bằng cách cắt tiền tố số của mã: cột `thu_tu` của mọi lĩnh
     # vực trong bảng đều bằng 0 nên không sắp xếp được, và các mã 10./11./13.

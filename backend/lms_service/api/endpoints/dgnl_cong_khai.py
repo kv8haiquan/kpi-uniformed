@@ -18,11 +18,12 @@ HAI DINH DANG TRA VE, chon bang tham so `dinh_dang`:
                  (Dynamic block) cua chatbot, khong phai bien doi gi them
 """
 
+import logging
 from datetime import date
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lms_service.config import settings
@@ -34,6 +35,35 @@ from lms_service.schemas.cau_hoi_hang_ngay import (
 from lms_service.services.cau_hoi_hang_ngay_service import CauHoiHangNgayService
 
 router = APIRouter(prefix="/dgnl/cong-khai", tags=["ĐGNL - Công khai (chatbot)"])
+
+# Bam vao logger cua uvicorn: no da co handler san, logger tu dat ten thi
+# khong co handler nao nen log roi vao hu khong.
+logger = logging.getLogger("uvicorn.error")
+
+
+def soi_yeu_cau(req: Request, ten: str) -> None:
+    """Ghi lai TOAN BO header + query cua mot lan goi, de xem Zalo gui gi.
+
+    Muc dich: tim xem Zalo co tu dinh kem danh tinh nguoi dung (user_id) vao
+    loi goi cua khoi Dynamic khong. Co thi moi chan spam theo tung nguoi duoc.
+
+    Chi bat khi `dgnl_soi_yeu_cau=True` (dat trong .env cua DEV). KHONG bat
+    tren prod: log day du header cua moi lan goi la vua on vua thua.
+    Khoa bot LUON bi che, ke ca khi bat.
+    """
+    if not settings.dgnl_soi_yeu_cau:
+        return
+    header = {
+        k: ("***" if k.lower() in ("x-bot-key", "authorization") else v)
+        for k, v in req.headers.items()
+    }
+    logger.info(
+        "[SOI %s] ip=%s query=%s headers=%s",
+        ten,
+        req.client.host if req.client else "?",
+        dict(req.query_params),
+        header,
+    )
 
 
 def xac_thuc_bot(x_bot_key: Optional[str] = Header(None)) -> None:
@@ -53,6 +83,7 @@ def xac_thuc_bot(x_bot_key: Optional[str] = Header(None)) -> None:
 
 @router.get("/cau-hoi-hang-ngay")
 async def cau_hoi_hang_ngay(
+    request: Request,
     ngay: Optional[date] = Query(
         None, description="Mac dinh la hom nay theo gio Viet Nam"
     ),
@@ -84,6 +115,7 @@ async def cau_hoi_hang_ngay(
     Goi bao nhieu lan trong cung mot ngay cung ra dung mot cau (da chot o bang
     lms.cau_hoi_hang_ngay), nen bot thu lai hay nhieu nguoi cung nhan deu khop.
     """
+    soi_yeu_cau(request, "cau-hoi")
     service = CauHoiHangNgayService(db)
     kq = await service.lay_cau_hoi(ngay)
 
@@ -98,6 +130,7 @@ async def cau_hoi_hang_ngay(
 
 @router.get("/dap-an")
 async def dap_an(
+    request: Request,
     cau_hoi_id: Optional[UUID] = Query(
         None,
         description="Lay tu payload cua nut. De trong = cau phat gan nhat.",
@@ -117,6 +150,7 @@ async def dap_an(
       - KHONG co `cau_hoi_id` (nguoi dung GO TAY "A"/"B" tren Zalo may tinh,
         noi khong hien nut): lay cau phat gan nhat.
     """
+    soi_yeu_cau(request, "dap-an")
     service = CauHoiHangNgayService(db)
     kq = await service.lay_dap_an(cau_hoi_id, chon)
 

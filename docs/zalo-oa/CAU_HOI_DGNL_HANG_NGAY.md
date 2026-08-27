@@ -171,6 +171,27 @@ URL khối động thứ hai — không truyền `cau_hoi_id`, API tự lấy c�
 …/dgnl/cong-khai/dap-an?chon={{tên_trường_tự_tạo}}&dinh_dang=zalo
 ```
 
+## 3e. Bấm nút gửi về cái gì — đối chứng thật 27/08/2026
+
+Zalo **không** gửi về chuỗi `A`. Nó gửi nguyên object payload đã chuyển thành
+chuỗi:
+
+```
+{"content":"A"}
+```
+
+Xem được trong hộp thư OA (tin `oa.query.hide` ẩn với người dùng nhưng quản
+trị viên vẫn thấy). Người gõ tay thì gửi về `A` trơn.
+
+⚠️ Đây từng là một **lỗi im lặng**: bỏ hết dấu của `{"content":"A"}` còn
+`contentA`, lấy ký tự đầu ra `C` → **mọi lần bấm nút đều bị chấm thành C**, mà
+kết quả trả về vẫn trông hợp lý nên rất khó phát hiện. `_chuan_hoa_chon()` nay
+bóc `content` bằng `json.loads`, hỏng thì vớt bằng regex, vẫn không được thì
+trả `None` (thà không chấm còn hơn chấm nhầm).
+
+Hệ quả cho kịch bản chatbot: biến của khối Nhập liệu sẽ chứa cả chuỗi
+`{"content":"A"}`. **Không sao** — cứ truyền nguyên vào `chon=`, API tự bóc.
+
 ## 4. Bảo mật
 
 - `ZALO_BOT_API_KEY` **để trống = tắt hẳn** (mọi lời gọi 401). Không có chế độ mở.
@@ -204,7 +225,7 @@ cd backend && source venv/bin/activate
 DB_NAME=kpi_haiquan_test pytest lms_service/tests/test_dgnl_cong_khai.py -v
 ```
 
-29 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (18).
+35 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (24).
 
 ⚠️ Service tự gọi `commit()` nên test **ghi thật** vào DB đang trỏ tới —
 bắt buộc `DB_NAME=kpi_haiquan_test`.

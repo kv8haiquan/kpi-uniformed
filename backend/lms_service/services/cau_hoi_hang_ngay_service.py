@@ -12,6 +12,8 @@ Gioi han cua Zalo duoc ma hoa thanh hang so o duoi — vuot la tin bi tu choi.
 
 from __future__ import annotations
 
+import json
+import re
 import uuid
 from datetime import date
 from typing import Any, Optional
@@ -168,11 +170,34 @@ class CauHoiHangNgayService:
         """
         if not chon:
             return None
-        # Neu kich ban chuyen nguyen payload nut "DGNL|<id>|A" thi lay doan
-        # cuoi. Khong co nhanh nay thi ky tu dau se ra "D" — cham sai het.
-        if "|" in chon:
-            chon = chon.rsplit("|", 1)[-1]
-        sach = "".join(c for c in chon if c.isalnum()).upper()
+        s = chon.strip()
+
+        # Bam nut: Zalo KHONG gui ve chuoi "A" ma gui nguyen object payload da
+        # chuyen thanh chuoi — '{"content":"A"}' (doi chung that 27/08/2026).
+        # Khong boc lay `content` thi bo dau xong con "contentA", ky tu dau ra
+        # "C" -> MOI lan bam nut deu bi cham thanh C. Loi im lang, van tra ve
+        # ket qua trong hop ly nen rat kho phat hien.
+        if "{" in s:
+            boc = None
+            try:
+                obj = json.loads(s)
+                if isinstance(obj, dict):
+                    boc = obj.get("content")
+            except (ValueError, TypeError):
+                pass
+            if boc is None:
+                # JSON hong (thua dau phay, nhay don...) van vot duoc bang regex
+                m = re.search(r'"content"\s*:\s*"([^"]*)"', s)
+                boc = m.group(1) if m else None
+            if boc is None:
+                return None  # tha khong cham con hon cham nham
+            s = str(boc)
+
+        # Kich ban chuyen nguyen payload dang cu "DGNL|<id>|A" thi lay doan cuoi
+        if "|" in s:
+            s = s.rsplit("|", 1)[-1]
+
+        sach = "".join(c for c in s if c.isalnum()).upper()
         return sach[0] if sach else None
 
     async def lay_dap_an(

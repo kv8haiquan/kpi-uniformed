@@ -474,3 +474,50 @@ async def test_go_linh_tinh_thi_khong_cham_bua(client, rac):
     assert d["da_chon"] is None
     assert d["dung"] is None
     assert d["dap_an_dung"]
+
+
+# =========================================================================
+# BAM NUT: Zalo gui ve nguyen object payload dang chuoi
+# =========================================================================
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "gui_ve,mong_doi",
+    [
+        ('{"content":"A"}', "A"),
+        ('{"content": "B"}', "B"),
+        ('{ "content" : "C" }', "C"),
+        ("A", "A"),                       # go tay
+        ('{"content":"DGNL|abc|D"}', "D"),  # phong khi quay lai payload cu
+    ],
+)
+async def test_boc_dung_phuong_an_tu_payload_nut(client, gui_ve, mong_doi):
+    """Doi chung that 27/08: bam nut A -> Zalo gui '{"content":"A"}'.
+
+    Khong boc `content` thi con "contentA" -> ky tu dau "C" -> MOI lan bam nut
+    deu cham thanh C. Loi im lang, ket qua van trong hop ly.
+    """
+    await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat()},
+        headers={"X-Bot-Key": KHOA},
+    )
+    r = await client.get(
+        URL_DAP_AN, params={"chon": gui_ve}, headers={"X-Bot-Key": KHOA}
+    )
+    assert r.json()["data"]["da_chon"] == mong_doi
+
+
+@pytest.mark.asyncio
+async def test_payload_hong_thi_khong_cham_con_hon_cham_nham(client):
+    await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat()},
+        headers={"X-Bot-Key": KHOA},
+    )
+    r = await client.get(
+        URL_DAP_AN,
+        params={"chon": '{"khong_phai_content":"A"}'},
+        headers={"X-Bot-Key": KHOA},
+    )
+    assert r.json()["data"]["da_chon"] is None

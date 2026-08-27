@@ -223,6 +223,13 @@ class CauHoiHangNgayService:
         )
 
         da_chon = self._chuan_hoa_chon(chon)
+        # Nguoi dung go vao khung chat chu khong phai chon tu menu — ho co the
+        # go bat cu thu gi. Chu cai khong thuoc cac phuong an cua CAU NAY thi
+        # coi nhu khong tra loi, dung cham. Neu khong se ra tin nhan vo nghia
+        # kieu "Ban chon X, dap an dung la B" khi ho chi go "xin chao".
+        cac_key = {str(lc.get("key")) for lc in lua_chon}
+        if da_chon is not None and da_chon not in cac_key:
+            da_chon = None
         la_dung = (da_chon == dung_key) if da_chon else None
 
         return {

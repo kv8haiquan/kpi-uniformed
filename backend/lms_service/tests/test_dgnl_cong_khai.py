@@ -451,3 +451,26 @@ async def test_chon_van_hieu_neu_kich_ban_chuyen_nguyen_payload_cu(client):
         headers={"X-Bot-Key": KHOA},
     )
     assert r.json()["data"]["da_chon"] == "C"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rac", ["xin chào", "Z", "123", "?!"])
+async def test_go_linh_tinh_thi_khong_cham_bua(client, rac):
+    """Go vao khung chat chu khong phai chon menu — phai chiu duoc moi thu.
+
+    Truoc khi vá: "xin chào" -> lay ky tu dau "X" -> bao "Ban chon X, dap an
+    dung la B", vo nghia voi nguoi doc.
+    """
+    await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat()},
+        headers={"X-Bot-Key": KHOA},
+    )
+    r = await client.get(
+        URL_DAP_AN, params={"chon": rac}, headers={"X-Bot-Key": KHOA}
+    )
+    assert r.status_code == 200
+    d = r.json()["data"]
+    assert d["da_chon"] is None
+    assert d["dung"] is None
+    assert d["dap_an_dung"]

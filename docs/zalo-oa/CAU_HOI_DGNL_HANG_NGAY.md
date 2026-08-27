@@ -152,6 +152,25 @@ và không cần xử lý biến.
 Thêm một quy tắc **tạm** với từ khoá `CAUHOI` chạy kịch bản 1 để test — sửa và
 xem kết quả trong 10 giây thay vì chờ sang hôm sau. Xoá sau khi xong.
 
+## 3d. Cấu hình khối "Nhập liệu" — hai bẫy
+
+Kịch bản gọn nhất chỉ cần **1 quy tắc**: hẹn giờ 08:00 → khối động lấy câu hỏi
+→ khối **Nhập liệu** chờ trả lời → khối động thứ hai gọi `/dap-an`.
+
+⛔ **"Lưu vào Chatbot" phải là trường TỰ TẠO**, ví dụ `dap_an_dgnl`. Tuyệt đối
+không chọn trường có sẵn của Zalo (Họ Tên, SĐT, Email): câu trả lời sẽ ghi đè
+lên dữ liệu thật, ai trả lời "A" thì họ tên trong danh bạ OA thành "A". Không
+khôi phục được.
+
+⏰ **Thời gian chờ mặc định 5 phút là quá ngắn.** Tin gửi 08:00, nhiều người
+trưa chiều mới mở Zalo. Đặt 999 phút (~16 tiếng) là vừa nhịp một ngày một câu.
+
+URL khối động thứ hai — không truyền `cau_hoi_id`, API tự lấy câu phát gần nhất:
+
+```
+…/dgnl/cong-khai/dap-an?chon={{tên_trường_tự_tạo}}&dinh_dang=zalo
+```
+
 ## 4. Bảo mật
 
 - `ZALO_BOT_API_KEY` **để trống = tắt hẳn** (mọi lời gọi 401). Không có chế độ mở.
@@ -185,7 +204,7 @@ cd backend && source venv/bin/activate
 DB_NAME=kpi_haiquan_test pytest lms_service/tests/test_dgnl_cong_khai.py -v
 ```
 
-25 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (14).
+29 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (18).
 
 ⚠️ Service tự gọi `commit()` nên test **ghi thật** vào DB đang trỏ tới —
 bắt buộc `DB_NAME=kpi_haiquan_test`.
@@ -197,5 +216,7 @@ bắt buộc `DB_NAME=kpi_haiquan_test`.
 - Dựng kịch bản 2 (từ khoá `A`/`B`/`C`/`D`) — xem mục 3c. Bấm nút hiện chưa có
   phản hồi vì chưa có quy tắc nào bắt.
 - Xác nhận khối động đặt được trong quy tắc hẹn giờ hằng ngày.
+- Thử **Phản hồi nhanh** A/B/C/D của Zalo trong khối Nhập liệu — có thể hiện
+  được trên Zalo máy tính, chỗ mà nút trong `attachment` không hiện.
 - Nếu khối động truyền được `user_id`: thêm bảng ghi nhận ai trả lời gì để
   làm thống kê/xếp hạng theo đơn vị.

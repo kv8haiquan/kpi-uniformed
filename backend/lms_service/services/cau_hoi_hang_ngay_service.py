@@ -302,7 +302,7 @@ class CauHoiHangNgayService:
         self, ngay: date, lv: LinhVuc, noi_dung: str, lua_chon: list[dict]
     ) -> str:
         dong = [
-            f"📚 CÂU HỎI ĐGNL NGÀY {ngay.strftime('%d/%m/%Y')}",
+            f"📚 CÂU HỎI ÔN TẬP ĐGNL NGÀY {ngay.strftime('%d/%m/%Y')}",
             f"Lĩnh vực: {lv.ten_linh_vuc}",
             "",
             noi_dung,
@@ -311,7 +311,6 @@ class CauHoiHangNgayService:
         dong += [f"{lc['key']}. {lc['noi_dung']}" for lc in lua_chon]
         # Zalo may tinh KHONG hien nut bam (han che cua Zalo, khong sua duoc
         # tu phia minh) — nen luon chi them duong go tay, chay o moi nen tang.
-        dong += ["", "👇 Bấm nút bên dưới, hoặc nhắn A/B/C/D nếu bạn dùng Zalo máy tính"]
         return self._cat("\n".join(dong), ZALO_MAX_TEXT)
 
     def _text_dap_an(
@@ -347,8 +346,19 @@ class CauHoiHangNgayService:
     # ⚠️ CHUA DOI CHUNG bang khoi dong that. Neu "Test the Request" bao sai
     # dinh dang thi CHI sua hai ham nay, khong dung den phan con lai.
 
-    def zalo_cau_hoi(self, kq: dict) -> dict:
-        """Doi ket qua cau hoi -> object message Zalo kem nut chon dap an."""
+    def zalo_cau_hoi(self, kq: dict, kieu_nut: str = "object") -> dict:
+        """Doi ket qua cau hoi -> object message Zalo kem nut chon dap an.
+
+        `kieu_nut` quyet dinh hinh dang truong `payload` cua nut:
+          - "object" (mac dinh): {"content": "A"} — dang co trong tai lieu Zalo,
+            DA doi chung la hien duoc nut. Nhung khi nguoi dung bam, Zalo gui ve
+            nguyen chuoi '{"content":"A"}', khac voi nguoi go tay ("A"). Buoc
+            dieu kien trong kich ban phai khop hai dang khac nhau.
+          - "chuoi": "A" — neu Zalo chap nhan dang nay thi bam nut va go tay cho
+            ra CUNG mot gia tri, buoc dieu kien chi con mot dang de khop.
+            CHUA doi chung Zalo co dung nut voi dang nay khong, nen de tuy chon
+            thay vi doi thang.
+        """
         nut = []
         for lc in kq["lua_chon"]:
             nut.append(
@@ -357,18 +367,18 @@ class CauHoiHangNgayService:
                     # lap lai lan hai lam khung chat dai gap doi.
                     "title": self._cat(lc["key"], ZALO_MAX_BUTTON_TITLE),
                     "type": "oa.query.hide",
-                    # Payload CHI la chu cai, co y. Zalo may tinh khong hien nut
-                    # nen phai co duong go tay, ma quy tac chatbot bat theo tu
-                    # khoa: de payload la "DGNL|<id>|A" thi cu bam nut se KHONG
-                    # khop tu khoa "A", thanh ra phai dung hai quy tac rieng cho
-                    # hai duong. De tro lai chu cai thi mot quy tac lo ca hai.
+                    # Payload CHI la chu cai (khong kem cau_hoi_id), co y: buoc
+                    # dieu kien trong kich ban chi so sanh duoc chuoi tinh, co
+                    # them id vao la khong khop duoc nhanh nao.
                     #
                     # Danh doi: mat `cau_hoi_id` nen nguoi tra loi sau nua dem bi
                     # cham theo cau moi. Chap nhan duoc — duong go tay von da vay.
-                    # Neu sau nay tu viet webhook (khong con phu thuoc quy tac
+                    # Neu sau nay tu viet webhook (khong con phu thuoc kich ban
                     # chatbot) thi doi lai thanh f"{TIEN_TO_PAYLOAD}|{id}|{key}";
                     # `_chuan_hoa_chon` doc duoc ca hai dang.
-                    "payload": {"content": lc["key"]},
+                    "payload": (
+                        lc["key"] if kieu_nut == "chuoi" else {"content": lc["key"]}
+                    ),
                 }
             )
         return {

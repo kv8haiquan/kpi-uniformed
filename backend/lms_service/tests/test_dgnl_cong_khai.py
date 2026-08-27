@@ -423,13 +423,20 @@ async def test_nhan_nut_chi_con_chu_cai(client):
 
 
 @pytest.mark.asyncio
-async def test_text_nhac_go_tay_cho_nguoi_dung_may_tinh(client):
+async def test_text_zalo_du_de_va_moi_phuong_an(client):
+    """Than tin phai tu doc duoc: Zalo may tinh khong hien nut, nguoi dung
+    chi nhin vao chu roi go A/B/C/D. Khong kiem cau chu cu the (de con sua
+    loi van), chi kiem du noi dung."""
     r = await client.get(
         URL_CAU_HOI,
         params={"ngay": NGAY_TEST.isoformat()},
         headers={"X-Bot-Key": KHOA},
     )
-    assert "máy tính" in r.json()["data"]["text_zalo"]
+    d = r.json()["data"]
+    txt = d["text_zalo"]
+    assert d["noi_dung"] in txt
+    for lc in d["lua_chon"]:
+        assert f"{lc['key']}. {lc['noi_dung']}" in txt
 
 
 @pytest.mark.asyncio
@@ -521,3 +528,34 @@ async def test_payload_hong_thi_khong_cham_con_hon_cham_nham(client):
         headers={"X-Bot-Key": KHOA},
     )
     assert r.json()["data"]["da_chon"] is None
+
+
+@pytest.mark.asyncio
+async def test_kieu_nut_chuoi_tra_payload_phang(client):
+    """`kieu_nut=chuoi`: bam nut va go tay cho ra CUNG mot gia tri.
+
+    Nho vay buoc dieu kien trong kich ban chatbot chi phai khop mot dang.
+    """
+    r = await client.get(
+        URL_CAU_HOI,
+        params={
+            "ngay": NGAY_TEST.isoformat(),
+            "dinh_dang": "zalo",
+            "kieu_nut": "chuoi",
+        },
+        headers={"X-Bot-Key": KHOA},
+    )
+    for n in r.json()["attachment"]["payload"]["buttons"]:
+        assert n["payload"] == n["title"]
+
+
+@pytest.mark.asyncio
+async def test_kieu_nut_mac_dinh_van_la_object(client):
+    """Khong truyen gi thi giu nguyen dang da doi chung la hien duoc nut."""
+    r = await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat(), "dinh_dang": "zalo"},
+        headers={"X-Bot-Key": KHOA},
+    )
+    for n in r.json()["attachment"]["payload"]["buttons"]:
+        assert n["payload"] == {"content": n["title"]}

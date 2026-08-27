@@ -59,6 +59,15 @@ async def cau_hoi_hang_ngay(
     dinh_dang: Optional[str] = Query(
         None, description="`zalo` de tra object message cua Zalo"
     ),
+    kieu_nut: str = Query(
+        "object",
+        description=(
+            "Hinh dang payload cua nut (chi co tac dung khi dinh_dang=zalo). "
+            "`object` = {\"content\": \"A\"} (mac dinh, da doi chung hien "
+            "duoc nut). `chuoi` = \"A\" — bam nut va go tay cho ra CUNG mot "
+            "gia tri, buoc dieu kien trong kich ban chi con mot dang de khop."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     _: None = Depends(xac_thuc_bot),
 ):
@@ -71,7 +80,7 @@ async def cau_hoi_hang_ngay(
     kq = await service.lay_cau_hoi(ngay)
 
     if (dinh_dang or "").lower() == "zalo":
-        return service.zalo_cau_hoi(kq)
+        return service.zalo_cau_hoi(kq, kieu_nut=kieu_nut)
 
     return {
         "success": True,

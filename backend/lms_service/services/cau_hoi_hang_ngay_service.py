@@ -168,6 +168,10 @@ class CauHoiHangNgayService:
         """
         if not chon:
             return None
+        # Neu kich ban chuyen nguyen payload nut "DGNL|<id>|A" thi lay doan
+        # cuoi. Khong co nhanh nay thi ky tu dau se ra "D" — cham sai het.
+        if "|" in chon:
+            chon = chon.rsplit("|", 1)[-1]
         sach = "".join(c for c in chon if c.isalnum()).upper()
         return sach[0] if sach else None
 
@@ -321,10 +325,18 @@ class CauHoiHangNgayService:
                     # lap lai lan hai lam khung chat dai gap doi.
                     "title": self._cat(lc["key"], ZALO_MAX_BUTTON_TITLE),
                     "type": "oa.query.hide",
-                    "payload": {
-                        # Webhook / kich ban doc lai chuoi nay de biet cham cau nao
-                        "content": f"{TIEN_TO_PAYLOAD}|{kq['cau_hoi_id']}|{lc['key']}"
-                    },
+                    # Payload CHI la chu cai, co y. Zalo may tinh khong hien nut
+                    # nen phai co duong go tay, ma quy tac chatbot bat theo tu
+                    # khoa: de payload la "DGNL|<id>|A" thi cu bam nut se KHONG
+                    # khop tu khoa "A", thanh ra phai dung hai quy tac rieng cho
+                    # hai duong. De tro lai chu cai thi mot quy tac lo ca hai.
+                    #
+                    # Danh doi: mat `cau_hoi_id` nen nguoi tra loi sau nua dem bi
+                    # cham theo cau moi. Chap nhan duoc — duong go tay von da vay.
+                    # Neu sau nay tu viet webhook (khong con phu thuoc quy tac
+                    # chatbot) thi doi lai thanh f"{TIEN_TO_PAYLOAD}|{id}|{key}";
+                    # `_chuan_hoa_chon` doc duoc ca hai dang.
+                    "payload": {"content": lc["key"]},
                 }
             )
         return {

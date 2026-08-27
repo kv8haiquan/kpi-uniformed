@@ -200,29 +200,30 @@ async def test_dinh_dang_zalo_co_nut_bam(client):
     for n in nut:
         assert n["type"] == "oa.query.hide"
         assert len(n["title"]) <= 100
-        assert n["payload"]["content"].startswith("DGNL|")
+        # Payload chi la chu cai de mot quy tac tu khoa lo duoc ca nut bam
+        # lan nguoi go tay tren Zalo may tinh
+        assert n["payload"]["content"] == n["title"]
     # Gioi han text cua Zalo
     assert len(body["text"]) <= 2000
 
 
 @pytest.mark.asyncio
-async def test_payload_nut_dung_cau_hoi_dang_phat(client):
+async def test_payload_nut_khop_lua_chon(client):
+    """Payload moi nut phai la dung key cua phuong an tuong ung."""
     chuan = await client.get(
         URL_CAU_HOI,
         params={"ngay": NGAY_TEST.isoformat()},
         headers={"X-Bot-Key": KHOA},
     )
-    cau_hoi_id = chuan.json()["data"]["cau_hoi_id"]
+    keys = [lc["key"] for lc in chuan.json()["data"]["lua_chon"]]
 
     zalo = await client.get(
         URL_CAU_HOI,
         params={"ngay": NGAY_TEST.isoformat(), "dinh_dang": "zalo"},
         headers={"X-Bot-Key": KHOA},
     )
-    for n in zalo.json()["attachment"]["payload"]["buttons"]:
-        _, cid, key = n["payload"]["content"].split("|")
-        assert cid == cau_hoi_id
-        assert key
+    nut = zalo.json()["attachment"]["payload"]["buttons"]
+    assert [n["payload"]["content"] for n in nut] == keys
 
 
 # =========================================================================
@@ -429,3 +430,24 @@ async def test_text_nhac_go_tay_cho_nguoi_dung_may_tinh(client):
         headers={"X-Bot-Key": KHOA},
     )
     assert "máy tính" in r.json()["data"]["text_zalo"]
+
+
+@pytest.mark.asyncio
+async def test_chon_van_hieu_neu_kich_ban_chuyen_nguyen_payload_cu(client):
+    """Phong khi kich ban chuyen nguyen chuoi "DGNL|<id>|A" vao `chon`.
+
+    Khong co nhanh xu ly "|" thi ky tu dau se ra "D" (cua DGNL) -> cham sai het.
+    """
+    hoi = await client.get(
+        URL_CAU_HOI,
+        params={"ngay": NGAY_TEST.isoformat()},
+        headers={"X-Bot-Key": KHOA},
+    )
+    cau_hoi_id = hoi.json()["data"]["cau_hoi_id"]
+
+    r = await client.get(
+        URL_DAP_AN,
+        params={"cau_hoi_id": cau_hoi_id, "chon": f"DGNL|{cau_hoi_id}|C"},
+        headers={"X-Bot-Key": KHOA},
+    )
+    assert r.json()["data"]["da_chon"] == "C"

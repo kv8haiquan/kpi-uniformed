@@ -65,18 +65,19 @@ Bấm **Test the Request** để đối chứng. Endpoint trả về đúng hìn
     "payload": {
       "buttons": [
         {"title": "A", "type": "oa.query.hide",
-         "payload": {"content": "DGNL|<cau_hoi_id>|A"}}
+         "payload": {"content": "A"}}
       ]
     }
   }
 }
 ```
 
-Khi người dùng bấm nút, Zalo gửi chuỗi `payload.content` về. Tách theo dấu `|`
-lấy `cau_hoi_id` và phương án đã chọn, rồi gọi:
+Khi người dùng bấm nút, Zalo gửi `payload.content` về — **chỉ là chữ cái**
+`A`/`B`/`C`/`D`, cố ý để trùng với thứ người dùng Zalo máy tính gõ tay. Nhờ vậy
+**một** quy tắc từ khoá lo được cả hai đường, không phải tách chuỗi. Gọi:
 
 ```
-https://kpihaiquan.vn/api/v1/lms/dgnl/cong-khai/dap-an?cau_hoi_id=<id>&chon=<A|B|C|D>&dinh_dang=zalo
+https://kpihaiquan.vn/api/v1/lms/dgnl/cong-khai/dap-an?chon=<A|B|C|D>&dinh_dang=zalo
 ```
 
 Kết quả trả về cũng là object `message`, gửi thẳng cho người dùng:
@@ -131,6 +132,26 @@ Chatbot chỉ cần một quy tắc bắt từ khoá `A`/`B`/`C`/`D` rồi gọi
 Nhãn nút cũng đã rút gọn còn `A`/`B`/`C`/`D` — nội dung phương án đã nằm ở
 thân tin, để cả câu trên nút làm khung chat dài gấp đôi.
 
+## 3c. Cần dựng mấy quy tắc trên Zalo OA
+
+Tối thiểu **2 kịch bản**:
+
+| # | Kịch bản | Quy tắc kích hoạt | Khối động gọi |
+|---|---|---|---|
+| 1 | Câu hỏi | Hẹn giờ, lặp hằng ngày 08:00 | `/cau-hoi-hang-ngay?dinh_dang=zalo` |
+| 2 | Đáp án | Từ khoá `A`, `B`, `C`, `D` | `/dap-an?chon=…&dinh_dang=zalo` |
+
+Kịch bản 2 phục vụ **cả** người bấm nút lẫn người gõ tay, vì payload nút đã là
+chữ cái.
+
+Nếu quy tắc từ khoá **truyền được** chữ đã khớp vào URL → đúng 2 kịch bản.
+Nếu **không truyền được** → tách thành 4 quy tắc, mỗi chữ cái một quy tắc trỏ
+tới một URL cố định (`…&chon=A`, `…&chon=B`, …). Xấu hơn nhưng chắc chắn chạy
+và không cần xử lý biến.
+
+Thêm một quy tắc **tạm** với từ khoá `CAUHOI` chạy kịch bản 1 để test — sửa và
+xem kết quả trong 10 giây thay vì chờ sang hôm sau. Xoá sau khi xong.
+
 ## 4. Bảo mật
 
 - `ZALO_BOT_API_KEY` **để trống = tắt hẳn** (mọi lời gọi 401). Không có chế độ mở.
@@ -164,7 +185,7 @@ cd backend && source venv/bin/activate
 DB_NAME=kpi_haiquan_test pytest lms_service/tests/test_dgnl_cong_khai.py -v
 ```
 
-24 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (13).
+25 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (14).
 
 ⚠️ Service tự gọi `commit()` nên test **ghi thật** vào DB đang trỏ tới —
 bắt buộc `DB_NAME=kpi_haiquan_test`.
@@ -173,8 +194,8 @@ bắt buộc `DB_NAME=kpi_haiquan_test`.
 
 - ✅ ~~Đối chứng định dạng `attachment`~~ — đã chạy thật 27/08, tin hiện đúng
   kèm 4 nút trên Zalo điện thoại.
-- Dựng quy tắc bắt payload nút (`DGNL|<id>|<key>`) để gọi `/dap-an`. Bấm nút
-  hiện chưa có phản hồi vì chưa có quy tắc nào bắt chuỗi đó.
+- Dựng kịch bản 2 (từ khoá `A`/`B`/`C`/`D`) — xem mục 3c. Bấm nút hiện chưa có
+  phản hồi vì chưa có quy tắc nào bắt.
 - Xác nhận khối động đặt được trong quy tắc hẹn giờ hằng ngày.
 - Nếu khối động truyền được `user_id`: thêm bảng ghi nhận ai trả lời gì để
   làm thống kê/xếp hạng theo đơn vị.

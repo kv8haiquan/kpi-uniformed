@@ -192,6 +192,36 @@ trả `None` (thà không chấm còn hơn chấm nhầm).
 Hệ quả cho kịch bản chatbot: biến của khối Nhập liệu sẽ chứa cả chuỗi
 `{"content":"A"}`. **Không sao** — cứ truyền nguyên vào `chon=`, API tự bóc.
 
+## 3f. Zalo gửi gì tới khối Dynamic — soi thật 27/08/2026
+
+Bật `DGNL_SOI_YEU_CAU=true` (chỉ dev) rồi đọc `/tmp/kpi-dev-logs/lms.log`:
+
+```
+[SOI dap-an] GET  ip=49.213.78.2 query={'chon':'B'} than=<rỗng>
+[SOI dap-an] POST ip=49.213.78.2 query={'chon':'A'} than=<rỗng> content-length: 0
+headers: host, x-real-ip, x-forwarded-for, x-forwarded-proto, connection,
+         content-type: application/json, user-agent: ZPChatbot, x-bot-key
+```
+
+**Zalo KHÔNG gửi kèm định danh người dùng.** Không `user_id`, không mã hội
+thoại — cả GET lẫn POST, POST thì thân rỗng hẳn.
+
+Hệ quả: **không chặn spam theo từng người được** qua đường chatbot. Chặn theo
+IP cũng vô nghĩa vì mọi lời gọi đều từ dải IP của Zalo (`49.213.78.x`), cắt là
+cắt của tất cả. Muốn chặn theo người thì phải tự gửi bằng `user_id` + webhook
+(xem mục 7).
+
+Được một thứ: `user-agent: ZPChatbot` dùng để xác minh nguồn gọi — giả mạo
+được nên chỉ là lớp phụ, không thay khoá.
+
+⚠️ **Trần chi tiêu 500k/ngày KHÔNG bảo vệ luồng này.** `tran_chi.py` chặn ở
+`gui_hang_doi()` của worker ZNS; tin do chatbot Zalo gửi không đi qua mã nguồn
+mình. Phải đặt hạn mức trong **Zalo Cloud Account**.
+
+Ước lượng rủi ro spam: tin tư vấn miễn phí 8 tin đầu trong 48h, sau đó 55đ/tin
+— phải trên 7 lần trả lời trong 48h mới bắt đầu mất tiền. 10 người nghịch 50
+lần ≈ 24.000đ.
+
 ## 4. Bảo mật
 
 - `ZALO_BOT_API_KEY` **để trống = tắt hẳn** (mọi lời gọi 401). Không có chế độ mở.
@@ -225,7 +255,7 @@ cd backend && source venv/bin/activate
 DB_NAME=kpi_haiquan_test pytest lms_service/tests/test_dgnl_cong_khai.py -v
 ```
 
-35 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (24).
+40 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (8), đáp án (24).
 
 ⚠️ Service tự gọi `commit()` nên test **ghi thật** vào DB đang trỏ tới —
 bắt buộc `DB_NAME=kpi_haiquan_test`.

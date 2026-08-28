@@ -44,8 +44,15 @@ logger = logging.getLogger("uvicorn.error")
 async def soi_yeu_cau(req: Request, ten: str) -> None:
     """Ghi lai TOAN BO header + query cua mot lan goi, de xem Zalo gui gi.
 
-    Muc dich: tim xem Zalo co tu dinh kem danh tinh nguoi dung (user_id) vao
-    loi goi cua khoi Dynamic khong. Co thi moi chan spam theo tung nguoi duoc.
+    KET QUA SOI 27/08/2026 (giu lai de khoi ai phai soi lai):
+    Zalo KHONG gui kem bat ky dinh danh nguoi dung nao. Ca GET lan POST deu chi
+    co host, x-real-ip, x-forwarded-*, connection, content-type,
+    user-agent: ZPChatbot — POST thi than rong (content-length: 0). Khong co
+    user_id, khong ma hoi thoai. => Khong the chan spam theo tung nguoi qua
+    duong chatbot, va chan theo IP cung vo nghia vi moi loi goi deu tu dai IP
+    cua Zalo. Muon chan theo nguoi thi phai tu gui bang user_id + webhook.
+
+    Giu ham nay lai de con soi cac thay doi cua Zalo ve sau.
 
     Chi bat khi `dgnl_soi_yeu_cau=True` (dat trong .env cua DEV). KHONG bat
     tren prod: log day du header cua moi lan goi la vua on vua thua.
@@ -87,7 +94,7 @@ def xac_thuc_bot(x_bot_key: Optional[str] = Header(None)) -> None:
         )
 
 
-@router.api_route("/cau-hoi-hang-ngay", methods=["GET", "POST"])
+@router.get("/cau-hoi-hang-ngay")
 async def cau_hoi_hang_ngay(
     request: Request,
     ngay: Optional[date] = Query(
@@ -134,7 +141,7 @@ async def cau_hoi_hang_ngay(
     }
 
 
-@router.api_route("/dap-an", methods=["GET", "POST"])
+@router.get("/dap-an")
 async def dap_an(
     request: Request,
     cau_hoi_id: Optional[UUID] = Query(

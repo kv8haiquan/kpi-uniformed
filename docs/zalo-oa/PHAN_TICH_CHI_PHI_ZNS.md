@@ -154,6 +154,13 @@ Việc tra dùng chính số điện thoại làm khóa nên kết quả **chín
 **Kết luận:** mức giá 560đ có niêm yết nhưng **đường gửi chưa được mở** cho Official Account của Chi cục. Đây là việc phải hỏi VNG, không phải việc lập trình.
 
 > ⚠️ **Vì vậy KHÔNG nên quét Zalo ID của cả 543 công chức lúc này.** Việc quét gửi số điện thoại thật của cán bộ sang máy chủ VNG, mà hiện chưa đổi lấy được lợi ích nào. Chỉ nên làm sau khi VNG xác nhận mở đường gửi theo Zalo ID.
+>
+> **CẬP NHẬT 28/08/2026 — cảnh báo trên đã hết hiệu lực.** Tiền đề "chưa đổi
+> lấy được lợi ích nào" không còn: Zalo ID là thứ duy nhất cho phép gắn nhãn để
+> lọc người nhận. OA có 758 người theo dõi nhưng chỉ ~327 là công chức, nên
+> không gắn nhãn thì hơn 400 người dân sẽ nhận tin ôn tập mỗi sáng. Đã quét
+> toàn bộ (có lãnh đạo duyệt) và gắn nhãn `CC_HQKV08_1/2/3` —
+> xem `docs/zalo-oa/CAU_HOI_DGNL_HANG_NGAY.md` mục 8.
 
 > **Đính chính hai điều tôi đã nói sai trong quá trình khảo sát:**
 > 1. Tôi từng khẳng định Zalo *không* cho tra Zalo ID từ số điện thoại. **Sai** — API `oa/getprofile` nhận tham số `phone` và trả về đầy đủ hồ sơ nếu người đó đã follow OA.

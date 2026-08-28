@@ -192,6 +192,42 @@ trả `None` (thà không chấm còn hơn chấm nhầm).
 Hệ quả cho kịch bản chatbot: biến của khối Nhập liệu sẽ chứa cả chuỗi
 `{"content":"A"}`. **Không sao** — cứ truyền nguyên vào `chon=`, API tự bóc.
 
+## 3f. Zalo gửi gì tới khối Dynamic — soi thật 27/08/2026
+
+Bật `DGNL_SOI_YEU_CAU=true` (chỉ dev) rồi đọc `/tmp/kpi-dev-logs/lms.log`:
+
+```
+[SOI dap-an] GET  ip=49.213.78.2 query={'chon':'B'} than=<rỗng>
+[SOI dap-an] POST ip=49.213.78.2 query={'chon':'A'} than=<rỗng> content-length: 0
+headers: host, x-real-ip, x-forwarded-for, x-forwarded-proto, connection,
+         content-type: application/json, user-agent: ZPChatbot, x-bot-key
+```
+
+**Zalo KHÔNG gửi kèm định danh người dùng.** Không `user_id`, không mã hội
+thoại — cả GET lẫn POST, POST thì thân rỗng hẳn.
+
+Hệ quả: **không chặn spam theo từng người được** qua đường chatbot. Chặn theo
+IP cũng vô nghĩa vì mọi lời gọi đều từ dải IP của Zalo (`49.213.78.x`), cắt là
+cắt của tất cả. Muốn chặn theo người thì phải tự gửi bằng `user_id` + webhook
+(xem mục 7).
+
+Được một thứ: `user-agent: ZPChatbot` dùng để xác minh nguồn gọi — giả mạo
+được nên chỉ là lớp phụ, không thay khoá.
+
+Lưu ý về chi phí: `tran_chi.py` chặn ở `gui_hang_doi()` của worker ZNS nên
+**không** nhìn thấy tin do chatbot Zalo gửi. Theo xác nhận của quản trị OA
+(27/08/2026), hạn mức **Zalo Cloud Account nay gộp chung với ZBS**, nên phần
+chi của luồng chatbot đã nằm trong hạn mức đó — không cần dựng thêm trần.
+
+Ước lượng rủi ro spam: tin tư vấn miễn phí 8 tin đầu trong 48h, sau đó 55đ/tin
+— phải trên 7 lần trả lời trong 48h mới bắt đầu mất tiền. 10 người nghịch 50
+lần ≈ 24.000đ. Chấp nhận được, và không chặn theo từng người được (xem trên).
+
+**Vì sao gặp nhiều giới hạn đến vậy:** OA của Chi cục là **OA cơ quan nhà
+nước**. Ba bức tường gặp phải khi dựng kịch bản — không tạo được trường tuỳ
+biến, tối đa 4 quy tắc, không có bước điều kiện — đều là giới hạn tính năng của
+loại OA này, không phải cấu hình sai.
+
 ## 4. Bảo mật
 
 - `ZALO_BOT_API_KEY` **để trống = tắt hẳn** (mọi lời gọi 401). Không có chế độ mở.
@@ -225,7 +261,7 @@ cd backend && source venv/bin/activate
 DB_NAME=kpi_haiquan_test pytest lms_service/tests/test_dgnl_cong_khai.py -v
 ```
 
-35 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (3), đáp án (24).
+40 test: xác thực (3), chốt câu theo ngày (5), định dạng Zalo (8), đáp án (24).
 
 ⚠️ Service tự gọi `commit()` nên test **ghi thật** vào DB đang trỏ tới —
 bắt buộc `DB_NAME=kpi_haiquan_test`.
@@ -239,5 +275,81 @@ bắt buộc `DB_NAME=kpi_haiquan_test`.
 - Xác nhận khối động đặt được trong quy tắc hẹn giờ hằng ngày.
 - Thử **Phản hồi nhanh** A/B/C/D của Zalo trong khối Nhập liệu — có thể hiện
   được trên Zalo máy tính, chỗ mà nút trong `attachment` không hiện.
-- Nếu khối động truyền được `user_id`: thêm bảng ghi nhận ai trả lời gì để
-  làm thống kê/xếp hạng theo đơn vị.
+- ❌ ~~Nếu khối động truyền được `user_id`~~ — đã soi, Zalo không gửi (mục 3f).
+  Muốn thống kê theo người thì phải tự gửi bằng OA Message API.
+
+**Về việc "gửi bằng UID đã thử và thất bại" (mục 5.3 của PHAN_TICH_CHI_PHI_ZNS.md):**
+lần đó thử trên `business.openapi.zalo.me/message/template` — tức **ZBS/ZNS**,
+gửi tin mẫu theo số điện thoại, mục đích là hưởng giá 560đ thay vì 800đ. Endpoint
+đó đòi số điện thoại nên trả `-108` (số điện thoại không hợp lệ) khi đưa UID vào.
+
+Đó là **một sản phẩm khác** với OA Message API
+(`openapi.zalo.me/v3.0/oa/message/cs` — tin tư vấn), vốn định địa chỉ bằng
+`user_id` chứ không bằng số điện thoại. Thất bại của ZNS-theo-UID **không**
+chứng minh `message/cs` bị chặn. Nhưng cũng chưa có gì chứng minh nó chạy: quyền
+*gửi tin tư vấn* chưa từng được xin cho ứng dụng này. Muốn biết chắc thì phải
+nộp duyệt quyền rồi thử — không suy ra được từ dữ liệu hiện có.
+
+
+## 8. Lọc người nhận bằng nhãn — đã làm 28/08/2026
+
+OA có **758 người theo dõi**, chỉ ~327 là công chức. Hơn 400 người còn lại là
+người dân. Quy tắc hẹn giờ của chatbot lọc được người nhận **theo nhãn**, nên
+phải gắn nhãn cho đúng nhóm công chức.
+
+### Đã làm
+
+| Bước | Lệnh | Kết quả |
+|---|---|---|
+| Quét UID | `python scripts/zalo_tra_uid.py --tat-ca --ghi` | 327/543 có `zalo_user_id` (60,2%) |
+| Gắn nhãn | `python scripts/zalo_gan_nhan_cong_chuc.py --ghi` | 327 người, 0 lỗi |
+
+Đối chứng lại từ phía Zalo (`getfollowers` theo `tag_name`):
+
+```
+CC_HQKV08_1  119      HQQN  70   ← nhãn cũ của Hải quan Quảng Ninh, KHÔNG đụng
+CC_HQKV08_2  111
+CC_HQKV08_3   97
+  cộng      327
+```
+
+**Quy tắc 08:00 phải nhắm cả ba nhãn `CC_HQKV08_*`.**
+
+### Vì sao ba nhãn chứ không một
+
+Zalo giới hạn **200 người/nhãn**; vượt quá thì hệ thống **tự gỡ nhãn của người
+được gắn lâu nhất, không báo gì** — người bị gỡ lặng lẽ không nhận tin nữa.
+Script chia theo `int(user_id) % số_nhãn` nên mỗi người luôn rơi vào cùng một
+nhãn qua mọi lần chạy; chia theo thứ tự danh sách thì thêm một người ở đầu là
+dồn toàn bộ phía sau sang nhãn khác.
+
+Ngưỡng đặt 150/nhãn (không phải 200) để còn chỗ cho người follow thêm giữa hai
+lần chạy.
+
+### Chạy lại định kỳ
+
+Công chức mới follow OA sẽ **không có nhãn** và lặng lẽ không nhận được câu
+hỏi. Script chạy lại được nhiều lần (gắn lại nhãn cũ là thao tác vô hại):
+
+```bash
+0 6 * * 1  cd /opt/kpi-prod/backend && venv/bin/python \
+           scripts/zalo_gan_nhan_cong_chuc.py --ghi >> /var/log/zalo-nhan.log 2>&1
+```
+
+### ⚠️ Độ phủ thật chỉ 60%
+
+```
+543 công chức
+327 đã follow OA   ← chỉ nhóm này nhận được tin
+172 chưa follow    ← không nhận gì, gắn nhãn cũng vô ích
+ 44 số hỏng        ← đơn vị cần rà lại danh bạ
+```
+
+Gắn nhãn **không** cải thiện con số này. Muốn phủ hết phải có đợt phổ biến để
+172 người kia quan tâm OA — việc hành chính, không phải việc kỹ thuật. Nếu lãnh
+đạo kỳ vọng "cả cơ quan cùng ôn tập" thì con số thật hiện là 6/10 người.
+
+### Còn nợ
+
+Công chức nghỉ hưu / chuyển công tác vẫn giữ nhãn cũ. Muốn gỡ thì bổ sung nhánh
+gọi `rmfollowerfromtag` cho người có `is_active = false`.

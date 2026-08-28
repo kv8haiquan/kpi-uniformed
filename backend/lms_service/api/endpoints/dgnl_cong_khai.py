@@ -41,11 +41,18 @@ router = APIRouter(prefix="/dgnl/cong-khai", tags=["ĐGNL - Công khai (chatbot)
 logger = logging.getLogger("uvicorn.error")
 
 
-def soi_yeu_cau(req: Request, ten: str) -> None:
+async def soi_yeu_cau(req: Request, ten: str) -> None:
     """Ghi lai TOAN BO header + query cua mot lan goi, de xem Zalo gui gi.
 
-    Muc dich: tim xem Zalo co tu dinh kem danh tinh nguoi dung (user_id) vao
-    loi goi cua khoi Dynamic khong. Co thi moi chan spam theo tung nguoi duoc.
+    KET QUA SOI 27/08/2026 (giu lai de khoi ai phai soi lai):
+    Zalo KHONG gui kem bat ky dinh danh nguoi dung nao. Ca GET lan POST deu chi
+    co host, x-real-ip, x-forwarded-*, connection, content-type,
+    user-agent: ZPChatbot — POST thi than rong (content-length: 0). Khong co
+    user_id, khong ma hoi thoai. => Khong the chan spam theo tung nguoi qua
+    duong chatbot, va chan theo IP cung vo nghia vi moi loi goi deu tu dai IP
+    cua Zalo. Muon chan theo nguoi thi phai tu gui bang user_id + webhook.
+
+    Giu ham nay lai de con soi cac thay doi cua Zalo ve sau.
 
     Chi bat khi `dgnl_soi_yeu_cau=True` (dat trong .env cua DEV). KHONG bat
     tren prod: log day du header cua moi lan goi la vua on vua thua.
@@ -57,11 +64,17 @@ def soi_yeu_cau(req: Request, ten: str) -> None:
         k: ("***" if k.lower() in ("x-bot-key", "authorization") else v)
         for k, v in req.headers.items()
     }
+    try:
+        than = (await req.body())[:2000].decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — soi log thi khong duoc lam hong request
+        than = "<khong doc duoc>"
     logger.info(
-        "[SOI %s] ip=%s query=%s headers=%s",
+        "[SOI %s] %s ip=%s query=%s than=%s headers=%s",
         ten,
+        req.method,
         req.client.host if req.client else "?",
         dict(req.query_params),
+        than or "<rong>",
         header,
     )
 
@@ -115,7 +128,7 @@ async def cau_hoi_hang_ngay(
     Goi bao nhieu lan trong cung mot ngay cung ra dung mot cau (da chot o bang
     lms.cau_hoi_hang_ngay), nen bot thu lai hay nhieu nguoi cung nhan deu khop.
     """
-    soi_yeu_cau(request, "cau-hoi")
+    await soi_yeu_cau(request, "cau-hoi")
     service = CauHoiHangNgayService(db)
     kq = await service.lay_cau_hoi(ngay)
 
@@ -150,7 +163,7 @@ async def dap_an(
       - KHONG co `cau_hoi_id` (nguoi dung GO TAY "A"/"B" tren Zalo may tinh,
         noi khong hien nut): lay cau phat gan nhat.
     """
-    soi_yeu_cau(request, "dap-an")
+    await soi_yeu_cau(request, "dap-an")
     service = CauHoiHangNgayService(db)
     kq = await service.lay_dap_an(cau_hoi_id, chon)
 

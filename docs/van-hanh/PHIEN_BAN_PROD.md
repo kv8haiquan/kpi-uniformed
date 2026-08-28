@@ -7,11 +7,11 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `97264ae` |
-| **Ngắn** | `97264ae` |
-| **Nhánh nguồn** | `prod` (fast-forward từ `feature/lich-cong-tac-xem-tuan-ngay`) |
-| **Ngày ghi mốc** | 25/08/2026 11:32 |
-| **Alembic** | `mt_025_loai_tai_lieu_20260822` (không đổi — đợt này không có migration) |
+| **Commit** | `81bb5b5` |
+| **Ngắn** | `81bb5b5` |
+| **Nhánh nguồn** | `prod` (fast-forward từ `feature/lms-dgnl-cau-hoi-hang-ngay`) |
+| **Ngày ghi mốc** | 28/08/2026 17:00 |
+| **Alembic** | `lms_cau_hoi_hang_ngay_20260827` (thêm bảng `lms.cau_hoi_hang_ngay`) |
 
 Nội dung: **Lịch công tác — xem theo TUẦN và theo NGÀY**. Tab Lịch trước chỉ có
 lưới tháng (cắt còn 3 sự kiện mỗi ô) và danh sách trộn mọi ngày. Nay thêm lưới
@@ -76,6 +76,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 25/08/2026 | `902e711` | Công cụ: `trien_khai.sh` tự gắn nhánh `prod` — chỉ script + tài liệu, không chạm code dịch vụ, không restart |
 | 25/08/2026 | `e005660` | Backup: lịch sử phiên bản uploads (ảnh hardlink, giữ 60 bản) + sửa mặc định đường dẫn uploads đã chết. Cần cài tay vào `/opt/kpi/scripts/` — xem `scripts/INSTALL_CRON.md` |
 | 25/08/2026 | `97264ae` | Lịch công tác: xem theo tuần và theo ngày, một ngày hiện chi tiết đầy đủ mọi cuộc họp — thuần frontend, không migration |
+| 28/08/2026 | `81bb5b5` | ĐGNL: câu hỏi ôn tập hằng ngày qua chatbot Zalo — 2 endpoint công khai `/api/v1/lms/dgnl/cong-khai/*` (khoá `ZALO_BOT_API_KEY`), migration `lms_cau_hoi_hang_ngay_20260827` thêm bảng mới. Kèm script gắn nhãn công chức trên OA và báo cáo người chưa quan tâm OA |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

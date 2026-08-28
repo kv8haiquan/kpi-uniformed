@@ -41,7 +41,7 @@ router = APIRouter(prefix="/dgnl/cong-khai", tags=["ĐGNL - Công khai (chatbot)
 logger = logging.getLogger("uvicorn.error")
 
 
-def soi_yeu_cau(req: Request, ten: str) -> None:
+async def soi_yeu_cau(req: Request, ten: str) -> None:
     """Ghi lai TOAN BO header + query cua mot lan goi, de xem Zalo gui gi.
 
     Muc dich: tim xem Zalo co tu dinh kem danh tinh nguoi dung (user_id) vao
@@ -57,11 +57,17 @@ def soi_yeu_cau(req: Request, ten: str) -> None:
         k: ("***" if k.lower() in ("x-bot-key", "authorization") else v)
         for k, v in req.headers.items()
     }
+    try:
+        than = (await req.body())[:2000].decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001 — soi log thi khong duoc lam hong request
+        than = "<khong doc duoc>"
     logger.info(
-        "[SOI %s] ip=%s query=%s headers=%s",
+        "[SOI %s] %s ip=%s query=%s than=%s headers=%s",
         ten,
+        req.method,
         req.client.host if req.client else "?",
         dict(req.query_params),
+        than or "<rong>",
         header,
     )
 
@@ -81,7 +87,7 @@ def xac_thuc_bot(x_bot_key: Optional[str] = Header(None)) -> None:
         )
 
 
-@router.get("/cau-hoi-hang-ngay")
+@router.api_route("/cau-hoi-hang-ngay", methods=["GET", "POST"])
 async def cau_hoi_hang_ngay(
     request: Request,
     ngay: Optional[date] = Query(
@@ -115,7 +121,7 @@ async def cau_hoi_hang_ngay(
     Goi bao nhieu lan trong cung mot ngay cung ra dung mot cau (da chot o bang
     lms.cau_hoi_hang_ngay), nen bot thu lai hay nhieu nguoi cung nhan deu khop.
     """
-    soi_yeu_cau(request, "cau-hoi")
+    await soi_yeu_cau(request, "cau-hoi")
     service = CauHoiHangNgayService(db)
     kq = await service.lay_cau_hoi(ngay)
 
@@ -128,7 +134,7 @@ async def cau_hoi_hang_ngay(
     }
 
 
-@router.get("/dap-an")
+@router.api_route("/dap-an", methods=["GET", "POST"])
 async def dap_an(
     request: Request,
     cau_hoi_id: Optional[UUID] = Query(
@@ -150,7 +156,7 @@ async def dap_an(
       - KHONG co `cau_hoi_id` (nguoi dung GO TAY "A"/"B" tren Zalo may tinh,
         noi khong hien nut): lay cau phat gan nhat.
     """
-    soi_yeu_cau(request, "dap-an")
+    await soi_yeu_cau(request, "dap-an")
     service = CauHoiHangNgayService(db)
     kq = await service.lay_dap_an(cau_hoi_id, chon)
 

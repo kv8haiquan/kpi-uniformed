@@ -84,3 +84,6 @@ docs/zalo-oa/*.png
 docs/Lich Hop Cong Tac/
 # Bản xuất sống dùng cho di trú — cùng nội dung, cùng lý do.
 backend/scripts/di_tru_lichkv8/dumps/
+
+# Báo cáo rà Zalo — chứa họ tên + SĐT thật của công chức (NĐ 13/2023)
+docs/zalo-oa/BAO_CAO_CHUA_QUAN_TAM_OA.md

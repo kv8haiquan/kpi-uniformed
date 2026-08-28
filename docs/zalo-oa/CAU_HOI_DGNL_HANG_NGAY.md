@@ -289,3 +289,67 @@ gửi tin mẫu theo số điện thoại, mục đích là hưởng giá 560đ 
 chứng minh `message/cs` bị chặn. Nhưng cũng chưa có gì chứng minh nó chạy: quyền
 *gửi tin tư vấn* chưa từng được xin cho ứng dụng này. Muốn biết chắc thì phải
 nộp duyệt quyền rồi thử — không suy ra được từ dữ liệu hiện có.
+
+
+## 8. Lọc người nhận bằng nhãn — đã làm 28/08/2026
+
+OA có **758 người theo dõi**, chỉ ~327 là công chức. Hơn 400 người còn lại là
+người dân. Quy tắc hẹn giờ của chatbot lọc được người nhận **theo nhãn**, nên
+phải gắn nhãn cho đúng nhóm công chức.
+
+### Đã làm
+
+| Bước | Lệnh | Kết quả |
+|---|---|---|
+| Quét UID | `python scripts/zalo_tra_uid.py --tat-ca --ghi` | 327/543 có `zalo_user_id` (60,2%) |
+| Gắn nhãn | `python scripts/zalo_gan_nhan_cong_chuc.py --ghi` | 327 người, 0 lỗi |
+
+Đối chứng lại từ phía Zalo (`getfollowers` theo `tag_name`):
+
+```
+CC_HQKV08_1  119      HQQN  70   ← nhãn cũ của Hải quan Quảng Ninh, KHÔNG đụng
+CC_HQKV08_2  111
+CC_HQKV08_3   97
+  cộng      327
+```
+
+**Quy tắc 08:00 phải nhắm cả ba nhãn `CC_HQKV08_*`.**
+
+### Vì sao ba nhãn chứ không một
+
+Zalo giới hạn **200 người/nhãn**; vượt quá thì hệ thống **tự gỡ nhãn của người
+được gắn lâu nhất, không báo gì** — người bị gỡ lặng lẽ không nhận tin nữa.
+Script chia theo `int(user_id) % số_nhãn` nên mỗi người luôn rơi vào cùng một
+nhãn qua mọi lần chạy; chia theo thứ tự danh sách thì thêm một người ở đầu là
+dồn toàn bộ phía sau sang nhãn khác.
+
+Ngưỡng đặt 150/nhãn (không phải 200) để còn chỗ cho người follow thêm giữa hai
+lần chạy.
+
+### Chạy lại định kỳ
+
+Công chức mới follow OA sẽ **không có nhãn** và lặng lẽ không nhận được câu
+hỏi. Script chạy lại được nhiều lần (gắn lại nhãn cũ là thao tác vô hại):
+
+```bash
+0 6 * * 1  cd /opt/kpi-prod/backend && venv/bin/python \
+           scripts/zalo_gan_nhan_cong_chuc.py --ghi >> /var/log/zalo-nhan.log 2>&1
+```
+
+### ⚠️ Độ phủ thật chỉ 60%
+
+```
+543 công chức
+327 đã follow OA   ← chỉ nhóm này nhận được tin
+172 chưa follow    ← không nhận gì, gắn nhãn cũng vô ích
+ 44 số hỏng        ← đơn vị cần rà lại danh bạ
+```
+
+Gắn nhãn **không** cải thiện con số này. Muốn phủ hết phải có đợt phổ biến để
+172 người kia quan tâm OA — việc hành chính, không phải việc kỹ thuật. Nếu lãnh
+đạo kỳ vọng "cả cơ quan cùng ôn tập" thì con số thật hiện là 6/10 người.
+
+### Còn nợ
+
+Công chức nghỉ hưu / chuyển công tác vẫn giữ nhãn cũ. Muốn gỡ thì bổ sung nhánh
+gọi `rmfollowerfromtag` cho người có `is_active = false`.

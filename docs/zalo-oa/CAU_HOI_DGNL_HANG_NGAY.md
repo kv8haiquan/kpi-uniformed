@@ -214,13 +214,19 @@ cắt của tất cả. Muốn chặn theo người thì phải tự gửi bằn
 Được một thứ: `user-agent: ZPChatbot` dùng để xác minh nguồn gọi — giả mạo
 được nên chỉ là lớp phụ, không thay khoá.
 
-⚠️ **Trần chi tiêu 500k/ngày KHÔNG bảo vệ luồng này.** `tran_chi.py` chặn ở
-`gui_hang_doi()` của worker ZNS; tin do chatbot Zalo gửi không đi qua mã nguồn
-mình. Phải đặt hạn mức trong **Zalo Cloud Account**.
+Lưu ý về chi phí: `tran_chi.py` chặn ở `gui_hang_doi()` của worker ZNS nên
+**không** nhìn thấy tin do chatbot Zalo gửi. Theo xác nhận của quản trị OA
+(27/08/2026), hạn mức **Zalo Cloud Account nay gộp chung với ZBS**, nên phần
+chi của luồng chatbot đã nằm trong hạn mức đó — không cần dựng thêm trần.
 
 Ước lượng rủi ro spam: tin tư vấn miễn phí 8 tin đầu trong 48h, sau đó 55đ/tin
 — phải trên 7 lần trả lời trong 48h mới bắt đầu mất tiền. 10 người nghịch 50
-lần ≈ 24.000đ.
+lần ≈ 24.000đ. Chấp nhận được, và không chặn theo từng người được (xem trên).
+
+**Vì sao gặp nhiều giới hạn đến vậy:** OA của Chi cục là **OA cơ quan nhà
+nước**. Ba bức tường gặp phải khi dựng kịch bản — không tạo được trường tuỳ
+biến, tối đa 4 quy tắc, không có bước điều kiện — đều là giới hạn tính năng của
+loại OA này, không phải cấu hình sai.
 
 ## 4. Bảo mật
 
@@ -269,5 +275,17 @@ bắt buộc `DB_NAME=kpi_haiquan_test`.
 - Xác nhận khối động đặt được trong quy tắc hẹn giờ hằng ngày.
 - Thử **Phản hồi nhanh** A/B/C/D của Zalo trong khối Nhập liệu — có thể hiện
   được trên Zalo máy tính, chỗ mà nút trong `attachment` không hiện.
-- Nếu khối động truyền được `user_id`: thêm bảng ghi nhận ai trả lời gì để
-  làm thống kê/xếp hạng theo đơn vị.
+- ❌ ~~Nếu khối động truyền được `user_id`~~ — đã soi, Zalo không gửi (mục 3f).
+  Muốn thống kê theo người thì phải tự gửi bằng OA Message API.
+
+**Về việc "gửi bằng UID đã thử và thất bại" (mục 5.3 của PHAN_TICH_CHI_PHI_ZNS.md):**
+lần đó thử trên `business.openapi.zalo.me/message/template` — tức **ZBS/ZNS**,
+gửi tin mẫu theo số điện thoại, mục đích là hưởng giá 560đ thay vì 800đ. Endpoint
+đó đòi số điện thoại nên trả `-108` (số điện thoại không hợp lệ) khi đưa UID vào.
+
+Đó là **một sản phẩm khác** với OA Message API
+(`openapi.zalo.me/v3.0/oa/message/cs` — tin tư vấn), vốn định địa chỉ bằng
+`user_id` chứ không bằng số điện thoại. Thất bại của ZNS-theo-UID **không**
+chứng minh `message/cs` bị chặn. Nhưng cũng chưa có gì chứng minh nó chạy: quyền
+*gửi tin tư vấn* chưa từng được xin cho ứng dụng này. Muốn biết chắc thì phải
+nộp duyệt quyền rồi thử — không suy ra được từ dữ liệu hiện có.

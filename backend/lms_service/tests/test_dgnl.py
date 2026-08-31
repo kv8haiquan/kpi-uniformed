@@ -1977,3 +1977,275 @@ class TestXoaNhieuCauHoiDgnl:
         resp = await client.post(f"{BASE}/dgnl/ngan-hang/xoa-nhieu",
                                  json={"ids": [str(uuid.uuid4())]})
         assert resp.status_code == 403
+
+
+# =========================================================================
+# RESET LUOT THI (QT_DAO_TAO) — 31/08/2026
+# =========================================================================
+
+class TestResetLuotThi:
+    """Reset bai thi cua 1 thi sinh khi co nguoi dang nhap nham tai khoan.
+
+    Hai muc: XOA_SACH (ve CHUA_THI, tra lai du luot) va MO_KHOA_LUOT (giu
+    ket qua, chi go co da_xac_nhan). Moi lan reset phai de lai nhat ky.
+    """
+
+    _setup_dgnl_exam = TestLichSuLanThi._setup_dgnl_exam
+    _open_with_dap_an = TestLichSuLanThi._open_with_dap_an
+    _thi_va_nop = TestLichSuLanThi._thi_va_nop
+
+    async def _lay_thi_sinh(self, client, kt_id: str, cc_id: str) -> dict:
+        """Doc lai ban ghi thi sinh qua danh sach admin."""
+        resp = await client.get(f"{BASE}/ky-thi/{kt_id}/thi-sinh")
+        assert resp.status_code == 200, resp.json()
+        rows = [r for r in resp.json()["data"] if r["cong_chuc_id"] == cc_id]
+        assert len(rows) == 1
+        return rows[0]
+
+    # ---------- XOA_SACH ----------
+
+    async def test_xoa_sach_ve_trang_thai_chua_thi(self, client, admin_user):
+        """XOA_SACH: diem, bai lam, lich su, mocs thoi gian deu bi xoa trang."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+
+        truoc = await self._lay_thi_sinh(client, kt_id, cc_id)
+        assert truoc["trang_thai"] == "DA_NOP"
+        assert truoc["lan_thi_hien_tai"] == 1
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "XOA_SACH", "ly_do": "Người khác đăng nhập nhầm tài khoản"},
+        )
+        assert resp.status_code == 200, resp.json()
+        assert resp.json()["data"]["trang_thai_truoc"] == "DA_NOP"
+        assert resp.json()["data"]["trang_thai_sau"] == "CHUA_THI"
+
+        sau = await self._lay_thi_sinh(client, kt_id, cc_id)
+        assert sau["trang_thai"] == "CHUA_THI"
+        assert sau["lan_thi_hien_tai"] == 0
+        assert sau["diem_tong"] is None
+        assert sau["xep_loai"] is None
+        assert sau["thoi_gian_bat_dau"] is None
+        assert sau["thoi_gian_nop"] is None
+        assert sau["da_xac_nhan"] is False
+        assert not (sau["lich_su_thi"] or [])
+
+    async def test_xoa_sach_cho_thi_lai_du_luot(self, client, admin_user):
+        """Sau XOA_SACH, thi sinh vao thi lai duoc va tinh lai tu lan 1."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+        await client.post(f"{BASE}/ky-thi/{kt_id}/xac-nhan")  # khoa lai
+
+        # Da xac nhan -> bi chan
+        chan = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert chan.status_code == 400
+        assert chan.json()["detail"]["error"]["code"] == "DGNL_048"
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "XOA_SACH", "ly_do": "Thi hộ do nhầm tài khoản, cho thi lại"},
+        )
+        assert resp.status_code == 200, resp.json()
+
+        lai = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert lai.status_code == 200, lai.json()
+        sau = await self._lay_thi_sinh(client, kt_id, cc_id)
+        assert sau["trang_thai"] == "DANG_THI"
+        assert sau["lan_thi_hien_tai"] == 1  # tinh lai tu dau, khong phai 2
+
+    # ---------- MO_KHOA_LUOT ----------
+
+    async def test_mo_khoa_luot_giu_ket_qua_cu(self, client, admin_user):
+        """MO_KHOA_LUOT: go khoa nhung diem va lich su lan 1 van con."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+        await client.post(f"{BASE}/ky-thi/{kt_id}/xac-nhan")
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "MO_KHOA_LUOT", "ly_do": "Mất điện giữa chừng, mở lại lượt 2"},
+        )
+        assert resp.status_code == 200, resp.json()
+
+        sau = await self._lay_thi_sinh(client, kt_id, cc_id)
+        assert sau["trang_thai"] == "DA_NOP"       # van giu ket qua
+        assert sau["lan_thi_hien_tai"] == 1
+        assert sau["da_xac_nhan"] is False          # da go khoa
+        assert len(sau["lich_su_thi"] or []) == 1   # lich su lan 1 con nguyen
+
+        # Vao thi duoc luot 2
+        lai = await client.post(f"{BASE}/ky-thi/{kt_id}/bat-dau")
+        assert lai.status_code == 200, lai.json()
+        assert (await self._lay_thi_sinh(client, kt_id, cc_id))["lan_thi_hien_tai"] == 2
+
+    async def test_mo_khoa_khi_chua_bi_khoa_400(self, client, admin_user):
+        """Chua xac nhan -> van con quyen thi lai, mo khoa la thua (DGNL_052)."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "MO_KHOA_LUOT", "ly_do": "Thử mở khóa khi chưa khóa"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_052"
+
+    async def test_mo_khoa_khi_het_luot_400(self, client, admin_user):
+        """Dung het 2/2 luot -> mo khoa vo nghia, phai bao ro (DGNL_053)."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)   # lan 1
+        await self._thi_va_nop(client, kt_id)   # lan 2 — het luot
+        await client.post(f"{BASE}/ky-thi/{kt_id}/xac-nhan")
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "MO_KHOA_LUOT", "ly_do": "Xin thêm lượt cho thí sinh"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_053"
+
+    async def test_mo_khoa_khi_chua_thi_400(self, client, admin_user):
+        """Chua nop bai thi khong co gi de mo khoa (DGNL_051)."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "MO_KHOA_LUOT", "ly_do": "Mở khóa người chưa thi"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_051"
+
+    # ---------- RANG BUOC DAU VAO ----------
+
+    async def test_ly_do_qua_ngan_bi_tu_choi(self, client, admin_user):
+        """Ly do la bat buoc — thao tac xoa du lieu that phai truy nguyen duoc."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+
+        for ly_do in ("", "x"):
+            resp = await client.post(
+                f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+                json={"loai_reset": "XOA_SACH", "ly_do": ly_do},
+            )
+            assert resp.status_code == 422, resp.json()
+
+        # Ban ghi khong bi dung toi
+        assert (await self._lay_thi_sinh(client, kt_id, cc_id))["trang_thai"] == "DA_NOP"
+
+    async def test_loai_reset_khong_hop_le_400(self, client, admin_user):
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "XOA_HET_KY_THI", "ly_do": "Loại reset bịa ra"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_050"
+
+    async def test_thi_sinh_khong_thuoc_ky_thi_404(self, client, admin_user):
+        data, _cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        nguoi_la = "02fed37c-1c82-4250-a6ea-7bf9db7b6955"
+
+        resp = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{nguoi_la}/reset",
+            json={"loai_reset": "XOA_SACH", "ly_do": "Người không có trong kỳ thi"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["error"]["code"] == "DGNL_023"
+
+    # ---------- NHAT KY ----------
+
+    async def test_nhat_ky_ghi_day_du(self, client, admin_user):
+        """Nhat ky phai giu lai trang thai truoc + diem cu + ly do + nguoi reset."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+        truoc = await self._lay_thi_sinh(client, kt_id, cc_id)
+
+        ly_do = "Đồng chí bên cạnh mượn máy làm nhầm bài"
+        r = await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "XOA_SACH", "ly_do": ly_do},
+        )
+        assert r.status_code == 200, r.json()
+
+        log = await client.get(f"{BASE}/ky-thi/{kt_id}/lich-su-reset")
+        assert log.status_code == 200, log.json()
+        rows = log.json()["data"]
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["loai_reset"] == "XOA_SACH"
+        assert row["ly_do"] == ly_do
+        assert row["trang_thai_truoc"] == "DA_NOP"
+        assert row["lan_thi_truoc"] == 1
+        assert float(row["diem_truoc"]) == float(truoc["diem_tong"])
+        assert row["cong_chuc_id"] == cc_id
+        assert row["nguoi_reset_id"] == str(admin_user.sub)
+        assert row["thoi_gian"] is not None
+
+    async def test_nhat_ky_loc_theo_thi_sinh(self, client, admin_user):
+        """Loc nhat ky theo cong_chuc_id — nguoi khac khong lot vao."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+        await client.post(
+            f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+            json={"loai_reset": "XOA_SACH", "ly_do": "Reset để kiểm tra bộ lọc"},
+        )
+
+        khop = await client.get(f"{BASE}/ky-thi/{kt_id}/lich-su-reset", params={"cong_chuc_id": cc_id})
+        assert len(khop.json()["data"]) == 1
+
+        nguoi_khac = "02fed37c-1c82-4250-a6ea-7bf9db7b6955"
+        lech = await client.get(f"{BASE}/ky-thi/{kt_id}/lich-su-reset", params={"cong_chuc_id": nguoi_khac})
+        assert lech.json()["data"] == []
+
+    # ---------- PHAN QUYEN ----------
+
+    async def test_lanh_dao_khong_duoc_reset(self, client, admin_user):
+        """CCT khong phai QT_DAO_TAO -> khong duoc dung cong cu nay."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+
+        _override_current_user(_make_token("CCT", is_lanh_dao=True))
+        try:
+            resp = await client.post(
+                f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+                json={"loai_reset": "XOA_SACH", "ly_do": "Lãnh đạo tự reset"},
+            )
+            assert resp.status_code == 403
+            log = await client.get(f"{BASE}/ky-thi/{kt_id}/lich-su-reset")
+            assert log.status_code == 403
+        finally:
+            _override_current_user(admin_user)
+
+        # Ban ghi khong bi dung toi
+        assert (await self._lay_thi_sinh(client, kt_id, cc_id))["trang_thai"] == "DA_NOP"
+
+    async def test_cong_chuc_khong_duoc_reset(self, client, admin_user):
+        """Cong chuc thuong tuyet doi khong tu reset bai cua chinh minh."""
+        data, cc_id = await self._open_with_dap_an(client, admin_user)
+        kt_id = data["ky_thi"]["id"]
+        await self._thi_va_nop(client, kt_id)
+
+        _override_current_user(_make_token("CC"))
+        try:
+            resp = await client.post(
+                f"{BASE}/ky-thi/{kt_id}/thi-sinh/{cc_id}/reset",
+                json={"loai_reset": "XOA_SACH", "ly_do": "Tự xóa bài của mình"},
+            )
+            assert resp.status_code == 403
+        finally:
+            _override_current_user(admin_user)

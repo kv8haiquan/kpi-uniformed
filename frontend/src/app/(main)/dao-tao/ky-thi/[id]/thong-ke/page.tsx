@@ -12,6 +12,8 @@ import Link from 'next/link';
 import { kyThiApi } from '@/services/lms';
 import { useAuthStore } from '@/stores/useAuthStore';
 import ViPhamDetailModal from '@/components/lms/ViPhamDetailModal';
+import ResetLuotThiModal from '@/components/lms/ResetLuotThiModal';
+import LichSuResetModal from '@/components/lms/LichSuResetModal';
 import type { IKyThi, IDgnlThongKe, IThiSinh, ILichSuThiSummary } from '@/types/lms';
 
 /** Chỉ admin (QT_DAO_TAO/SUPER_ADMIN) được quản lý/xem module ĐGNL. */
@@ -68,6 +70,11 @@ export default function ThongKeKyThiPage() {
   const [viewLan, setViewLan] = useState<number | 'all'>('all');
   // Thí sinh đang xem chi tiết vi phạm (modal)
   const [viPhamTarget, setViPhamTarget] = useState<{ ccId: string; hoTen?: string } | null>(null);
+  // Thí sinh đang reset lượt thi (modal) + nhật ký reset của cả kỳ
+  const [resetTarget, setResetTarget] = useState<IThiSinh | null>(null);
+  const [showLichSuReset, setShowLichSuReset] = useState(false);
+  // Tăng lên để nạp lại bảng sau khi reset (không tách hàm load ra khỏi effect)
+  const [reloadKey, setReloadKey] = useState(0);
 
   // So lan thi toi da trong ky -> dung de render options dropdown
   const maxLan = useMemo(() => {
@@ -106,7 +113,7 @@ export default function ThongKeKyThiPage() {
       }
     };
     if (kyThiId) load();
-  }, [kyThiId]);
+  }, [kyThiId, reloadKey]);
 
   const handleExport = async () => {
     setExporting(true);
@@ -160,6 +167,13 @@ export default function ThongKeKyThiPage() {
           >
             🖥️ Giám sát trực tiếp
           </Link>
+          <button
+            onClick={() => setShowLichSuReset(true)}
+            className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+            title="Xem ai đã reset lượt thi của thí sinh nào, vì sao"
+          >
+            📓 Nhật ký reset
+          </button>
           <button
             onClick={handleExport}
             disabled={exporting}
@@ -335,6 +349,7 @@ export default function ThongKeKyThiPage() {
                     onToggle={() => toggleExpand(ts.id)}
                     viewLan={viewLan}
                     onShowViPham={() => setViPhamTarget({ ccId: ts.cong_chuc_id, hoTen: ts.ho_ten || undefined })}
+                    onReset={() => setResetTarget(ts)}
                   />
                 );
               })}
@@ -351,12 +366,26 @@ export default function ThongKeKyThiPage() {
           onClose={() => setViPhamTarget(null)}
         />
       )}
+
+      {resetTarget && (
+        <ResetLuotThiModal
+          kyThiId={kyThiId}
+          thiSinh={resetTarget}
+          soLanThiToiDa={kyThi?.so_lan_thi_toi_da}
+          onClose={() => setResetTarget(null)}
+          onDone={() => { setResetTarget(null); setReloadKey((k) => k + 1); }}
+        />
+      )}
+
+      {showLichSuReset && (
+        <LichSuResetModal kyThiId={kyThiId} onClose={() => setShowLichSuReset(false)} />
+      )}
     </div>
   );
 }
 
 function FragmentRow({
-  ts, idx, kyThiId, lichSu, soLan, coTheExpand, isOpen, onToggle, viewLan, onShowViPham,
+  ts, idx, kyThiId, lichSu, soLan, coTheExpand, isOpen, onToggle, viewLan, onShowViPham, onReset,
 }: {
   ts: IThiSinh;
   idx: number;
@@ -368,6 +397,7 @@ function FragmentRow({
   onToggle: () => void;
   viewLan: number | 'all';
   onShowViPham: () => void;
+  onReset: () => void;
 }) {
   // Ket qua hien thi theo lan da chon (hoac lan moi nhat)
   const kq = resolveKetQuaLan(ts, viewLan);
@@ -438,25 +468,38 @@ function FragmentRow({
           )}
         </td>
         <td className="py-2 px-3 text-center">
-          {kq.hasData && kq.hasChiTiet ? (
-            <Link
-              href={baiLamHref}
-              className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium inline-flex items-center gap-1"
-              title={viewLan === 'all' ? 'Xem bài làm lần mới nhất' : `Xem bài làm lần ${viewLan}`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              Xem bài làm
-            </Link>
-          ) : kq.hasData && !kq.hasChiTiet ? (
-            <span className="text-gray-400 text-xs" title="Lần thi cũ không lưu chi tiết câu trả lời">
-              Không có chi tiết
-            </span>
-          ) : (
-            <span className="text-gray-300 text-xs">—</span>
-          )}
+          <div className="inline-flex items-center gap-3">
+            {kq.hasData && kq.hasChiTiet ? (
+              <Link
+                href={baiLamHref}
+                className="text-blue-600 hover:text-blue-800 hover:underline text-xs font-medium inline-flex items-center gap-1"
+                title={viewLan === 'all' ? 'Xem bài làm lần mới nhất' : `Xem bài làm lần ${viewLan}`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                Xem bài làm
+              </Link>
+            ) : kq.hasData && !kq.hasChiTiet ? (
+              <span className="text-gray-400 text-xs" title="Lần thi cũ không lưu chi tiết câu trả lời">
+                Không có chi tiết
+              </span>
+            ) : (
+              <span className="text-gray-300 text-xs">—</span>
+            )}
+            {/* Reset chỉ có nghĩa khi thí sinh đã đụng vào bài thi */}
+            {ts.trang_thai !== 'CHUA_THI' && (
+              <button
+                type="button"
+                onClick={onReset}
+                className="text-red-600 hover:text-red-800 hover:underline text-xs font-medium"
+                title="Reset lượt thi (người khác làm nhầm, sự cố giữa chừng)"
+              >
+                Reset
+              </button>
+            )}
+          </div>
         </td>
       </tr>
       {isOpen && (

@@ -27,6 +27,7 @@ from lms_service.models.phien_thi import PhienThi
 from lms_service.models.vi_pham_thi import ViPhamThi
 from lms_service.models.cau_truc_de_template import CauTrucDeTemplate
 from lms_service.models.cau_hoi_hang_ngay import CauHoiHangNgay
+from lms_service.models.lich_su_reset_thi import LichSuResetThi
 
 __all__ = [
     "Base",
@@ -52,4 +53,5 @@ __all__ = [
     "ViPhamThi",
     "CauTrucDeTemplate",
     "CauHoiHangNgay",
+    "LichSuResetThi",
 ]

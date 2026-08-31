@@ -526,11 +526,32 @@ export interface IThiSinh {
   thoi_gian_bat_dau: string | null;
   thoi_gian_nop: string | null;
   thoi_gian_lam_giay: number | null;
+  /** Đã chốt ca thi -> không được thi lại dù còn lượt (tự động sau 10' kể từ khi nộp). */
+  da_xac_nhan?: boolean;
+  thoi_gian_xac_nhan?: string | null;
   ho_ten: string | null;
   ma_cc: string | null;
   don_vi_ten: string | null;
   vi_tri_ten: string | null;
   lich_su_thi?: ILichSuThiSummary[] | null;
+}
+
+/** 1 dòng nhật ký reset lượt thi (ai reset, cho ai, vì sao, trạng thái trước đó). */
+export interface ILichSuReset {
+  id: string;
+  ky_thi_id: string | null;
+  cong_chuc_id: string;
+  nguoi_reset_id: string;
+  loai_reset: 'XOA_SACH' | 'MO_KHOA_LUOT';
+  ly_do: string;
+  trang_thai_truoc: string | null;
+  lan_thi_truoc: number | null;
+  diem_truoc: number | string | null;
+  thoi_gian: string | null;
+  ho_ten: string | null;
+  ma_cc: string | null;
+  nguoi_reset_ten: string | null;
+  nguoi_reset_ma_cc: string | null;
 }
 
 // =============================================================================

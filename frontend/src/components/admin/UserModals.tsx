@@ -417,6 +417,29 @@ export function UserEditModal({ user, onSuccess, onClose }: UserEditModalProps) 
 // USER TRANSFER MODAL
 // =============================================================================
 
+/**
+ * Ngày hôm nay theo GIỜ ĐỊA PHƯƠNG, dạng YYYY-MM-DD.
+ *
+ * KHÔNG dùng `new Date().toISOString().split('T')[0]`: `toISOString()` trả về giờ
+ * UTC, nên từ 00:00 đến 07:00 giờ Việt Nam nó cho ra ngày HÔM QUA.
+ */
+function ngayHomNay(): string {
+  const d = new Date();
+  const thang = String(d.getMonth() + 1).padStart(2, '0');
+  const ngay = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${thang}-${ngay}`;
+}
+
+/** Số ngày giữa hai chuỗi YYYY-MM-DD (dương = `a` sau `b`). */
+function soNgayLech(a: string, b: string): number {
+  const ms = new Date(`${a}T00:00:00`).getTime() - new Date(`${b}T00:00:00`).getTime();
+  return Math.round(ms / 86_400_000);
+}
+
+// Nhập muộn/sớm quá mốc này thì cảnh báo — không chặn, chỉ nhắc người nhập
+// đối chiếu lại ngày trong quyết định.
+const NGUONG_CANH_BAO_NGAY = 15;
+
 interface UserTransferModalProps {
   user: IUserResponse;
   donViList: IDonViOption[];
@@ -440,7 +463,8 @@ export function UserTransferModal({ user, donViList, vaiTroList, onSuccess, onCl
     chuc_vu_moi: user.chuc_vu || '',
     is_lanh_dao: user.is_lanh_dao,
     ly_do: '',
-    ngay_hieu_luc: new Date().toISOString().split('T')[0],
+    // KHÔNG điền sẵn ngày hôm nay — xem ghi chú ở `ngayHomNay` bên dưới.
+    ngay_hieu_luc: '',
   });
 
   // Load lịch sử điều chuyển
@@ -517,12 +541,42 @@ export function UserTransferModal({ user, donViList, vaiTroList, onSuccess, onCl
     }
   };
 
+  // Cảnh báo khi ngày hiệu lực lệch xa ngày nhập — dấu hiệu nhập muộn (quên cả
+  // đợt) hoặc gõ nhầm năm/tháng. Chuỗi rỗng = không có gì để cảnh báo.
+  const canhBaoNgay: string | null = (() => {
+    if (!formData.ngay_hieu_luc) return null;
+    const lech = soNgayLech(formData.ngay_hieu_luc, ngayHomNay());
+    if (lech < -NGUONG_CANH_BAO_NGAY) {
+      return `Ngày hiệu lực cách hôm nay ${Math.abs(lech)} ngày về trước — bạn đang nhập muộn. `
+        + `Kiểm tra lại ngày ghi trong quyết định.`;
+    }
+    if (lech > NGUONG_CANH_BAO_NGAY) {
+      return `Ngày hiệu lực ở ${lech} ngày trong tương lai — kiểm tra lại xem có gõ nhầm tháng/năm không.`;
+    }
+    return null;
+  })();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.don_vi_id_moi && !formData.vai_tro_id_moi) {
       alert('Vui lòng chọn đơn vị mới hoặc vai trò mới');
       return;
+    }
+
+    // Ngày hiệu lực BẮT BUỘC. Trước đây ô này điền sẵn ngày hôm nay và backend
+    // còn tự lấp `date.today()` khi để trống → 92/95 bản ghi lịch sử ghi ngày
+    // NHẬP LIỆU thay vì ngày quyết định, phải đi sửa lại hàng loạt (31/08/2026).
+    if (!formData.ngay_hieu_luc) {
+      alert('Vui lòng nhập Ngày hiệu lực — lấy đúng ngày ghi trong quyết định, không phải ngày hôm nay');
+      return;
+    }
+
+    if (canhBaoNgay) {
+      const tiepTuc = window.confirm(
+        `${canhBaoNgay}\n\nOK = ngày này đúng, cứ lưu • Cancel = để tôi xem lại`
+      );
+      if (!tiepTuc) return;
     }
 
     setIsSubmitting(true);
@@ -610,15 +664,38 @@ export function UserTransferModal({ user, donViList, vaiTroList, onSuccess, onCl
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Ngày hiệu lực</label>
-              <input
-                type="date"
-                value={formData.ngay_hieu_luc || ''}
-                onChange={(e) => setFormData({ ...formData, ngay_hieu_luc: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Ngày hiệu lực <span className="text-red-500">*</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  required
+                  value={formData.ngay_hieu_luc || ''}
+                  onChange={(e) => setFormData({ ...formData, ngay_hieu_luc: e.target.value })}
+                  className="flex-1 min-w-0 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, ngay_hieu_luc: ngayHomNay() })}
+                  className="px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 whitespace-nowrap"
+                  title="Điền ngày hôm nay"
+                >
+                  Hôm nay
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Lấy đúng ngày ghi trong quyết định, không phải ngày nhập liệu.
+              </p>
             </div>
           </div>
+
+          {canhBaoNgay && (
+            <div className="flex gap-2 bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-3 py-2 text-sm">
+              <span aria-hidden>⚠️</span>
+              <span>{canhBaoNgay}</span>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Lý do điều chuyển</label>

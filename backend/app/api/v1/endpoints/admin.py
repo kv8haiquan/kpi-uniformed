@@ -1004,6 +1004,14 @@ async def transfer_user(
         chuc_vu_cu=chuc_vu_cu,
         chuc_vu_moi=user.chuc_vu,
         ly_do=payload.ly_do,
+        # ⚠️ `or date.today()` là LƯỚI AN TOÀN cho client cũ, KHÔNG phải hành vi
+        # mong muốn. Chính nó (cùng với ô ngày điền sẵn hôm nay ở frontend) đã
+        # khiến 92/95 bản ghi lịch sử ghi NGÀY NHẬP LIỆU thay vì ngày quyết định,
+        # phải đi sửa lại hàng loạt ngày 31/08/2026 — xem
+        # `scripts/fix_ngay_dieu_chuyen_2026.py` và
+        # `docs/Fix-dieu-chuyen-don-vi/PLAN_SUA_NGAY_DIEU_CHUYEN.md`.
+        # Frontend nay BẮT BUỘC nhập ngày (UserTransferModal). Nếu về sau không
+        # còn client nào gửi thiếu trường này, hãy đổi thành 422 thay vì tự lấp.
         ngay_hieu_luc=payload.ngay_hieu_luc or date.today(),
         nguoi_thuc_hien_id=admin.id,
     )

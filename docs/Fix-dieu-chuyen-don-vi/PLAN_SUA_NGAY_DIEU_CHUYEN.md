@@ -214,7 +214,7 @@ Nhánh: `feature/kpi-sua-ngay-dieu-chuyen` (tạo từ `prod` @ `c53d843`)
 | 2. Viết script | ✅ `backend/scripts/fix_ngay_dieu_chuyen_2026.py` |
 | 3. Chạy thử DB test | ✅ `kpi_haiquan_test`: xóa 8 · sửa 77 · thêm 62 · 0 cảnh báo; chạy lần 2 ra 0 thao tác (idempotent) |
 | 4. Sửa code + đối chứng | ✅ mốc chốt → cuối tháng M; đối chứng T1–T8 = **1 ca đổi**; 5/5 test PASS |
-| 5. Chặn tái diễn (FE/BE) | ⬜ **chưa làm** — đã xác định chính xác 3 chỗ cần sửa |
+| 5. Chặn tái diễn (FE/BE) | ✅ xong — bỏ prefill, bắt buộc nhập ngày, cảnh báo lệch >15 ngày, vá lỗi UTC; build sạch |
 | 6. Áp prod | ⬜ **chưa làm** — cần user ngồi cạnh |
 
 Con số thực tế của script (khác dự toán ban đầu vì 4 người khứ hồi sau khi gộp
@@ -329,18 +329,31 @@ vấn đề nằm ở giá trị mặc định.**
 | 2 | `backend/app/api/v1/endpoints/admin.py:1004` | `ngay_hieu_luc=payload.ngay_hieu_luc or date.today()` | Kể cả FE gửi rỗng, BE vẫn **âm thầm** điền hôm nay — không có cách nào để trống |
 | 3 | cùng dòng 443 | `toISOString()` trả ngày theo **UTC** | Từ 00:00–07:00 giờ VN, ô ngày điền sẵn **hôm qua** |
 
-**Việc cần làm (đã bỏ yêu cầu bắt buộc số QĐ theo quyết định của user):**
+**ĐÃ LÀM 31/08/2026** (bỏ yêu cầu bắt buộc số QĐ theo quyết định của user):
 
-- FE: bỏ prefill → để trống + `required`; nếu vẫn muốn tiện thì thêm nút
-  "Hôm nay" bấm chủ động thay vì điền sẵn.
-- FE: cảnh báo vàng khi ngày hiệu lực cách ngày nhập > 15 ngày
-  ("Bạn đang nhập muộn — kiểm tra lại ngày trong quyết định").
-- FE: nếu giữ prefill ở đâu đó thì dùng giờ địa phương, không dùng `toISOString()`.
-- BE: giữ `or date.today()` làm lưới an toàn (không phá client cũ).
+- ✅ `UserModals.tsx` — bỏ prefill, ô ngày để trống + `required` + dấu `*`;
+  thêm nút **"Hôm nay"** để người nhập bấm chủ động thay vì được điền sẵn;
+  chú thích dưới ô: *"Lấy đúng ngày ghi trong quyết định, không phải ngày nhập liệu."*
+- ✅ Chặn ở `handleSubmit`: thiếu ngày → báo và không gửi.
+- ✅ Hàm `ngayHomNay()` dùng **giờ địa phương**, thay `toISOString()` (vốn trả giờ
+  UTC → từ 00:00–07:00 giờ VN điền sẵn ngày HÔM QUA).
+- ✅ Cảnh báo vàng khi ngày hiệu lực lệch quá **15 ngày** so với ngày nhập, cả hai
+  chiều: về trước = "bạn đang nhập muộn", về sau = "kiểm tra gõ nhầm tháng/năm".
+  Bấm Lưu khi đang có cảnh báo thì phải xác nhận thêm một lần — nhắc, không chặn.
+- ✅ `admin.py` — giữ `or date.today()` làm lưới an toàn cho client cũ, kèm ghi chú
+  nêu rõ đây KHÔNG phải hành vi mong muốn và chính nó đã gây ra đợt sửa này.
 - Ô "Lý do" giữ nguyên **không bắt buộc**.
-- **Còn treo:** màn "Điều chuyển hàng loạt theo QĐ" (1 ngày hiệu lực + dán danh
-  sách `ma_cc, đơn vị đến`). Đợt nào cũng vài chục người; nhập lẻ là lý do đợt
-  04/02 bị bỏ quên trọn vẹn 62 người và đợt 03/7 chỉ nhập được 1/3.
+
+Kiểm chứng: `tsc --noEmit` sạch, `npm run build` compiled successfully.
+`eslint` còn 1 lỗi `react-hooks/set-state-in-effect` ở `useEffect(reloadHistory)`
+— **đỏ sẵn từ trước**, đã đối chứng bằng cách lint lại trên bản gốc.
+
+Modal đổi trạng thái (vô hiệu hóa/kích hoạt) ở `admin/users/page.tsx` vốn đã để
+trống ngày sẵn (`useState('')`) → không cần sửa.
+
+**Còn treo:** màn "Điều chuyển hàng loạt theo QĐ" (1 ngày hiệu lực + dán danh
+sách `ma_cc, đơn vị đến`). Đợt nào cũng vài chục người; nhập lẻ là lý do đợt
+04/02 bị bỏ quên trọn vẹn 62 người và đợt 03/7 chỉ nhập được 1/3.
 
 ### Bước 6 — Áp prod
 

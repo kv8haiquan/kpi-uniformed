@@ -455,6 +455,16 @@ export const kyThiApi = {
   exportExcel: (id: string) => lmsApi.get(`/ky-thi/${id}/export`, { responseType: 'blob' }),
   /** Giám sát trực tiếp kỳ thi (tiến độ/vi phạm/online từng thí sinh). Chỉ admin. */
   giamSat: (id: string) => lmsApi.get(`/ky-thi/${id}/giam-sat`),
+  /**
+   * Reset bài thi của 1 thí sinh (người khác đăng nhập nhầm, sự cố giữa chừng).
+   * XOA_SACH = về CHUA_THI, trả lại đủ lượt. MO_KHOA_LUOT = giữ kết quả, mở lượt sau.
+   * Lý do là bắt buộc — bản ghi cũ được chụp lại vào nhật ký trước khi sửa. Chỉ admin.
+   */
+  resetLuotThi: (id: string, ccId: string, data: { loai_reset: 'XOA_SACH' | 'MO_KHOA_LUOT'; ly_do: string }) =>
+    lmsApi.post(`/ky-thi/${id}/thi-sinh/${ccId}/reset`, data),
+  /** Nhật ký reset của kỳ thi (lọc theo 1 thí sinh nếu truyền ccId). Chỉ admin. */
+  lichSuReset: (id: string, ccId?: string) =>
+    lmsApi.get(`/ky-thi/${id}/lich-su-reset`, ccId ? { params: { cong_chuc_id: ccId } } : undefined),
 };
 
 // =============================================================================

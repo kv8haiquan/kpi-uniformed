@@ -564,16 +564,33 @@ def _don_vi_tai_thang_expr(thang: int, nam: int):
       (2) Người-duyệt: đơn vị của người phê duyệt TCC (ưu tiên cấp 2, else cấp 1) NẾU người đó
                     là TDV/PDV VÀ khác đơn vị hồ sơ → lấy đơn vị người duyệt; ngược lại = hồ sơ.
                     (Loại CCT/PCCT vì họ duyệt chéo toàn cục, đơn vị của họ vô nghĩa.)
-      (3) Heuristic: cuộn ngược điều chuyển hiệu lực SAU mốc chốt (cuối tháng M+1) — như cũ.
+      (3) Heuristic: cuộn ngược điều chuyển hiệu lực SAU mốc chốt = CUỐI THÁNG M.
 
     Ba nguồn sai ở các ca KHÁC NHAU và rời nhau → lấy ĐA SỐ (≥2 phiếu) khử được "kẻ lạc loài"
     của từng nguồn. Kiểm chứng T4+T5/2026: 100% khớp phụ lục, 0 ca phải phá hòa.
     Không đa số (rất hiếm) → ưu tiên kê-khai → người-duyệt → heuristic.
+
+    v2.1 (31/08/2026) — MỐC CHỐT VỀ CUỐI THÁNG M (trước đây là cuối tháng M+1).
+      Mốc cũ nới thêm TRỌN một tháng, không phải vì nghiệp vụ mà để BÙ cho việc
+      `lich_su_dieu_chuyen.ngay_hieu_luc` bị ghi bằng NGÀY NHẬP LIỆU (trễ 2–3 tuần
+      so với quyết định) — form điều chuyển điền sẵn ngày hôm nay.
+      Sau đợt làm sạch dữ liệu 31/08/2026 (xem
+      `scripts/fix_ngay_dieu_chuyen_2026.py` và
+      `docs/Fix-dieu-chuyen-don-vi/PLAN_SUA_NGAY_DIEU_CHUYEN.md`), ngày hiệu lực đã
+      đúng theo quyết định, nên mốc phải đọc đúng nghĩa đen: quyết định có hiệu lực
+      SAU khi tháng M kết thúc thì trong tháng M công chức vẫn ở đơn vị cũ.
+
+      ⚠️ Giữ mốc cũ cùng với dữ liệu đã làm sạch sẽ SAI: ví dụ QĐ hiệu lực 15/5,
+      báo cáo T4 có mốc cũ 31/5 → 15/5 không > 31/5 → không cuộn ngược → gán sai
+      vào đơn vị mới. Hai thay đổi này phải đi cùng nhau.
+
+      Kiểm chứng trên `kpi_haiquan_test` (bản sao prod): T1–T7/2026, 558 công chức
+      → chỉ T1 đổi 1 ca (20ZZ-0303 Vũ Thanh Hảo về PTSTQ, khớp kê khai T1), T2–T7
+      không đổi dòng nào.
     """
     import calendar
     from datetime import date as _date
-    y, m = (nam + 1, 1) if thang >= 12 else (nam, thang + 1)
-    mocchot = _date(y, m, calendar.monthrange(y, m)[1])
+    mocchot = _date(nam, thang, calendar.monthrange(nam, thang)[1])
 
     # (3) Heuristic điều chuyển: chỉ cuộn ngược quyết định có don_vi_moi == hồ sơ hiện tại
     #     và hiệu lực SAU mốc chốt → bỏ qua bản ghi rác/khứ hồi trong lich_su_dieu_chuyen.

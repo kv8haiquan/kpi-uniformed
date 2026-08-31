@@ -150,6 +150,22 @@ Cái "nới thêm một tháng" đó chính là để bù cho việc `ngay_hieu_
 không heuristic sẽ hiểu ngược. Vì vậy sửa dữ liệu và sửa mốc **phải đi cùng nhau**
 trong một lần phát hành.
 
+### ⚠️ Phát hiện khi viết test: heuristic một mình KHÔNG đổi được kết quả
+
+Nhánh phá hòa của phép bầu phiếu là `COALESCE(v_kk, v_ap, v_he)`, mà
+`v_ap = COALESCE(đơn vị người duyệt, đơn vị hồ sơ)` → **không bao giờ NULL**.
+Nên `v_he` **không bao giờ được chạm tới** ở nhánh phá hòa.
+
+Hệ quả: heuristic chỉ có tiếng nói khi **đồng ý với phiếu kê-khai** (hoặc trùng
+phiếu người-duyệt). Công chức không kê khai trong tháng thì đơn vị-tại-tháng
+luôn bằng đơn vị hồ sơ hiện tại, bất kể lịch sử điều chuyển ghi gì.
+
+Điều này giải thích tại sao đợt sửa chỉ đổi 1 ca trên 558 người × 8 tháng, và
+cũng có nghĩa: **giá trị chính của việc làm sạch lịch sử là tính đúng đắn của
+hồ sơ nhân sự**, không phải cứu báo cáo. Hành vi này đã được chốt bằng test
+`test_heuristic_mot_minh_khong_doi_duoc_ket_qua` để lần sau ai đọc hàm không
+kỳ vọng sai.
+
 ---
 
 ## 3. Đã mô phỏng tác động (chưa ghi gì vào DB)
@@ -187,7 +203,26 @@ Nói cách khác: làm đủ 6 mục thì báo cáo T2–T7 **không đổi mộ
 
 ## 4. Kế hoạch thực hiện
 
-Nhánh: `feature/kpi-sua-ngay-dieu-chuyen`
+Nhánh: `feature/kpi-sua-ngay-dieu-chuyen` (tạo từ `prod` @ `c53d843`)
+
+### Tình trạng — cập nhật 31/08/2026
+
+| Bước | Trạng thái |
+|---|---|
+| 0. Chốt đầu vào | ✅ xong (4 quyết định + 2 câu còn treo, không chặn) |
+| 1. Sao lưu | ✅ `/var/backup/truoc_sua_ngay_dieu_chuyen_20260831_1819.sql` (232 KB) |
+| 2. Viết script | ✅ `backend/scripts/fix_ngay_dieu_chuyen_2026.py` |
+| 3. Chạy thử DB test | ✅ `kpi_haiquan_test`: xóa 8 · sửa 77 · thêm 62 · 0 cảnh báo; chạy lần 2 ra 0 thao tác (idempotent) |
+| 4. Sửa code + đối chứng | ✅ mốc chốt → cuối tháng M; đối chứng T1–T8 = **1 ca đổi**; 5/5 test PASS |
+| 5. Chặn tái diễn (FE/BE) | ✅ xong — bỏ prefill, bắt buộc nhập ngày, cảnh báo lệch >15 ngày, vá lỗi UTC; build sạch |
+| 6. Áp prod | ⬜ **chưa làm** — cần user ngồi cạnh |
+
+Con số thực tế của script (khác dự toán ban đầu vì 4 người khứ hồi sau khi gộp
+thì dòng giữ lại cũng phải sửa ngày → 73 + 4 = 77):
+
+```
+xóa 8 · sửa 77 · thêm 62 · đã đúng sẵn 3 · cảnh báo 0     (tổng 142 dòng QĐ)
+```
 
 ### Bước 0 — Chốt đầu vào (cần TCCB trả lời, chặn bước 3)
 
@@ -247,8 +282,33 @@ DB_NAME=kpi_haiquan_test python scripts/fix_ngay_dieu_chuyen_2026.py --apply
 - `bao_cao_xep_loai.py`: `mocchot` → **ngày cuối tháng M** (bỏ `+1`), cập nhật
   docstring nêu rõ lý do đổi (dữ liệu ngày đã được làm sạch 25/08/2026).
 - `_active_tai_thang_expr`: giữ nguyên (12 dòng NULL là cố ý — xem Sai #6).
-- Test: bảng đối chứng **báo cáo xếp loại T1→T7/2026 trước vs sau**, phải khớp
-  đúng dự đoán ở §3 (chỉ T1 đổi 1 ca). Kèm test `pytest` cho `_don_vi_tai_thang_expr`.
+- Đối chứng: `backend/scripts/doi_chung_don_vi_tai_thang.py` chạy **chính biểu thức
+  trong code** trên 2 database rồi so từng công chức từng tháng — không viết lại SQL
+  bằng tay nên không lệch khỏi thứ thật sự chạy.
+
+  Cách so "code cũ + dữ liệu cũ" với "code mới + dữ liệu mới":
+
+  ```bash
+  git stash push backend/app/api/v1/endpoints/bao_cao_xep_loai.py
+  python scripts/doi_chung_don_vi_tai_thang.py --db-a kpi_haiquan --db-b kpi_haiquan --xuat /tmp/truoc.json
+  git stash pop
+  python scripts/doi_chung_don_vi_tai_thang.py --db-a kpi_haiquan_test --db-b kpi_haiquan_test --xuat /tmp/sau.json
+  # rồi so trường "a" của hai file
+  ```
+
+  **Kết quả thực tế (31/08/2026): T1 đổi 1 ca (`20ZZ-0303` HQCK-MC → PTSTQ),
+  T2–T8 đổi 0 ca.** Đúng bằng dự đoán ở §3.
+- Test: `backend/tests/integration/test_moc_chot_don_vi_tai_thang.py` — 5 test,
+  đã kiểm chứng **có tác dụng thật**: đưa mốc cũ trở lại thì 2 test đỏ ngay.
+
+  ```bash
+  DB_NAME=kpi_haiquan_test pytest tests/integration/test_moc_chot_don_vi_tai_thang.py -v
+  ```
+
+- Regression toàn bộ `tests/integration/` + `tests/regression/`: **39 pass, 1 fail**.
+  Ca đỏ là `test_dieu_chinh_danh_gia_thang.py::test_bao_cao_da_phe_duyet_bao_400`
+  — **đỏ sẵn từ trước**, đã kiểm chứng bằng cách chạy lại trên code gốc. Không
+  thuộc đợt này, nhưng nên vá riêng.
 
 ### Bước 5 — Chặn tái diễn (quan trọng hơn cả việc vá)
 
@@ -269,18 +329,31 @@ vấn đề nằm ở giá trị mặc định.**
 | 2 | `backend/app/api/v1/endpoints/admin.py:1004` | `ngay_hieu_luc=payload.ngay_hieu_luc or date.today()` | Kể cả FE gửi rỗng, BE vẫn **âm thầm** điền hôm nay — không có cách nào để trống |
 | 3 | cùng dòng 443 | `toISOString()` trả ngày theo **UTC** | Từ 00:00–07:00 giờ VN, ô ngày điền sẵn **hôm qua** |
 
-**Việc cần làm (đã bỏ yêu cầu bắt buộc số QĐ theo quyết định của user):**
+**ĐÃ LÀM 31/08/2026** (bỏ yêu cầu bắt buộc số QĐ theo quyết định của user):
 
-- FE: bỏ prefill → để trống + `required`; nếu vẫn muốn tiện thì thêm nút
-  "Hôm nay" bấm chủ động thay vì điền sẵn.
-- FE: cảnh báo vàng khi ngày hiệu lực cách ngày nhập > 15 ngày
-  ("Bạn đang nhập muộn — kiểm tra lại ngày trong quyết định").
-- FE: nếu giữ prefill ở đâu đó thì dùng giờ địa phương, không dùng `toISOString()`.
-- BE: giữ `or date.today()` làm lưới an toàn (không phá client cũ).
+- ✅ `UserModals.tsx` — bỏ prefill, ô ngày để trống + `required` + dấu `*`;
+  thêm nút **"Hôm nay"** để người nhập bấm chủ động thay vì được điền sẵn;
+  chú thích dưới ô: *"Lấy đúng ngày ghi trong quyết định, không phải ngày nhập liệu."*
+- ✅ Chặn ở `handleSubmit`: thiếu ngày → báo và không gửi.
+- ✅ Hàm `ngayHomNay()` dùng **giờ địa phương**, thay `toISOString()` (vốn trả giờ
+  UTC → từ 00:00–07:00 giờ VN điền sẵn ngày HÔM QUA).
+- ✅ Cảnh báo vàng khi ngày hiệu lực lệch quá **15 ngày** so với ngày nhập, cả hai
+  chiều: về trước = "bạn đang nhập muộn", về sau = "kiểm tra gõ nhầm tháng/năm".
+  Bấm Lưu khi đang có cảnh báo thì phải xác nhận thêm một lần — nhắc, không chặn.
+- ✅ `admin.py` — giữ `or date.today()` làm lưới an toàn cho client cũ, kèm ghi chú
+  nêu rõ đây KHÔNG phải hành vi mong muốn và chính nó đã gây ra đợt sửa này.
 - Ô "Lý do" giữ nguyên **không bắt buộc**.
-- **Còn treo:** màn "Điều chuyển hàng loạt theo QĐ" (1 ngày hiệu lực + dán danh
-  sách `ma_cc, đơn vị đến`). Đợt nào cũng vài chục người; nhập lẻ là lý do đợt
-  04/02 bị bỏ quên trọn vẹn 62 người và đợt 03/7 chỉ nhập được 1/3.
+
+Kiểm chứng: `tsc --noEmit` sạch, `npm run build` compiled successfully.
+`eslint` còn 1 lỗi `react-hooks/set-state-in-effect` ở `useEffect(reloadHistory)`
+— **đỏ sẵn từ trước**, đã đối chứng bằng cách lint lại trên bản gốc.
+
+Modal đổi trạng thái (vô hiệu hóa/kích hoạt) ở `admin/users/page.tsx` vốn đã để
+trống ngày sẵn (`useState('')`) → không cần sửa.
+
+**Còn treo:** màn "Điều chuyển hàng loạt theo QĐ" (1 ngày hiệu lực + dán danh
+sách `ma_cc, đơn vị đến`). Đợt nào cũng vài chục người; nhập lẻ là lý do đợt
+04/02 bị bỏ quên trọn vẹn 62 người và đợt 03/7 chỉ nhập được 1/3.
 
 ### Bước 6 — Áp prod
 

@@ -7,8 +7,6 @@ API endpoints thi sinh DGNL: giao, danh sach, xoa, bat dau, nop bai, ket qua, ex
   POST   /ky-thi/{id}/thi-sinh                  Giao thi sinh (batch)
   GET    /ky-thi/{id}/thi-sinh                  Danh sach thi sinh + ket qua
   DELETE /ky-thi/{id}/thi-sinh/{cong_chuc_id}   Xoa thi sinh
-  POST   /ky-thi/{id}/thi-sinh/{cc_id}/reset    Reset luot thi (co nhat ky)
-  GET    /ky-thi/{id}/lich-su-reset             Nhat ky reset
   POST   /ky-thi/{id}/bat-dau                   Bat dau thi -> random de
   POST   /ky-thi/{id}/nop-bai                   Nop bai -> cham diem
   POST   /ky-thi/{id}/xac-nhan                  Xac nhan ca thi (chot ket qua)
@@ -29,7 +27,6 @@ from lms_service.schemas.thi_sinh import (
     NopBaiRequest, KetQuaResponse,
     LuuNhapRequest, GiamSatResponse,
     ViPhamCreate, ViPhamLyDoUpdate,
-    ResetLuotThiRequest, LichSuResetResponse,
 )
 from lms_service.services.thi_sinh_service import ThiSinhService
 from shared.auth import TokenPayload
@@ -121,51 +118,6 @@ async def xoa_thi_sinh(
     service = ThiSinhService(db)
     await service.xoa_thi_sinh(ky_thi_id, cong_chuc_id, user)
     return {"success": True, "message": "Xóa thí sinh thành công"}
-
-
-# ================================================================
-# RESET LUOT THI
-# ================================================================
-
-@router.post("/{ky_thi_id}/thi-sinh/{cong_chuc_id}/reset")
-async def reset_luot_thi(
-    ky_thi_id: UUID,
-    cong_chuc_id: UUID,
-    data: ResetLuotThiRequest,
-    db: AsyncSession = Depends(get_db),
-    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
-):
-    """Reset bai thi cua 1 thi sinh — chi admin (QT_DAO_TAO/SUPER_ADMIN).
-
-    Dung khi nguoi khac dang nhap nham tai khoan lam bai, hoac su co giua chung.
-    Bat buoc ly do; ban ghi cu duoc chup lai vao nhat ky truoc khi sua.
-    """
-    service = ThiSinhService(db)
-    result = await service.reset_luot_thi(
-        ky_thi_id, cong_chuc_id, data.loai_reset, data.ly_do, user
-    )
-    msg = (
-        "Đã xóa sạch bài thi — thí sinh thi lại từ đầu"
-        if data.loai_reset == "XOA_SACH"
-        else "Đã mở khóa — thí sinh vào thi được lượt tiếp theo"
-    )
-    return {"success": True, "data": result, "message": msg}
-
-
-@router.get("/{ky_thi_id}/lich-su-reset")
-async def lich_su_reset(
-    ky_thi_id: UUID,
-    cong_chuc_id: Optional[UUID] = Query(None, description="Lọc theo 1 thí sinh"),
-    db: AsyncSession = Depends(get_db),
-    user: TokenPayload = Depends(require_platform_role("QT_DAO_TAO")),
-):
-    """Nhat ky reset cua ky thi — chi admin (QT_DAO_TAO/SUPER_ADMIN)."""
-    service = ThiSinhService(db)
-    rows = await service.danh_sach_lich_su_reset(ky_thi_id, user, cong_chuc_id=cong_chuc_id)
-    return {
-        "success": True,
-        "data": [LichSuResetResponse(**r).model_dump(mode="json") for r in rows],
-    }
 
 
 # ================================================================

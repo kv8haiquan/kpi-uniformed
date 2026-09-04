@@ -38,7 +38,9 @@ export interface IMucPhanQuyen {
   /** Người đang đăng nhập có được ĐẶT mức này không. */
   dat_duoc: boolean;
 }
-export type HinhThucDiemDanh = 'QR' | 'BAM_TAY';
+// TU_DIEM_DANH: CBCC tự bấm "Tôi có mặt" trong app (G4-fix-6.2).
+// Hiện là 100% dữ liệu thật trên prod nhưng trước đây khai thiếu ở đây.
+export type HinhThucDiemDanh = 'QR' | 'BAM_TAY' | 'TU_DIEM_DANH';
 export type TrangThaiDiemDanh = 'CO_MAT' | 'DEN_MUON' | 'VANG_CO_PHEP' | 'VANG_KHONG_PHEP';
 
 export type TrangThaiXinPhep = 'CHO_DUYET' | 'DA_DUYET' | 'TU_CHOI' | 'TU_DONG_DUYET';
@@ -357,6 +359,104 @@ export interface IThemTuNhomResponse {
   tong_thanh_phan: number;
   chu_toa_auto_filled: boolean;
   thu_ky_auto_filled: boolean;
+}
+
+// ════════════════════════════════════════════════════════════
+// NHÃN ĐIỂM DANH (dùng chung — trước đây trùng lặp ở 3 nơi)
+// ════════════════════════════════════════════════════════════
+
+export const TRANG_THAI_DIEM_DANH_LABELS: Record<TrangThaiDiemDanh, string> = {
+  CO_MAT: 'Có mặt',
+  DEN_MUON: 'Đến muộn',
+  VANG_CO_PHEP: 'Vắng có phép',
+  VANG_KHONG_PHEP: 'Vắng không phép',
+};
+
+export const TRANG_THAI_DIEM_DANH_COLOR: Record<TrangThaiDiemDanh, string> = {
+  CO_MAT: 'text-green-700',
+  DEN_MUON: 'text-yellow-700',
+  VANG_CO_PHEP: 'text-blue-700',
+  VANG_KHONG_PHEP: 'text-red-700',
+};
+
+/** Badge nền cho ô trạng thái trong bảng chi tiết. */
+export const TRANG_THAI_DIEM_DANH_BADGE: Record<TrangThaiDiemDanh, string> = {
+  CO_MAT: 'bg-green-100 text-green-800',
+  DEN_MUON: 'bg-yellow-100 text-yellow-800',
+  VANG_CO_PHEP: 'bg-blue-100 text-blue-800',
+  VANG_KHONG_PHEP: 'bg-red-100 text-red-800',
+};
+
+export const HINH_THUC_DIEM_DANH_LABELS: Record<HinhThucDiemDanh, string> = {
+  QR: 'Quét QR',
+  BAM_TAY: 'Thư ký bấm tay',
+  TU_DIEM_DANH: 'Tự điểm danh',
+};
+
+export const LOAI_THAM_DU_LABELS: Record<LoaiThamDu, string> = {
+  BAT_BUOC: 'Bắt buộc',
+  THAM_KHAO: 'Tham khảo',
+};
+
+/** Nhãn ngắn cho 6 ô số tổng hợp — cần vừa bề ngang thẻ. */
+export const NHAN_O_SO_DIEM_DANH = {
+  tong_so: 'Tổng',
+  co_mat: 'Có mặt',
+  den_muon: 'Đến muộn',
+  vang_co_phep: 'Vắng phép',
+  vang_khong_phep: 'Vắng KP',
+  chua_diem_danh: 'Chưa điểm danh',
+} as const;
+
+// ════════════════════════════════════════════════════════════
+// BẢNG ĐIỂM DANH CHI TIẾT
+// ════════════════════════════════════════════════════════════
+
+/** Trạng thái điểm danh của user hiện tại + thông tin cửa sổ điểm danh.
+ *  Máy chủ vẫn trả 3 field window_* mà service trước đây khai thiếu, khiến
+ *  trang phải `as IMyStatus` với interface khai cục bộ. */
+export interface IMyStatus {
+  is_invited: boolean;
+  da_diem_danh: boolean;
+  trang_thai: TrangThaiDiemDanh | null;
+  hinh_thuc: HinhThucDiemDanh | null;
+  gio_diem_danh: string | null;
+  window_status: 'NOT_YET_OPEN' | 'OPEN' | 'CLOSED';
+  open_at: string;
+  close_at: string;
+}
+
+/** Một dòng trong bảng điểm danh. `trang_thai = null` nghĩa là CHƯA điểm danh
+ *  — người đó vẫn có dòng vì máy chủ đi từ bảng thành phần. */
+export interface IDiemDanhChiTietRow {
+  cong_chuc_id: string;
+  ho_ten: string | null;
+  ma_cc: string | null;
+  chuc_vu: string | null;
+  don_vi_id: string | null;
+  ten_don_vi: string | null;
+  loai_tham_du: LoaiThamDu;
+  xac_nhan: XacNhan | null;
+  trang_thai: TrangThaiDiemDanh | null;
+  hinh_thuc: HinhThucDiemDanh | null;
+  gio_diem_danh: string | null;
+  ghi_chu: string | null;
+  nguoi_diem_danh_id: string | null;
+  nguoi_diem_danh_ho_ten: string | null;
+  /** Lý do vắng: ưu tiên đơn xin phép, không có thì lấy ghi chú lúc chấm tay. */
+  ly_do_vang: string | null;
+  nguon_ly_do: 'DON_XIN_PHEP' | 'GHI_CHU_DIEM_DANH' | null;
+  xin_phep_trang_thai: TrangThaiXinPhep | null;
+  xin_phep_auto_duyet: boolean | null;
+  nguoi_du_thay_ho_ten: string | null;
+}
+
+export interface IDiemDanhChiTiet {
+  tong_hop: Omit<IDiemDanhSummary, 'chi_tiet'>;
+  /** Máy chủ tự tính theo luật của endpoint bấm tay — giao diện KHÔNG tự đoán,
+   *  nếu không CCT/PCCT sẽ thấy ô chọn rồi nhận 403. */
+  co_the_bam_tay: boolean;
+  danh_sach: IDiemDanhChiTietRow[];
 }
 
 // ════════════════════════════════════════════════════════════

@@ -272,3 +272,140 @@ async def test_diem_danh_cua_toi_not_invited_403(
     resp = await client.get(f"{BASE_CH}/{ch_id}/diem-danh-cua-toi")
     assert resp.status_code == 403
     assert resp.json()["detail"]["error"]["code"] == "NO_PERMISSION"
+
+
+# ══════════════════════════════════════════════════════════════════════
+# REGRESSION 04/09/2026 — ba lỗi của luồng bấm tay
+# ══════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_bam_tay_gio_diem_danh_dung_moc(
+    client: AsyncClient, chu_toa_user, seed_test_users,
+    db_session: AsyncSession,
+):
+    """gio_diem_danh của bấm tay phải là ĐÚNG thời điểm chấm.
+
+    Cột là TIMESTAMPTZ và asyncpg hiểu datetime naive theo TimeZone của
+    session DB (Asia/Ho_Chi_Minh), nên cả `datetime.now()` và
+    `datetime.now(timezone.utc)` đều cho cùng một mốc. Test này canh mốc
+    tuyệt đối để bắt được sai lệch thật nếu về sau ai đó ghi giờ tường vào
+    cột này khi TimeZone session đổi sang UTC.
+    """
+    from datetime import datetime, timezone
+
+    create = await client.post(BASE_CH + "/", json=_create_meeting_payload(
+        seed_test_users["don_vi_a"], chu_toa_user.sub,
+        thanh_phan=[{"cong_chuc_id": "aaaaaaaa-0002-0000-0000-000000000002",
+                     "loai_tham_du": "BAT_BUOC"}],
+    ))
+    ch_id = create.json()["data"]["id"]
+
+    await client.post(BASE_DD + "/bam-tay", json={
+        "cuoc_hop_id": ch_id,
+        "diem_danh": [{"cong_chuc_id": "aaaaaaaa-0002-0000-0000-000000000002",
+                       "trang_thai": "CO_MAT"}],
+    })
+
+    res = await db_session.execute(sa_text("""
+        SELECT gio_diem_danh FROM meeting.diem_danh
+         WHERE cuoc_hop_id = :ch AND hinh_thuc = 'BAM_TAY'
+    """), {"ch": ch_id})
+    gio = res.scalar_one()
+
+    # So mốc tuyệt đối, cả hai phía đều tz-aware → không có chỗ cho suy diễn
+    # múi giờ. Lệch 1 tiếng trở lên là sai thật.
+    assert gio.tzinfo is not None, "gio_diem_danh mất thông tin múi giờ"
+    lech_phut = abs(
+        (gio - datetime.now(timezone.utc)).total_seconds()
+    ) / 60
+    assert lech_phut < 5, f"gio_diem_danh lệch {lech_phut:.0f} phút so thực tế"
+
+
+@pytest.mark.asyncio
+async def test_bam_tay_khong_xoa_ghi_chu_cu(
+    client: AsyncClient, chu_toa_user, seed_test_users,
+    db_session: AsyncSession,
+):
+    """Chấm lại mà không kèm ghi_chu thì lý do vắng cũ phải còn nguyên.
+
+    Quy ước: ghi_chu=None là GIỮ NGUYÊN, "" là XOÁ TRẮNG.
+    """
+    cc = "aaaaaaaa-0002-0000-0000-000000000002"
+    create = await client.post(BASE_CH + "/", json=_create_meeting_payload(
+        seed_test_users["don_vi_a"], chu_toa_user.sub,
+        thanh_phan=[{"cong_chuc_id": cc, "loai_tham_du": "BAT_BUOC"}],
+    ))
+    ch_id = create.json()["data"]["id"]
+
+    async def _ghi_chu_hien_tai():
+        res = await db_session.execute(sa_text(
+            "SELECT ghi_chu FROM meeting.diem_danh"
+            " WHERE cuoc_hop_id=:ch AND cong_chuc_id=:cc"
+        ), {"ch": ch_id, "cc": cc})
+        return res.scalar_one()
+
+    # Lần 1 — có lý do
+    await client.post(BASE_DD + "/bam-tay", json={"cuoc_hop_id": ch_id, "diem_danh": [
+        {"cong_chuc_id": cc, "trang_thai": "VANG_CO_PHEP",
+         "ghi_chu": "đi công tác Hà Nội"},
+    ]})
+    assert await _ghi_chu_hien_tai() == "đi công tác Hà Nội"
+
+    # Lần 2 — chỉ sửa trạng thái, KHÔNG gửi ghi_chu
+    await client.post(BASE_DD + "/bam-tay", json={"cuoc_hop_id": ch_id, "diem_danh": [
+        {"cong_chuc_id": cc, "trang_thai": "CO_MAT"},
+    ]})
+    assert await _ghi_chu_hien_tai() == "đi công tác Hà Nội"
+
+    # Lần 3 — gửi chuỗi rỗng thì mới xoá
+    await client.post(BASE_DD + "/bam-tay", json={"cuoc_hop_id": ch_id, "diem_danh": [
+        {"cong_chuc_id": cc, "trang_thai": "CO_MAT", "ghi_chu": ""},
+    ]})
+    assert await _ghi_chu_hien_tai() == ""
+
+
+@pytest.mark.asyncio
+async def test_bam_tay_audit_ghi_tung_nguoi(
+    client: AsyncClient, chu_toa_user, seed_test_users,
+    db_session: AsyncSession,
+):
+    """Audit phải truy được ai bị đổi trạng thái, từ gì sang gì.
+
+    Cần thiết vì meeting.diem_danh không có updated_at và nguoi_diem_danh_id
+    bị ghi đè mỗi lần sửa → không có audit này là mất dấu vĩnh viễn.
+    """
+    import json
+
+    cc = "aaaaaaaa-0002-0000-0000-000000000002"
+    create = await client.post(BASE_CH + "/", json=_create_meeting_payload(
+        seed_test_users["don_vi_a"], chu_toa_user.sub,
+        thanh_phan=[{"cong_chuc_id": cc, "loai_tham_du": "BAT_BUOC"}],
+    ))
+    ch_id = create.json()["data"]["id"]
+
+    # Tạo mới → tu=None
+    await client.post(BASE_DD + "/bam-tay", json={"cuoc_hop_id": ch_id, "diem_danh": [
+        {"cong_chuc_id": cc, "trang_thai": "CO_MAT"},
+    ]})
+    # Sửa → tu=CO_MAT, den=VANG_KHONG_PHEP
+    await client.post(BASE_DD + "/bam-tay", json={"cuoc_hop_id": ch_id, "diem_danh": [
+        {"cong_chuc_id": cc, "trang_thai": "VANG_KHONG_PHEP"},
+    ]})
+
+    res = await db_session.execute(sa_text("""
+        SELECT chi_tiet FROM common.audit_log
+         WHERE module='MEETING' AND hanh_dong='CHECKIN_MANUAL'
+           AND doi_tuong_id=:ch
+    """), {"ch": ch_id})
+    dong = [r[0] for r in res.fetchall()]
+    assert len(dong) == 2
+
+    # KHÔNG sắp theo created_at: now() của Postgres là mốc TRANSACTION nên cả
+    # hai dòng có created_at y hệt. Khớp theo nội dung thay vì thứ tự.
+    thay_doi = [
+        (json.loads(d) if isinstance(d, str) else d)["thay_doi"] for d in dong
+    ]
+    assert [{"cong_chuc_id": cc, "tu": None, "den": "CO_MAT"}] in thay_doi
+    assert [
+        {"cong_chuc_id": cc, "tu": "CO_MAT", "den": "VANG_KHONG_PHEP"},
+    ] in thay_doi

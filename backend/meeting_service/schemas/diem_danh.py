@@ -7,7 +7,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-HINH_THUC_VALUES = ["QR", "BAM_TAY"]
+# TU_DIEM_DANH được DB CHECK cho phép từ migration meeting_012 và hiện là
+# 100% dữ liệu thật (46/46 row prod) — hằng số này trước đó khai thiếu.
+HINH_THUC_VALUES = ["QR", "BAM_TAY", "TU_DIEM_DANH"]
 TRANG_THAI_VALUES = ["CO_MAT", "DEN_MUON", "VANG_CO_PHEP", "VANG_KHONG_PHEP"]
 
 

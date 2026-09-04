@@ -8,10 +8,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from fastapi import Response
+
 from meeting_service.dependencies import (
     DatabaseDep,
     CurrentUserDep,
     require_can_edit_meeting,
+    require_can_manage_diem_danh,
     require_can_view_meeting,
 )
 from meeting_service.models.cuoc_hop import CuocHop
@@ -22,6 +25,7 @@ from meeting_service.schemas.diem_danh import (
     QRSubmit,
     QRTokenResponse,
 )
+from meeting_service.services.audit_log_service import ghi_audit
 from meeting_service.services.diem_danh_service import DiemDanhService
 
 
@@ -176,3 +180,135 @@ async def summary_diem_danh(
             ],
         },
     }
+
+
+# ─── 5. CHI TIẾT ĐIỂM DANH TỪNG THÀNH PHẦN ────────────────────────────
+@router_cuoc_hop.get(
+    "/{cuoc_hop_id}/diem-danh/chi-tiet",
+    summary="Bảng điểm danh từng thành phần (ban tổ chức)",
+)
+async def chi_tiet_diem_danh(
+    db: DatabaseDep,
+    user: CurrentUserDep,
+    ch: CuocHop = Depends(require_can_manage_diem_danh),
+):
+    """Endpoint RIÊNG, không nhồi vào `GET /{id}/diem-danh`.
+
+    Endpoint tổng hợp cũ dùng `require_can_view_meeting` nên mọi người được
+    mời đều gọi được; thêm danh sách từng người vào đó sẽ để công chức thường
+    đọc được ai vắng, ai chưa điểm danh của cả cuộc họp.
+    """
+    service = DiemDanhService(db)
+    return {"success": True, "data": await service.chi_tiet(ch, user)}
+
+
+# ─── 6. XUẤT EXCEL BẢNG ĐIỂM DANH ─────────────────────────────────────
+@router_cuoc_hop.get(
+    "/{cuoc_hop_id}/diem-danh/xuat-excel",
+    summary="Xuất bảng điểm danh ra Excel",
+)
+async def xuat_excel_diem_danh(
+    db: DatabaseDep,
+    user: CurrentUserDep,
+    ch: CuocHop = Depends(require_can_manage_diem_danh),
+):
+    service = DiemDanhService(db)
+    kq = await service.chi_tiet(ch, user)
+
+    # Nạp muộn để API JSON không phải trả giá cho openpyxl.
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    NHAN_TRANG_THAI = {
+        "CO_MAT": "Có mặt",
+        "DEN_MUON": "Đến muộn",
+        "VANG_CO_PHEP": "Vắng có phép",
+        "VANG_KHONG_PHEP": "Vắng không phép",
+    }
+    NHAN_HINH_THUC = {
+        "QR": "Quét QR",
+        "BAM_TAY": "Thư ký bấm tay",
+        "TU_DIEM_DANH": "Tự điểm danh",
+    }
+    NHAN_LOAI_THAM_DU = {"BAT_BUOC": "Bắt buộc", "THAM_KHAO": "Tham khảo"}
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Diem danh"
+
+    cot = ["STT", "Họ tên", "Mã CC", "Đơn vị", "Chức vụ", "Loại tham dự",
+           "Trạng thái", "Giờ điểm danh", "Hình thức", "Người chấm",
+           "Lý do vắng / Ghi chú"]
+
+    gio = ch.gio_bat_dau.strftime("%H:%M") if ch.gio_bat_dau else ""
+    ws.append([f"BẢNG ĐIỂM DANH — {ch.tieu_de} ({ch.ngay_hop} {gio})".strip()])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(cot))
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A1"].alignment = Alignment(horizontal="center")
+
+    th = kq["tong_hop"]
+    ws.append([
+        f"Tổng {th['tong_so']} người · có mặt {th['co_mat']}"
+        f" · đến muộn {th['den_muon']}"
+        f" · vắng có phép {th['vang_co_phep']}"
+        f" · vắng không phép {th['vang_khong_phep']}"
+        f" · chưa điểm danh {th['chua_diem_danh']}"
+    ])
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(cot))
+    ws["A2"].alignment = Alignment(horizontal="center")
+    ws.append([])
+    ws.append(cot)
+
+    dong_tieu_de = ws.max_row
+    to_mau = PatternFill("solid", fgColor="D9E1F2")
+    for c in range(1, len(cot) + 1):
+        o = ws.cell(row=dong_tieu_de, column=c)
+        o.font = Font(bold=True)
+        o.fill = to_mau
+        o.alignment = Alignment(horizontal="center", vertical="center")
+
+    for i, r in enumerate(kq["danh_sach"], start=1):
+        # Giờ lưu naive giờ VN — cắt chuỗi ISO, không đổi múi giờ lần nữa.
+        gio_dd = (r["gio_diem_danh"] or "").replace("T", " ")[:16]
+        ws.append([
+            i,
+            r["ho_ten"] or "",
+            r["ma_cc"] or "",
+            r["ten_don_vi"] or "",
+            r["chuc_vu"] or "",
+            NHAN_LOAI_THAM_DU.get(r["loai_tham_du"], r["loai_tham_du"] or ""),
+            NHAN_TRANG_THAI.get(r["trang_thai"], "Chưa điểm danh"),
+            gio_dd,
+            NHAN_HINH_THUC.get(r["hinh_thuc"], ""),
+            r["nguoi_diem_danh_ho_ten"] or "",
+            r["ly_do_vang"] or "",
+        ])
+
+    for c, rong in enumerate([6, 26, 12, 26, 18, 13, 16, 17, 16, 22, 40], start=1):
+        ws.column_dimensions[get_column_letter(c)].width = rong
+
+    from io import BytesIO
+    buf = BytesIO()
+    wb.save(buf)
+
+    await ghi_audit(
+        db,
+        hanh_dong="EXPORT_DIEM_DANH",
+        nguoi_thuc_hien_id=UUID(user.sub),
+        doi_tuong_loai="cuoc_hop",
+        doi_tuong_id=ch.id,
+        chi_tiet={"so_dong": len(kq["danh_sach"])},
+    )
+    await db.flush()
+
+    # CuocHop KHÔNG có cột ma_hop; mã chỉ tồn tại với nguồn Lịch công tác
+    # (ma_lich), nên lấy ngày họp làm tên file cho các cuộc họp HKG thuần.
+    ten_file = f"diem-danh-{ch.ma_lich or ch.ngay_hop}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{ten_file}"'},
+    )

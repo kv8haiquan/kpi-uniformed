@@ -17,21 +17,11 @@ import {
 } from 'lucide-react';
 import { diemDanhApi } from '@/services/hkg';
 import { errMsg } from '@/lib/hkg-error';
-import type { IDiemDanh, TrangThaiDiemDanh } from '@/types/hkg';
-
-const TRANG_THAI_LABELS: Record<TrangThaiDiemDanh, string> = {
-  CO_MAT: 'Có mặt',
-  DEN_MUON: 'Đến muộn',
-  VANG_CO_PHEP: 'Vắng có phép',
-  VANG_KHONG_PHEP: 'Vắng không phép',
-};
-
-const TRANG_THAI_COLOR: Record<TrangThaiDiemDanh, string> = {
-  CO_MAT: 'text-green-700',
-  DEN_MUON: 'text-yellow-700',
-  VANG_CO_PHEP: 'text-blue-700',
-  VANG_KHONG_PHEP: 'text-red-700',
-};
+import {
+  TRANG_THAI_DIEM_DANH_COLOR as TRANG_THAI_COLOR,
+  TRANG_THAI_DIEM_DANH_LABELS as TRANG_THAI_LABELS,
+  type IDiemDanh,
+} from '@/types/hkg';
 
 type Status = 'pending' | 'submitting' | 'success' | 'error' | 'no_token';
 

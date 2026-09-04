@@ -12,6 +12,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meeting_service.models.cuoc_hop import CuocHop
@@ -156,6 +157,10 @@ class DiemDanhService:
         nguoi_diem_danh_id = UUID(user.sub)
 
         results: list[DiemDanh] = []
+        # Nhật ký từng người, để audit truy được "ai đổi trạng thái của ai".
+        # meeting.diem_danh KHÔNG có updated_at và nguoi_diem_danh_id bị ghi đè
+        # mỗi lần sửa, nên không ghi ở đây là mất dấu vĩnh viễn.
+        thay_doi: list[dict] = []
         for item in payload.diem_danh:
             # Verify thành phần
             res = await self.db.execute(
@@ -179,12 +184,24 @@ class DiemDanhService:
             existing = res.scalar_one_or_none()
             if existing is not None:
                 # Update existing (cho phép thay đổi trạng thái)
+                thay_doi.append({
+                    "cong_chuc_id": str(item.cong_chuc_id),
+                    "tu": existing.trang_thai,
+                    "den": item.trang_thai,
+                })
                 existing.trang_thai = item.trang_thai
-                existing.ghi_chu = item.ghi_chu
+                # ghi_chu=None nghĩa là GIỮ NGUYÊN, "" nghĩa là XOÁ TRẮNG.
+                # Trước đây gán thẳng nên payload không kèm ghi_chu sẽ xoá mất
+                # lý do vắng mà thư ký đã nhập ở lần chấm trước.
+                if item.ghi_chu is not None:
+                    existing.ghi_chu = item.ghi_chu
                 existing.nguoi_diem_danh_id = nguoi_diem_danh_id
                 results.append(existing)
                 continue
 
+            # Mốc tuyệt đối (aware UTC). Cột gio_diem_danh là TIMESTAMPTZ nên
+            # dạng này đúng kể cả khi TimeZone của session DB đổi sang UTC —
+            # bền hơn datetime.now() naive mà submit_qr/tu_diem_danh đang dùng.
             now = datetime.now(timezone.utc)
             dd = DiemDanh(
                 cuoc_hop_id=ch.id,
@@ -197,6 +214,11 @@ class DiemDanhService:
             )
             self.db.add(dd)
             results.append(dd)
+            thay_doi.append({
+                "cong_chuc_id": str(item.cong_chuc_id),
+                "tu": None,
+                "den": item.trang_thai,
+            })
 
         await self.db.flush()
 
@@ -206,7 +228,11 @@ class DiemDanhService:
             nguoi_thuc_hien_id=nguoi_diem_danh_id,
             doi_tuong_loai="cuoc_hop",
             doi_tuong_id=ch.id,
-            chi_tiet={"so_diem_danh": len(results)},
+            chi_tiet={
+                "cuoc_hop_id": str(ch.id),
+                "so_diem_danh": len(results),
+                "thay_doi": thay_doi,
+            },
         )
         await self.db.flush()
         return results
@@ -371,6 +397,116 @@ class DiemDanhService:
             "vang_khong_phep": vang_khong_phep,
             "chua_diem_danh": chua,
             "chi_tiet": diem_danh,
+        }
+
+    # ──────────────────────────────────────────────────────────────────
+    # CHI TIẾT TỪNG THÀNH PHẦN (bảng điểm danh cho ban tổ chức)
+    # ──────────────────────────────────────────────────────────────────
+    # Câu SQL đi TỪ meeting.thanh_phan chứ không từ meeting.diem_danh, nhờ vậy
+    # người chưa điểm danh vẫn có một dòng với trang_thai = NULL. Hai LEFT JOIN
+    # sang diem_danh và xin_phep_vang KHÔNG nhân bản dòng vì cả hai bảng đều có
+    # UNIQUE (cuoc_hop_id, cong_chuc_id).
+    _SQL_CHI_TIET = sa_text("""
+        SELECT tp.cong_chuc_id, cc.ho_ten, cc.ma_cc, cc.chuc_vu,
+               cc.don_vi_id, dv.ten_don_vi,
+               tp.loai_tham_du, tp.xac_nhan,
+               dd.trang_thai AS dd_trang_thai, dd.hinh_thuc AS dd_hinh_thuc,
+               dd.gio_diem_danh, dd.ghi_chu AS dd_ghi_chu,
+               dd.nguoi_diem_danh_id, ndd.ho_ten AS nguoi_diem_danh_ho_ten,
+               xpv.trang_thai AS xp_trang_thai, xpv.ly_do AS xp_ly_do,
+               xpv.auto_approved AS xp_auto_approved,
+               dt.ho_ten AS nguoi_du_thay_ho_ten
+          FROM meeting.thanh_phan tp
+          LEFT JOIN public.cong_chuc      cc  ON cc.id  = tp.cong_chuc_id
+          LEFT JOIN public.don_vi         dv  ON dv.id  = cc.don_vi_id
+          LEFT JOIN meeting.diem_danh     dd  ON dd.cuoc_hop_id  = tp.cuoc_hop_id
+                                             AND dd.cong_chuc_id = tp.cong_chuc_id
+          LEFT JOIN public.cong_chuc      ndd ON ndd.id = dd.nguoi_diem_danh_id
+          LEFT JOIN meeting.xin_phep_vang xpv ON xpv.cuoc_hop_id  = tp.cuoc_hop_id
+                                             AND xpv.cong_chuc_id = tp.cong_chuc_id
+          LEFT JOIN public.cong_chuc      dt  ON dt.id  = xpv.nguoi_du_thay_id
+         WHERE tp.cuoc_hop_id = :ch_id
+         ORDER BY dv.ten_don_vi NULLS LAST, cc.ho_ten
+    """)
+
+    @staticmethod
+    def _co_the_bam_tay(ch: CuocHop, user: TokenPayload) -> bool:
+        """Phản chiếu ĐÚNG luật của POST /diem-danh/bam-tay.
+
+        Để giao diện không hiện ô chọn trạng thái cho người chắc chắn sẽ ăn
+        403 — CCT/PCCT xem được bảng nhưng theo ma trận quyền thì KHÔNG được
+        bấm tay.
+        """
+        if ch.trang_thai == "HUY":
+            return False
+        user_id = UUID(user.sub)
+        return bool(
+            user.is_admin
+            or user.vai_tro in ("SUPER_ADMIN", "ADMIN")
+            or ch.chu_toa_id == user_id
+            or ch.thu_ky_id == user_id
+            or "TRUONG_CNTT" in (user.platform_roles or [])
+        )
+
+    async def chi_tiet(self, ch: CuocHop, user: TokenPayload) -> dict:
+        """Bảng điểm danh từng người + tổng hợp + cờ quyền bấm tay."""
+        res = await self.db.execute(self._SQL_CHI_TIET, {"ch_id": str(ch.id)})
+
+        danh_sach: list[dict] = []
+        for row in res.fetchall():
+            # Lý do vắng: ưu tiên đơn xin phép, không có thì lấy ghi chú thư ký
+            # nhập khi chấm tay. Bắt buộc có nhánh sau vì thực tế chưa ai dùng
+            # luồng đơn xin phép — nếu chỉ đọc từ đơn thì cột này luôn rỗng.
+            if row.xp_ly_do:
+                ly_do_vang, nguon_ly_do = row.xp_ly_do, "DON_XIN_PHEP"
+            elif row.dd_ghi_chu:
+                ly_do_vang, nguon_ly_do = row.dd_ghi_chu, "GHI_CHU_DIEM_DANH"
+            else:
+                ly_do_vang, nguon_ly_do = None, None
+
+            danh_sach.append({
+                "cong_chuc_id": str(row.cong_chuc_id),
+                "ho_ten": row.ho_ten,
+                "ma_cc": row.ma_cc,
+                "chuc_vu": row.chuc_vu,
+                "don_vi_id": str(row.don_vi_id) if row.don_vi_id else None,
+                "ten_don_vi": row.ten_don_vi,
+                "loai_tham_du": row.loai_tham_du,
+                "xac_nhan": row.xac_nhan,
+                "trang_thai": row.dd_trang_thai,
+                "hinh_thuc": row.dd_hinh_thuc,
+                "gio_diem_danh": (
+                    row.gio_diem_danh.isoformat() if row.gio_diem_danh else None
+                ),
+                "ghi_chu": row.dd_ghi_chu,
+                "nguoi_diem_danh_id": (
+                    str(row.nguoi_diem_danh_id) if row.nguoi_diem_danh_id else None
+                ),
+                "nguoi_diem_danh_ho_ten": row.nguoi_diem_danh_ho_ten,
+                "ly_do_vang": ly_do_vang,
+                "nguon_ly_do": nguon_ly_do,
+                "xin_phep_trang_thai": row.xp_trang_thai,
+                "xin_phep_auto_duyet": row.xp_auto_approved,
+                "nguoi_du_thay_ho_ten": row.nguoi_du_thay_ho_ten,
+            })
+
+        # Đếm TỪ CHÍNH danh_sach — bảng và các ô số không bao giờ lệch nhau.
+        def _dem(tt: str) -> int:
+            return sum(1 for r in danh_sach if r["trang_thai"] == tt)
+
+        return {
+            "tong_hop": {
+                "tong_so": len(danh_sach),
+                "co_mat": _dem("CO_MAT"),
+                "den_muon": _dem("DEN_MUON"),
+                "vang_co_phep": _dem("VANG_CO_PHEP"),
+                "vang_khong_phep": _dem("VANG_KHONG_PHEP"),
+                "chua_diem_danh": sum(
+                    1 for r in danh_sach if r["trang_thai"] is None
+                ),
+            },
+            "co_the_bam_tay": self._co_the_bam_tay(ch, user),
+            "danh_sach": danh_sach,
         }
 
     # ──────────────────────────────────────────────────────────────────

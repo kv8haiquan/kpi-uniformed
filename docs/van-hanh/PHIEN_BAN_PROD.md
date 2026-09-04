@@ -7,31 +7,48 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `81bb5b5` |
-| **Ngắn** | `81bb5b5` |
-| **Nhánh nguồn** | `prod` (fast-forward từ `feature/lms-dgnl-cau-hoi-hang-ngay`) |
-| **Ngày ghi mốc** | 28/08/2026 17:00 |
-| **Alembic** | `lms_cau_hoi_hang_ngay_20260827` (thêm bảng `lms.cau_hoi_hang_ngay`) |
+| **Commit** | `dba30f9` |
+| **Ngắn** | `dba30f9` |
+| **Nhánh nguồn** | `feature/hkg-diem-danh-chi-tiet` (fast-forward, chứa cả `feature/kpi-sua-ngay-dieu-chuyen`) |
+| **Ngày ghi mốc** | 04/09/2026 22:45 |
+| **Alembic** | `lms_cau_hoi_hang_ngay_20260827` — **KHÔNG migration mới** |
 
-Nội dung: **Lịch công tác — xem theo TUẦN và theo NGÀY**. Tab Lịch trước chỉ có
-lưới tháng (cắt còn 3 sự kiện mỗi ô) và danh sách trộn mọi ngày. Nay thêm lưới
-tuần hiện hết sự kiện từng ngày, và màn hình một ngày xếp nối nhau chi tiết
-ĐẦY ĐỦ của mọi cuộc họp hôm đó — thành phần, đơn vị chuẩn bị, số văn bản, ghi
-chú, tài liệu, chấm sao — kèm nguyên bộ nút Sửa / Huỷ / Xoá / Nhật ký. Ngày
-đông nhất trong sáu tháng dữ liệu có 8 cuộc, trước phải vào–ra 8 lần mới đọc
-hết. Bấm bất cứ đâu trong ô ngày ở lưới tháng là mở cả ngày đó.
+Nội dung: **hai việc trong một lần phát hành.**
 
-Phần hiển thị của trang chi tiết tách thành `components/ChiTietSuKien.tsx`, cả
-trang `/lich-cong-tac/[id]` lẫn màn hình một ngày cùng dùng — hai bên không thể
-lệch nhau. Thuần frontend, **không đụng backend, không thêm endpoint**: API
-danh sách vốn đã lọc theo khoảng ngày và tính cả sự kiện nhiều ngày giao với
-khoảng đó.
+**1. HKG — bảng điểm danh chi tiết từng thành phần.** Tab Điểm danh trước chỉ có
+6 ô số tổng hợp: ban tổ chức biết BAO NHIÊU người có mặt mà không biết là AI.
+Nay 6 ô đó thành nút lọc cho một bảng liệt kê từng người — họ tên, mã công chức,
+đơn vị, chức vụ, loại tham dự, trạng thái, giờ, hình thức, người chấm, lý do
+vắng. Người **chưa** điểm danh vẫn có tên trong bảng. Chủ tọa/thư ký chấm tay
+ngay trên từng dòng (endpoint `bam-tay` có từ đầu nhưng chưa có giao diện — nợ
+ghi trong `HUONG_DAN_SU_DUNG_HKG.md` §18/§25, nay gỡ được). Thêm nút xuất Excel
+làm bảng điểm danh lưu hồ sơ, có ghi nhật ký `EXPORT_DIEM_DANH`.
 
-> Ghi chú quy trình: nhánh feature tạo ra lúc prod còn ở `e005660`, đến khi
-> triển khai thì prod đã ở `58bf940`. Truyền thẳng SHA cũ sẽ **lùi production**,
-> mất luôn `kiem_tra_ky_thi.sh` của mốc trước. Đã rebase nhánh lên `origin/prod`
-> rồi mới triển khai — `git log <nhánh>..origin/prod` phải RỖNG trước khi chạy
-> `trien_khai.sh`.
+Hai endpoint mới, đều chỉ-đọc và chỉ ban tổ chức gọi được:
+`GET /cuoc-hop/{id}/diem-danh/chi-tiet` và `.../diem-danh/xuat-excel`.
+
+Kèm ba bản vá phát hiện khi làm: chấm tay không còn xoá mất ghi chú cũ khi gửi
+payload không có `ghi_chu`; nhật ký `CHECKIN_MANUAL` ghi rõ từng người (trước
+chỉ ghi tổng số, mà bảng `diem_danh` không có `updated_at` nên mất dấu vĩnh
+viễn); hằng `HINH_THUC_VALUES` bổ sung `TU_DIEM_DANH` — giá trị chiếm 100% dữ
+liệu thật nhưng trước đó khai thiếu cả ở máy chủ lẫn giao diện.
+
+**2. KPI — sửa ngày hiệu lực điều chuyển** (`699cbc1` + `0cd7daa`): `ngay_hieu_luc`
+trả về đúng ngày quyết định thay vì ngày nhập liệu, mốc chốt về cuối tháng M, và
+bắt buộc nhập ngày hiệu lực khi điều chuyển thay vì điền sẵn ngày hôm nay.
+
+> Ghi chú quy trình: nhánh HKG được tạo TỪ `feature/kpi-sua-ngay-dieu-chuyen`
+> nên chứa sẵn 2 commit KPI. Đã báo và người dùng chọn phát hành cả hai cùng
+> lượt, nên truyền một SHA `dba30f9` là đủ. Đã đối chứng
+> `git log dba30f9..origin/prod` RỖNG trước khi chạy `trien_khai.sh`.
+>
+> Nhánh `feature/lms-reset-luot-thi` (1 commit, **có migration**) cố ý để lại
+> cho đợt sau.
+>
+> Sửa luôn một lỗi của chính sổ này: mục "Hiện tại" trước đây ghi commit
+> `81bb5b5` nhưng phần Nội dung lại tả tính năng Lịch công tác tuần/ngày của
+> `97264ae` — hai phần lệch nhau, đúng loại lỗi mà ghi chú 25/08 bên dưới đã
+> cảnh báo. Nội dung của `81bb5b5` nay nằm đúng ở hàng của nó trong bảng lịch sử.
 
 ### Mốc trước — `2137a32`
 
@@ -77,6 +94,8 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 25/08/2026 | `e005660` | Backup: lịch sử phiên bản uploads (ảnh hardlink, giữ 60 bản) + sửa mặc định đường dẫn uploads đã chết. Cần cài tay vào `/opt/kpi/scripts/` — xem `scripts/INSTALL_CRON.md` |
 | 25/08/2026 | `97264ae` | Lịch công tác: xem theo tuần và theo ngày, một ngày hiện chi tiết đầy đủ mọi cuộc họp — thuần frontend, không migration |
 | 28/08/2026 | `81bb5b5` | ĐGNL: câu hỏi ôn tập hằng ngày qua chatbot Zalo — 2 endpoint công khai `/api/v1/lms/dgnl/cong-khai/*` (khoá `ZALO_BOT_API_KEY`), migration `lms_cau_hoi_hang_ngay_20260827` thêm bảng mới. Kèm script gắn nhãn công chức trên OA và báo cáo người chưa quan tâm OA |
+| 28/08/2026 | `c53d843` | Ghi mốc prod `81bb5b5` vào sổ — chỉ tài liệu, không chạm code |
+| 04/09/2026 | `dba30f9` | HKG: bảng điểm danh chi tiết từng thành phần + chấm tay + xuất Excel (2 endpoint chỉ-đọc mới, audit `EXPORT_DIEM_DANH`); kèm KPI: sửa ngày hiệu lực điều chuyển (`699cbc1`+`0cd7daa`) — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

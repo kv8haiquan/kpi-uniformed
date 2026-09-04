@@ -1,68 +1,63 @@
 /**
- * Tab Điểm danh — sinh QR + summary + tự điểm danh + countdown.
+ * Tab Điểm danh — sinh QR + tự điểm danh + bảng chi tiết từng thành phần.
  *
  * G4-fix-7 (01/05/2026):
  * - Ẩn "Sinh QR" cho CBCC thường (canEdit only)
  * - Pre-compute window status: nếu chưa đến giờ → message "Chưa đến giờ họp"
  * - Hide "Tôi có mặt" cho CBCC ngoài thành phần (myStatus.is_invited check)
+ *
+ * 04/09/2026: 6 ô số tổng hợp trước đây chỉ cho biết BAO NHIÊU người có mặt
+ * mà không cho biết là AI. Nay chuyển hẳn vào BangDiemDanhChiTiet — ở đó
+ * chúng thành nút lọc cho bảng danh sách, kèm chấm tay và xuất Excel.
  */
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { QrCode, X, CheckCircle2, Loader2, Clock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { diemDanhApi } from '@/services/hkg';
 import { errMsg } from '@/lib/hkg-error';
-import type { IDiemDanhSummary, IQRTokenResponse } from '@/types/hkg';
+import {
+  HINH_THUC_DIEM_DANH_LABELS,
+  TRANG_THAI_DIEM_DANH_LABELS,
+  type IMyStatus,
+  type IQRTokenResponse,
+} from '@/types/hkg';
 import { useMeeting } from '@/components/hkg/MeetingContext';
-
-interface IMyStatus {
-  is_invited: boolean;
-  da_diem_danh: boolean;
-  trang_thai: string | null;
-  hinh_thuc: string | null;
-  gio_diem_danh: string | null;
-  window_status: 'NOT_YET_OPEN' | 'OPEN' | 'CLOSED';
-  open_at: string;
-  close_at: string;
-}
+import BangDiemDanhChiTiet from '@/components/hkg/BangDiemDanhChiTiet';
 
 export default function DiemDanhTabPage() {
   const { id } = useParams<{ id: string }>();
   const { isLocked, canEdit } = useMeeting();
-  const [summary, setSummary] = useState<IDiemDanhSummary | null>(null);
   const [qr, setQr] = useState<IQRTokenResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [myStatus, setMyStatus] = useState<IMyStatus | null>(null);
   const [checkinBusy, setCheckinBusy] = useState(false);
+  // Đổi khoá này là buộc bảng chi tiết dựng lại và nạp số liệu mới. Bảng tự
+  // tính 6 ô số từ danh sách của nó nên không cần gọi thêm endpoint tổng hợp.
+  const [khoaBang, setKhoaBang] = useState(0);
 
-  const fetchSummary = async () => {
+  const fetchMyStatus = useCallback(async () => {
     try {
-      setSummary(await diemDanhApi.summary(id));
-    } catch (e: unknown) { setError(errMsg(e)); }
-  };
-
-  const fetchMyStatus = async () => {
-    try {
-      setMyStatus(await diemDanhApi.myStatus(id) as IMyStatus);
+      setMyStatus(await diemDanhApi.myStatus(id));
     } catch {
       // silent — non-critical
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchSummary();
     fetchMyStatus();
-  }, [id]);
+  }, [fetchMyStatus]);
 
   const handleSelfCheckin = async () => {
     setCheckinBusy(true);
     setError(null);
     try {
       await diemDanhApi.tuDiemDanh(id);
-      await Promise.all([fetchSummary(), fetchMyStatus()]);
+      await fetchMyStatus();
+      setKhoaBang((n) => n + 1);
     } catch (e: unknown) {
       setError(errMsg(e, 'Không thể điểm danh'));
     } finally {
@@ -126,11 +121,14 @@ export default function DiemDanhTabPage() {
               <CheckCircle2 className="w-8 h-8 text-green-600" />
               <div>
                 <p className="font-medium text-green-900">
-                  Bạn đã điểm danh — {myStatus.trang_thai}
+                  Bạn đã điểm danh
+                  {myStatus.trang_thai
+                    && ` — ${TRANG_THAI_DIEM_DANH_LABELS[myStatus.trang_thai]}`}
                 </p>
                 <p className="text-xs text-green-700 mt-0.5">
-                  {myStatus.hinh_thuc === 'TU_DIEM_DANH' ? 'Tự điểm danh' :
-                   myStatus.hinh_thuc === 'QR' ? 'Quét QR' : 'Bấm tay'}
+                  {myStatus.hinh_thuc
+                    ? HINH_THUC_DIEM_DANH_LABELS[myStatus.hinh_thuc]
+                    : ''}
                   {myStatus.gio_diem_danh && (
                     <> · {new Date(myStatus.gio_diem_danh).toLocaleString('vi-VN')}</>
                   )}
@@ -215,26 +213,15 @@ export default function DiemDanhTabPage() {
         </div>
       )}
 
-      {/* Summary chỉ hiện cho organizer (CBCC thường không xem được số liệu chung) */}
-      {canEdit && summary && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <Card label="Tổng" value={summary.tong_so} />
-          <Card label="Có mặt" value={summary.co_mat} color="text-green-700" />
-          <Card label="Đến muộn" value={summary.den_muon} color="text-yellow-700" />
-          <Card label="Vắng phép" value={summary.vang_co_phep} color="text-blue-700" />
-          <Card label="Vắng KP" value={summary.vang_khong_phep} color="text-red-700" />
-          <Card label="Chưa điểm danh" value={summary.chua_diem_danh} color="text-gray-700" />
-        </div>
+      {/* Bảng chi tiết chỉ dành cho ban tổ chức — CBCC thường không xem được
+          ai có mặt/ai vắng của cả cuộc họp (máy chủ cũng chặn 403). */}
+      {canEdit && (
+        <BangDiemDanhChiTiet
+          key={khoaBang}
+          cuocHopId={id}
+          onSaved={fetchMyStatus}
+        />
       )}
-    </div>
-  );
-}
-
-function Card({ label, value, color = 'text-gray-900' }: { label: string; value: number; color?: string }) {
-  return (
-    <div className="bg-gray-50 rounded border p-3 text-center">
-      <div className={`text-2xl font-bold ${color}`}>{value}</div>
-      <div className="text-xs text-gray-600 mt-1">{label}</div>
     </div>
   );
 }

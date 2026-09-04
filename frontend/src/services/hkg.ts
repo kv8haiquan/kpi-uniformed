@@ -8,6 +8,8 @@
  */
 
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
+
+import { layTenFile } from '@/services/lich-cong-tac';
 import type {
   IBienBan,
   ICuocHop,
@@ -17,7 +19,9 @@ import type {
   IDashboardCaNhan,
   IDashboardDonVi,
   IDiemDanh,
+  IDiemDanhChiTiet,
   IDiemDanhSummary,
+  IMyStatus,
   IKetLuan,
   IKetLuanCreate,
   IMucPhanQuyen,
@@ -292,14 +296,41 @@ export const diemDanhApi = {
   tuDiemDanh: (cuoc_hop_id: string) =>
     unwrap<IDiemDanh>(hkgApi.post(`/cuoc-hop/${cuoc_hop_id}/tu-diem-danh`)),
 
+  // Kiểu lấy từ types/hkg.ts — trước đây khai cục bộ ở đây và THIẾU 3 field
+  // window_status/open_at/close_at mà máy chủ vẫn trả, nên trang điểm danh
+  // phải ép kiểu `as IMyStatus`.
   myStatus: (cuoc_hop_id: string) =>
-    unwrap<{
-      is_invited: boolean;
-      da_diem_danh: boolean;
-      trang_thai: string | null;
-      hinh_thuc: string | null;
-      gio_diem_danh: string | null;
-    }>(hkgApi.get(`/cuoc-hop/${cuoc_hop_id}/diem-danh-cua-toi`)),
+    unwrap<IMyStatus>(hkgApi.get(`/cuoc-hop/${cuoc_hop_id}/diem-danh-cua-toi`)),
+
+  /** Bảng điểm danh từng thành phần — chỉ ban tổ chức gọi được (403 nếu không). */
+  chiTiet: (cuoc_hop_id: string) =>
+    unwrap<IDiemDanhChiTiet>(
+      hkgApi.get(`/cuoc-hop/${cuoc_hop_id}/diem-danh/chi-tiet`),
+    ),
+
+  /**
+   * Tải bảng điểm danh dạng Excel.
+   *
+   * Máy chủ trả thẳng bytes chứ không bọc JSON nên không dùng được `unwrap`.
+   * Cùng khuôn với lichCongTacApi.xuatExcel.
+   */
+  xuatExcel: async (cuoc_hop_id: string) => {
+    const resp = await hkgApi.get(
+      `/cuoc-hop/${cuoc_hop_id}/diem-danh/xuat-excel`,
+      { responseType: 'blob', timeout: 60000 },
+    );
+    const url = URL.createObjectURL(resp.data as Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = layTenFile(
+      resp.headers['content-disposition'],
+      'diem-danh.xlsx',
+    );
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ════════════════════════════════════════════════════════════

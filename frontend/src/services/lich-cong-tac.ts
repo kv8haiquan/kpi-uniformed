@@ -226,7 +226,7 @@ export const thongKeTaiLieuApi = {
 };
 
 /** Lấy tên file từ `Content-Disposition`, có tên dự phòng khi thiếu. */
-function layTenFile(cd: unknown, duPhong = 'bao-cao.xlsx'): string {
+export function layTenFile(cd: unknown, duPhong = 'bao-cao.xlsx'): string {
   if (typeof cd === 'string') {
     const m = /filename="?([^";]+)"?/.exec(cd);
     if (m) return m[1];

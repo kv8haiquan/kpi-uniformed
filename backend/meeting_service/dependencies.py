@@ -299,3 +299,50 @@ async def require_can_edit_meeting(
         detail={"success": False, "error": {"code": "NO_PERMISSION",
                 "message": "Bạn không có quyền chỉnh sửa cuộc họp này"}},
     )
+
+
+async def require_can_manage_diem_danh(
+    cuoc_hop_id: Annotated[UUID, Path(...)],
+    user: CurrentUserDep,
+    db: DatabaseDep,
+) -> CuocHop:
+    """Xem bảng điểm danh chi tiết: ban tổ chức + lãnh đạo xem-toàn-Chi-cục.
+
+    KHÁC `require_can_edit_meeting` ở hai điểm, cả hai đều có lý do:
+
+    1. KHÔNG chặn 409 cuộc họp HUY. Đây là dependency cho endpoint CHỈ ĐỌC —
+       bảng điểm danh của cuộc họp đã hủy vẫn phải tra được để đối chiếu.
+    2. CÓ tính cả CCT/PCCT/CHANH_VP (qua `_has_view_all`). Nhờ vậy tập quyền
+       khớp 1:1 với cờ `canEdit` phía giao diện, tránh cảnh bảng hiện ra rồi
+       mọi request đều 403.
+
+    Quyền BẤM TAY hẹp hơn quyền xem này (chỉ chủ tọa/thư ký/admin/TRUONG_CNTT
+    theo ma trận docs/HKG/HKG_PLATFORM_ROLES.md) — xem `co_the_bam_tay` trong
+    DiemDanhService.chi_tiet().
+    """
+    result = await db.execute(
+        select(CuocHop).where(
+            CuocHop.id == cuoc_hop_id,
+            CuocHop.is_deleted.is_(False),
+        )
+    )
+    ch = result.scalar_one_or_none()
+    if ch is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"success": False, "error": {"code": "MEETING_NOT_FOUND",
+                    "message": "Không tìm thấy cuộc họp"}},
+        )
+
+    user_id = UUID(user.sub)
+    if _has_view_all(user):
+        return ch
+    if ch.chu_toa_id == user_id or ch.thu_ky_id == user_id:
+        return ch
+
+    log_tu_choi_cuoc_hop("VIEW", user, ch)
+    raise HTTPException(
+        status_code=403,
+        detail={"success": False, "error": {"code": "NO_PERMISSION",
+                "message": "Chỉ ban tổ chức cuộc họp mới xem được bảng điểm danh"}},
+    )

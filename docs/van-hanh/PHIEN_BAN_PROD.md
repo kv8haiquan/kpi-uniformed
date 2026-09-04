@@ -96,6 +96,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 28/08/2026 | `81bb5b5` | ĐGNL: câu hỏi ôn tập hằng ngày qua chatbot Zalo — 2 endpoint công khai `/api/v1/lms/dgnl/cong-khai/*` (khoá `ZALO_BOT_API_KEY`), migration `lms_cau_hoi_hang_ngay_20260827` thêm bảng mới. Kèm script gắn nhãn công chức trên OA và báo cáo người chưa quan tâm OA |
 | 28/08/2026 | `c53d843` | Ghi mốc prod `81bb5b5` vào sổ — chỉ tài liệu, không chạm code |
 | 04/09/2026 | `dba30f9` | HKG: bảng điểm danh chi tiết từng thành phần + chấm tay + xuất Excel (2 endpoint chỉ-đọc mới, audit `EXPORT_DIEM_DANH`); kèm KPI: sửa ngày hiệu lực điều chuyển (`699cbc1`+`0cd7daa`) — **không migration** |
+| 05/09/2026 | *(không phát hành code)* | **Di trú DỮ LIỆU** `lich_su_dieu_chuyen` theo QĐ điều động 2026: xóa 8 · sửa 77 · thêm 62 (`scripts/fix_ngay_dieu_chuyen_2026.py`). Kèm mở lại tiêu chí chung T7 cho `20ZZ-0529` (`scripts/mo_lai_tieu_chi_chung.py`). Chi tiết ở mục dưới |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng
@@ -105,6 +106,56 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 > Chú thích này trước nằm CHEN GIỮA bảng, cắt bảng làm đôi nên hai dòng
 > `902e711` và `e005660` hiện ra thành văn bản thường, không phải hàng bảng.
 > Đã chuyển xuống dưới bảng.
+
+## Di trú dữ liệu 05/09/2026 — ngày hiệu lực điều chuyển
+
+Không phát hành code (code đã ra cùng `dba30f9` ngày 04/09). Đây là **sửa nội
+dung dữ liệu**, chạy tay có user duyệt từng bước — cố tình KHÔNG đóng thành
+Alembic migration để không ai bị nó tự chạy lúc khởi động app mà không xem trước.
+
+**Sao lưu trước khi ghi:** `/var/backup/truoc_ap_prod_20260905_0021.sql` (12 MB,
+gồm `lich_su_dieu_chuyen`, `cong_chuc`, `danh_gia_thang`, `tieu_chi_chung_danh_gia`).
+
+**Bước 1 — `scripts/fix_ngay_dieu_chuyen_2026.py --apply`**
+
+| | |
+|---|---|
+| Xóa | 8 bản ghi (4 người × 2 dòng — vết "nhập → hoàn tác → nhập lại") |
+| Sửa | 77 bản ghi: `ngay_hieu_luc` về ngày QĐ, `ly_do` → `"Đợt điều động <ngày>"` (chỉ khi đang rỗng/mặc định) |
+| Thêm | 62 bản ghi đợt 04/02/2026 |
+| Tổng | `lich_su_dieu_chuyen` 111 → **165** (151 DIEU_CHUYEN + 14 trạng thái) |
+
+Đối chứng sau khi ghi: phân bố `2026-02-04 = 62 · 2026-05-15 = 75 · 2026-06-03 = 2
+· 2026-07-03 = 3`; 0 công chức lệch giữa đơn vị hiện tại và đơn vị đến của QĐ mới
+nhất. Còn đúng 1 bộ trùng cùng chiều — `20ZZ-0187` Nguyễn Đình Hiến, 2 dòng
+HQCK-MC→HQCK-MC (đổi chức vụ trong cùng đơn vị, không nằm trong QĐ) — **cố ý
+không đụng**.
+
+**Bước 2 — `scripts/mo_lai_tieu_chi_chung.py --ma-cc 20ZZ-0529 --thang 7 --nam 2026 --apply`**
+
+QĐ 03/7/2026 chuyển người này HQCK-MC → KSHQ nhưng chỉ được nhập 25/08, khi T7
+đã `DA_PHE_DUYET` bởi PĐT đơn vị cũ. Đã trả T7 về `NHAP`, bỏ khóa, xóa dấu vết
+phê duyệt của đơn vị cũ, dời `don_vi_id_snapshot` sang KSHQ; 10 dòng tiêu chí về
+`NHAP` và giữ 20.00 điểm tự chấm. Các tháng 1, 4, 5, 6, 8 **không bị đụng**.
+
+**Đối chứng cuối, bằng chính biểu thức `_don_vi_tai_thang_expr` của báo cáo**
+(`scripts/doi_chung_don_vi_tai_thang.py`), so với ảnh chụp hiện trạng 31/08 trên
+558 công chức × T1–T8/2026 — đổi **đúng 2 ca dự kiến, không có ca thứ ba**:
+
+| Tháng | Mã CC | Trước | Sau | Vì sao đúng |
+|---|---|---|---|---|
+| T1 | `20ZZ-0303` | HQCK-MC | PTSTQ | QĐ 04/02 mới chuyển PTSTQ→MC; kê khai T1 cũng ghi PTSTQ |
+| T7 | `20ZZ-0529` | HQCK-MC | KSHQ | QĐ 03/7 đã chuyển sang KSHQ |
+
+**Còn phải làm tay trên giao diện** (không làm bằng SQL):
+1. `20ZZ-0529` tự đánh giá tiêu chí chung T7 → gửi phê duyệt
+2. Lãnh đạo KSHQ duyệt cấp 1 rồi cấp 2
+3. Cả HQCK-MC và KSHQ bấm "cập nhật chi tiết từ dữ liệu" cho báo cáo xếp loại T7
+   — hiện còn một dòng `chi_tiet_xep_loai` T7 xếp người này vào báo cáo HQCK-MC
+   (trạng thái `NHAP`, tạo 28/08)
+
+**Còn nợ:** `ly_do` của 139 bản ghi mới/vừa sửa đang là `"Đợt điều động <ngày>"`
+— chưa có số quyết định. TCCB bổ sung sau qua `/admin/lich-su-dieu-chuyen`.
 
 ## Quy ước giữ nhánh khớp code đang chạy
 

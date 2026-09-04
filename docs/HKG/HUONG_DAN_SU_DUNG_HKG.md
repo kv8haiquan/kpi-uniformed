@@ -422,7 +422,29 @@ Mã QR hiện ra kích thước lớn. Chiếu lên màn hình máy chiếu ho�
 
 Ngay dưới mã là bảng đếm theo thời gian thực: Tổng · Có mặt · Đến muộn · Vắng có phép · Vắng không phép · Chưa điểm danh. Bảng này **chỉ ban tổ chức nhìn thấy**.
 
-Đại biểu không có điện thoại hoặc gặp trục trặc: hiện tại **giao diện chưa có màn hình bấm điểm danh tay** cho thư ký (chức năng phía máy chủ đã có). Trong lúc chờ, đề nghị đại biểu tự bấm "Tôi có mặt" trên máy tính cá nhân, hoặc ghi nhận ngoài hệ thống rồi bổ sung sau.
+**Bấm vào một ô đếm để lọc** danh sách bên dưới. Ví dụ bấm ô "Chưa điểm danh" là ra ngay danh sách những người còn thiếu. Bấm lần nữa để bỏ lọc.
+
+### Danh sách từng người
+
+Dưới các ô đếm là bảng đầy đủ thành phần cuộc họp: họ tên, mã công chức, đơn vị, chức vụ, loại tham dự, trạng thái điểm danh, giờ điểm danh, hình thức (tự điểm danh · quét QR · thư ký bấm tay) và người đã chấm.
+
+Người **chưa điểm danh vẫn có tên trong bảng**, đánh dấu "Chưa điểm danh" — nhờ vậy biết còn thiếu ai chứ không chỉ biết thiếu bao nhiêu người.
+
+Có ô tìm theo họ tên hoặc mã công chức, và bộ lọc theo đơn vị khi thành phần gồm nhiều đơn vị.
+
+Bảng này **chỉ ban tổ chức xem được** (chủ tọa, thư ký, Chi cục trưởng, Phó Chi cục trưởng, Chánh Văn phòng, Trưởng phòng CNTT, quản trị). Đại biểu thường vẫn chỉ thấy khối điểm danh của riêng mình.
+
+### Đại biểu không có điện thoại hoặc gặp trục trặc
+
+Ở cột **Chấm** cuối mỗi dòng, chọn trạng thái cho người đó: Có mặt · Đến muộn · Vắng có phép · Vắng không phép. Chọn một trong hai trạng thái vắng thì hệ thống hỏi lý do — lý do này hiện ngay dưới trạng thái và có trong file Excel xuất ra.
+
+Chấm lại nhiều lần được. **Sửa trạng thái mà không nhập lại lý do thì lý do cũ giữ nguyên.** Mọi lần chấm đều ghi nhật ký (ai chấm cho ai, từ trạng thái nào sang trạng thái nào).
+
+Cột Chấm chỉ hiện với **chủ tọa, thư ký và quản trị** — Chi cục trưởng/Phó Chi cục trưởng xem được bảng nhưng không chấm thay. Cuộc họp đã hủy hoặc đã hoàn thành thì cột này biến mất, bảng còn lại chỉ để tra cứu.
+
+### Xuất bảng điểm danh ra Excel
+
+Nút **"Xuất Excel"** ở góc phải thanh lọc. File gồm dòng tiêu đề cuộc họp, dòng tổng hợp sáu con số, rồi danh sách đầy đủ — dùng làm bảng điểm danh lưu hồ sơ hoặc in dự phòng khi mất điện, mất mạng. Mỗi lần xuất đều được ghi nhật ký.
 
 ## 19. Biên bản họp
 
@@ -548,8 +570,7 @@ Nêu rõ để không mất thời gian tìm:
 
 | Chưa có | Cách làm tạm |
 |---|---|
-| Biểu mẫu gửi đơn xin vắng | Báo trực tiếp chủ tọa hoặc thư ký |
-| Màn hình thư ký bấm điểm danh tay | Đại biểu tự bấm "Tôi có mặt" |
+| Biểu mẫu gửi đơn xin vắng | Báo trực tiếp chủ tọa hoặc thư ký; thư ký chấm "Vắng có phép" kèm lý do ở thẻ Điểm danh |
 | Lịch họp dạng lịch tháng | Dùng bảng danh sách và bộ lọc |
 | Liên kết menu tới trang Thống kê và Xin phép vắng | Gõ địa chỉ hoặc lưu dấu trang |
 | Biểu quyết trong cuộc họp | Ghi kết quả vào biên bản |

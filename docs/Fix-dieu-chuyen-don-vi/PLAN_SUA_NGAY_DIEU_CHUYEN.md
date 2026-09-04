@@ -107,8 +107,10 @@ chuyển nốt 2 người còn lại lúc 16:35 ngày 25/08, **ghi đúng `ngay_
 | `20ZZ-0529` | Nguyễn Đức Quang | KSHQ ✅ | 2026-07-03 (nhập 25/08) |
 | `20ZZ-0176` | Nguyễn Văn Hoàn 1995 | KSHQ ✅ | 2026-07-03 (nhập 25/08) |
 
-Còn tồn: **T7/2026 của `20ZZ-0529` đã được HQCK-MC phê duyệt** (`DA_PHE_DUYET`)
-trước khi chuyển. Cần quyết xem có chấm lại theo KSHQ hay giữ nguyên.
+~~Còn tồn: T7/2026 của `20ZZ-0529`~~ → ✅ **ĐÃ XỬ LÝ 05/09/2026**: user chọn cách A
+(kê khai lại). Đã chạy `scripts/mo_lai_tieu_chi_chung.py` trên prod — T7 về `NHAP`,
+bỏ khóa, xóa dấu vết duyệt của HQCK-MC, snapshot sang KSHQ. Còn phải làm tay:
+công chức tự chấm lại, KSHQ duyệt 2 cấp, hai đơn vị cập nhật lại báo cáo T7.
 
 ### Sai #5 — 4 bộ bản ghi "khứ hồi" do nhập sai rồi sửa
 
@@ -215,7 +217,7 @@ Nhánh: `feature/kpi-sua-ngay-dieu-chuyen` (tạo từ `prod` @ `c53d843`)
 | 3. Chạy thử DB test | ✅ `kpi_haiquan_test`: xóa 8 · sửa 77 · thêm 62 · 0 cảnh báo; chạy lần 2 ra 0 thao tác (idempotent) |
 | 4. Sửa code + đối chứng | ✅ mốc chốt → cuối tháng M; đối chứng T1–T8 = **1 ca đổi**; 5/5 test PASS |
 | 5. Chặn tái diễn (FE/BE) | ✅ xong — bỏ prefill, bắt buộc nhập ngày, cảnh báo lệch >15 ngày, vá lỗi UTC; build sạch |
-| 6. Áp prod | ⬜ **chưa làm** — cần user ngồi cạnh |
+| 6. Áp prod | ✅ **XONG 05/09/2026** — user duyệt; xóa 8 · sửa 77 · thêm 62; đối chứng đổi đúng 2 ca dự kiến. Xem `docs/van-hanh/PHIEN_BAN_PROD.md` §Di trú dữ liệu 05/09 |
 
 Con số thực tế của script (khác dự toán ban đầu vì 4 người khứ hồi sau khi gộp
 thì dòng giữ lại cũng phải sửa ngày → 73 + 4 = 77):

@@ -300,6 +300,20 @@ async def test_xuat_excel_tra_ve_xlsx(
     ten_trong_file = [ws.cell(row=r, column=2).value for r in (5, 6)]
     assert "Test User TEST-G3-002" in ten_trong_file
 
+    # Giờ trong file PHẢI là giờ Việt Nam. Cắt thẳng chuỗi ISO (vốn theo UTC)
+    # làm báo cáo lệch 7 tiếng — lỗi này đã lộ ra khi đối chứng dữ liệu thật:
+    # cuộc họp 14:00 in thành "06:54".
+    from zoneinfo import ZoneInfo
+    gio_vn_mong_doi = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).strftime("%H")
+    o_gio = [ws.cell(row=r, column=8).value for r in (5, 6)]
+    gio_da_in = [g for g in o_gio if g]
+    assert gio_da_in, "không có dòng nào in giờ điểm danh"
+    for g in gio_da_in:
+        assert g.startswith(date.today().strftime("%d/%m/%Y")), \
+            f"định dạng giờ sai: {g!r}"
+        assert g.split()[1][:2] == gio_vn_mong_doi, \
+            f"giờ {g!r} không phải giờ VN (mong đợi giờ {gio_vn_mong_doi})"
+
     # HKG.txt §849: xuất dữ liệu BẮT BUỘC ghi log
     res = await db_session.execute(sa_text("""
         SELECT COUNT(*) FROM common.audit_log

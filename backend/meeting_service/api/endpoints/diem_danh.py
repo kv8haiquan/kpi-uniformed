@@ -1,14 +1,15 @@
 """
 api/endpoints/diem_danh.py
 ============================
-Module 4 — Điểm danh. 4 endpoints theo §6 HKG_API_SPECS.md.
+Module 4 — Điểm danh. 6 endpoint theo §6 HKG_API_SPECS.md, cộng 2 endpoint
+bảng chi tiết + xuất Excel cho ban tổ chức (thêm 04/09/2026).
 """
 
+from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
-
-from fastapi import Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from meeting_service.dependencies import (
     DatabaseDep,
@@ -202,6 +203,23 @@ async def chi_tiet_diem_danh(
     return {"success": True, "data": await service.chi_tiet(ch, user)}
 
 
+_MUI_GIO_VN = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def _gio_vn(iso: str | None) -> str:
+    """ISO (UTC) → 'dd/mm/YYYY HH:MM' giờ Việt Nam. Rỗng nếu chưa điểm danh."""
+    if not iso:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return ""
+    if dt.tzinfo is None:
+        # Phòng trường hợp cột bị ghi giờ tường: coi như đã là giờ VN.
+        return dt.strftime("%d/%m/%Y %H:%M")
+    return dt.astimezone(_MUI_GIO_VN).strftime("%d/%m/%Y %H:%M")
+
+
 # ─── 6. XUẤT EXCEL BẢNG ĐIỂM DANH ─────────────────────────────────────
 @router_cuoc_hop.get(
     "/{cuoc_hop_id}/diem-danh/xuat-excel",
@@ -269,8 +287,10 @@ async def xuat_excel_diem_danh(
         o.alignment = Alignment(horizontal="center", vertical="center")
 
     for i, r in enumerate(kq["danh_sach"], start=1):
-        # Giờ lưu naive giờ VN — cắt chuỗi ISO, không đổi múi giờ lần nữa.
-        gio_dd = (r["gio_diem_danh"] or "").replace("T", " ")[:16]
+        # gio_diem_danh là MỐC tuyệt đối, máy chủ trả ISO theo UTC. Phải đổi
+        # về Asia/Ho_Chi_Minh trước khi in, nếu cắt thẳng chuỗi ISO thì báo
+        # cáo hiện sai 7 tiếng (một cuộc họp 14:00 hoá ra "06:54").
+        gio_dd = _gio_vn(r["gio_diem_danh"])
         ws.append([
             i,
             r["ho_ten"] or "",

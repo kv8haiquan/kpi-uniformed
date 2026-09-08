@@ -20,7 +20,8 @@
 
 import { useEffect, useState } from 'react';
 import { baoCaoApi, baiKiemTraApi } from '@/services/lms';
-import { iconBaiNop, loaiFileBaiNop, nhanBaiNop } from '@/lib/bai-nop-file';
+import { iconBaiNop, layExtension, loaiFileBaiNop, nhanBaiNop } from '@/lib/bai-nop-file';
+import XemTruocWord from '@/components/lms/XemTruocWord';
 
 interface Props {
   khoaHocId: string;
@@ -569,11 +570,14 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {chamModal.bai_nop_url && (() => {
-                const loaiFile = loaiFileBaiNop(chamModal.bai_nop_ten_file || chamModal.bai_nop_url);
+                const tenHoacUrl = chamModal.bai_nop_ten_file || chamModal.bai_nop_url;
+                const loaiFile = loaiFileBaiNop(tenHoacUrl);
+                // Chỉ .docx dựng được trong trình duyệt; .doc nhị phân cũ thì không
+                const dungDuocWord = loaiFile === 'WORD' && layExtension(tenHoacUrl) === 'docx';
                 return (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Bài làm ({nhanBaiNop(chamModal.bai_nop_ten_file || chamModal.bai_nop_url)})
+                    Bài làm ({nhanBaiNop(tenHoacUrl)})
                   </label>
                   {loaiFile === 'VIDEO' ? (
                     <div className="bg-black rounded-lg overflow-hidden">
@@ -592,6 +596,12 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                       title={chamModal.bai_nop_ten_file || 'Bài nộp PDF'}
                       className="w-full h-[50vh] border border-gray-200 rounded-lg bg-gray-50"
                     />
+                  ) : dungDuocWord ? (
+                    <XemTruocWord
+                      key={chamModal.bai_nop_url}
+                      url={chamModal.bai_nop_url}
+                      tenFile={chamModal.bai_nop_ten_file}
+                    />
                   ) : loaiFile === 'ANH' ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -600,12 +610,14 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                       className="w-full max-h-[50vh] object-contain rounded-lg border border-gray-200 bg-gray-50"
                     />
                   ) : (
-                    // Tai lieu Office / dinh dang khac: trinh duyet khong xem truoc duoc → tai ve
+                    // .doc cu / Excel / PowerPoint: trinh duyet khong doc duoc → tai ve
                     <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50">
-                      <div className="text-3xl mb-1">
-                        {iconBaiNop(chamModal.bai_nop_ten_file || chamModal.bai_nop_url)}
-                      </div>
-                      <p className="text-sm text-gray-600">Không xem trước được trên trình duyệt</p>
+                      <div className="text-3xl mb-1">{iconBaiNop(tenHoacUrl)}</div>
+                      <p className="text-sm text-gray-600">
+                        {loaiFile === 'WORD'
+                          ? 'File .doc (Word 97-2003) — trình duyệt không đọc được định dạng này'
+                          : 'Không xem trước được trên trình duyệt'}
+                      </p>
                       <a
                         href={chamModal.bai_nop_url}
                         download={chamModal.bai_nop_ten_file || undefined}

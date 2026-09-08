@@ -185,7 +185,7 @@ export interface IBaiKiemTraCreate {
   /** Bắt buộc nếu loai_bai_kiem_tra=THUC_HANH */
   yeu_cau_bai_lam?: string;
   dung_luong_toi_da_mb?: number;     // default 500
-  dinh_dang_cho_phep?: string;       // CSV: "mp4,mov,webm"
+  dinh_dang_cho_phep?: string;       // CSV: "pdf" | "mp4,mov,webm" | "pdf,mp4"
   thoi_gian_lam_bai_phut?: number;   // null = không giới hạn
   so_lan_lam_toi_da?: number;        // default 3
   diem_dat?: number;                 // default 70

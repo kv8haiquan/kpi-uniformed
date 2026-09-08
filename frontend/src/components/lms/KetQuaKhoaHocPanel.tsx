@@ -20,6 +20,8 @@
 
 import { useEffect, useState } from 'react';
 import { baoCaoApi, baiKiemTraApi } from '@/services/lms';
+import { iconBaiNop, layExtension, loaiFileBaiNop, nhanBaiNop } from '@/lib/bai-nop-file';
+import XemTruocWord from '@/components/lms/XemTruocWord';
 
 interface Props {
   khoaHocId: string;
@@ -285,7 +287,7 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                               className="text-blue-600 hover:underline text-xs"
                               title={kq.bai_nop_ten_file || ''}
                             >
-                              🎬 Xem video
+                              {iconBaiNop(kq.bai_nop_ten_file || kq.bai_nop_url)} Xem bài nộp
                             </a>
                           ) : (
                             <span className="text-gray-400 text-xs">—</span>
@@ -567,23 +569,70 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {chamModal.bai_nop_url && (
+              {chamModal.bai_nop_url && (() => {
+                const tenHoacUrl = chamModal.bai_nop_ten_file || chamModal.bai_nop_url;
+                const loaiFile = loaiFileBaiNop(tenHoacUrl);
+                // Chỉ .docx dựng được trong trình duyệt; .doc nhị phân cũ thì không
+                const dungDuocWord = loaiFile === 'WORD' && layExtension(tenHoacUrl) === 'docx';
+                return (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Video bài làm
+                    Bài làm ({nhanBaiNop(tenHoacUrl)})
                   </label>
-                  <div className="bg-black rounded-lg overflow-hidden">
-                    <video
+                  {loaiFile === 'VIDEO' ? (
+                    <div className="bg-black rounded-lg overflow-hidden">
+                      <video
+                        src={chamModal.bai_nop_url}
+                        controls
+                        className="w-full max-h-[50vh]"
+                        preload="metadata"
+                      >
+                        Trình duyệt không hỗ trợ phát video.
+                      </video>
+                    </div>
+                  ) : loaiFile === 'PDF' ? (
+                    <iframe
                       src={chamModal.bai_nop_url}
-                      controls
-                      className="w-full max-h-[50vh]"
-                      preload="metadata"
-                    >
-                      Trình duyệt không hỗ trợ phát video.
-                    </video>
-                  </div>
+                      title={chamModal.bai_nop_ten_file || 'Bài nộp PDF'}
+                      className="w-full h-[50vh] border border-gray-200 rounded-lg bg-gray-50"
+                    />
+                  ) : dungDuocWord ? (
+                    <XemTruocWord
+                      key={chamModal.bai_nop_url}
+                      url={chamModal.bai_nop_url}
+                      tenFile={chamModal.bai_nop_ten_file}
+                    />
+                  ) : loaiFile === 'ANH' ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={chamModal.bai_nop_url}
+                      alt={chamModal.bai_nop_ten_file || 'Bài nộp'}
+                      className="w-full max-h-[50vh] object-contain rounded-lg border border-gray-200 bg-gray-50"
+                    />
+                  ) : (
+                    // .doc cu / Excel / PowerPoint: trinh duyet khong doc duoc → tai ve
+                    <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50">
+                      <div className="text-3xl mb-1">{iconBaiNop(tenHoacUrl)}</div>
+                      <p className="text-sm text-gray-600">
+                        {loaiFile === 'WORD'
+                          ? 'File .doc (Word 97-2003) — trình duyệt không đọc được định dạng này'
+                          : 'Không xem trước được trên trình duyệt'}
+                      </p>
+                      <a
+                        href={chamModal.bai_nop_url}
+                        download={chamModal.bai_nop_ten_file || undefined}
+                        className="inline-block mt-2 px-3 py-1.5 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                      >
+                        Tải file về để chấm
+                      </a>
+                    </div>
+                  )}
                   <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
-                    {chamModal.bai_nop_ten_file && <span>📄 {chamModal.bai_nop_ten_file}</span>}
+                    {chamModal.bai_nop_ten_file && (
+                      <span>
+                        {iconBaiNop(chamModal.bai_nop_ten_file)} {chamModal.bai_nop_ten_file}
+                      </span>
+                    )}
                     {chamModal.bai_nop_size_bytes && (
                       <span>{(chamModal.bai_nop_size_bytes / (1024 * 1024)).toFixed(2)} MB</span>
                     )}
@@ -599,7 +648,8 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                     )}
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               <div className="grid grid-cols-3 gap-3">
                 <div>

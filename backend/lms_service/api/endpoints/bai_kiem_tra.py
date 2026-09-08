@@ -14,6 +14,7 @@ Endpoints:
   DELETE /bai-kiem-tra/{id}                Xoa BKT
   POST   /bai-kiem-tra/{id}/bat-dau        Bat dau lam bai
   POST   /bai-kiem-tra/{id}/nop-bai        Nop bai
+  POST   /bai-kiem-tra/{id}/nop-bai-thuc-hanh  Nop file bai thuc hanh (PDF/video)
   POST   /bai-kiem-tra/{id}/luu-nhap       Luu bai lam nhap
   GET    /ket-qua/{id}                     Xem ket qua chi tiet
 """
@@ -187,16 +188,25 @@ async def bat_dau_thi(
     }
 
 
-@router.post("/bai-kiem-tra/{id}/nop-video", status_code=201)
-async def nop_video(
+@router.post("/bai-kiem-tra/{id}/nop-bai-thuc-hanh", status_code=201)
+@router.post("/bai-kiem-tra/{id}/nop-video", status_code=201, include_in_schema=False)
+async def nop_bai_thuc_hanh(
     id: UUID,
-    file: UploadFile = File(..., description="Video bài làm (.mp4, .mov, .webm...)"),
+    file: UploadFile = File(
+        ...,
+        description="File bài làm — PDF (.pdf), tài liệu (.docx, .pptx...) "
+                    "hoặc video (.mp4, .mov, .webm). Định dạng chấp nhận theo "
+                    "cấu hình `dinh_dang_cho_phep` của bài kiểm tra.",
+    ),
     db: AsyncSession = Depends(get_db),
     user: TokenPayload = Depends(get_current_user),
 ):
-    """Học viên nộp video bài thực hành. Multipart upload."""
+    """Học viên nộp bài thực hành (PDF / tài liệu / video). Multipart upload.
+
+    `/nop-video` la duong dan cu, giu lai cho client phat hanh truoc do.
+    """
     service = BaiKiemTraService(db)
-    result = await service.nop_video(id, file, user)
+    result = await service.nop_bai_thuc_hanh(id, file, user)
     await db.commit()
     return {
         "success": True,

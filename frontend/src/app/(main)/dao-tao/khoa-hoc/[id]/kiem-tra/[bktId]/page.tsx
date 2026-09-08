@@ -6,9 +6,10 @@
 
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { iconBaiNop, moTaDinhDang, loaiFileBaiNop } from '@/lib/bai-nop-file';
 import { baiKiemTraApi } from '@/services/lms';
 import type { IBaiKiemTra, ICauHoiForExam, IKetQuaResponse } from '@/types/lms';
 
@@ -56,6 +57,16 @@ export default function KiemTraPage() {
 
   // Ket qua state
   const [ketQua, setKetQua] = useState<IKetQuaResponse | null>(null);
+
+  // Ban xem truoc cho file PDF vua chon; thu hoi object URL khi doi/bo file
+  const thPreviewUrl = useMemo(
+    () => (thFile && loaiFileBaiNop(thFile.name) === 'PDF' ? URL.createObjectURL(thFile) : null),
+    [thFile],
+  );
+  useEffect(() => {
+    if (!thPreviewUrl) return;
+    return () => URL.revokeObjectURL(thPreviewUrl);
+  }, [thPreviewUrl]);
 
   // Load BKT info and lich su
   useEffect(() => {
@@ -278,10 +289,10 @@ export default function KiemTraPage() {
   const handleNopBaiRef = useRef(handleNopBai);
   handleNopBaiRef.current = handleNopBai;
 
-  // Nop video bai thuc hanh
-  const handleNopVideo = useCallback(async () => {
+  // Nop file bai thuc hanh (PDF / tai lieu / video)
+  const handleNopBaiThucHanh = useCallback(async () => {
     if (!thFile) {
-      alert('Vui lòng chọn file video để nộp');
+      alert('Vui lòng chọn file bài làm để nộp');
       return;
     }
     if (isPreview) {
@@ -304,13 +315,13 @@ export default function KiemTraPage() {
 
     try {
       setThUploadPct(0);
-      const res = await baiKiemTraApi.nopVideo(bktId, thFile, (pct) => setThUploadPct(pct));
+      const res = await baiKiemTraApi.nopBaiThucHanh(bktId, thFile, (pct) => setThUploadPct(pct));
       setThKetQua(res.data.data);
       setState('THUC_HANH_DA_NOP');
       setThUploadPct(null);
     } catch (err: any) {
       setThUploadPct(null);
-      alert(err?.response?.data?.detail?.error?.message || 'Lỗi nộp video. Thử lại sau.');
+      alert(err?.response?.data?.detail?.error?.message || 'Lỗi nộp bài. Thử lại sau.');
     }
   }, [thFile, thDinhDang, thDungLuongMb, bktId, isPreview]);
 
@@ -368,13 +379,13 @@ export default function KiemTraPage() {
           <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 ${
             laThucHanh ? 'bg-orange-100' : 'bg-purple-100'
           }`}>
-            <span className="text-3xl">{laThucHanh ? '🎬' : '📝'}</span>
+            <span className="text-3xl">{laThucHanh ? moTaDinhDang(bkt.dinh_dang_cho_phep).icon : '📝'}</span>
           </div>
           <h1 className="text-xl font-bold text-gray-900 mb-1">{bkt.tieu_de}</h1>
           <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
             laThucHanh ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'
           }`}>
-            {laThucHanh ? 'Thực hành — nộp video' : 'Trắc nghiệm'}
+            {laThucHanh ? `Thực hành — nộp ${moTaDinhDang(bkt.dinh_dang_cho_phep).nhan}` : 'Trắc nghiệm'}
           </span>
 
           {laThucHanh ? (
@@ -439,7 +450,7 @@ export default function KiemTraPage() {
             className={`w-full px-6 py-3 text-white rounded-xl font-semibold transition-colors disabled:opacity-50 mt-5 ${
               laThucHanh ? 'bg-orange-600 hover:bg-orange-700' : 'bg-purple-600 hover:bg-purple-700'
             }`}>
-            {loading ? 'Đang tải...' : laThucHanh ? 'Bắt đầu nộp video' : 'Bắt đầu làm bài'}
+            {loading ? 'Đang tải...' : laThucHanh ? 'Bắt đầu nộp bài' : 'Bắt đầu làm bài'}
           </button>
           <Link href={`/dao-tao/khoa-hoc/${khoaHocId}`}
             className="text-sm text-gray-500 hover:text-gray-700 mt-4 inline-block">Quay lại khóa học</Link>
@@ -450,7 +461,7 @@ export default function KiemTraPage() {
   }
 
   // =========================================================================
-  // STATE: THUC_HANH_CHUA_NOP — form upload video
+  // STATE: THUC_HANH_CHUA_NOP — form upload file bai lam (PDF / tai lieu / video)
   // =========================================================================
   if (state === 'THUC_HANH_CHUA_NOP' && bkt) {
     return (
@@ -459,10 +470,10 @@ export default function KiemTraPage() {
         <div className="max-w-2xl mx-auto p-4">
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mt-4">
             <div className="flex items-center gap-3 mb-4">
-              <span className="text-2xl">🎬</span>
+              <span className="text-2xl">{moTaDinhDang(thDinhDang).icon}</span>
               <div className="flex-1 min-w-0">
                 <h1 className="text-lg font-bold text-gray-900 truncate">{bkt.tieu_de}</h1>
-                <p className="text-xs text-gray-500">Bài thực hành — nộp video</p>
+                <p className="text-xs text-gray-500">Bài thực hành — nộp {moTaDinhDang(thDinhDang).nhan}</p>
               </div>
             </div>
 
@@ -475,18 +486,28 @@ export default function KiemTraPage() {
 
             <div className="flex gap-4 text-xs text-gray-500 mb-4">
               <span>📦 Tối đa: <strong className="text-gray-700">{thDungLuongMb} MB</strong></span>
-              <span>🎬 Định dạng: <strong className="text-gray-700">{thDinhDang}</strong></span>
+              <span>{moTaDinhDang(thDinhDang).icon} Định dạng: <strong className="text-gray-700">{thDinhDang}</strong></span>
             </div>
 
             {/* Chọn file */}
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
               {thFile ? (
                 <div className="space-y-2">
-                  <div className="text-3xl">🎬</div>
+                  <div className="text-3xl">{iconBaiNop(thFile.name)}</div>
                   <div className="text-sm font-medium text-gray-900 truncate">{thFile.name}</div>
                   <div className="text-xs text-gray-500">
-                    {(thFile.size / (1024 * 1024)).toFixed(2)} MB · {thFile.type || 'video'}
+                    {(thFile.size / (1024 * 1024)).toFixed(2)} MB · {thFile.type || 'file'}
                   </div>
+                  {thPreviewUrl && (
+                    <a
+                      href={thPreviewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-xs text-blue-600 hover:underline"
+                    >
+                      Xem trước PDF ↗
+                    </a>
+                  )}
                   <button
                     onClick={() => setThFile(null)}
                     disabled={thUploadPct !== null}
@@ -508,7 +529,7 @@ export default function KiemTraPage() {
                     }}
                   />
                   <div className="text-4xl mb-2">📂</div>
-                  <div className="text-sm font-medium text-gray-700">Nhấn để chọn video bài làm</div>
+                  <div className="text-sm font-medium text-gray-700">Nhấn để chọn {moTaDinhDang(thDinhDang).nhan} bài làm</div>
                   <div className="text-xs text-gray-400 mt-1">{thDinhDang} · tối đa {thDungLuongMb} MB</div>
                 </label>
               )}
@@ -527,7 +548,7 @@ export default function KiemTraPage() {
               <Link href={`/dao-tao/khoa-hoc/${khoaHocId}`}
                 className="text-sm text-gray-500 hover:text-gray-700">← Quay lại khóa học</Link>
               <button
-                onClick={handleNopVideo}
+                onClick={handleNopBaiThucHanh}
                 disabled={!thFile || thUploadPct !== null || isPreview}
                 className="px-6 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700 disabled:opacity-50"
                 title={isPreview ? 'Chế độ xem thử: không thể nộp bài' : ''}
@@ -561,7 +582,7 @@ export default function KiemTraPage() {
             </div>
             <h1 className="text-xl font-bold text-gray-900 mb-2">Đã nộp bài!</h1>
             <p className="text-sm text-gray-600 mb-1">
-              Video bài làm của bạn đã được gửi đến giảng viên.
+              Bài làm của bạn đã được gửi đến giảng viên.
             </p>
             <p className="text-sm text-gray-500 mb-6">
               Trạng thái: <span className="inline-block px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 font-medium text-xs">Chờ chấm</span>
@@ -578,7 +599,7 @@ export default function KiemTraPage() {
                   <div>
                     <span className="text-gray-500">Bài nộp:</span>{' '}
                     <a href={thKetQua.bai_nop_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                      Xem lại video đã nộp ↗
+                      {iconBaiNop(thKetQua.bai_nop_ten_file || thKetQua.bai_nop_url)} Xem lại bài đã nộp ↗
                     </a>
                   </div>
                 )}

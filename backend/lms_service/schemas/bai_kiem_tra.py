@@ -26,6 +26,40 @@ class CauHoiInline(BaseModel):
 
 LOAI_BAI_KIEM_TRA = {"TRAC_NGHIEM", "THUC_HANH"}
 
+# Dinh dang bai nop thuc hanh duoc phep — phai la tap con cua
+# lms_service.config.ALLOWED_EXTENSIONS (FileService kiem tra lan 2).
+DINH_DANG_BAI_NOP_HOP_LE = {
+    # Video
+    "mp4", "mov", "webm", "avi",
+    # Tai lieu — PDF la dinh dang chinh cho bai tap viet/bao cao
+    "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
+    # Anh (bai chup man hinh / san pham thiet ke)
+    "jpg", "jpeg", "png",
+}
+
+
+def chuan_hoa_dinh_dang(raw: Optional[str]) -> Optional[str]:
+    """Chuan hoa CSV dinh dang: bo dau cham, lowercase, khu trung, giu thu tu.
+
+    Raise ValueError neu co dinh dang ngoai DINH_DANG_BAI_NOP_HOP_LE.
+    Tra ve None neu raw la None (de Update biet la "khong doi").
+    """
+    if raw is None:
+        return None
+    exts: list[str] = []
+    for item in raw.split(","):
+        e = item.strip().lstrip(".").lower()
+        if not e or e in exts:
+            continue
+        if e not in DINH_DANG_BAI_NOP_HOP_LE:
+            raise ValueError(
+                f"Định dạng '{e}' không được hỗ trợ. "
+                f"Cho phép: {', '.join(sorted(DINH_DANG_BAI_NOP_HOP_LE))}"
+            )
+        exts.append(e)
+    # Chuoi rong → None: giu nguyen mac dinh cua he thong
+    return ",".join(exts) if exts else None
+
 
 class BaiKiemTraCreate(BaseModel):
     """Schema tao bai kiem tra."""
@@ -63,6 +97,11 @@ class BaiKiemTraCreate(BaseModel):
             raise ValueError(f"Loại BKT phải thuộc: {sorted(LOAI_BAI_KIEM_TRA)}")
         return v
 
+    @field_validator("dinh_dang_cho_phep")
+    @classmethod
+    def _vld_dinh_dang(cls, v: Optional[str]) -> Optional[str]:
+        return chuan_hoa_dinh_dang(v)
+
 
 class BaiKiemTraUpdate(BaseModel):
     """Schema cap nhat bai kiem tra."""
@@ -92,6 +131,11 @@ class BaiKiemTraUpdate(BaseModel):
         if v is not None and v not in LOAI_BAI_KIEM_TRA:
             raise ValueError(f"Loại BKT phải thuộc: {sorted(LOAI_BAI_KIEM_TRA)}")
         return v
+
+    @field_validator("dinh_dang_cho_phep")
+    @classmethod
+    def _vld_dinh_dang(cls, v: Optional[str]) -> Optional[str]:
+        return chuan_hoa_dinh_dang(v)
 
 
 class BaiKiemTraResponse(BaseModel):

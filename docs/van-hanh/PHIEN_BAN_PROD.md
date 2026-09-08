@@ -7,11 +7,54 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `dba30f9` |
-| **Ngắn** | `dba30f9` |
-| **Nhánh nguồn** | `feature/hkg-diem-danh-chi-tiet` (fast-forward, chứa cả `feature/kpi-sua-ngay-dieu-chuyen`) |
-| **Ngày ghi mốc** | 04/09/2026 22:45 |
+| **Commit** | `d15b850` |
+| **Ngắn** | `d15b850` |
+| **Nhánh nguồn** | `upload-pdf-dao-tao` (fast-forward, cắt từ `feature/kpi-mo-lai-tieu-chi-chung`) |
+| **Ngày ghi mốc** | 08/09/2026 11:31 |
 | **Alembic** | `lms_cau_hoi_hang_ngay_20260827` — **KHÔNG migration mới** |
+
+Nội dung: **LMS — bài tập thực hành nhận file PDF và Word, không chỉ video.**
+
+Bài kiểm tra loại `THUC_HANH` trước đây được thiết kế riêng cho video: mặc định
+`dinh_dang_cho_phep = "mp4,mov,webm"`, toàn bộ nhãn giao diện ghi "nộp video",
+và màn chấm bài luôn dựng thẻ `<video>`. Cột `dinh_dang_cho_phep` vốn đã cho
+phép gõ `pdf` từ `add_lms_bkt_thuc_hanh_20260422`, nhưng làm vậy thì giảng viên
+mở bài nộp ra chỉ thấy khung đen — nên trên thực tế tính năng chưa dùng được.
+
+Nay giảng viên chọn định dạng bằng nút bấm (📕 PDF · 📘 Word · 📄 PDF+Word ·
+🎬 Video · 📎 Tất cả). Màn nộp bài và màn chấm bài hiển thị theo đúng loại file:
+iframe cho PDF, trình phát cho video, ảnh cho ảnh, nút tải về cho tài liệu
+Office. Học viên xem trước được bản PDF trước khi bấm nộp.
+
+Endpoint mới `POST /bai-kiem-tra/{id}/nop-bai-thuc-hanh`; `/nop-video` giữ
+nguyên làm bí danh (ẩn khỏi OpenAPI) để client đã phát hành không vỡ.
+
+Kèm một lớp chống đổi đuôi file: đối chiếu chữ ký (magic bytes) ở đầu file
+TRƯỚC khi ghi xuống đĩa, phủ pdf/doc/docx/xls/xlsx/ppt/pptx. Hai chỗ dễ chặn
+nhầm đã xử lý — docx/xlsx/pptx thực chất là ZIP nên đối chiếu tiền tố `PK`;
+`.doc` chấp nhận CẢ chữ ký OLE2 lẫn `{\rtf` vì Word vẫn lưu RTF dưới đuôi
+`.doc`, chỉ nhận OLE2 sẽ loại oan bài nộp thật.
+
+Kiểm chứng trước khi phát hành: 21/21 test `lms_service/tests/test_bai_kiem_tra.py`
+PASS trên `kpi_haiquan_test` (11 test mới cho luồng nộp file), 11 test vitest cho
+`lib/bai-nop-file.ts`, `tsc --noEmit` sạch. Không đụng dữ liệu production.
+
+> Ghi chú quy trình: nhánh `upload-pdf-dao-tao` cắt từ nhánh làm việc dở
+> `feature/kpi-mo-lai-tieu-chi-chung` nên mang theo 2 commit không liên quan —
+> `85cbedf` (thêm `scripts/mo_lai_tieu_chi_chung.py`, script chạy tay, đã đối
+> chứng không nơi nào import nên trơ lúc chạy) và `a828e89` (chỉ tài liệu). Đã
+> báo và người dùng chọn phát hành cả 4 commit cùng lượt, nên truyền một SHA
+> `d15b850` là đủ.
+>
+> Còn nợ: xem `.docx` ngay trong màn chấm bài. Trình duyệt không đọc được
+> `.docx` (bản chất là ZIP chứa XML) nên hiện chỉ có nút tải về. Hướng đã chốt
+> là dùng `docx-preview` dựng ở TRÌNH DUYỆT người chấm, KHÔNG chuyển sang PDF
+> bằng LibreOffice ở máy chủ: `FileService.convert_to_pdf` gọi `subprocess.run`
+> đồng bộ, chẹn event loop tới 60s mỗi file — không an toàn khi nhiều học viên
+> nộp cùng lúc. File `.doc` nhị phân cũ thì không thư viện JS nào đọc được, giữ
+> nguyên nút tải về.
+
+### Mốc trước — `dba30f9`
 
 Nội dung: **hai việc trong một lần phát hành.**
 
@@ -50,7 +93,7 @@ bắt buộc nhập ngày hiệu lực khi điều chuyển thay vì điền s�
 > `97264ae` — hai phần lệch nhau, đúng loại lỗi mà ghi chú 25/08 bên dưới đã
 > cảnh báo. Nội dung của `81bb5b5` nay nằm đúng ở hàng của nó trong bảng lịch sử.
 
-### Mốc trước — `2137a32`
+### Mốc trước nữa — `2137a32`
 
 Nội dung: **Chặn build/triển khai khi đang có người thi**. Sinh ra từ sự cố cùng
 ngày 10:04–10:17: `npm run build` chạy trần đúng lúc 13 thí sinh đang ở phút thứ
@@ -64,13 +107,13 @@ Kèm theo, đã áp thẳng lên máy và **không nằm trong git**: swapfile 8
 `/etc/fstab`, và `/etc/sysctl.d/99-kpi-oom.conf` (`vm.swappiness=10`,
 `vm.min_free_kbytes=131072`, `vm.watermark_scale_factor=100`).
 
-### Mốc trước nữa — `cc254be`
+### Mốc cũ hơn — `cc254be`
 
 **Quy trình khôi phục file từ ảnh uploads**, kèm cảnh báo `/opt/kpi/scripts` nằm
 ngoài `trien_khai.sh`. Trước đó là `e005660` (sửa mặc định uploads sai trong sao
 lưu) và `b6f805c` (lịch sử phiên bản cho uploads bằng ảnh hardlink).
 
-### Mốc cũ hơn — `8653f0e`
+### Mốc cũ nhất — `8653f0e`
 
 **ĐGNL — thư viện mẫu cấu trúc đề**. Tab "Mẫu cấu trúc đề" cho sửa
 mẫu trực tiếp trên lưới (trước chỉ tạo được bằng cách lưu từ kỳ thi, không sửa
@@ -97,6 +140,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 28/08/2026 | `c53d843` | Ghi mốc prod `81bb5b5` vào sổ — chỉ tài liệu, không chạm code |
 | 04/09/2026 | `dba30f9` | HKG: bảng điểm danh chi tiết từng thành phần + chấm tay + xuất Excel (2 endpoint chỉ-đọc mới, audit `EXPORT_DIEM_DANH`); kèm KPI: sửa ngày hiệu lực điều chuyển (`699cbc1`+`0cd7daa`) — **không migration** |
 | 05/09/2026 | *(không phát hành code)* | **Di trú DỮ LIỆU** `lich_su_dieu_chuyen` theo QĐ điều động 2026: xóa 8 · sửa 77 · thêm 62 (`scripts/fix_ngay_dieu_chuyen_2026.py`). Kèm mở lại tiêu chí chung T7 cho `20ZZ-0529` (`scripts/mo_lai_tieu_chi_chung.py`). Chi tiết ở mục dưới |
+| 08/09/2026 | `d15b850` | LMS: bài tập thực hành nhận file PDF/Word (endpoint `nop-bai-thuc-hanh`, `/nop-video` thành bí danh; đối chiếu chữ ký file chống đổi đuôi; giao diện chọn định dạng + xem theo loại file). Kèm `85cbedf` (script `mo_lai_tieu_chi_chung.py`, trơ lúc chạy) và `a828e89` (tài liệu) — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

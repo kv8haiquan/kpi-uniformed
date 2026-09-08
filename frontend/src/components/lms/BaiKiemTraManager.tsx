@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { moTaDinhDang } from '@/lib/bai-nop-file';
 import { baiKiemTraApi, cauHoiApi } from '@/services/lms';
 import type { IBaiKiemTra, IBaiKiemTraCreate, ICauHoi, ICauHoiInline } from '@/types/lms';
 import ImportCauHoiDialog from '@/components/lms/ImportCauHoiDialog';
@@ -648,7 +649,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
             <div className="flex gap-2">
               {[
                 { v: 'TRAC_NGHIEM', label: '📝 Trắc nghiệm', hint: 'Câu hỏi tự động chấm' },
-                { v: 'THUC_HANH',   label: '🎬 Thực hành',   hint: 'Học viên upload video bài làm' },
+                { v: 'THUC_HANH',   label: '📎 Thực hành',   hint: 'Học viên nộp file PDF / tài liệu / video' },
               ].map((opt) => (
                 <button
                   key={opt.v}
@@ -684,7 +685,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                   rows={4}
                   value={base.yeu_cau_bai_lam}
                   onChange={(e) => setBase({ ...base, yeu_cau_bai_lam: e.target.value })}
-                  placeholder="Mô tả chi tiết nội dung học viên cần làm, quay video và nộp..."
+                  placeholder="Mô tả chi tiết nội dung học viên cần làm và nộp (file PDF, tài liệu hoặc video)..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y bg-white"
                 />
               </div>
@@ -699,18 +700,38 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                     onChange={(e) => setBase({ ...base, dung_luong_toi_da_mb: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                   />
-                  <p className="text-xs text-gray-400 mt-0.5">Thường 500 MB (~15 phút video 720p)</p>
+                  <p className="text-xs text-gray-400 mt-0.5">PDF thường &lt; 20 MB · video 720p ~500 MB</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Định dạng cho phép</label>
+                  <div className="flex gap-1 mb-1.5">
+                    {[
+                      { label: '📕 PDF',    val: 'pdf' },
+                      { label: '🎬 Video',  val: 'mp4,mov,webm' },
+                      { label: '📎 Cả hai', val: 'pdf,mp4,mov,webm' },
+                    ].map((preset) => (
+                      <button
+                        key={preset.val}
+                        type="button"
+                        onClick={() => setBase({ ...base, dinh_dang_cho_phep: preset.val })}
+                        className={`px-2 py-1 rounded text-xs border ${
+                          base.dinh_dang_cho_phep.trim() === preset.val
+                            ? 'border-blue-500 bg-blue-100 text-blue-700 font-medium'
+                            : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >{preset.label}</button>
+                    ))}
+                  </div>
                   <input
                     type="text"
                     value={base.dinh_dang_cho_phep}
                     onChange={(e) => setBase({ ...base, dinh_dang_cho_phep: e.target.value })}
-                    placeholder="mp4,mov,webm"
+                    placeholder="pdf,mp4,mov,webm"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                   />
-                  <p className="text-xs text-gray-400 mt-0.5">CSV, không dấu chấm</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    CSV, không dấu chấm. Hỗ trợ: pdf, doc(x), ppt(x), xls(x), mp4, mov, webm, avi, jpg, png
+                  </p>
                 </div>
               </div>
             </div>
@@ -1054,7 +1075,9 @@ export default function BaiKiemTraManager({ khoaHocId }: BaiKiemTraManagerProps)
             <div key={bkt.id}
               className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
             >
-              <span className="text-2xl shrink-0">{laThucHanh ? '🎬' : '📝'}</span>
+              <span className="text-2xl shrink-0">
+              {laThucHanh ? moTaDinhDang(bkt.dinh_dang_cho_phep).icon : '📝'}
+            </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-medium text-gray-900 truncate">{bkt.tieu_de}</p>
@@ -1066,7 +1089,7 @@ export default function BaiKiemTraManager({ khoaHocId }: BaiKiemTraManagerProps)
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {laThucHanh
-                    ? `Upload video · Tối đa ${bkt.dung_luong_toi_da_mb ?? 500} MB · ${bkt.dinh_dang_cho_phep || 'mp4,mov,webm'}`
+                    ? `Nộp ${moTaDinhDang(bkt.dinh_dang_cho_phep).nhan} · Tối đa ${bkt.dung_luong_toi_da_mb ?? 500} MB · ${bkt.dinh_dang_cho_phep || 'mp4,mov,webm'}`
                     : `${bkt.so_cau_hoi} câu`}
                   {bkt.thoi_gian_lam_bai_phut
                     ? ` · ${bkt.thoi_gian_lam_bai_phut} phút`

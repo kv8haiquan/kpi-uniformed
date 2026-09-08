@@ -200,11 +200,14 @@ export const baiKiemTraApi = {
     lmsApi.post(`/bai-kiem-tra/${id}/bat-dau${preview ? '?preview=true' : ''}`),
   nopBai: (id: string, data: any) =>
     lmsApi.post(`/bai-kiem-tra/${id}/nop-bai`, data),
-  /** Học viên nộp video bài thực hành — POST /bai-kiem-tra/{id}/nop-video (multipart) */
-  nopVideo: (id: string, file: File, onProgress?: (pct: number) => void) => {
+  /**
+   * Học viên nộp file bài thực hành (PDF / tài liệu / video)
+   * — POST /bai-kiem-tra/{id}/nop-bai-thuc-hanh (multipart).
+   */
+  nopBaiThucHanh: (id: string, file: File, onProgress?: (pct: number) => void) => {
     const fd = new FormData();
     fd.append('file', file);
-    return lmsApi.post(`/bai-kiem-tra/${id}/nop-video`, fd, {
+    return lmsApi.post(`/bai-kiem-tra/${id}/nop-bai-thuc-hanh`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (e) => {
         if (onProgress && e.total) {

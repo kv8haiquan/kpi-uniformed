@@ -2,11 +2,14 @@
 Tests cho cau hoi + bai kiem tra + luong thi — 10 test cases.
 """
 
+import io
 import uuid
 
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+
+import lms_service.config as lms_config
 
 from lms_service.main import app
 from lms_service.dependencies import get_current_user
@@ -263,3 +266,111 @@ class TestLuongThi:
         _set_user(cbcc)
         resp = await client.get(f"/api/v1/lms/bai-kiem-tra/{setup['bkt_id']}/ket-qua-tat-ca")
         assert resp.status_code == 403
+
+
+# =========================================================================
+# BKT THUC HANH — NOP FILE PDF
+# =========================================================================
+
+async def _setup_bkt_thuc_hanh(client, dinh_dang: str = "pdf") -> dict:
+    """Tao khoa hoc da xuat ban + 1 BKT thuc hanh nhan dinh dang truyen vao."""
+    kh = await client.post("/api/v1/lms/khoa-hoc", json={
+        "ma_khoa_hoc": f"KH-TH-{uuid.uuid4().hex[:6]}",
+        "ten_khoa_hoc": "Thuc hanh test", "loai": "BAT_BUOC",
+    })
+    kh_id = kh.json()["data"]["id"]
+    await client.post(f"/api/v1/lms/khoa-hoc/{kh_id}/bai-hoc", json={
+        "tieu_de": "Bai 1", "loai_noi_dung": "HTML",
+    })
+    await client.patch(f"/api/v1/lms/khoa-hoc/{kh_id}/trang-thai", json={"trang_thai": "CHO_DUYET"})
+    await client.patch(f"/api/v1/lms/khoa-hoc/{kh_id}/trang-thai", json={"trang_thai": "DA_XUAT_BAN"})
+
+    bkt = await client.post(f"/api/v1/lms/khoa-hoc/{kh_id}/bai-kiem-tra", json={
+        "tieu_de": "Bai tap thuc hanh PDF",
+        "loai_bai_kiem_tra": "THUC_HANH",
+        "yeu_cau_bai_lam": "Viet bao cao va nop file PDF",
+        "dinh_dang_cho_phep": dinh_dang,
+        "dung_luong_toi_da_mb": 20,
+    })
+    assert bkt.status_code == 201, f"tao BKT thuc hanh that bai: {bkt.json()}"
+    return {"kh_id": kh_id, "bkt_id": bkt.json()["data"]["id"], "bkt": bkt.json()["data"]}
+
+
+class TestNopPdfThucHanh:
+    """Bai tap thuc hanh nhan file PDF (khong chi video)."""
+
+    async def test_tao_bkt_dinh_dang_pdf(self, client, admin_user):
+        """dinh_dang_cho_phep = 'pdf' duoc chap nhan va chuan hoa."""
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang=".PDF, pdf ,docx")
+        # bo dau cham, ha chu thuong, khu trung lap, giu thu tu
+        assert s["bkt"]["dinh_dang_cho_phep"] == "pdf,docx"
+
+    async def test_tao_bkt_dinh_dang_khong_ho_tro(self, client, admin_user):
+        """Dinh dang ngoai danh muc (exe) bi tu choi ngay o tang schema."""
+        kh = await client.post("/api/v1/lms/khoa-hoc", json={
+            "ma_khoa_hoc": f"KH-TH-{uuid.uuid4().hex[:6]}",
+            "ten_khoa_hoc": "Thuc hanh exe", "loai": "BAT_BUOC",
+        })
+        kh_id = kh.json()["data"]["id"]
+        resp = await client.post(f"/api/v1/lms/khoa-hoc/{kh_id}/bai-kiem-tra", json={
+            "tieu_de": "BKT xau",
+            "loai_bai_kiem_tra": "THUC_HANH",
+            "yeu_cau_bai_lam": "Nop file",
+            "dinh_dang_cho_phep": "exe",
+        })
+        assert resp.status_code == 422, resp.text
+
+    async def test_nop_pdf_thanh_cong(self, client, admin_user, tmp_path, monkeypatch):
+        """Hoc vien nop file PDF cho BKT thuc hanh — 201 + trang thai CHO_CHAM."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="pdf")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("bao-cao.pdf", io.BytesIO(b"%PDF-1.4 bao cao"), "application/pdf")},
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()["data"]
+        assert data["bai_nop_ten_file"] == "bao-cao.pdf"
+        assert data["bai_nop_url"].endswith(".pdf")
+        assert data["trang_thai_cham"] == "CHO_CHAM"
+        assert data["lan_thu"] == 1
+
+    async def test_nop_video_khi_chi_cho_pdf(self, client, admin_user, tmp_path, monkeypatch):
+        """BKT chi nhan PDF thi file .mp4 bi tu choi."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="pdf")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("clip.mp4", io.BytesIO(b"\x00\x00\x00\x18ftypmp42"), "video/mp4")},
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"]["error"]["code"] == "LMS_ERR_006"
+
+    async def test_nop_pdf_gia_bi_tu_choi(self, client, admin_user, tmp_path, monkeypatch):
+        """File doi duoi thanh .pdf nhung khong co chu ky %PDF- bi chan."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="pdf")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("gia-mao.pdf", io.BytesIO(b"MZ\x90\x00 khong phai pdf"), "application/pdf")},
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"]["error"]["code"] == "LMS_ERR_008"
+
+    async def test_duong_dan_cu_nop_video_van_chay(self, client, admin_user, tmp_path, monkeypatch):
+        """Client cu goi /nop-video van nop duoc (giu tuong thich nguoc)."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="pdf,mp4")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-video",
+            files={"file": ("bai.pdf", io.BytesIO(b"%PDF-1.7 x"), "application/pdf")},
+        )
+        assert resp.status_code == 201, resp.text

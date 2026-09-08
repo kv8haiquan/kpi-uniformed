@@ -273,6 +273,11 @@ class BaiKiemTraService:
         cau_hoi_ids = update_data.pop("cau_hoi_ids", None)
         cau_hoi_moi = update_data.pop("cau_hoi_moi", None)
 
+        # dinh_dang_cho_phep = None (client gui chuoi rong) → giu cau hinh cu,
+        # khong de cot ve NULL roi roi vao mac dinh video.
+        if update_data.get("dinh_dang_cho_phep") is None:
+            update_data.pop("dinh_dang_cho_phep", None)
+
         for field, value in update_data.items():
             setattr(bkt, field, value)
 
@@ -995,15 +1000,20 @@ class BaiKiemTraService:
         return items
 
     # =========================================================================
-    # 11. NOP VIDEO — BKT THUC HANH
+    # 11. NOP BAI THUC HANH (PDF / TAI LIEU / VIDEO)
     # =========================================================================
-    async def nop_video(
+    async def nop_bai_thuc_hanh(
         self,
         bai_kiem_tra_id: uuid.UUID,
         file: UploadFile,
         user: TokenPayload,
     ) -> dict:
-        """Hoc vien nop video bai thuc hanh. Moi lan bam nop tao lan nop moi."""
+        """Hoc vien nop bai thuc hanh (video HOAC file PDF/tai lieu).
+
+        Dinh dang duoc chap nhan lay tu `bkt.dinh_dang_cho_phep` — giang vien
+        cau hinh khi tao BKT (vi du "pdf" cho bai tap viet, "mp4,mov" cho video).
+        Moi lan bam nop tao mot lan nop moi.
+        """
         bkt = await self._get_bkt(bai_kiem_tra_id)
         user_uuid = uuid.UUID(user.sub)
 
@@ -1072,6 +1082,22 @@ class BaiKiemTraService:
                 },
             )
 
+        # PDF: doi chieu chu ky file truoc khi luu (chong doi duoi file thanh .pdf)
+        if ext == "pdf":
+            header = await file.read(5)
+            await file.seek(0)
+            if header != b"%PDF-":
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "success": False,
+                        "error": {
+                            "code": "LMS_ERR_008",
+                            "message": "File không phải PDF hợp lệ (sai chữ ký file)",
+                        },
+                    },
+                )
+
         # Luu file
         fs = FileService()
         result = await fs.save_file(file, sub_folder="bai-thuc-hanh")
@@ -1127,6 +1153,16 @@ class BaiKiemTraService:
             "ngay_lam": kq.ngay_lam,
             "loai_bai_kiem_tra": "THUC_HANH",
         }
+
+    # Giu ten cu de khong vo client da phat hanh truoc do
+    async def nop_video(
+        self,
+        bai_kiem_tra_id: uuid.UUID,
+        file: UploadFile,
+        user: TokenPayload,
+    ) -> dict:
+        """Alias cu cua `nop_bai_thuc_hanh` (truoc day chi nhan video)."""
+        return await self.nop_bai_thuc_hanh(bai_kiem_tra_id, file, user)
 
     # =========================================================================
     # 12. CHAM TAY — BKT THUC HANH (GV / QT)

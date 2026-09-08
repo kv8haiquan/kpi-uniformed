@@ -15,6 +15,7 @@ import type { IKhoaHoc, IBaiHoc, IBaiKiemTra, ILichSuThi, IChungChi } from '@/ty
 import KhaoSatForm from '@/components/lms/KhaoSatForm';
 import KetQuaKhoaHocPanel from '@/components/lms/KetQuaKhoaHocPanel';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { moTaDinhDang } from '@/lib/bai-nop-file';
 
 const TIEN_DO_ICON: Record<string, string> = {
   CHUA_XEM: '⚪',
@@ -604,7 +605,7 @@ export default function KhoaHocDetailPage() {
                             </div>
                             <div className="text-xs text-gray-500 mt-0.5">
                               {laThucHanh
-                                ? `Nộp video · ≤ ${bkt.dung_luong_toi_da_mb ?? 500} MB · ${bkt.dinh_dang_cho_phep || 'mp4,mov,webm'}`
+                                ? `Nộp ${moTaDinhDang(bkt.dinh_dang_cho_phep).nhan} · ≤ ${bkt.dung_luong_toi_da_mb ?? 500} MB · ${bkt.dinh_dang_cho_phep || 'mp4,mov,webm'}`
                                 : `${bkt.so_cau_hoi} câu`}
                               {' • '}
                               {bkt.thoi_gian_lam_bai_phut ? `${bkt.thoi_gian_lam_bai_phut} phút` : 'Không giới hạn'}

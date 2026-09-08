@@ -8,11 +8,13 @@
  * ảnh, hoặc tài liệu Office. Mỗi loại hiển thị bằng icon và trình xem khác nhau.
  */
 
-export type LoaiFileBaiNop = 'PDF' | 'VIDEO' | 'ANH' | 'TAI_LIEU' | 'KHAC';
+export type LoaiFileBaiNop = 'PDF' | 'WORD' | 'VIDEO' | 'ANH' | 'TAI_LIEU' | 'KHAC';
 
+const EXT_WORD = ['doc', 'docx'];
 const EXT_VIDEO = ['mp4', 'mov', 'webm', 'avi'];
 const EXT_ANH = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-const EXT_TAI_LIEU = ['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'];
+// Tài liệu Office còn lại (bảng tính / trình chiếu) — Word tách riêng ở trên
+const EXT_TAI_LIEU = ['ppt', 'pptx', 'xls', 'xlsx'];
 
 /** Lấy phần mở rộng (không dấu chấm, chữ thường) từ tên file hoặc URL. */
 export function layExtension(tenFileHoacUrl?: string | null): string {
@@ -27,6 +29,7 @@ export function layExtension(tenFileHoacUrl?: string | null): string {
 export function loaiFileBaiNop(tenFileHoacUrl?: string | null): LoaiFileBaiNop {
   const ext = layExtension(tenFileHoacUrl);
   if (ext === 'pdf') return 'PDF';
+  if (EXT_WORD.includes(ext)) return 'WORD';
   if (EXT_VIDEO.includes(ext)) return 'VIDEO';
   if (EXT_ANH.includes(ext)) return 'ANH';
   if (EXT_TAI_LIEU.includes(ext)) return 'TAI_LIEU';
@@ -35,6 +38,7 @@ export function loaiFileBaiNop(tenFileHoacUrl?: string | null): LoaiFileBaiNop {
 
 const ICON: Record<LoaiFileBaiNop, string> = {
   PDF: '📕',
+  WORD: '📘',
   VIDEO: '🎬',
   ANH: '🖼️',
   TAI_LIEU: '📄',
@@ -43,11 +47,15 @@ const ICON: Record<LoaiFileBaiNop, string> = {
 
 const NHAN: Record<LoaiFileBaiNop, string> = {
   PDF: 'PDF',
+  WORD: 'Word',
   VIDEO: 'video',
   ANH: 'ảnh',
   TAI_LIEU: 'tài liệu',
   KHAC: 'file',
 };
+
+/** Các loại đều là văn bản → gộp nhãn chung "tài liệu" khi trộn lẫn. */
+const LOAI_VAN_BAN: LoaiFileBaiNop[] = ['PDF', 'WORD', 'TAI_LIEU'];
 
 /** Icon emoji tương ứng loại file. */
 export function iconBaiNop(tenFileHoacUrl?: string | null): string {
@@ -70,10 +78,13 @@ export function moTaDinhDang(csv?: string | null): { icon: string; nhan: string 
     .filter(Boolean);
   if (exts.length === 0) return { icon: '📎', nhan: 'file' };
 
-  const loai = new Set(exts.map((e) => loaiFileBaiNop(`x.${e}`)));
-  if (loai.size === 1) {
-    const only = [...loai][0];
-    return { icon: ICON[only], nhan: NHAN[only] };
+  const loai = [...new Set(exts.map((e) => loaiFileBaiNop(`x.${e}`)))];
+  if (loai.length === 1) {
+    return { icon: ICON[loai[0]], nhan: NHAN[loai[0]] };
+  }
+  // PDF + Word (+ Office khác) → gọi chung là "tài liệu" thay vì "file"
+  if (loai.every((l) => LOAI_VAN_BAN.includes(l))) {
+    return { icon: '📄', nhan: 'tài liệu' };
   }
   return { icon: '📎', nhan: 'file bài làm' };
 }

@@ -28,6 +28,20 @@ from shared.auth import TokenPayload
 from lms_service.core.timezone import now_vn
 
 
+# Chu ky (magic bytes) dau file theo phan mo rong — dung de chan doi duoi file.
+# .doc chap nhan ca OLE2 lan RTF vi Word van luu RTF duoi duoi .doc.
+# File dinh dang Office 2007+ (docx/xlsx/pptx) thuc chat la ZIP nen bat dau "PK".
+CHU_KY_FILE: dict[str, dict] = {
+    "pdf":  {"ten": "PDF",             "prefix": (b"%PDF-",)},
+    "doc":  {"ten": "Word (.doc)",     "prefix": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", b"{\\rtf")},
+    "docx": {"ten": "Word (.docx)",    "prefix": (b"PK",)},
+    "xls":  {"ten": "Excel (.xls)",    "prefix": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",)},
+    "xlsx": {"ten": "Excel (.xlsx)",   "prefix": (b"PK",)},
+    "ppt":  {"ten": "PowerPoint (.ppt)",  "prefix": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",)},
+    "pptx": {"ten": "PowerPoint (.pptx)", "prefix": (b"PK",)},
+}
+
+
 class BaiKiemTraService:
     """Service xu ly bai kiem tra va luong thi."""
 
@@ -1082,21 +1096,8 @@ class BaiKiemTraService:
                 },
             )
 
-        # PDF: doi chieu chu ky file truoc khi luu (chong doi duoi file thanh .pdf)
-        if ext == "pdf":
-            header = await file.read(5)
-            await file.seek(0)
-            if header != b"%PDF-":
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "success": False,
-                        "error": {
-                            "code": "LMS_ERR_008",
-                            "message": "File không phải PDF hợp lệ (sai chữ ký file)",
-                        },
-                    },
-                )
+        # Doi chieu chu ky file truoc khi luu (chong doi duoi file)
+        await self._kiem_tra_chu_ky(file, ext)
 
         # Luu file
         fs = FileService()
@@ -1153,6 +1154,35 @@ class BaiKiemTraService:
             "ngay_lam": kq.ngay_lam,
             "loai_bai_kiem_tra": "THUC_HANH",
         }
+
+    @staticmethod
+    async def _kiem_tra_chu_ky(file: UploadFile, ext: str) -> None:
+        """Doi chieu chu ky (magic bytes) o dau file voi phan mo rong.
+
+        Chan truong hop doi duoi file — vi du .exe doi thanh .docx — TRUOC khi
+        ghi xuong dia. Dinh dang khong co trong bang thi bo qua (video/anh da
+        duoc trinh duyet va FileService chan o vong khac).
+        """
+        chu_ky = CHU_KY_FILE.get(ext)
+        if not chu_ky:
+            return
+
+        can_doc = max(len(k) for k in chu_ky["prefix"])
+        header = await file.read(can_doc)
+        await file.seek(0)
+
+        if not any(header.startswith(k) for k in chu_ky["prefix"]):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "success": False,
+                    "error": {
+                        "code": "LMS_ERR_008",
+                        "message": f"File không phải {chu_ky['ten']} hợp lệ "
+                                   f"(sai chữ ký file — có thể do đổi đuôi tên file)",
+                    },
+                },
+            )
 
     # Giu ten cu de khong vo client da phat hanh truoc do
     async def nop_video(

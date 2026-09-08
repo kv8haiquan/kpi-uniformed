@@ -269,8 +269,12 @@ class TestLuongThi:
 
 
 # =========================================================================
-# BKT THUC HANH — NOP FILE PDF
+# BKT THUC HANH — NOP FILE PDF / WORD
 # =========================================================================
+
+# Chu ky dau file dung cho test — trung voi bang CHU_KY_FILE cua service
+_OLE2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"   # .doc, .xls, .ppt (Office 97-2003)
+_ZIP = b"PK\x03\x04"                              # .docx, .xlsx, .pptx (Office 2007+)
 
 async def _setup_bkt_thuc_hanh(client, dinh_dang: str = "pdf") -> dict:
     """Tao khoa hoc da xuat ban + 1 BKT thuc hanh nhan dinh dang truyen vao."""
@@ -296,8 +300,8 @@ async def _setup_bkt_thuc_hanh(client, dinh_dang: str = "pdf") -> dict:
     return {"kh_id": kh_id, "bkt_id": bkt.json()["data"]["id"], "bkt": bkt.json()["data"]}
 
 
-class TestNopPdfThucHanh:
-    """Bai tap thuc hanh nhan file PDF (khong chi video)."""
+class TestNopFileThucHanh:
+    """Bai tap thuc hanh nhan file PDF / Word (khong chi video)."""
 
     async def test_tao_bkt_dinh_dang_pdf(self, client, admin_user):
         """dinh_dang_cho_phep = 'pdf' duoc chap nhan va chuan hoa."""
@@ -374,3 +378,79 @@ class TestNopPdfThucHanh:
             files={"file": ("bai.pdf", io.BytesIO(b"%PDF-1.7 x"), "application/pdf")},
         )
         assert resp.status_code == 201, resp.text
+
+    async def test_nop_docx_thanh_cong(self, client, admin_user, tmp_path, monkeypatch):
+        """Hoc vien nop file Word .docx (dinh dang ZIP) — 201."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="doc,docx")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("bao-cao.docx", io.BytesIO(_ZIP + b" noi dung word"),
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()["data"]
+        assert data["bai_nop_ten_file"] == "bao-cao.docx"
+        assert data["trang_thai_cham"] == "CHO_CHAM"
+
+    async def test_nop_doc_ole2_thanh_cong(self, client, admin_user, tmp_path, monkeypatch):
+        """File .doc Word 97-2003 (chu ky OLE2) duoc chap nhan."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="doc,docx")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("bai-cu.doc", io.BytesIO(_OLE2 + b" noi dung"), "application/msword")},
+        )
+        assert resp.status_code == 201, resp.text
+
+    async def test_nop_doc_dang_rtf_thanh_cong(self, client, admin_user, tmp_path, monkeypatch):
+        """Word van luu RTF duoi duoi .doc — khong duoc chan nham."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="doc")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("bai-rtf.doc", io.BytesIO(rb"{\rtf1\ansi noi dung"), "application/msword")},
+        )
+        assert resp.status_code == 201, resp.text
+
+    async def test_nop_docx_gia_bi_tu_choi(self, client, admin_user, tmp_path, monkeypatch):
+        """File doi duoi thanh .docx nhung khong phai ZIP bi chan."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="docx")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("gia-mao.docx", io.BytesIO(b"MZ\x90\x00 khong phai word"),
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"]["error"]["code"] == "LMS_ERR_008"
+
+    async def test_bkt_nhan_ca_pdf_va_word(self, client, admin_user, tmp_path, monkeypatch):
+        """Mot BKT cau hinh 'pdf,doc,docx' nhan ca hai loai file."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="pdf,doc,docx")
+        assert s["bkt"]["dinh_dang_cho_phep"] == "pdf,doc,docx"
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        r1 = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("lan1.pdf", io.BytesIO(b"%PDF-1.4 x"), "application/pdf")},
+        )
+        assert r1.status_code == 201, r1.text
+        assert r1.json()["data"]["lan_thu"] == 1
+
+        r2 = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("lan2.docx", io.BytesIO(_ZIP + b" x"),
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        )
+        assert r2.status_code == 201, r2.text
+        assert r2.json()["data"]["lan_thu"] == 2

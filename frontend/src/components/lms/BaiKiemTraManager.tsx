@@ -649,7 +649,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
             <div className="flex gap-2">
               {[
                 { v: 'TRAC_NGHIEM', label: '📝 Trắc nghiệm', hint: 'Câu hỏi tự động chấm' },
-                { v: 'THUC_HANH',   label: '📎 Thực hành',   hint: 'Học viên nộp file PDF / tài liệu / video' },
+                { v: 'THUC_HANH',   label: '📎 Thực hành',   hint: 'Học viên nộp file PDF / Word / video' },
               ].map((opt) => (
                 <button
                   key={opt.v}
@@ -685,7 +685,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                   rows={4}
                   value={base.yeu_cau_bai_lam}
                   onChange={(e) => setBase({ ...base, yeu_cau_bai_lam: e.target.value })}
-                  placeholder="Mô tả chi tiết nội dung học viên cần làm và nộp (file PDF, tài liệu hoặc video)..."
+                  placeholder="Mô tả chi tiết nội dung học viên cần làm và nộp (file PDF, Word hoặc video)..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y bg-white"
                 />
               </div>
@@ -700,15 +700,17 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                     onChange={(e) => setBase({ ...base, dung_luong_toi_da_mb: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                   />
-                  <p className="text-xs text-gray-400 mt-0.5">PDF thường &lt; 20 MB · video 720p ~500 MB</p>
+                  <p className="text-xs text-gray-400 mt-0.5">PDF/Word thường &lt; 20 MB · video 720p ~500 MB</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Định dạng cho phép</label>
-                  <div className="flex gap-1 mb-1.5">
+                  <div className="flex flex-wrap gap-1 mb-1.5">
                     {[
-                      { label: '📕 PDF',    val: 'pdf' },
-                      { label: '🎬 Video',  val: 'mp4,mov,webm' },
-                      { label: '📎 Cả hai', val: 'pdf,mp4,mov,webm' },
+                      { label: '📕 PDF',      val: 'pdf' },
+                      { label: '📘 Word',     val: 'doc,docx' },
+                      { label: '📄 PDF+Word', val: 'pdf,doc,docx' },
+                      { label: '🎬 Video',    val: 'mp4,mov,webm' },
+                      { label: '📎 Tất cả',   val: 'pdf,doc,docx,mp4,mov,webm' },
                     ].map((preset) => (
                       <button
                         key={preset.val}
@@ -726,7 +728,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                     type="text"
                     value={base.dinh_dang_cho_phep}
                     onChange={(e) => setBase({ ...base, dinh_dang_cho_phep: e.target.value })}
-                    placeholder="pdf,mp4,mov,webm"
+                    placeholder="pdf,doc,docx"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                   />
                   <p className="text-xs text-gray-400 mt-0.5">

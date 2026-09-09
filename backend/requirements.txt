@@ -11,6 +11,9 @@ greenlet==3.1.1
 pandas==2.2.3
 openpyxl==3.1.5
 reportlab==4.4.10
+# Pillow von la phu thuoc gian tiep cua reportlab, nhung chung_chi_pdf.py
+# dung truc tiep de lam mo an chim → khai bao thang cho khoi phu thuoc may rui.
+Pillow==12.3.0
 xlrd==2.0.1
 pydantic==2.10.4
 pydantic-settings==2.7.0

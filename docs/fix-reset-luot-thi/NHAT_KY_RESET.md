@@ -53,6 +53,22 @@ tổng thí sinh của kỳ vẫn 402). Toàn bộ điều kiện PASS mới COM
 - `vi_pham_thi` của kỳ tháng 8: 39 → 36 (đúng 3 dòng của thí sinh này).
 - Điều kiện thi lại: `lan_thi_hien_tai = 0 < so_lan_thi_toi_da = 2`, kỳ `DANG_MO` đến 15/09/2026 17:17 → thí sinh vào thi được ngay, tính là **lượt 1**.
 
+### Đã ghi ngược vào nhật ký trong hệ thống (10/09/2026, sau khi công cụ lên prod)
+
+Công cụ reset lên prod cùng ngày (commit `13647f8`), nên ca này đã được chèn 1 dòng
+vào `lms.lich_su_reset_thi` để nhật ký trên giao diện không bỏ trống ca gần nhất:
+
+- `nguoi_reset_id` = `a0000000-0000-0000-0000-000000000002` (**ADMIN-001 — Quản trị viên**)
+- `loai_reset` = `XOA_SACH`, `trang_thai_truoc` = `DA_NOP`, `lan_thi_truoc` = 2, `diem_truoc` = 74.00
+- `thoi_gian` = 10/09/2026 14:17:55 (đúng lúc chạy SQL, không phải lúc chèn)
+- `du_lieu_truoc` dựng từ file snapshot, đúng hình dạng công cụ tự sinh (24 cột `thi_sinh`
+  + `_vi_pham`), kèm khoá `_ghi_chu_backfill` nói rõ đây là dòng ghi ngược
+- `ly_do` ghi thẳng rằng thao tác gốc làm bằng SQL trước khi có công cụ
+
+Đối chiếu sau khi chèn: nhật ký kỳ ĐGNL-THANG 8 - TA có đúng 1 dòng, join ra
+"20ZZ-0005 · Võ Hồng Chung — ADMIN-001 · Quản trị viên", `du_lieu_truoc` giữ đủ
+2 lượt thi và 3 vi phạm.
+
 ### Đường lùi
 
 Khôi phục từ `snapshot_20ZZ-0005_20260910.json`: `UPDATE lms.thi_sinh … FROM jsonb_populate_record`

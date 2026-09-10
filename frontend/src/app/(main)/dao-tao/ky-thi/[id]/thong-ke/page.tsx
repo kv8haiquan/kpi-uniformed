@@ -14,6 +14,10 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import ViPhamDetailModal from '@/components/lms/ViPhamDetailModal';
 import ResetLuotThiModal from '@/components/lms/ResetLuotThiModal';
 import LichSuResetModal from '@/components/lms/LichSuResetModal';
+import {
+  BO_LOC_RONG, coDangLoc, danhSachDonVi, danhSachViTri, locThiSinh, moTaLoc, slug,
+  type BoLocThiSinh,
+} from '@/lib/loc-thi-sinh';
 import type { IKyThi, IDgnlThongKe, IThiSinh, ILichSuThiSummary } from '@/types/lms';
 
 /** Chỉ admin (QT_DAO_TAO/SUPER_ADMIN) được quản lý/xem module ĐGNL. */
@@ -75,6 +79,24 @@ export default function ThongKeKyThiPage() {
   const [showLichSuReset, setShowLichSuReset] = useState(false);
   // Tăng lên để nạp lại bảng sau khi reset (không tách hàm load ra khỏi effect)
   const [reloadKey, setReloadKey] = useState(0);
+  // Bộ lọc danh sách thí sinh (lọc tại trình duyệt — trang đã tải sẵn toàn bộ)
+  const [boLoc, setBoLoc] = useState<BoLocThiSinh>(BO_LOC_RONG);
+  const [xuatLoc, setXuatLoc] = useState(false);
+
+  // Danh sách sau lọc — mọi chỗ render bảng đều dùng cái này
+  const dsLoc = useMemo(
+    () => locThiSinh(thiSinh, boLoc, kyThi?.so_lan_thi_toi_da ?? 0),
+    [thiSinh, boLoc, kyThi?.so_lan_thi_toi_da],
+  );
+  const dsDonVi = useMemo(() => danhSachDonVi(thiSinh), [thiSinh]);
+  const dsViTri = useMemo(() => danhSachViTri(thiSinh), [thiSinh]);
+  const dangLoc = coDangLoc(boLoc);
+
+  /** Đặt nhanh một bộ lọc từ thẻ thống kê rồi cuộn xuống bảng. */
+  const locNhanh = (patch: Partial<BoLocThiSinh>) => {
+    setBoLoc({ ...BO_LOC_RONG, ...patch });
+    document.getElementById('ds-thi-sinh')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // So lan thi toi da trong ky -> dung de render options dropdown
   const maxLan = useMemo(() => {
@@ -129,6 +151,53 @@ export default function ThongKeKyThiPage() {
       alert('Lỗi khi export file');
     } finally {
       setExporting(false);
+    }
+  };
+
+  /**
+   * Xuất Excel ĐÚNG danh sách đang lọc — dựng ngay tại trình duyệt.
+   * Khác nút "Xuất Excel" ở trên: nút kia gọi server và luôn ra toàn bộ thí sinh,
+   * server không biết người dùng đang lọc gì.
+   */
+  const handleXuatLoc = async () => {
+    if (dsLoc.length === 0) return;
+    setXuatLoc(true);
+    try {
+      const XLSX = await import('xlsx');
+      const nhanTrangThai: Record<string, string> = {
+        CHUA_THI: 'Chưa thi',
+        DANG_THI: 'Đang thi',
+        DA_NOP: 'Đã nộp',
+        VANG: 'Vắng',
+      };
+      const rows = dsLoc.map((ts, i) => ({
+        'STT': i + 1,
+        'Mã CC': ts.ma_cc || '',
+        'Họ tên': ts.ho_ten || '',
+        'Đơn vị': ts.don_vi_ten || '',
+        'Vị trí': ts.vi_tri_ten || '',
+        'Trạng thái': nhanTrangThai[ts.trang_thai] || ts.trang_thai,
+        'Số lần thi': ts.lan_thi_hien_tai || 0,
+        'Điểm': ts.diem_tong ?? '',
+        'Xếp loại': ts.xep_loai === 'DAT' ? 'Đạt' : ts.xep_loai === 'KHONG_DAT' ? 'Không đạt' : '',
+        'Số vi phạm': ts.so_lan_vi_pham ?? 0,
+        'Thời gian nộp': ts.thoi_gian_nop ? new Date(ts.thoi_gian_nop).toLocaleString('vi-VN') : '',
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 12 }, { wch: 26 }, { wch: 28 }, { wch: 22 },
+        { wch: 11 }, { wch: 10 }, { wch: 8 }, { wch: 11 }, { wch: 10 }, { wch: 20 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Thí sinh');
+
+      const ngay = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `thi-sinh_${slug(kyThi?.ma_ky_thi || kyThiId)}_${moTaLoc(boLoc)}_${ngay}.xlsx`);
+    } catch {
+      alert('Lỗi khi xuất danh sách đang lọc');
+    } finally {
+      setXuatLoc(false);
     }
   };
 
@@ -193,11 +262,32 @@ export default function ThongKeKyThiPage() {
       {/* Stat cards */}
       {tq && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
-          <StatCard label="Tổng thí sinh" value={tq.tong_thi_sinh} color="blue" />
-          <StatCard label="Đã thi" value={tq.da_thi} color="green" />
-          <StatCard label="Chưa thi" value={tq.chua_thi} color="gray" />
-          <StatCard label="Đạt" value={tq.dat} color="green" />
-          <StatCard label="Không đạt" value={tq.khong_dat} color="red" />
+          {/* Bốn thẻ giữa bấm được: đặt luôn bộ lọc rồi cuộn xuống bảng —
+              nhìn thấy "Chưa thi: 2" thì bấm vào là ra tên hai người. */}
+          <StatCard
+            label="Tổng thí sinh" value={tq.tong_thi_sinh} color="blue"
+            onClick={() => locNhanh({})} active={!dangLoc}
+          />
+          <StatCard
+            label="Đã thi" value={tq.da_thi} color="green"
+            onClick={() => locNhanh({ trangThai: 'DA_NOP' })}
+            active={boLoc.trangThai === 'DA_NOP' && boLoc.xepLoai === 'all'}
+          />
+          <StatCard
+            label="Chưa thi" value={tq.chua_thi} color="gray"
+            onClick={() => locNhanh({ trangThai: 'CHUA_THI' })}
+            active={boLoc.trangThai === 'CHUA_THI'}
+          />
+          <StatCard
+            label="Đạt" value={tq.dat} color="green"
+            onClick={() => locNhanh({ xepLoai: 'DAT' })}
+            active={boLoc.xepLoai === 'DAT'}
+          />
+          <StatCard
+            label="Không đạt" value={tq.khong_dat} color="red"
+            onClick={() => locNhanh({ xepLoai: 'KHONG_DAT' })}
+            active={boLoc.xepLoai === 'KHONG_DAT'}
+          />
           <StatCard label="Tỷ lệ đạt" value={`${tq.ti_le_dat}%`} color="purple" />
         </div>
       )}
@@ -283,9 +373,11 @@ export default function ThongKeKyThiPage() {
       )}
 
       {/* Danh sach thi sinh */}
-      <div className="bg-white rounded-xl border p-4">
+      <div id="ds-thi-sinh" className="bg-white rounded-xl border p-4 scroll-mt-4">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <h3 className="font-semibold text-gray-700">Danh sách thí sinh ({thiSinh.length})</h3>
+          <h3 className="font-semibold text-gray-700">
+            Danh sách thí sinh ({dangLoc ? `${dsLoc.length}/${thiSinh.length}` : thiSinh.length})
+          </h3>
           {maxLan > 1 && (
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <span>Xem điểm theo:</span>
@@ -308,6 +400,103 @@ export default function ThongKeKyThiPage() {
             &ldquo;—&rdquo;. (Các thẻ thống kê phía trên vẫn tính theo lần mới nhất.)
           </div>
         )}
+
+        {/* Thanh lọc — lọc ngay tại trình duyệt, không gọi thêm API */}
+        <div className="mb-3 border border-gray-200 rounded-lg p-3 bg-gray-50/60">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              value={boLoc.tuKhoa}
+              onChange={(e) => setBoLoc({ ...boLoc, tuKhoa: e.target.value })}
+              placeholder="🔍 Tìm mã CC / họ tên…"
+              className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <select
+              value={boLoc.trangThai}
+              onChange={(e) => setBoLoc({ ...boLoc, trangThai: e.target.value as BoLocThiSinh['trangThai'] })}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">Trạng thái: tất cả</option>
+              <option value="CHUA_THI">Chưa thi</option>
+              <option value="DANG_THI">Đang thi</option>
+              <option value="DA_NOP">Đã nộp</option>
+              <option value="VANG">Vắng</option>
+            </select>
+            <select
+              value={boLoc.donVi}
+              onChange={(e) => setBoLoc({ ...boLoc, donVi: e.target.value })}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white max-w-[220px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Đơn vị: tất cả</option>
+              {dsDonVi.map((dv) => <option key={dv} value={dv}>{dv}</option>)}
+            </select>
+            <select
+              value={boLoc.viTri}
+              onChange={(e) => setBoLoc({ ...boLoc, viTri: e.target.value })}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white max-w-[220px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Vị trí: tất cả</option>
+              {dsViTri.map((vt) => <option key={vt} value={vt}>{vt}</option>)}
+            </select>
+            <select
+              value={boLoc.luot}
+              onChange={(e) => setBoLoc({ ...boLoc, luot: e.target.value as BoLocThiSinh['luot'] })}
+              title={`Kỳ này tối đa ${kyThi?.so_lan_thi_toi_da ?? '—'} lượt`}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">Lượt thi: tất cả</option>
+              <option value="con">Còn lượt</option>
+              <option value="het">Hết lượt</option>
+            </select>
+            <select
+              value={boLoc.xepLoai}
+              onChange={(e) => setBoLoc({ ...boLoc, xepLoai: e.target.value as BoLocThiSinh['xepLoai'] })}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="all">Xếp loại: tất cả</option>
+              <option value="DAT">Đạt</option>
+              <option value="KHONG_DAT">Không đạt</option>
+            </select>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={boLoc.chiViPham}
+                onChange={(e) => setBoLoc({ ...boLoc, chiViPham: e.target.checked })}
+                className="rounded border-gray-300"
+              />
+              Chỉ người có vi phạm
+            </label>
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-gray-500">
+                Đang hiện <strong className="text-gray-700">{dsLoc.length}</strong>/{thiSinh.length}
+              </span>
+              {dsLoc.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleXuatLoc}
+                  disabled={xuatLoc}
+                  className="px-3 py-1 border border-green-300 text-green-700 bg-white rounded-lg hover:bg-green-50 disabled:opacity-50"
+                  title="Xuất Excel đúng danh sách đang lọc (dựng tại trình duyệt)"
+                >
+                  {xuatLoc ? 'Đang xuất…' : '⬇️ Xuất DS đang lọc'}
+                </button>
+              )}
+              {dangLoc && (
+                <button
+                  type="button"
+                  onClick={() => setBoLoc(BO_LOC_RONG)}
+                  className="px-3 py-1 border border-gray-300 rounded-lg hover:bg-white"
+                >
+                  Xoá lọc
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -329,7 +518,7 @@ export default function ThongKeKyThiPage() {
               </tr>
             </thead>
             <tbody>
-              {thiSinh.map((ts, idx) => {
+              {dsLoc.map((ts, idx) => {
                 const lichSu = ts.lich_su_thi || [];
                 const soLan = ts.trang_thai === 'DA_NOP'
                   ? Math.max(ts.lan_thi_hien_tai || 0, lichSu.length)
@@ -353,6 +542,20 @@ export default function ThongKeKyThiPage() {
                   />
                 );
               })}
+              {dsLoc.length === 0 && (
+                <tr>
+                  <td colSpan={12} className="py-10 text-center text-gray-500">
+                    <div className="mb-2">Không có thí sinh nào khớp bộ lọc.</div>
+                    <button
+                      type="button"
+                      onClick={() => setBoLoc(BO_LOC_RONG)}
+                      className="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      Xoá lọc
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -637,7 +840,19 @@ function LichSuLanThiPanel({
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number | string; color: string }) {
+/**
+ * Thẻ số liệu. Có `onClick` thì thành nút lọc nhanh (viền đậm khi đang được chọn);
+ * không có thì vẫn là thẻ tĩnh như trước.
+ */
+function StatCard({
+  label, value, color, onClick, active,
+}: {
+  label: string;
+  value: number | string;
+  color: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
   const colorMap: Record<string, string> = {
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
     green: 'bg-green-50 text-green-700 border-green-200',
@@ -645,11 +860,29 @@ function StatCard({ label, value, color }: { label: string; value: number | stri
     gray: 'bg-gray-50 text-gray-700 border-gray-200',
     purple: 'bg-purple-50 text-purple-700 border-purple-200',
   };
-  return (
-    <div className={`${colorMap[color] || colorMap.blue} rounded-xl border p-3 text-center`}>
+  const nen = colorMap[color] || colorMap.blue;
+  const body = (
+    <>
       <div className="text-xl font-bold">{value}</div>
       <div className="text-xs opacity-80">{label}</div>
-    </div>
+    </>
+  );
+
+  if (!onClick) {
+    return <div className={`${nen} rounded-xl border p-3 text-center`}>{body}</div>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={!!active}
+      title={`Lọc danh sách: ${label}`}
+      className={`${nen} rounded-xl border p-3 text-center transition hover:brightness-95 ${
+        active ? 'ring-2 ring-offset-1 ring-current' : ''
+      }`}
+    >
+      {body}
+    </button>
   );
 }
 

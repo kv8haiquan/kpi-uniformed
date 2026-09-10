@@ -7,11 +7,49 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `13647f8` |
-| **Ngắn** | `13647f8` |
-| **Nhánh nguồn** | `feature/lms-reset-luot-thi` (rebase lên `prod`, gốc là `6c7270d` ngày 31/08) |
-| **Ngày ghi mốc** | 10/09/2026 14:30 |
-| **Alembic** | `lms_reset_luot_thi_20260831` — **CÓ migration mới** (thêm bảng `lms.lich_su_reset_thi`) |
+| **Commit** | `2bd8508` |
+| **Ngắn** | `2bd8508` |
+| **Nhánh nguồn** | `upload-pdf-dao-tao` (rebase lên `prod` trước khi phát hành) |
+| **Ngày ghi mốc** | 10/09/2026 15:47 |
+| **Alembic** | `lms_reset_luot_thi_20260831` — **KHÔNG migration mới** |
+
+Nội dung: **ba việc trong một lần phát hành.**
+
+**1. ĐGNL — bộ lọc danh sách thí sinh trên trang thống kê kỳ thi.** Trang trước đây đổ
+thẳng cả 402 thí sinh ra một bảng, không tìm không lọc được gì; thẻ "Chưa thi" cho con số
+nhưng không cho biết LÀ AI, nên muốn nhắc đơn vị còn người chưa thi thì phải xuất Excel rồi
+lọc ngoài. Nay có thanh lọc ngay trên bảng: tìm theo mã CC/họ tên (bỏ dấu — gõ `chung` ra
+"Võ Hồng Chung"), trạng thái, đơn vị, vị trí việc làm, còn lượt/hết lượt, xếp loại, chỉ
+người có vi phạm. Bốn thẻ số liệu đầu trang thành nút lọc nhanh. Thêm nút xuất Excel đúng
+danh sách đang lọc, dựng tại trình duyệt (nút cũ gọi server nên luôn ra toàn bộ — server
+không biết người dùng đang lọc gì), tên file mang theo mô tả bộ lọc để gửi thẳng cho đơn vị.
+
+Toàn bộ lọc chạy ở client vì trang vốn đã tải sẵn 100% thí sinh qua `danhSachThiSinhTatCa`
+và endpoint list trả đủ mọi cột của `lms.thi_sinh` — **không sửa một dòng backend nào**.
+Logic tách ra `frontend/src/lib/loc-thi-sinh.ts` để test được: 24 test vitest.
+
+Ba quy ước đã chốt: "Chưa thi" gồm cả người vừa được RESET (đúng nghĩa chưa có kết quả);
+"Hết lượt" so `lan_thi_hien_tai` với `so_lan_thi_toi_da`, kỳ chưa rõ cấu hình thì không ai
+bị coi là hết lượt (thà hiện thừa còn hơn giấu mất người cần xử lý); lọc xếp loại chỉ xét
+người ĐÃ NỘP nên "Không đạt" không dính người chưa thi.
+
+**2. LMS — xem nội dung bài nộp Word ngay trong màn chấm bài** (`af5ec71`). Gỡ món nợ ghi ở
+mốc `d15b850`: `.docx` dựng bằng `docx-preview` ngay tại TRÌNH DUYỆT người chấm, không
+chuyển sang PDF bằng LibreOffice ở máy chủ — `FileService.convert_to_pdf` gọi
+`subprocess.run` đồng bộ, chẹn event loop tới 60s mỗi file, không an toàn khi nhiều học
+viên nộp cùng lúc. File `.doc` nhị phân cũ vẫn chỉ có nút tải về.
+
+**3. LMS — chứng chỉ hoàn thành theo mẫu giấy của Chi cục** (`51dd8c9`). Dựng lại
+`chung_chi_pdf.py` theo mẫu giấy thật, có logo làm ảnh chìm. Khai báo thẳng `Pillow==12.3.0`
+trong `requirements.txt`: vốn là phụ thuộc gián tiếp của reportlab nhưng nay dùng trực tiếp
+để làm mờ ảnh chìm, để tránh phụ thuộc may rủi.
+
+Kiểm chứng trước khi phát hành: **265/265 test LMS PASS** trên `kpi_haiquan_test`,
+24 test vitest mới cho lib lọc PASS, `tsc --noEmit` sạch, eslint không thêm lỗi mới, route
+thống kê compile và trả 200. Đối chiếu dữ liệu thật kỳ ĐGNL-THANG 8 - TA: chưa thi 2 ·
+hết lượt 17 · có vi phạm 32 · không đạt 0. Không migration, không đụng dữ liệu đang chạy.
+
+### Mốc trước — `13647f8`
 
 Nội dung: **ĐGNL — công cụ reset lượt thi cho quản trị đào tạo, có nhật ký.**
 
@@ -53,6 +91,8 @@ nào sẵn có.
 >
 > Hai commit `c358641` (xem bài nộp Word khi chấm) và `914125d` (thiết kế lại
 > chứng chỉ) trên nhánh `upload-pdf-dao-tao` **chưa** lên prod, đợt này không kéo theo.
+> — Cập nhật: hai commit đó đã lên prod ngay sau đó ở mốc `2bd8508` cùng ngày,
+> dưới SHA mới `af5ec71` / `51dd8c9` (nhánh được rebase lên `prod` lần nữa).
 
 ### Mốc trước — `d15b850`
 
@@ -186,6 +226,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 08/09/2026 | `d15b850` | LMS: bài tập thực hành nhận file PDF/Word (endpoint `nop-bai-thuc-hanh`, `/nop-video` thành bí danh; đối chiếu chữ ký file chống đổi đuôi; giao diện chọn định dạng + xem theo loại file). Kèm `85cbedf` (script `mo_lai_tieu_chi_chung.py`, trơ lúc chạy) và `a828e89` (tài liệu) — **không migration** |
 | 10/09/2026 | *(không phát hành code)* | **Sửa DỮ LIỆU**: reset lượt thi ĐGNL cho `20ZZ-0005` kỳ ĐGNL-THANG 8 - TA bằng SQL (xoá 2 lượt 6đ + 74đ, về `CHUA_THI`; xoá 3 vi phạm + 1 phiên thi). Snapshot và nhật ký ở `docs/fix-reset-luot-thi/` |
 | 10/09/2026 | `13647f8` | ĐGNL: công cụ reset lượt thi cho quản trị đào tạo — 2 endpoint chỉ-admin, nút Reset + Nhật ký trên trang thống kê kỳ thi, migration `lms_reset_luot_thi_20260831` thêm bảng `lms.lich_su_reset_thi`. Rebase `6c7270d` lên `prod` trước khi phát hành (SHA gốc đã tụt sau prod 9 commit) |
+| 10/09/2026 | `2bd8508` | ĐGNL: bộ lọc danh sách thí sinh trên trang thống kê (chưa thi/đơn vị/vị trí/còn lượt/xếp loại/vi phạm + tìm bỏ dấu + xuất Excel theo bộ lọc, lọc tại client nên KHÔNG đụng backend). Kèm `af5ec71` (xem bài nộp Word khi chấm bằng docx-preview) và `51dd8c9` (chứng chỉ theo mẫu giấy Chi cục, thêm Pillow) — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

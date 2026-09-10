@@ -1,0 +1,1519 @@
+{
+  "vi_pham": [
+    {
+      "id": "834febad-e0e9-4cd4-99ec-5a5c5f55785d",
+      "ly_do": null,
+      "lan_thi": 1,
+      "ky_thi_id": "a6aa0796-8eab-452a-9bb7-309c0663cf0d",
+      "thoi_gian": "2026-08-26T15:15:15.781583+07:00",
+      "created_at": "2026-08-26T15:15:15.773704+07:00",
+      "thi_sinh_id": "6509b063-404c-4001-892d-9b686c256b85",
+      "loai_vi_pham": "SWITCH_TAB"
+    },
+    {
+      "id": "42c03243-c8cb-44c3-97e4-76cb1eba2654",
+      "ly_do": null,
+      "lan_thi": 1,
+      "ky_thi_id": "a6aa0796-8eab-452a-9bb7-309c0663cf0d",
+      "thoi_gian": "2026-08-26T15:22:04.307989+07:00",
+      "created_at": "2026-08-26T15:22:02.143037+07:00",
+      "thi_sinh_id": "6509b063-404c-4001-892d-9b686c256b85",
+      "loai_vi_pham": "SWITCH_TAB"
+    },
+    {
+      "id": "4079bd88-0cd5-476a-bb71-ccab0197f28b",
+      "ly_do": null,
+      "lan_thi": 1,
+      "ky_thi_id": "a6aa0796-8eab-452a-9bb7-309c0663cf0d",
+      "thoi_gian": "2026-08-26T15:22:39.793061+07:00",
+      "created_at": "2026-08-26T15:22:39.786773+07:00",
+      "thi_sinh_id": "6509b063-404c-4001-892d-9b686c256b85",
+      "loai_vi_pham": "SWITCH_TAB"
+    }
+  ],
+  "chup_luc": "2026-09-10T14:17:06.766718+07:00",
+  "thi_sinh": {
+    "id": "6509b063-404c-4001-892d-9b686c256b85",
+    "xep_loai": "DAT",
+    "diem_tong": 74.0,
+    "ky_thi_id": "a6aa0796-8eab-452a-9bb7-309c0663cf0d",
+    "vi_tri_id": "dc56c203-68eb-4ed7-8c97-722b4e8e8051",
+    "created_at": "2026-08-25T10:48:02.019768+07:00",
+    "de_thi_ids": [
+      "e3f1603a-8e1f-4d31-913b-fb7c2ec28be7",
+      "dcb025dd-fb51-434a-bc44-cda816400710",
+      "2ee4730e-aa4a-4f00-a8b1-b3531a78e6df",
+      "acd9fdcc-19ea-4318-8c0d-1e79cb1416d5",
+      "ab5f58fa-31a5-4fda-bda8-beb446be702e",
+      "24bf484e-7ac4-4b81-98e3-2b9cd994cb0b",
+      "b1984cc1-fa56-4d18-adc8-0cf99f1049c0",
+      "b8a91bed-64f4-4ff2-b613-3d8f23b926eb",
+      "c2f5e850-3242-4919-b8af-4dce0e88c189",
+      "96720306-97ab-4f69-a119-f1a52b497314",
+      "bcbf9a90-aaa6-4ef2-9b38-2de8141d8e07",
+      "b5d59569-07ad-4144-9ceb-7b63acb52f8c",
+      "aa19ff2b-2493-4680-b475-37520cfa11e7",
+      "1712e209-3e52-429d-a9aa-087237342f55",
+      "25d2c927-ddbf-4dac-a6d8-64cff0e589e4",
+      "4cfaff6d-770a-477f-86f2-ae074af562dc",
+      "181003f2-786e-43b9-b547-091f5dff8801",
+      "f32833ce-5f8a-40de-95ff-19c04799a5fc",
+      "452350a8-8ef3-40f5-8e97-922fca6590b0",
+      "9d5bb08d-de4a-4f65-895e-a9f51243a310",
+      "47918161-11d8-4dce-b649-0cb5717ed830",
+      "e3c44900-7cf2-4bb0-b4f6-e131b74bd729",
+      "0fdc8d42-eef5-4425-b719-c57659388113",
+      "59e30195-d7cf-47e7-b2dc-1bb99abfd61b",
+      "af0f064c-adf9-4275-bc62-1b7a078d1685",
+      "e6ba8e06-4c42-4041-a6d1-a22457b5c116",
+      "f46b8d5c-7983-454a-b2db-6aa9157b2348",
+      "4e5dc60e-3205-49be-ae0f-18f3f908c95e",
+      "f55fc0eb-b1da-4390-b06a-097db94b6973",
+      "c97aac9a-cc66-4507-8bcf-2fd81610ac59",
+      "6298e8c8-9bcb-46b7-918f-1021265e8f5b",
+      "76ac90ae-993c-4da8-8d2d-cc53a064f377",
+      "e249844e-ce78-47db-abb4-43dc8a457ae0",
+      "004a763b-108b-494c-83b5-3472b3202cdb",
+      "a7838950-baa0-4dfa-8be3-d3bd1ee7b459",
+      "4e074011-4afb-4e0c-8151-2724ea2eefe4",
+      "543521cf-8be8-4b00-9479-8f4a95bd8ad8",
+      "8bb672de-65aa-492f-b660-2dd27c633ecf",
+      "ee6fe12a-d910-4b70-9859-ddd541334cf5",
+      "ebe651c4-e12e-4009-8f6b-0d3edb7c3c8c",
+      "a987ba40-472d-449d-a9fc-4dd991968e3c",
+      "861bc3ec-3867-49ae-bb49-f7c65e852791",
+      "4f070f1e-2123-4605-81f9-bef0694fc6a5",
+      "07f8df5e-9207-49fe-b644-54d49b78ae5a",
+      "39e3e1e9-d2b2-418d-b155-87b7db968824",
+      "739560fa-218e-4080-8c4d-90f9b874af41",
+      "1012232a-f2d8-4dc6-abba-6a18a2f3a769",
+      "c669956d-f98a-4901-a163-0446b30b1f4f",
+      "b69e6aef-97e1-47bb-b533-6556ab0263e0",
+      "ff101391-e1fe-4e6c-9db4-6530d16beace"
+    ],
+    "so_cau_sai": 13,
+    "trang_thai": "DA_NOP",
+    "updated_at": "2026-09-10T11:09:39.780286+07:00",
+    "da_xac_nhan": false,
+    "lich_su_thi": [
+      {
+        "lan": 1,
+        "diem": 6.0,
+        "xep_loai": "KHONG_DAT",
+        "de_thi_ids": [
+          "49f789bd-febc-4e45-a3a5-458a41befce3",
+          "c0b71f1b-6801-4745-b4dc-b83c6634240a",
+          "91415ada-f7b6-48dd-9d9f-37134792461d",
+          "41435b68-9e26-4730-a44f-3671e16b540b",
+          "77613b7d-302f-4fc5-aaf3-5aeab413cf73",
+          "a2075a11-2698-4a66-a275-531802131ea1",
+          "825f1733-19e8-42a9-ab7d-07b3a7452261",
+          "a4d7ef7b-af33-4bca-9186-acf1c3842871",
+          "b5c1c5e0-83ae-4547-ac14-a69ca93845c7",
+          "e7031bc5-2eb3-4b76-ab76-161e108521f1",
+          "c9a2f3c9-62d0-4ea3-9be5-acc57324208b",
+          "2876451b-2f1a-411e-97c1-f270e7b2ef3f",
+          "3a3c6123-5eab-470d-b161-b34f374c32a0",
+          "aa19ff2b-2493-4680-b475-37520cfa11e7",
+          "b6297d22-21c8-431d-a8e9-1dbd254eba4b",
+          "96609d7e-2722-463a-a132-dac3c39d6457",
+          "099d61ba-ac6b-45d0-8d07-2dc75fc6a5d5",
+          "741a21f0-c399-410c-abae-097d32e493d6",
+          "752d759a-2605-4f73-9d98-015fed52e0a8",
+          "58364df2-72fc-43f9-a51e-276dbcdcf3c4",
+          "c07fb33a-cb86-4133-ae58-bbce8a8f8418",
+          "4f20a57c-683a-4fe2-80c8-9185c90e843f",
+          "12716d3f-8894-4da7-a788-2a173d860e51",
+          "16ed2be5-5378-496f-af5f-f4196937ea94",
+          "b165aff3-b226-4134-9916-34009110c495",
+          "deab04e1-4581-4819-960a-345f584ce191",
+          "8704b600-c45c-42ba-9d55-7b5c9acea406",
+          "30547ad9-75a6-468f-981a-ac9f5fb3a439",
+          "8f49f622-176a-4bd9-9086-a768ac29d723",
+          "4e5dc60e-3205-49be-ae0f-18f3f908c95e",
+          "1a11706d-3c45-4671-b2c3-b5d3916b15dd",
+          "1e79ea25-3fd4-4b78-8456-842d4ea847b7",
+          "54cac0dc-eea9-4a82-88b3-ab4b3125a7ce",
+          "95ff4f07-cf9b-4c70-b1f1-53344b6c8e1e",
+          "eeb7a281-9296-4b72-8b9d-463430d2af0a",
+          "e6334390-09b0-4fe2-b1b6-5175ff377489",
+          "8ef85c2e-559f-412c-8e6e-279150712cfd",
+          "ec51896a-588e-4254-8d86-12cb6be0e5fe",
+          "e2e5de87-bfe5-4e1b-be64-f61697850d8a",
+          "ebe651c4-e12e-4009-8f6b-0d3edb7c3c8c",
+          "86320535-4d85-49ed-bb80-564e7b5d4f7f",
+          "fd2bfffa-378a-4041-8026-84c460f90f4a",
+          "07f8df5e-9207-49fe-b644-54d49b78ae5a",
+          "9b9e013c-f13b-4e80-9671-f51509021e3a",
+          "2c0c5f2a-d25a-43cb-a421-8ed09fb750da",
+          "2f118256-672d-4667-b66a-074bd2d771e7",
+          "27a3d4ec-f66f-4056-be6e-27d965d21919",
+          "a8950eb7-c7cd-4161-bcd3-5efb9bf0792c",
+          "739560fa-218e-4080-8c4d-90f9b874af41",
+          "edc58072-1a70-41ce-8d5b-7c849efc0f12"
+        ],
+        "so_cau_sai": 47,
+        "so_cau_dung": 3,
+        "tong_so_cau": 50,
+        "thoi_gian_nop": "2026-09-10T03:44:56.164031+00:00",
+        "chi_tiet_tra_loi": [
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "49f789bd-febc-4e45-a3a5-458a41befce3",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "c0b71f1b-6801-4745-b4dc-b83c6634240a",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "91415ada-f7b6-48dd-9d9f-37134792461d",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "41435b68-9e26-4730-a44f-3671e16b540b",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "77613b7d-302f-4fc5-aaf3-5aeab413cf73",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "a2075a11-2698-4a66-a275-531802131ea1",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "825f1733-19e8-42a9-ab7d-07b3a7452261",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "a4d7ef7b-af33-4bca-9186-acf1c3842871",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "b5c1c5e0-83ae-4547-ac14-a69ca93845c7",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "e7031bc5-2eb3-4b76-ab76-161e108521f1",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "c9a2f3c9-62d0-4ea3-9be5-acc57324208b",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "2876451b-2f1a-411e-97c1-f270e7b2ef3f",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "3a3c6123-5eab-470d-b161-b34f374c32a0",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "aa19ff2b-2493-4680-b475-37520cfa11e7",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "b6297d22-21c8-431d-a8e9-1dbd254eba4b",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "96609d7e-2722-463a-a132-dac3c39d6457",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "099d61ba-ac6b-45d0-8d07-2dc75fc6a5d5",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "741a21f0-c399-410c-abae-097d32e493d6",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "752d759a-2605-4f73-9d98-015fed52e0a8",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "58364df2-72fc-43f9-a51e-276dbcdcf3c4",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "c07fb33a-cb86-4133-ae58-bbce8a8f8418",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "4f20a57c-683a-4fe2-80c8-9185c90e843f",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "12716d3f-8894-4da7-a788-2a173d860e51",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "16ed2be5-5378-496f-af5f-f4196937ea94",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "b165aff3-b226-4134-9916-34009110c495",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "deab04e1-4581-4819-960a-345f584ce191",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "8704b600-c45c-42ba-9d55-7b5c9acea406",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "30547ad9-75a6-468f-981a-ac9f5fb3a439",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "8f49f622-176a-4bd9-9086-a768ac29d723",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "4e5dc60e-3205-49be-ae0f-18f3f908c95e",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "1a11706d-3c45-4671-b2c3-b5d3916b15dd",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "1e79ea25-3fd4-4b78-8456-842d4ea847b7",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "54cac0dc-eea9-4a82-88b3-ab4b3125a7ce",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "95ff4f07-cf9b-4c70-b1f1-53344b6c8e1e",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "eeb7a281-9296-4b72-8b9d-463430d2af0a",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "e6334390-09b0-4fe2-b1b6-5175ff377489",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "8ef85c2e-559f-412c-8e6e-279150712cfd",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "ec51896a-588e-4254-8d86-12cb6be0e5fe",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "e2e5de87-bfe5-4e1b-be64-f61697850d8a",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "ebe651c4-e12e-4009-8f6b-0d3edb7c3c8c",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "86320535-4d85-49ed-bb80-564e7b5d4f7f",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "fd2bfffa-378a-4041-8026-84c460f90f4a",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "07f8df5e-9207-49fe-b644-54d49b78ae5a",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "9b9e013c-f13b-4e80-9671-f51509021e3a",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "2c0c5f2a-d25a-43cb-a421-8ed09fb750da",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "2f118256-672d-4667-b66a-074bd2d771e7",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "27a3d4ec-f66f-4056-be6e-27d965d21919",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "a8950eb7-c7cd-4161-bcd3-5efb9bf0792c",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "739560fa-218e-4080-8c4d-90f9b874af41",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": null,
+            "cau_hoi_id": "edc58072-1a70-41ce-8d5b-7c849efc0f12",
+            "dap_an_dung": "B"
+          }
+        ],
+        "thoi_gian_bat_dau": "2026-08-26T08:14:47.631729+00:00",
+        "diem_theo_linh_vuc": {
+          "10.TA": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          },
+          "1. LHQ": {
+            "dung": 2,
+            "tong": 5,
+            "phan_tram": 40.0
+          },
+          "3. LQLT": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          },
+          "6. QCLV": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          },
+          "7. QCCV": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          },
+          "8. LCDS": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          },
+          "9. STVB": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          },
+          "2. LTXNK": {
+            "dung": 1,
+            "tong": 5,
+            "phan_tram": 20.0
+          },
+          "5. LCBCC": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          },
+          "4. LXLVPHC": {
+            "dung": 0,
+            "tong": 5,
+            "phan_tram": 0.0
+          }
+        },
+        "thoi_gian_lam_giay": 1279808
+      },
+      {
+        "lan": 2,
+        "diem": 74.0,
+        "xep_loai": "DAT",
+        "de_thi_ids": [
+          "e3f1603a-8e1f-4d31-913b-fb7c2ec28be7",
+          "dcb025dd-fb51-434a-bc44-cda816400710",
+          "2ee4730e-aa4a-4f00-a8b1-b3531a78e6df",
+          "acd9fdcc-19ea-4318-8c0d-1e79cb1416d5",
+          "ab5f58fa-31a5-4fda-bda8-beb446be702e",
+          "24bf484e-7ac4-4b81-98e3-2b9cd994cb0b",
+          "b1984cc1-fa56-4d18-adc8-0cf99f1049c0",
+          "b8a91bed-64f4-4ff2-b613-3d8f23b926eb",
+          "c2f5e850-3242-4919-b8af-4dce0e88c189",
+          "96720306-97ab-4f69-a119-f1a52b497314",
+          "bcbf9a90-aaa6-4ef2-9b38-2de8141d8e07",
+          "b5d59569-07ad-4144-9ceb-7b63acb52f8c",
+          "aa19ff2b-2493-4680-b475-37520cfa11e7",
+          "1712e209-3e52-429d-a9aa-087237342f55",
+          "25d2c927-ddbf-4dac-a6d8-64cff0e589e4",
+          "4cfaff6d-770a-477f-86f2-ae074af562dc",
+          "181003f2-786e-43b9-b547-091f5dff8801",
+          "f32833ce-5f8a-40de-95ff-19c04799a5fc",
+          "452350a8-8ef3-40f5-8e97-922fca6590b0",
+          "9d5bb08d-de4a-4f65-895e-a9f51243a310",
+          "47918161-11d8-4dce-b649-0cb5717ed830",
+          "e3c44900-7cf2-4bb0-b4f6-e131b74bd729",
+          "0fdc8d42-eef5-4425-b719-c57659388113",
+          "59e30195-d7cf-47e7-b2dc-1bb99abfd61b",
+          "af0f064c-adf9-4275-bc62-1b7a078d1685",
+          "e6ba8e06-4c42-4041-a6d1-a22457b5c116",
+          "f46b8d5c-7983-454a-b2db-6aa9157b2348",
+          "4e5dc60e-3205-49be-ae0f-18f3f908c95e",
+          "f55fc0eb-b1da-4390-b06a-097db94b6973",
+          "c97aac9a-cc66-4507-8bcf-2fd81610ac59",
+          "6298e8c8-9bcb-46b7-918f-1021265e8f5b",
+          "76ac90ae-993c-4da8-8d2d-cc53a064f377",
+          "e249844e-ce78-47db-abb4-43dc8a457ae0",
+          "004a763b-108b-494c-83b5-3472b3202cdb",
+          "a7838950-baa0-4dfa-8be3-d3bd1ee7b459",
+          "4e074011-4afb-4e0c-8151-2724ea2eefe4",
+          "543521cf-8be8-4b00-9479-8f4a95bd8ad8",
+          "8bb672de-65aa-492f-b660-2dd27c633ecf",
+          "ee6fe12a-d910-4b70-9859-ddd541334cf5",
+          "ebe651c4-e12e-4009-8f6b-0d3edb7c3c8c",
+          "a987ba40-472d-449d-a9fc-4dd991968e3c",
+          "861bc3ec-3867-49ae-bb49-f7c65e852791",
+          "4f070f1e-2123-4605-81f9-bef0694fc6a5",
+          "07f8df5e-9207-49fe-b644-54d49b78ae5a",
+          "39e3e1e9-d2b2-418d-b155-87b7db968824",
+          "739560fa-218e-4080-8c4d-90f9b874af41",
+          "1012232a-f2d8-4dc6-abba-6a18a2f3a769",
+          "c669956d-f98a-4901-a163-0446b30b1f4f",
+          "b69e6aef-97e1-47bb-b533-6556ab0263e0",
+          "ff101391-e1fe-4e6c-9db4-6530d16beace"
+        ],
+        "so_cau_sai": 13,
+        "so_cau_dung": 37,
+        "tong_so_cau": 50,
+        "thoi_gian_nop": "2026-09-10T11:09:39.780286+07:00",
+        "chi_tiet_tra_loi": [
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "e3f1603a-8e1f-4d31-913b-fb7c2ec28be7",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "dcb025dd-fb51-434a-bc44-cda816400710",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "2ee4730e-aa4a-4f00-a8b1-b3531a78e6df",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "acd9fdcc-19ea-4318-8c0d-1e79cb1416d5",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "ab5f58fa-31a5-4fda-bda8-beb446be702e",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "24bf484e-7ac4-4b81-98e3-2b9cd994cb0b",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "b1984cc1-fa56-4d18-adc8-0cf99f1049c0",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "b8a91bed-64f4-4ff2-b613-3d8f23b926eb",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "c2f5e850-3242-4919-b8af-4dce0e88c189",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "96720306-97ab-4f69-a119-f1a52b497314",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "bcbf9a90-aaa6-4ef2-9b38-2de8141d8e07",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "b5d59569-07ad-4144-9ceb-7b63acb52f8c",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "aa19ff2b-2493-4680-b475-37520cfa11e7",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "1712e209-3e52-429d-a9aa-087237342f55",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "25d2c927-ddbf-4dac-a6d8-64cff0e589e4",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "4cfaff6d-770a-477f-86f2-ae074af562dc",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "181003f2-786e-43b9-b547-091f5dff8801",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "f32833ce-5f8a-40de-95ff-19c04799a5fc",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "452350a8-8ef3-40f5-8e97-922fca6590b0",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "9d5bb08d-de4a-4f65-895e-a9f51243a310",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "47918161-11d8-4dce-b649-0cb5717ed830",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "e3c44900-7cf2-4bb0-b4f6-e131b74bd729",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "0fdc8d42-eef5-4425-b719-c57659388113",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "59e30195-d7cf-47e7-b2dc-1bb99abfd61b",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "af0f064c-adf9-4275-bc62-1b7a078d1685",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "e6ba8e06-4c42-4041-a6d1-a22457b5c116",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "f46b8d5c-7983-454a-b2db-6aa9157b2348",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "4e5dc60e-3205-49be-ae0f-18f3f908c95e",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "f55fc0eb-b1da-4390-b06a-097db94b6973",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "c97aac9a-cc66-4507-8bcf-2fd81610ac59",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "6298e8c8-9bcb-46b7-918f-1021265e8f5b",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "76ac90ae-993c-4da8-8d2d-cc53a064f377",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "e249844e-ce78-47db-abb4-43dc8a457ae0",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "004a763b-108b-494c-83b5-3472b3202cdb",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": false,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "a7838950-baa0-4dfa-8be3-d3bd1ee7b459",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "4e074011-4afb-4e0c-8151-2724ea2eefe4",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "543521cf-8be8-4b00-9479-8f4a95bd8ad8",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "8bb672de-65aa-492f-b660-2dd27c633ecf",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "ee6fe12a-d910-4b70-9859-ddd541334cf5",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "ebe651c4-e12e-4009-8f6b-0d3edb7c3c8c",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "a987ba40-472d-449d-a9fc-4dd991968e3c",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "D"
+            },
+            "cau_hoi_id": "861bc3ec-3867-49ae-bb49-f7c65e852791",
+            "dap_an_dung": "D"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "4f070f1e-2123-4605-81f9-bef0694fc6a5",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "07f8df5e-9207-49fe-b644-54d49b78ae5a",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "39e3e1e9-d2b2-418d-b155-87b7db968824",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "B"
+            },
+            "cau_hoi_id": "739560fa-218e-4080-8c4d-90f9b874af41",
+            "dap_an_dung": "B"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "1012232a-f2d8-4dc6-abba-6a18a2f3a769",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "C"
+            },
+            "cau_hoi_id": "c669956d-f98a-4901-a163-0446b30b1f4f",
+            "dap_an_dung": "C"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "b69e6aef-97e1-47bb-b533-6556ab0263e0",
+            "dap_an_dung": "A"
+          },
+          {
+            "dung": true,
+            "tra_loi": {
+              "dap_an": "A"
+            },
+            "cau_hoi_id": "ff101391-e1fe-4e6c-9db4-6530d16beace",
+            "dap_an_dung": "A"
+          }
+        ],
+        "thoi_gian_bat_dau": "2026-09-10T03:45:21.762679+00:00",
+        "diem_theo_linh_vuc": {
+          "10.TA": {
+            "dung": 5,
+            "tong": 5,
+            "phan_tram": 100.0
+          },
+          "1. LHQ": {
+            "dung": 1,
+            "tong": 5,
+            "phan_tram": 20.0
+          },
+          "3. LQLT": {
+            "dung": 5,
+            "tong": 5,
+            "phan_tram": 100.0
+          },
+          "6. QCLV": {
+            "dung": 3,
+            "tong": 5,
+            "phan_tram": 60.0
+          },
+          "7. QCCV": {
+            "dung": 4,
+            "tong": 5,
+            "phan_tram": 80.0
+          },
+          "8. LCDS": {
+            "dung": 5,
+            "tong": 5,
+            "phan_tram": 100.0
+          },
+          "9. STVB": {
+            "dung": 5,
+            "tong": 5,
+            "phan_tram": 100.0
+          },
+          "2. LTXNK": {
+            "dung": 3,
+            "tong": 5,
+            "phan_tram": 60.0
+          },
+          "5. LCBCC": {
+            "dung": 4,
+            "tong": 5,
+            "phan_tram": 80.0
+          },
+          "4. LXLVPHC": {
+            "dung": 2,
+            "tong": 5,
+            "phan_tram": 40.0
+          }
+        },
+        "thoi_gian_lam_giay": 1458
+      }
+    ],
+    "so_cau_dung": 37,
+    "tong_so_cau": 50,
+    "cong_chuc_id": "bc5283e7-dbd2-4119-ab64-f629eb872c9a",
+    "chi_tiet_nhap": null,
+    "thoi_gian_nop": "2026-09-10T11:09:39.780286+07:00",
+    "so_lan_vi_pham": 0,
+    "chi_tiet_tra_loi": [
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "e3f1603a-8e1f-4d31-913b-fb7c2ec28be7",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "dcb025dd-fb51-434a-bc44-cda816400710",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "2ee4730e-aa4a-4f00-a8b1-b3531a78e6df",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "acd9fdcc-19ea-4318-8c0d-1e79cb1416d5",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "ab5f58fa-31a5-4fda-bda8-beb446be702e",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "24bf484e-7ac4-4b81-98e3-2b9cd994cb0b",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "b1984cc1-fa56-4d18-adc8-0cf99f1049c0",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "b8a91bed-64f4-4ff2-b613-3d8f23b926eb",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "c2f5e850-3242-4919-b8af-4dce0e88c189",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "96720306-97ab-4f69-a119-f1a52b497314",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "bcbf9a90-aaa6-4ef2-9b38-2de8141d8e07",
+        "dap_an_dung": "C"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "b5d59569-07ad-4144-9ceb-7b63acb52f8c",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "aa19ff2b-2493-4680-b475-37520cfa11e7",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "1712e209-3e52-429d-a9aa-087237342f55",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "25d2c927-ddbf-4dac-a6d8-64cff0e589e4",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "4cfaff6d-770a-477f-86f2-ae074af562dc",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "181003f2-786e-43b9-b547-091f5dff8801",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "f32833ce-5f8a-40de-95ff-19c04799a5fc",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "452350a8-8ef3-40f5-8e97-922fca6590b0",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "9d5bb08d-de4a-4f65-895e-a9f51243a310",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "47918161-11d8-4dce-b649-0cb5717ed830",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "e3c44900-7cf2-4bb0-b4f6-e131b74bd729",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "0fdc8d42-eef5-4425-b719-c57659388113",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "59e30195-d7cf-47e7-b2dc-1bb99abfd61b",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "af0f064c-adf9-4275-bc62-1b7a078d1685",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "e6ba8e06-4c42-4041-a6d1-a22457b5c116",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "f46b8d5c-7983-454a-b2db-6aa9157b2348",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "4e5dc60e-3205-49be-ae0f-18f3f908c95e",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "f55fc0eb-b1da-4390-b06a-097db94b6973",
+        "dap_an_dung": "C"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "c97aac9a-cc66-4507-8bcf-2fd81610ac59",
+        "dap_an_dung": "C"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "6298e8c8-9bcb-46b7-918f-1021265e8f5b",
+        "dap_an_dung": "C"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "76ac90ae-993c-4da8-8d2d-cc53a064f377",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "e249844e-ce78-47db-abb4-43dc8a457ae0",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "004a763b-108b-494c-83b5-3472b3202cdb",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": false,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "a7838950-baa0-4dfa-8be3-d3bd1ee7b459",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "4e074011-4afb-4e0c-8151-2724ea2eefe4",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "543521cf-8be8-4b00-9479-8f4a95bd8ad8",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "8bb672de-65aa-492f-b660-2dd27c633ecf",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "ee6fe12a-d910-4b70-9859-ddd541334cf5",
+        "dap_an_dung": "C"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "ebe651c4-e12e-4009-8f6b-0d3edb7c3c8c",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "a987ba40-472d-449d-a9fc-4dd991968e3c",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "D"
+        },
+        "cau_hoi_id": "861bc3ec-3867-49ae-bb49-f7c65e852791",
+        "dap_an_dung": "D"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "4f070f1e-2123-4605-81f9-bef0694fc6a5",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "07f8df5e-9207-49fe-b644-54d49b78ae5a",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "39e3e1e9-d2b2-418d-b155-87b7db968824",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "B"
+        },
+        "cau_hoi_id": "739560fa-218e-4080-8c4d-90f9b874af41",
+        "dap_an_dung": "B"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "1012232a-f2d8-4dc6-abba-6a18a2f3a769",
+        "dap_an_dung": "C"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "C"
+        },
+        "cau_hoi_id": "c669956d-f98a-4901-a163-0446b30b1f4f",
+        "dap_an_dung": "C"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "b69e6aef-97e1-47bb-b533-6556ab0263e0",
+        "dap_an_dung": "A"
+      },
+      {
+        "dung": true,
+        "tra_loi": {
+          "dap_an": "A"
+        },
+        "cau_hoi_id": "ff101391-e1fe-4e6c-9db4-6530d16beace",
+        "dap_an_dung": "A"
+      }
+    ],
+    "lan_thi_hien_tai": 2,
+    "thoi_gian_bat_dau": "2026-09-10T10:45:21.762679+07:00",
+    "diem_theo_linh_vuc": {
+      "10.TA": {
+        "dung": 5,
+        "tong": 5,
+        "phan_tram": 100.0
+      },
+      "1. LHQ": {
+        "dung": 1,
+        "tong": 5,
+        "phan_tram": 20.0
+      },
+      "3. LQLT": {
+        "dung": 5,
+        "tong": 5,
+        "phan_tram": 100.0
+      },
+      "6. QCLV": {
+        "dung": 3,
+        "tong": 5,
+        "phan_tram": 60.0
+      },
+      "7. QCCV": {
+        "dung": 4,
+        "tong": 5,
+        "phan_tram": 80.0
+      },
+      "8. LCDS": {
+        "dung": 5,
+        "tong": 5,
+        "phan_tram": 100.0
+      },
+      "9. STVB": {
+        "dung": 5,
+        "tong": 5,
+        "phan_tram": 100.0
+      },
+      "2. LTXNK": {
+        "dung": 3,
+        "tong": 5,
+        "phan_tram": 60.0
+      },
+      "5. LCBCC": {
+        "dung": 4,
+        "tong": 5,
+        "phan_tram": 80.0
+      },
+      "4. LXLVPHC": {
+        "dung": 2,
+        "tong": 5,
+        "phan_tram": 40.0
+      }
+    },
+    "thoi_gian_lam_giay": 1458,
+    "thoi_gian_xac_nhan": null
+  },
+  "phien_thi": [
+    {
+      "id": "7034ede3-9312-4a20-8203-20af0d437fcb",
+      "thiet_bi": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+      "ky_thi_id": "a6aa0796-8eab-452a-9bb7-309c0663cf0d",
+      "last_seen": "2026-09-10T11:09:39.774056+07:00",
+      "created_at": "2026-06-30T17:59:35.43369+07:00",
+      "phien_token": "cf56ef59adfd47cfb53b8ffb660eaff4",
+      "thi_sinh_id": "6509b063-404c-4001-892d-9b686c256b85",
+      "cong_chuc_id": "bc5283e7-dbd2-4119-ab64-f629eb872c9a"
+    }
+  ]
+}

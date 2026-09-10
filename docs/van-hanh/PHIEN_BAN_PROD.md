@@ -7,11 +7,54 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `d15b850` |
-| **Ngắn** | `d15b850` |
-| **Nhánh nguồn** | `upload-pdf-dao-tao` (fast-forward, cắt từ `feature/kpi-mo-lai-tieu-chi-chung`) |
-| **Ngày ghi mốc** | 08/09/2026 11:31 |
-| **Alembic** | `lms_cau_hoi_hang_ngay_20260827` — **KHÔNG migration mới** |
+| **Commit** | `13647f8` |
+| **Ngắn** | `13647f8` |
+| **Nhánh nguồn** | `feature/lms-reset-luot-thi` (rebase lên `prod`, gốc là `6c7270d` ngày 31/08) |
+| **Ngày ghi mốc** | 10/09/2026 14:30 |
+| **Alembic** | `lms_reset_luot_thi_20260831` — **CÓ migration mới** (thêm bảng `lms.lich_su_reset_thi`) |
+
+Nội dung: **ĐGNL — công cụ reset lượt thi cho quản trị đào tạo, có nhật ký.**
+
+Khi có người đăng nhập nhầm tài khoản rồi làm bài ĐGNL, cách duy nhất để trả lượt
+thi cho chủ tài khoản là sửa tay bằng SQL trên database đang phục vụ người dùng:
+không ai kiểm soát phạm vi, không lưu vết ai sửa và vì sao, bản ghi cũ mất hẳn nếu
+người sửa quên chụp lại. Đã xảy ra hai lần trong mười ngày — `20ZZ-0431` ngày
+31/08 và `20ZZ-0005` ngày 10/09 (xem `docs/fix-reset-luot-thi/NHAT_KY_RESET.md`).
+Gốc rễ không phải một lần sửa nhầm, mà là thiếu hẳn đường đi hợp lệ cho một
+nghiệp vụ có thật.
+
+Nay quản trị đào tạo bấm nút **Reset** ngay trên trang thống kê kỳ thi, hai mức:
+`XOA_SACH` (về `CHUA_THI`, trả lại đủ lượt, kết quả người làm nhầm biến mất khỏi
+báo cáo) và `MO_KHOA_LUOT` (giữ kết quả, chỉ gỡ cờ `da_xac_nhan`). Lý do là bắt
+buộc; bảng `lms.lich_su_reset_thi` ghi ai reset · cho ai · vì sao · điểm và trạng
+thái trước đó, kèm ảnh chụp NGUYÊN TRẠNG bản ghi `thi_sinh` và các lần vi phạm
+trong `du_lieu_truoc` — xoá rồi vẫn dựng lại được. FK dùng `ON DELETE SET NULL`
+chứ không CASCADE: nhật ký phải sống lâu hơn đối tượng nó ghi lại.
+
+Cả hai mức đều xoá dòng `lms.phien_thi`; không xoá thì thiết bị của người làm
+nhầm còn giữ token và nộp tiếp được vào bản ghi vừa reset. Các trường hợp mở khoá
+vô nghĩa bị chặn bằng mã lỗi riêng thay vì im lặng không làm gì: chưa nộp bài
+(`DGNL_051`), chưa hề bị khoá (`DGNL_052`), đã dùng hết lượt (`DGNL_053` — nói
+thẳng là phải dùng Xoá sạch). Hai endpoint mới, chỉ admin:
+`POST /api/v1/lms/ky-thi/{id}/thi-sinh/{cc_id}/reset` và
+`GET /api/v1/lms/ky-thi/{id}/lich-su-reset`.
+
+Kiểm chứng trước khi phát hành: **265/265 test LMS PASS** trên `kpi_haiquan_test`
+(13 test riêng cho luồng này — hai mức reset, bốn nhánh từ chối, nhật ký ghi đủ,
+lọc theo thí sinh, chặn CCT và công chức thường), migration lên → xuống → lên sạch
+trên DB test, `tsc --noEmit` sạch. Migration chỉ THÊM một bảng mới, không sửa bảng
+nào sẵn có.
+
+> Ghi chú quy trình: `6c7270d` cắt từ `c53d843` (28/08), trong khi prod đã đi
+> thêm 9 commit. Triển khai thẳng SHA gốc sẽ **lùi prod về 28/08** — mất bài tập
+> PDF/Word, bảng điểm danh HKG và hai fix ngày hiệu lực điều chuyển. Đã rebase
+> lên `prod` thành `13647f8` rồi mới phát hành. Rebase không xung đột: hai file
+> trùng (`frontend/src/services/lms.ts`, `types/lms.ts`) đổi ở hunk khác nhau.
+>
+> Hai commit `c358641` (xem bài nộp Word khi chấm) và `914125d` (thiết kế lại
+> chứng chỉ) trên nhánh `upload-pdf-dao-tao` **chưa** lên prod, đợt này không kéo theo.
+
+### Mốc trước — `d15b850`
 
 Nội dung: **LMS — bài tập thực hành nhận file PDF và Word, không chỉ video.**
 
@@ -141,6 +184,8 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 04/09/2026 | `dba30f9` | HKG: bảng điểm danh chi tiết từng thành phần + chấm tay + xuất Excel (2 endpoint chỉ-đọc mới, audit `EXPORT_DIEM_DANH`); kèm KPI: sửa ngày hiệu lực điều chuyển (`699cbc1`+`0cd7daa`) — **không migration** |
 | 05/09/2026 | *(không phát hành code)* | **Di trú DỮ LIỆU** `lich_su_dieu_chuyen` theo QĐ điều động 2026: xóa 8 · sửa 77 · thêm 62 (`scripts/fix_ngay_dieu_chuyen_2026.py`). Kèm mở lại tiêu chí chung T7 cho `20ZZ-0529` (`scripts/mo_lai_tieu_chi_chung.py`). Chi tiết ở mục dưới |
 | 08/09/2026 | `d15b850` | LMS: bài tập thực hành nhận file PDF/Word (endpoint `nop-bai-thuc-hanh`, `/nop-video` thành bí danh; đối chiếu chữ ký file chống đổi đuôi; giao diện chọn định dạng + xem theo loại file). Kèm `85cbedf` (script `mo_lai_tieu_chi_chung.py`, trơ lúc chạy) và `a828e89` (tài liệu) — **không migration** |
+| 10/09/2026 | *(không phát hành code)* | **Sửa DỮ LIỆU**: reset lượt thi ĐGNL cho `20ZZ-0005` kỳ ĐGNL-THANG 8 - TA bằng SQL (xoá 2 lượt 6đ + 74đ, về `CHUA_THI`; xoá 3 vi phạm + 1 phiên thi). Snapshot và nhật ký ở `docs/fix-reset-luot-thi/` |
+| 10/09/2026 | `13647f8` | ĐGNL: công cụ reset lượt thi cho quản trị đào tạo — 2 endpoint chỉ-admin, nút Reset + Nhật ký trên trang thống kê kỳ thi, migration `lms_reset_luot_thi_20260831` thêm bảng `lms.lich_su_reset_thi`. Rebase `6c7270d` lên `prod` trước khi phát hành (SHA gốc đã tụt sau prod 9 commit) |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

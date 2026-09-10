@@ -280,6 +280,13 @@ export default function AdminDashboardPage() {
               color="green"
             />
             <QuickActionCard
+              icon="📋"
+              title="Điều chuyển hàng loạt"
+              description="Cả đợt theo quyết định, bằng file Excel"
+              href="/admin/dieu-chuyen-hang-loat"
+              color="green"
+            />
+            <QuickActionCard
               icon="📦"
               title="Quản lý SP Chuẩn"
               description="Thêm, sửa sản phẩm chuẩn"

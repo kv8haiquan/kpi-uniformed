@@ -29,6 +29,7 @@ from app.api.v1.endpoints import (
     ke_khai_v2,  # PL3 V2 (28/04/2026): Kê khai công việc theo PL3
     admin_pl3,   # PL3 V2 (28/04/2026): Admin CRUD danh mục PL3 + pin version
     admin_import,  # PL3 V2 (28/04/2026): Admin import Excel PL3
+    admin_dieu_chuyen_hang_loat,  # Điều chuyển hàng loạt theo QĐ bằng Excel (10/09/2026)
     phan_cong_phu_trach,  # KPI LĐ mới (05/05/2026): Phân công CCT/PCCT phụ trách
     kpi_lanh_dao_v2,      # KPI LĐ mới (05/05/2026): Công thức v2 từ tháng 4/2026
     dieu_chinh_kqcv,      # Yêu cầu 2 (06/05/2026): LĐ điều chỉnh KQCV
@@ -205,6 +206,13 @@ api_router.include_router(
     admin_import.router,
     prefix="/admin",
     tags=["Admin Import PL3"],
+)
+
+# Điều chuyển nhân sự hàng loạt theo quyết định (10/09/2026)
+api_router.include_router(
+    admin_dieu_chuyen_hang_loat.router,
+    prefix="/admin",
+    tags=["Admin Điều chuyển hàng loạt"],
 )
 
 api_router.include_router(

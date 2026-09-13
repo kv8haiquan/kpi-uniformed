@@ -7,11 +7,70 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `13647f8` |
-| **Ngắn** | `13647f8` |
-| **Nhánh nguồn** | `feature/lms-reset-luot-thi` (rebase lên `prod`, gốc là `6c7270d` ngày 31/08) |
-| **Ngày ghi mốc** | 10/09/2026 14:30 |
-| **Alembic** | `lms_reset_luot_thi_20260831` — **CÓ migration mới** (thêm bảng `lms.lich_su_reset_thi`) |
+| **Commit** | `4aaa43e` |
+| **Ngắn** | `4aaa43e` |
+| **Nhánh nguồn** | `feature/kpi-dieu-chuyen-hang-loat` (fast-forward thẳng từ `2bd8508`, không phải rebase) |
+| **Ngày ghi mốc** | 13/09/2026 21:26 |
+| **Alembic** | `lms_reset_luot_thi_20260831` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — điều chuyển nhân sự hàng loạt theo quyết định, bằng file Excel.**
+
+Một quyết định điều động là MỘT sự kiện: một ngày hiệu lực, một danh sách người.
+Nhưng giao diện bắt nhập như N sự kiện rời rạc — mở modal từng người. Hậu quả đo
+được trên chính dữ liệu đợt điều động 2026: đợt 04/02 **bỏ quên trọn 62 người**,
+đợt 03/7 nhập được 1/3, đợt 15/5 ngày hiệu lực rải ra 6 ngày vì nhập nhiều buổi,
+và 4 người nhập nhầm đơn vị phải chuyển đi/chuyển lại sinh 8 bản ghi rác.
+
+Đợt `dba30f9` (04/09) đã chặn được NGÀY sai — bỏ điền sẵn ngày hôm nay, bắt buộc
+nhập, cảnh báo lệch quá 15 ngày. Nhưng không chặn được BỎ SÓT NGƯỜI, vì vẫn phải
+nhập lẻ từng người. Đây là nửa còn lại.
+
+Ba endpoint, cố ý tách rời — `/api/v1/admin/dieu-chuyen-hang-loat/`:
+`mau-excel` (GET, sinh mẫu) · `xem-truoc` (POST, đọc + đối chiếu, KHÔNG ghi) ·
+`ghi` (POST, cả đợt trong MỘT transaction). Trang `/admin/dieu-chuyen-hang-loat`.
+
+**Mẫu 4 sheet, sheet nhập liệu để TRỐNG:**
+`Nhap lieu` (Mã CC · Đơn vị đến dropdown · Ngày hiệu lực · Số QĐ tuỳ chọn) ·
+`Huong dan` (cách điền + ví dụ) · `Danh sach cong chuc` (543 người còn hoạt động,
+để copy mã CC sang) · `Ma don vi` (15 đơn vị).
+
+Ví dụ đặt ở sheet hướng dẫn chứ KHÔNG trên sheet nhập — để trên sheet nhập thì sẽ
+có lần quên xoá rồi nhập nhầm người mẫu vào thật.
+
+**Khoá là Mã CC, không phải họ tên.** File theo dõi của TCCB chỉ có họ tên, và
+khớp theo tên đã hỏng ở đợt 2026: 5 người không khớp vì DB gắn hậu tố năm sinh
+("Nguyễn Viết Cường 1971"), 8/142 dòng trùng tên gốc, một ca phải tra bốn nguồn
+mới tách được. Mã CC gõ sai thì hoặc không tìm thấy (báo lỗi to), hoặc trỏ sang
+người khác — mà bảng xem trước dội lại HỌ TÊN + ĐƠN VỊ HIỆN TẠI nên nhìn là thấy.
+Khác hẳn khớp theo tên: sai mà im lặng.
+
+**Còn một dòng lỗi thì từ chối cả đợt.** Ghi một nửa rồi báo "59/62 thành công" là
+đẩy việc dò tìm 3 dòng còn lại sang người dùng. Endpoint `ghi` đọc và đối chiếu
+LẠI TỪ ĐẦU, không tin kết quả xem trước phía client.
+
+Mỗi dòng một ngày hiệu lực riêng → một file xử lý được nhiều đợt cùng lúc, đúng
+như file 2026 chứa cả 4 đợt.
+
+Kèm một refactor: hệ quả dữ liệu khi đổi đơn vị (khoá đánh giá tháng cũ, xoá mềm
+kê khai nháp, gỡ khỏi báo cáo chưa duyệt) tách từ `admin.transfer_user` ra
+`app/core/dieu_chuyen.py`, dùng CHUNG cho cả hai luồng. Để mỗi bên một bản thì chỉ
+cần sửa một bên là kê khai/xếp loại của người vừa chuyển bị xử lý khác nhau tuỳ
+admin bấm nút nào.
+
+Kiểm chứng trước khi phát hành: **13/13 test mới PASS** trên `kpi_haiquan_test`
+(gồm ca then chốt — một dòng lỗi thì dòng hợp lệ cũng KHÔNG được ghi); chạy thử
+đầu-cuối sinh mẫu → điền → xem trước → ghi → tải lại cùng file ra "bỏ qua 3, ghi 0"
+(idempotent); regression 52 pass / 1 fail (`test_bao_cao_da_phe_duyet_bao_400` đỏ
+SẴN từ trước, đã đối chứng trên code gốc); `tsc --noEmit` + `eslint` + `npm run build`
+sạch. Sau triển khai: 8/8 dịch vụ health 200, ba endpoint mới trả 401 (có route,
+đòi đăng nhập — đúng), `kpihaiquan.vn` 200.
+
+> Ghi chú quy trình: mục "Hiện tại" trước đây ghi `13647f8`, nhưng prod thực tế đã
+> đi tiếp tới `2bd8508` (lọc danh sách thí sinh ĐGNL) mà không ai cập nhật sổ —
+> đúng loại lệch mà ghi chú 25/08 bên dưới đã cảnh báo. Nay `2bd8508` đã có hàng
+> riêng trong bảng lịch sử.
+
+### Mốc trước — `13647f8`
 
 Nội dung: **ĐGNL — công cụ reset lượt thi cho quản trị đào tạo, có nhật ký.**
 
@@ -186,6 +245,8 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 08/09/2026 | `d15b850` | LMS: bài tập thực hành nhận file PDF/Word (endpoint `nop-bai-thuc-hanh`, `/nop-video` thành bí danh; đối chiếu chữ ký file chống đổi đuôi; giao diện chọn định dạng + xem theo loại file). Kèm `85cbedf` (script `mo_lai_tieu_chi_chung.py`, trơ lúc chạy) và `a828e89` (tài liệu) — **không migration** |
 | 10/09/2026 | *(không phát hành code)* | **Sửa DỮ LIỆU**: reset lượt thi ĐGNL cho `20ZZ-0005` kỳ ĐGNL-THANG 8 - TA bằng SQL (xoá 2 lượt 6đ + 74đ, về `CHUA_THI`; xoá 3 vi phạm + 1 phiên thi). Snapshot và nhật ký ở `docs/fix-reset-luot-thi/` |
 | 10/09/2026 | `13647f8` | ĐGNL: công cụ reset lượt thi cho quản trị đào tạo — 2 endpoint chỉ-admin, nút Reset + Nhật ký trên trang thống kê kỳ thi, migration `lms_reset_luot_thi_20260831` thêm bảng `lms.lich_su_reset_thi`. Rebase `6c7270d` lên `prod` trước khi phát hành (SHA gốc đã tụt sau prod 9 commit) |
+| 10/09/2026 | `2bd8508` | ĐGNL: bộ lọc danh sách thí sinh trên trang thống kê kỳ thi — thuần frontend, không migration. **Phát hành nhưng khi đó chưa ghi sổ** |
+| 13/09/2026 | `4aaa43e` | KPI: điều chuyển nhân sự hàng loạt theo QĐ bằng Excel — 3 endpoint (`mau-excel`/`xem-truoc`/`ghi`), mẫu 4 sheet, trang `/admin/dieu-chuyen-hang-loat`; tách `app/core/dieu_chuyen.py` dùng chung với điều chuyển lẻ — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

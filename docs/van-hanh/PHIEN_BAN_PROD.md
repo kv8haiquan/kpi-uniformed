@@ -7,11 +7,49 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `4aaa43e` |
-| **Ngắn** | `4aaa43e` |
-| **Nhánh nguồn** | `feature/kpi-dieu-chuyen-hang-loat` (fast-forward thẳng từ `2bd8508`, không phải rebase) |
-| **Ngày ghi mốc** | 13/09/2026 21:26 |
+| **Commit** | `c825d1d` |
+| **Ngắn** | `c825d1d` |
+| **Nhánh nguồn** | `feature/lms-nop-bai-excel` (fast-forward, đúng 1 commit trên `2b22e21`) |
+| **Ngày ghi mốc** | 14/09/2026 21:46 |
 | **Alembic** | `lms_reset_luot_thi_20260831` — **KHÔNG migration mới** |
+
+Nội dung: **LMS — nộp bài thực hành bằng Excel, và xem bảng tính ngay khi chấm.**
+
+Backend vốn đã nhận `xls/xlsx` từ đợt `d15b850`, nhưng Excel chưa dùng được trên
+thực tế: giảng viên phải tự gõ tên định dạng vì không có nút chọn, file Excel dùng
+chung icon 📄 với PowerPoint, và màn chấm rơi vào nhánh "không xem trước được" nên
+phải tải về mở Excel rồi quay lại nhập điểm. Nay có nút 📗 Excel, icon riêng, và
+bảng tính dựng thẳng trong modal chấm kèm thẻ chọn sheet. Khác Word ở chỗ SheetJS
+đọc được CẢ `.xls` nhị phân, nên Excel không có khoảng trống "định dạng cũ phải
+tải về" như `.doc`.
+
+Hai quyết định đáng giữ lại:
+- **Không** dùng `XLSX.utils.sheet_to_html` + `innerHTML`. File do học viên nộp,
+  modal chấm do giảng viên/quản trị mở; một ô tính chứa `<img onerror=...>` lọt vào
+  `innerHTML` là chạy trong phiên người chấm — leo thang đặc quyền chứ không chỉ lỗi
+  hiển thị. Dựng bảng bằng React để React tự escape, có test riêng chốt điều này.
+- Cắt hiển thị ở 200 hàng × 40 cột kèm nút tải bản gốc: học viên có thể nộp sheet
+  vài chục nghìn dòng, dựng hết ra DOM là treo trình duyệt người chấm.
+
+Một lỗi thật do test bắt được trước khi lên prod: `XLSX.read(buf, {type:'array'})`
+phải nhận `Uint8Array`; đưa thẳng `ArrayBuffer` thì SheetJS đọc nhầm byte ZIP thành
+chữ và hiện ra một ô `PK…`. Lỗi này hỏng y hệt trên trình duyệt thật.
+
+Không chạm `package.json`: `xlsx@0.20.3` đã có từ đợt vá bảo mật 31/07, đã đối chứng
+`node_modules/xlsx` tồn tại ở cây prod TRƯỚC khi chạy `trien_khai.sh` — nếu thiếu thì
+build sẽ vỡ giữa chừng vì `npm ci` không chạy khi `package-lock.json` không đổi.
+
+> Ghi chú quy trình: commit này dựng bằng plumbing (`commit-tree`), không phải
+> `git commit` thường. Lý do: một phiên Claude Code khác chạy song song trên CÙNG
+> cây làm việc `/root/kpi-haiquan` đã `checkout -b` sang nhánh riêng giữa lúc đang
+> stage, rồi commit `7ade6a0` nuốt luôn 8 file của đợt này. Dựng lại bằng plumbing
+> để không phải đổi HEAD hay viết lại lịch sử nhánh của phiên kia. **Bài học: hai
+> phiên dùng chung một cây làm việc thì index và HEAD là tài nguyên tranh chấp —
+> lần sau nên tách `git worktree` riêng cho mỗi phiên.** Hệ quả còn lại: `7ade6a0`
+> trên nhánh `feature/hkg-nghien-cuu-lay-y-kien` chứa 8 file Excel trùng lặp không
+> thuộc về nó, cố ý chưa dọn.
+
+### Mốc trước — `4aaa43e`
 
 Nội dung: **KPI — điều chuyển nhân sự hàng loạt theo quyết định, bằng file Excel.**
 
@@ -247,6 +285,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 10/09/2026 | `13647f8` | ĐGNL: công cụ reset lượt thi cho quản trị đào tạo — 2 endpoint chỉ-admin, nút Reset + Nhật ký trên trang thống kê kỳ thi, migration `lms_reset_luot_thi_20260831` thêm bảng `lms.lich_su_reset_thi`. Rebase `6c7270d` lên `prod` trước khi phát hành (SHA gốc đã tụt sau prod 9 commit) |
 | 10/09/2026 | `2bd8508` | ĐGNL: bộ lọc danh sách thí sinh trên trang thống kê kỳ thi — thuần frontend, không migration. **Phát hành nhưng khi đó chưa ghi sổ** |
 | 13/09/2026 | `4aaa43e` | KPI: điều chuyển nhân sự hàng loạt theo QĐ bằng Excel — 3 endpoint (`mau-excel`/`xem-truoc`/`ghi`), mẫu 4 sheet, trang `/admin/dieu-chuyen-hang-loat`; tách `app/core/dieu_chuyen.py` dùng chung với điều chuyển lẻ — **không migration** |
+| 14/09/2026 | `c825d1d` | LMS: nộp bài thực hành bằng Excel (.xlsx/.xls) — nút chọn định dạng 📗 Excel, icon riêng, xem bảng tính trong modal chấm bằng SheetJS (dựng bằng React, không innerHTML, cắt 200 hàng × 40 cột) — **không migration**, không đổi package-lock |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

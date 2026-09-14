@@ -233,7 +233,7 @@ gỡ khỏi giao diện để bớt gánh bảo trì:
 | Tính năng | Dấu vết dùng | Đề nghị |
 |---|---|---|
 | Kết luận + theo dõi tiến độ | 0 dòng, nhưng **2 job scheduler** phục vụ | Hỏi Văn phòng: có định dùng không? Nếu không, tắt 2 job |
-| Ý kiến (`y_kien`) | 0 dòng | Gỡ tab hoặc bỏ |
+| Ý kiến (`y_kien`) | 0 dòng | Xem lại — **không phải "gỡ tab"**: cải chính 14/09, tab ý kiến CHƯA TỪNG tồn tại trong `layout.tsx`. Bảng có model + migration nhưng **không có schema/endpoint/giao diện**, nên không có đường ghi nào; `bien_ban_service.py:333` có sẵn đoạn kết xuất mục "Ý kiến" vào biên bản Word nhưng chưa bao giờ chạy được. Đây là **khung dựng sẵn cho Module 7 "Lấy ý kiến từ xa"**, không phải tính năng bị bỏ rơi — xem `docs/HKG/DE_XUAT_LAY_Y_KIEN_DU_THAO.md` |
 | Xin phép vắng | 0 dòng, 1 job scheduler | Bảng điểm danh mới đã thay được phần lõi |
 | Mẫu biểu (`mau_bieu`) | 0 dòng | Bỏ |
 | Ghi chú cuộc họp | 18 dòng, **chết từ 17/06** | Tìm hiểu vì sao bị bỏ |

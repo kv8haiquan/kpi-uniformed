@@ -649,7 +649,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
             <div className="flex gap-2">
               {[
                 { v: 'TRAC_NGHIEM', label: '📝 Trắc nghiệm', hint: 'Câu hỏi tự động chấm' },
-                { v: 'THUC_HANH',   label: '📎 Thực hành',   hint: 'Học viên nộp file PDF / Word / video' },
+                { v: 'THUC_HANH',   label: '📎 Thực hành',   hint: 'Học viên nộp file PDF / Word / Excel / video' },
               ].map((opt) => (
                 <button
                   key={opt.v}
@@ -685,7 +685,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                   rows={4}
                   value={base.yeu_cau_bai_lam}
                   onChange={(e) => setBase({ ...base, yeu_cau_bai_lam: e.target.value })}
-                  placeholder="Mô tả chi tiết nội dung học viên cần làm và nộp (file PDF, Word hoặc video)..."
+                  placeholder="Mô tả chi tiết nội dung học viên cần làm và nộp (file PDF, Word, Excel hoặc video)..."
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y bg-white"
                 />
               </div>
@@ -700,7 +700,7 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                     onChange={(e) => setBase({ ...base, dung_luong_toi_da_mb: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                   />
-                  <p className="text-xs text-gray-400 mt-0.5">PDF/Word thường &lt; 20 MB · video 720p ~500 MB</p>
+                  <p className="text-xs text-gray-400 mt-0.5">PDF/Word/Excel thường &lt; 20 MB · video 720p ~500 MB</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Định dạng cho phép</label>
@@ -708,9 +708,10 @@ function BktEditor({ mode, init, khoaHocId, onClose, onSuccess }: BktEditorProps
                     {[
                       { label: '📕 PDF',      val: 'pdf' },
                       { label: '📘 Word',     val: 'doc,docx' },
-                      { label: '📄 PDF+Word', val: 'pdf,doc,docx' },
+                      { label: '📗 Excel',    val: 'xls,xlsx' },
+                      { label: '📄 Văn bản',  val: 'pdf,doc,docx,xls,xlsx' },
                       { label: '🎬 Video',    val: 'mp4,mov,webm' },
-                      { label: '📎 Tất cả',   val: 'pdf,doc,docx,mp4,mov,webm' },
+                      { label: '📎 Tất cả',   val: 'pdf,doc,docx,xls,xlsx,mp4,mov,webm' },
                     ].map((preset) => (
                       <button
                         key={preset.val}

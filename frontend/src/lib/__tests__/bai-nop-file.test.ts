@@ -38,8 +38,12 @@ describe('loaiFileBaiNop', () => {
     expect(loaiFileBaiNop('a.png')).toBe('ANH');
   });
 
-  it('Excel/PowerPoint xếp vào tài liệu, còn lại là khác', () => {
-    expect(loaiFileBaiNop('a.xlsx')).toBe('TAI_LIEU');
+  it('Excel là loại riêng, cả .xlsx lẫn .xls', () => {
+    expect(loaiFileBaiNop('a.xlsx')).toBe('EXCEL');
+    expect(loaiFileBaiNop('a.xls')).toBe('EXCEL');
+  });
+
+  it('PowerPoint vẫn là tài liệu chung, còn lại là khác', () => {
     expect(loaiFileBaiNop('a.pptx')).toBe('TAI_LIEU');
     expect(loaiFileBaiNop('a.zip')).toBe('KHAC');
   });
@@ -52,6 +56,12 @@ describe('iconBaiNop / nhanBaiNop', () => {
     expect(iconBaiNop('bai.pdf')).toBe('📕');
     expect(nhanBaiNop('bai.pdf')).toBe('PDF');
   });
+
+  it('Excel có icon xanh lá riêng, không lẫn với Word', () => {
+    expect(iconBaiNop('bang-ke.xlsx')).toBe('📗');
+    expect(nhanBaiNop('bang-ke.xlsx')).toBe('Excel');
+    expect(iconBaiNop('bang-ke.xls')).toBe('📗');
+  });
 });
 
 describe('moTaDinhDang', () => {
@@ -61,8 +71,13 @@ describe('moTaDinhDang', () => {
     expect(moTaDinhDang('mp4,mov,webm')).toEqual({ icon: '🎬', nhan: 'video' });
   });
 
-  it('trộn PDF + Word → gọi chung là tài liệu', () => {
+  it('một loại Excel → nhãn Excel', () => {
+    expect(moTaDinhDang('xls,xlsx')).toEqual({ icon: '📗', nhan: 'Excel' });
+  });
+
+  it('trộn PDF + Word (+ Excel) → gọi chung là tài liệu', () => {
     expect(moTaDinhDang('pdf,doc,docx')).toEqual({ icon: '📄', nhan: 'tài liệu' });
+    expect(moTaDinhDang('pdf,doc,docx,xls,xlsx')).toEqual({ icon: '📄', nhan: 'tài liệu' });
   });
 
   it('trộn văn bản với video → nhãn chung chung', () => {

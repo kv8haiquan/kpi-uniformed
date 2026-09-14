@@ -454,3 +454,66 @@ class TestNopFileThucHanh:
         )
         assert r2.status_code == 201, r2.text
         assert r2.json()["data"]["lan_thu"] == 2
+
+    # ── EXCEL ────────────────────────────────────────────────────────────────
+
+    async def test_nop_xlsx_thanh_cong(self, client, admin_user, tmp_path, monkeypatch):
+        """Hoc vien nop bang tinh .xlsx (dinh dang ZIP) — 201."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="xls,xlsx")
+        assert s["bkt"]["dinh_dang_cho_phep"] == "xls,xlsx"
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("bang-ke.xlsx", io.BytesIO(_ZIP + b" noi dung bang tinh"),
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()["data"]
+        assert data["bai_nop_ten_file"] == "bang-ke.xlsx"
+        assert data["trang_thai_cham"] == "CHO_CHAM"
+
+    async def test_nop_xls_ole2_thanh_cong(self, client, admin_user, tmp_path, monkeypatch):
+        """File .xls Excel 97-2003 (chu ky OLE2) duoc chap nhan."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="xls,xlsx")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("bang-ke-cu.xls", io.BytesIO(_OLE2 + b" noi dung"),
+                            "application/vnd.ms-excel")},
+        )
+        assert resp.status_code == 201, resp.text
+
+    async def test_nop_xlsx_gia_bi_tu_choi(self, client, admin_user, tmp_path, monkeypatch):
+        """File doi duoi thanh .xlsx nhung khong phai ZIP bi chan."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="xlsx")
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        resp = await client.post(
+            f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+            files={"file": ("gia-mao.xlsx", io.BytesIO(b"MZ\x90\x00 khong phai excel"),
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert resp.status_code == 400, resp.text
+        assert resp.json()["detail"]["error"]["code"] == "LMS_ERR_008"
+
+    async def test_bkt_nhan_ca_van_ban_lan_bang_tinh(self, client, admin_user, tmp_path, monkeypatch):
+        """Bo nut 'Van ban' (pdf,doc,docx,xls,xlsx) nhan du ca ba ho file."""
+        monkeypatch.setattr(lms_config.settings, "upload_dir", str(tmp_path))
+        s = await _setup_bkt_thuc_hanh(client, dinh_dang="pdf,doc,docx,xls,xlsx")
+        assert s["bkt"]["dinh_dang_cho_phep"] == "pdf,doc,docx,xls,xlsx"
+        await dang_ky_va_duyet(client, s["kh_id"], admin_user)
+
+        for i, (ten, noi_dung) in enumerate(
+            [("a.pdf", b"%PDF-1.4 x"), ("b.docx", _ZIP + b" x"), ("c.xlsx", _ZIP + b" x")], start=1
+        ):
+            r = await client.post(
+                f"/api/v1/lms/bai-kiem-tra/{s['bkt_id']}/nop-bai-thuc-hanh",
+                files={"file": (ten, io.BytesIO(noi_dung), "application/octet-stream")},
+            )
+            assert r.status_code == 201, f"{ten}: {r.text}"
+            assert r.json()["data"]["lan_thu"] == i

@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react';
 import { baoCaoApi, baiKiemTraApi } from '@/services/lms';
 import { iconBaiNop, layExtension, loaiFileBaiNop, nhanBaiNop } from '@/lib/bai-nop-file';
 import XemTruocWord from '@/components/lms/XemTruocWord';
+import XemTruocExcel from '@/components/lms/XemTruocExcel';
 
 interface Props {
   khoaHocId: string;
@@ -602,6 +603,13 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                       url={chamModal.bai_nop_url}
                       tenFile={chamModal.bai_nop_ten_file}
                     />
+                  ) : loaiFile === 'EXCEL' ? (
+                    // SheetJS doc duoc ca .xlsx lan .xls nen khong can tach nhanh
+                    <XemTruocExcel
+                      key={chamModal.bai_nop_url}
+                      url={chamModal.bai_nop_url}
+                      tenFile={chamModal.bai_nop_ten_file}
+                    />
                   ) : loaiFile === 'ANH' ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -610,7 +618,7 @@ export default function KetQuaKhoaHocPanel({ khoaHocId }: Props) {
                       className="w-full max-h-[50vh] object-contain rounded-lg border border-gray-200 bg-gray-50"
                     />
                   ) : (
-                    // .doc cu / Excel / PowerPoint: trinh duyet khong doc duoc → tai ve
+                    // .doc cu / PowerPoint: trinh duyet khong doc duoc → tai ve
                     <div className="border border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50">
                       <div className="text-3xl mb-1">{iconBaiNop(tenHoacUrl)}</div>
                       <p className="text-sm text-gray-600">

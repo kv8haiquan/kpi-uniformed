@@ -1,0 +1,175 @@
+📄 Excel : /root/kpi-haiquan/docs/Fix-dieu-chuyen-don-vi/BANG THEO DOI DIEU DONG 2026.xls
+🗄️  DB    : kpi_haiquan @ localhost:5432
+🔧 Chế độ: XEM TRƯỚC (dry-run)
+✅ Đọc được 142 dòng quyết định từ Excel
+
+====================================================================================================
+1) GỘP KHỨ HỒI — xóa 8 bản ghi
+====================================================================================================
+   20ZZ-0417  Lê Vũ Hải                  2026-06-01     HQCK-CP -> HQCK-MC    (trùng cùng chiều QĐ)
+   20ZZ-0417  Lê Vũ Hải                  2026-06-02     HQCK-MC -> HQCK-CP    (hoàn tác của lần nhập sai)
+   20ZZ-0210  Lê Hùng                    2026-06-01     HQCK-VG -> HQCK-MC    (trùng cùng chiều QĐ)
+   20ZZ-0210  Lê Hùng                    2026-06-02     HQCK-MC -> HQCK-VG    (hoàn tác của lần nhập sai)
+   20ZZ-0108  Ngô Văn Chung              2026-05-29    HQCK-BPS -> HQCK-HM    (trùng cùng chiều QĐ)
+   20ZZ-0108  Ngô Văn Chung              2026-06-02     HQCK-HM -> HQCK-BPS   (hoàn tác của lần nhập sai)
+   20ZZ-0126  Lê Thanh Hải               2026-06-01       PTSTQ -> HQCK-MC    (trùng cùng chiều QĐ)
+   20ZZ-0126  Lê Thanh Hải               2026-06-01     HQCK-MC -> PTSTQ      (hoàn tác của lần nhập sai)
+
+====================================================================================================
+2) SỬA NGÀY HIỆU LỰC — 77 bản ghi
+====================================================================================================
+   20ZZ-0546  Đặng Hoàng Sơn             2026-06-01   -> 2026-05-15     HQCK-CP -> HQCK-MC
+   20ZZ-0251  Nguyễn Khắc Trung          2026-06-01   -> 2026-05-15     HQCK-CP -> HQCK-MC
+   20ZZ-0466  Đỗ Trung Kiên              2026-06-05   -> 2026-05-15     HQCK-CP -> HQCK-VG
+   20ZZ-0417  Lê Vũ Hải                  2026-06-02   -> 2026-05-15     HQCK-CP -> HQCK-MC
+   20ZZ-0241  Trần Việt Dũng             2026-06-01   -> 2026-05-15     HQCK-CP -> HQCK-MC
+   20ZZ-0124  Trương Việt Dũng           2026-06-05   -> 2026-05-15     HQCK-HG -> HQCK-VG
+   20ZZ-0381  Vũ Thị Thu Thảo            2026-06-01   -> 2026-05-15     HQCK-HG -> HQCK-MC
+   20ZZ-0014  Phạm Đình Cương            2026-06-01   -> 2026-05-15     HQCK-HG -> HQCK-MC
+   20ZZ-0266  Bùi Đình Thọ               2026-06-05   -> 2026-05-15     HQCK-HG -> HQCK-VG
+   20ZZ-0160  Nguyễn Thị Khanh           2026-06-03   -> 2026-05-15     HQCK-HG -> HQCK-HM
+   20ZZ-0498  Hoàng Tuấn Minh            2026-06-01   -> 2026-05-15     HQCK-HG -> HQCK-MC
+   20ZZ-0278  Nguyễn Văn Thặng           2026-06-01   -> 2026-05-15     HQCK-HG -> HQCK-MC
+   20ZZ-0582  Đỗ Đức Long                2026-06-01   -> 2026-05-15     HQCK-HG -> HQCK-MC
+   20ZZ-0086  Hoàng Dương Thương         2026-06-04   -> 2026-05-15     HQCK-HG -> HQCK-HM
+   20ZZ-0311  Lương Viết Sơn Hà          2026-06-01   -> 2026-05-15     HQCK-HG -> HQCK-MC
+   20ZZ-0255  Nguyễn Việt Thanh          2026-06-03   -> 2026-05-15     HQCK-HG -> HQCK-BPS
+   20ZZ-0081  Lê Mạnh Tú                 2026-06-02   -> 2026-05-15     HQCK-MC -> NVHQ
+   20ZZ-0457  Nguyễn Văn Việt            2026-06-05   -> 2026-05-15     HQCK-MC -> KSHQ
+   20ZZ-0484  Phạm Trung Dũng            2026-06-04   -> 2026-05-15     HQCK-MC -> KSHQ
+   20ZZ-0207  Nguyễn Thanh Quang 1970    2026-05-26   -> 2026-05-15     HQCK-MC -> KSHQ
+   20ZZ-0560  Phạm Thị Thu Thuỷ          2026-05-20   -> 2026-05-15     HQCK-MC -> VP
+   20ZZ-0070  Trần Thu Hương             2026-06-03   -> 2026-05-15     HQCK-MC -> HQCK-HG
+   20ZZ-0040  Nguyễn Việt Toàn           2026-06-01   -> 2026-05-15     HQCK-MC -> TCCB
+   20ZZ-0547  Vũ Ngọc Dũng               2026-06-01   -> 2026-05-15     HQCK-MC -> HQCK-HM
+   20ZZ-0085  Đỗ Tuấn Anh                2026-06-03   -> 2026-05-15     HQCK-MC -> HQCK-HG
+   20ZZ-0355  Đặng Văn Thuấn             2026-06-01   -> 2026-05-15     HQCK-MC -> HQCK-HM
+   20ZZ-0513  Nguyễn Tiến Vinh           2026-05-26   -> 2026-05-15     HQCK-MC -> PTSTQ
+   20ZZ-0162  Trần Thanh Dương           2026-06-04   -> 2026-05-15     HQCK-MC -> HQCK-CP
+   20ZZ-0459  Ngô Quang Long             2026-06-01   -> 2026-05-15     HQCK-MC -> PTSTQ
+   20ZZ-0237  Nguyễn Thanh Quang 1975    2026-06-04   -> 2026-05-15     HQCK-MC -> KSHQ
+   20ZZ-0409  Bùi Tuấn Phong             2026-06-03   -> 2026-05-15     HQCK-MC -> HQCK-HG
+   20ZZ-0410  Đào Duy Hưng               2026-06-03   -> 2026-05-15     HQCK-MC -> HQCK-HG
+   20ZZ-0194  Ngô Minh Hoàn              2026-06-02   -> 2026-05-15     HQCK-MC -> TCCB
+   20ZZ-0138  Hoàng Văn Thoại            2026-05-21   -> 2026-05-15     HQCK-MC -> QLRR
+   20ZZ-0357  Lê Hải Sơn                 2026-06-01   -> 2026-05-15     HQCK-MC -> KSHQ
+   20ZZ-0594  Phan Thị Ngọc Hoàn         2026-06-01   -> 2026-05-15        QLRR -> HQCK-MC
+   20ZZ-0350  Đỗ Thị Thu Hà              2026-06-01   -> 2026-05-15        TCCB -> HQCK-HM
+   20ZZ-0036  Phạm Quỳnh Mai             2026-06-03   -> 2026-05-15        TCCB -> HQCK-HG
+   20ZZ-0212  Đỗ Bích Diệp               2026-06-01   -> 2026-05-15          VP -> HQCK-MC
+   20ZZ-0059  Phan Thị Thu Trang         2026-06-01   -> 2026-05-15          VP -> HQCK-MC
+   20ZZ-0310  Nguyễn Thị Hằng            2026-06-05   -> 2026-05-15        NVHQ -> HQCK-HM
+   20ZZ-0589  Ngô Bá Thành               2026-06-02   -> 2026-05-15        NVHQ -> HQCK-HM
+   20ZZ-0306  Trần Đình Toản             2026-06-05   -> 2026-05-15        NVHQ -> HQCK-VG
+   20ZZ-0358  Mai Viết Long              2026-06-03   -> 2026-05-15     HQCK-HM -> HQCK-BPS
+   20ZZ-0451  Phạm Thị Nguyệt            2026-06-03   -> 2026-05-15     HQCK-HM -> NVHQ
+   20ZZ-0088  Lê Mạnh Hùng               2026-06-03   -> 2026-05-15     HQCK-HM -> HQCK-BPS
+   20ZZ-0508  Nguyễn Xuân Giáp           2026-06-02   -> 2026-05-15        KSHQ -> HQCK-HG
+   20ZZ-0261  Nguyễn Mạnh Cường 1970     2026-06-01   -> 2026-05-15        KSHQ -> HQCK-MC
+   20ZZ-0317  Nguyễn Hoàng Sâm           2026-06-02   -> 2026-05-15        KSHQ -> HQCK-MC
+   20ZZ-0509  Đinh Tiến Minh             2026-06-02   -> 2026-05-15        KSHQ -> HQCK-HM
+   20ZZ-0246  Hà Đức Hùng                2026-06-03   -> 2026-05-15        KSHQ -> HQCK-BPS
+   20ZZ-0304  Vũ Thị Hậu                 2026-06-01   -> 2026-05-15        KSHQ -> HQCK-MC
+   20ZZ-0250  Phạm Minh Tuấn             2026-06-04   -> 2026-05-15        KSHQ -> HQCK-VG
+   20ZZ-0587  Nguyễn Hồng Ngọc           2026-06-01   -> 2026-05-15        KSHQ -> HQCK-MC
+   20ZZ-0362  Trần Quốc Bình             2026-06-05   -> 2026-05-15        KSHQ -> HQCK-VG
+   20ZZ-0341  Đặng Ngọc Thanh            2026-06-03   -> 2026-05-15        KSHQ -> HQCK-HG
+   20ZZ-0198  Ngô Xuân Thịnh             2026-06-05   -> 2026-05-15        KSHQ -> HQCK-VG
+   20ZZ-0210  Lê Hùng                    2026-06-02   -> 2026-05-15     HQCK-VG -> HQCK-MC
+   20ZZ-0189  Nguyễn Đỗ Chức             2026-06-01   -> 2026-05-15     HQCK-VG -> HQCK-MC
+   20ZZ-0090  Nguyễn Anh Tuấn 1972       2026-06-05   -> 2026-05-15     HQCK-VG -> KSHQ
+   20ZZ-0563  Cù Hoàng Việt              2026-06-05   -> 2026-05-15     HQCK-VG -> KSHQ
+   20ZZ-0142  Vũ Minh Tuấn               2026-06-04   -> 2026-05-15     HQCK-VG -> HQCK-BPS
+   20ZZ-0277  Nguyễn Văn Nam             2026-06-03   -> 2026-05-15     HQCK-VG -> KSHQ
+   20ZZ-0314  Trần Văn Nhân              2026-06-02   -> 2026-05-15     HQCK-VG -> KSHQ
+   20ZZ-0249  Nguyễn Văn Hoàng           2026-06-01   -> 2026-05-15    HQCK-BPS -> HQCK-MC
+   20ZZ-0108  Ngô Văn Chung              2026-06-02   -> 2026-05-15    HQCK-BPS -> HQCK-HM
+   20ZZ-0343  Nguyễn Quang Tùng          2026-06-01   -> 2026-05-15    HQCK-BPS -> HQCK-MC
+   20ZZ-0126  Lê Thanh Hải               2026-06-02   -> 2026-05-15       PTSTQ -> HQCK-MC
+   20ZZ-0536  Nguyễn Quang Anh           2026-06-05   -> 2026-05-15        KSHQ -> HQCK-VG
+   20ZZ-0426  Nguyễn Quang Sơn           2026-06-04   -> 2026-05-15        KSHQ -> HQCK-VG
+   20ZZ-0523  Lưu Chí Công               2026-06-04   -> 2026-05-15        KSHQ -> HQCK-VG
+   20ZZ-0530  Nguyễn Lương Quyền         2026-06-05   -> 2026-05-15     HQCK-VG -> KSHQ
+   20ZZ-0535  Trương Quốc Huy            2026-06-06   -> 2026-05-15     HQCK-VG -> HQCK-HG
+   20ZZ-0532  Trần Ngọc Tuyên            2026-06-05   -> 2026-05-15     HQCK-VG -> KSHQ
+   20ZZ-0175  Nguyễn Ngọc Hải            2026-06-06   -> 2026-05-15     HQCK-HG -> HQCK-VG
+   20ZZ-0019  Bùi Anh Luận               2026-07-14   -> 2026-06-03          VP -> HQCK-VG
+   20ZZ-0018  Bùi Quang Tiến             2026-07-13   -> 2026-06-03     HQCK-MC -> HQCK-HG
+
+====================================================================================================
+3) THÊM MỚI — 62 bản ghi
+====================================================================================================
+   20ZZ-0399  Trần Văn Tuyên             2026-02-04    HQCK-BPS -> HQCK-HM
+   20ZZ-0374  Nguyễn Xuân Tùng           2026-02-04     HQCK-HM -> HQCK-BPS
+   20ZZ-0183  Phạm Thái Hưng             2026-02-04     HQCK-HG -> HQCK-VG
+   20ZZ-0602  Nguyễn Anh Dũng            2026-02-04     HQCK-CP -> VP
+   20ZZ-0558  Nguyễn Minh Chiến          2026-02-04          VP -> HQCK-CP
+   20ZZ-0021  Vũ Văn Cường               2026-02-04     HQCK-HM -> HQCK-CP
+   20ZZ-0220  Nguyễn Viết Cường 1971     2026-02-04     HQCK-CP -> HQCK-HM
+   20ZZ-0500  Vũ Đình Thảo               2026-02-04     HQCK-HG -> HQCK-VG
+   20ZZ-0501  Mạc Văn Hiểu               2026-02-04     HQCK-VG -> HQCK-HG
+   20ZZ-0006  Nguyễn Quang Hưng          2026-02-04    HQCK-BPS -> HQCK-VG
+   20ZZ-0480  Nguyễn Biên Hoà            2026-02-04     HQCK-VG -> VP
+   20ZZ-0098  Nguyễn Quốc Bình           2026-02-04        QLRR -> HQCK-VG
+   20ZZ-0083  Phạm Văn Minh              2026-02-04     HQCK-MC -> KSHQ
+   20ZZ-0507  Nguyễn Thanh Bình          2026-02-04        KSHQ -> HQCK-CP
+   20ZZ-0471  Nguyễn Thế Thiện           2026-02-04        KSHQ -> HQCK-BPS
+   20ZZ-0226  Lê Hà Phong                2026-02-04        KSHQ -> HQCK-VG
+   20ZZ-0062  Đào Kim Oanh               2026-02-04          VP -> QLRR
+   20ZZ-0187  Nguyễn Đình Hiến           2026-02-04     HQCK-VG -> HQCK-MC
+   20ZZ-0157  Bùi Hải Yến                2026-02-04     HQCK-HG -> HQCK-MC
+   20ZZ-0349  Nguyễn Ngọc Thực           2026-02-04     HQCK-HG -> HQCK-BPS
+   20ZZ-0163  Vũ Xuân Đoàn               2026-02-04     HQCK-HM -> HQCK-BPS
+   20ZZ-0161  Nguyễn Thị Thơm            2026-02-04        KSHQ -> HQCK-HM
+   20ZZ-0044  Tạ Thị Hiền                2026-02-04        TCCB -> HQCK-MC
+   20ZZ-0483  Nguyễn Đức Tuệ 1985        2026-02-04     HQCK-HG -> TCCB
+   20ZZ-0303  Vũ Thanh Hảo               2026-02-04       PTSTQ -> HQCK-MC
+   20ZZ-0378  Chu Minh Phong             2026-02-04       PTSTQ -> HQCK-HM
+   20ZZ-0203  Bùi Mạnh Hùng              2026-02-04     HQCK-CP -> HQCK-HM
+   20ZZ-0234  Nguyễn Hồng Phúc           2026-02-04        KSHQ -> HQCK-VG
+   20ZZ-0298  Phạm Thị Lan Hương 1987    2026-02-04    HQCK-BPS -> HQCK-MC
+   20ZZ-0197  Trần Nghĩa Long            2026-02-04     HQCK-CP -> HQCK-MC
+   20ZZ-0342  Đoàn Hồng Chuyên           2026-02-04     HQCK-MC -> HQCK-CP
+   20ZZ-0495  Trần Văn Tuyển             2026-02-04     HQCK-MC -> HQCK-HG
+   20ZZ-0077  Nguyễn Ngọc Vững           2026-02-04     HQCK-MC -> NVHQ
+   20ZZ-0445  Lý Trần Hùng               2026-02-04     HQCK-MC -> HQCK-HM
+   20ZZ-0597  Vũ Nguyên Linh             2026-02-04     HQCK-HG -> HQCK-MC
+   20ZZ-0144  Dương Mạnh Hà              2026-02-04     HQCK-HG -> HQCK-MC
+   20ZZ-0011  Nguyễn Thu Trang           2026-02-04     HQCK-CP -> VP
+   20ZZ-0053  Bùi Văn Khởi               2026-02-04     HQCK-MC -> VP
+   20ZZ-0346  Phạm Đình Trung            2026-02-04     HQCK-HG -> HQCK-VG
+   20ZZ-0436  Lê Công Hùng               2026-02-04     HQCK-HM -> HQCK-VG
+   20ZZ-0248  Nguyễn Tiến Ánh            2026-02-04        KSHQ -> HQCK-VG
+   20ZZ-0449  Vũ Thị Bích Diệp           2026-02-04     HQCK-CP -> HQCK-MC
+   20ZZ-0592  Phạm Thanh Ngân            2026-02-04          VP -> HQCK-MC
+   20ZZ-0267  Lê Thị Minh                2026-02-04     HQCK-MC -> KSHQ
+   20ZZ-0050  Vũ Thị Thuỷ                2026-02-04     HQCK-HM -> HQCK-MC
+   20ZZ-0308  Phạm Thị Phương Thanh      2026-02-04     HQCK-MC -> PTSTQ
+   20ZZ-0092  Bùi Ngọc Thái              2026-02-04        KSHQ -> HQCK-MC
+   20ZZ-0172  Trần Quốc Phong            2026-02-04     HQCK-VG -> HQCK-CP
+   20ZZ-0064  Đàm Quang Cường            2026-02-04     HQCK-MC -> HQCK-HG
+   20ZZ-0206  Nguyễn Công Toàn           2026-02-04     HQCK-MC -> HQCK-HG
+   20ZZ-0447  Nguyễn Trọng Nghĩa         2026-02-04     HQCK-MC -> PTSTQ
+   20ZZ-0497  Nguyễn Ngọc Khánh          2026-02-04     HQCK-MC -> HQCK-HG
+   20ZZ-0414  Nguyễn Minh Đức            2026-02-04     HQCK-HG -> HQCK-MC
+   20ZZ-0383  Đinh Bá Sơn                2026-02-04     HQCK-HM -> HQCK-HG
+   20ZZ-0291  Hồ Thị Hà                  2026-02-04       PTSTQ -> HQCK-HG
+   20ZZ-0455  Nguyễn Chính Đại           2026-02-04    HQCK-BPS -> KSHQ
+   20ZZ-0230  Ngô Quang Vinh             2026-02-04        KSHQ -> HQCK-MC
+   20ZZ-0268  Nguyễn Doãn Hiệp           2026-02-04        KSHQ -> NVHQ
+   20ZZ-0465  Hoàng Quốc Kiên            2026-02-04     HQCK-MC -> HQCK-BPS
+   20ZZ-0245  Đỗ Thuý Hằng               2026-02-04     HQCK-MC -> KSHQ
+   20ZZ-0388  Đỗ Thế Anh                 2026-02-04    HQCK-BPS -> HQCK-HM
+   20ZZ-0102  Dương Hương Giang          2026-02-04        NVHQ -> PTSTQ
+
+4) ĐÃ ĐÚNG SẴN — 3 bản ghi (không đụng)
+   20ZZ-0529  Nguyễn Đức Quang           2026-07-03     HQCK-MC -> KSHQ
+   20ZZ-0176  Nguyễn Văn Hoàn 1995       2026-07-03     HQCK-MC -> KSHQ
+   20ZZ-0527  Phạm Bình Dương            2026-07-03     HQCK-MC -> KSHQ
+
+----------------------------------------------------------------------------------------------------
+TỔNG: xóa 8 · sửa 77 · thêm 62 · đã đúng 3 · cảnh báo 0
+----------------------------------------------------------------------------------------------------
+
+ℹ️  Chế độ xem trước — KHÔNG ghi gì vào DB.
+   Thêm --apply để ghi thật.

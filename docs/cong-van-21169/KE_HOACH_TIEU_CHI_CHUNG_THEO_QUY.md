@@ -5,7 +5,15 @@
 > - Công văn triển khai của Chi cục HQKV VIII (đã ký, Chi cục trưởng Phạm Quốc Hưng): `docs/KPI-new/Cong van/Chi cục/CV trien khai DGXL_HQKV8 (ký).docx`
 > - Mẫu số 02A (công chức) / 02B (lãnh đạo) — phiếu đánh giá, xếp loại **theo quý**
 >
-> Ngày lập: 18/09/2026 · **Bản 2** (viết lại sau khi có văn bản gốc) · Trạng thái: chờ duyệt phạm vi đợt P0
+> Ngày lập: 18/09/2026 · **Bản 2** (viết lại sau khi có văn bản gốc)
+>
+> **Trạng thái 18/09/2026 18:15 — đợt P0 ĐÃ CODE XONG, CHƯA PHÁT HÀNH.**
+> Nhánh `feature/kpi-tieu-chi-theo-quy`, 3 commit:
+> `1de4c89` backend · `7cda61f` frontend · `440356d` test luồng duyệt 2 cấp.
+> Kiểm chứng: `DB_NAME=kpi_haiquan_test pytest tests/` → 116 passed (11 test mới
+> đều PASS; 2 test đỏ có sẵn từ trước, đã đối chiếu trên code gốc), build
+> frontend PASS. Production chưa bị đụng: chưa chạy migration, chưa restart.
+> Chờ người dùng duyệt phát hành — xem mục 6.
 
 ---
 

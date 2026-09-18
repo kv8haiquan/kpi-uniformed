@@ -17,6 +17,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { nhanKy, tcTheoQuy } from '@/lib/ky-tieu-chi';
 import { kpiV2Service } from '@/services/kpi-v2.service';
 import { tieuChiChungService } from '@/services/tieu-chi-chung.service';
 import { kpiLanhDaoV2Service } from '@/services/kpiLanhDaoV2.service';
@@ -617,11 +618,16 @@ export default function DanhGiaV2Page() {
                 <ScoreCard
                   title="Tiêu chí chung"
                   subtitle={
-                    tab === 'tam_tinh'
+                    // CV 21169: từ Q3/2026 điểm tiêu chí là điểm của CẢ QUÝ, dùng
+                    // chung cho 3 tháng → ghi rõ nguồn để CC không tưởng chấm nhầm.
+                    (tcTheoQuy(selectedThang, selectedNam)
+                      ? `${nhanKy(selectedThang, selectedNam)} • `
+                      : '') +
+                    (tab === 'tam_tinh'
                       ? 'Điểm tự chấm'
                       : tcChuaPheDuyet
                       ? 'Chờ phê duyệt'
-                      : 'Đã phê duyệt'
+                      : 'Đã phê duyệt')
                   }
                   value={diemTCHienThi}
                   maxValue={30}

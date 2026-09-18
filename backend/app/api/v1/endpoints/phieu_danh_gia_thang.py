@@ -34,6 +34,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import ActiveUserDep, DatabaseDep
+from app.core.ky_tieu_chi import ky_thang_con_hieu_luc, nhan_ky, thang_neo
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChungDanhGia,
@@ -180,6 +181,21 @@ async def upsert_phieu_nhap(
     phieu = (await db.execute(stmt)).scalar_one_or_none()
 
     if phieu is None:
+        # CV 21169 (18/09/2026): từ Q3/2026 phiếu đánh giá cá nhân lập theo QUÝ
+        # (Mẫu 02A/02B). Không tạo mới phiếu tháng nữa; phiếu tháng cũ vẫn xem/in được.
+        if not ky_thang_con_hieu_luc(payload.thang, payload.nam):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_response(
+                    code="PHIEU_T_009",
+                    message=(
+                        f"Từ {nhan_ky(payload.thang, payload.nam)}, phiếu đánh giá lập theo QUÝ "
+                        f"(Mẫu 02A/02B, Công văn 21169/CHQ-TCCB). "
+                        f"Không tạo phiếu tháng {payload.thang}/{payload.nam}."
+                    ),
+                ),
+            )
+
         phieu = PhieuDanhGiaThang(
             cong_chuc_id=current_user.id,
             thang=payload.thang,
@@ -670,7 +686,8 @@ async def kiem_tra_du_dieu_kien(
         .select_from(TieuChiChungDanhGia)
         .join(DanhGiaThang, DanhGiaThang.id == TieuChiChungDanhGia.danh_gia_thang_id)
         .where(DanhGiaThang.cong_chuc_id == current_user.id)
-        .where(DanhGiaThang.thang == thang)
+        # CV 21169: kỳ theo quý → phiếu tiêu chí nằm ở bản ghi tháng cuối quý
+        .where(DanhGiaThang.thang == thang_neo(thang, nam))
         .where(DanhGiaThang.nam == nam)
         .where(DanhGiaThang.is_deleted == False)
         .where(TieuChiChungDanhGia.trang_thai.in_(tc_dang_tam_tinh))

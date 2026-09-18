@@ -47,6 +47,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.ky_tieu_chi import thang_neo
 from app.models.kpi_assessment import DanhGiaThang
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import (
@@ -414,11 +415,19 @@ async def _lay_tc_chung_thang(
     thang: int,
     nam: int,
 ) -> Decimal:
-    """Điểm tiêu chí chung đã phê duyệt của 1 tháng (scale 0-30). 0 nếu không có."""
+    """Điểm tiêu chí chung đã phê duyệt của 1 tháng (scale 0-30). 0 nếu không có.
+
+    CV 21169 (18/09/2026): từ Q3/2026 tiêu chí chung chấm 1 lần cho CẢ QUÝ, phiếu
+    neo ở THÁNG CUỐI QUÝ. Khi đó mọi tháng trong quý trả về cùng một con điểm —
+    lấy từ bản ghi neo. Kỳ trước mốc giữ nguyên hành vi cũ (đọc đúng tháng đó).
+
+    Hệ quả cho mục 5 của `tinh_diem_quy`: trung bình 3 tháng bằng chính điểm quý,
+    nên công thức lũy kế bên dưới không cần đổi.
+    """
     stmt = (
         select(DanhGiaThang.diem_tieu_chi_chung)
         .where(DanhGiaThang.cong_chuc_id == cong_chuc_id)
-        .where(DanhGiaThang.thang == thang)
+        .where(DanhGiaThang.thang == thang_neo(thang, nam))
         .where(DanhGiaThang.nam == nam)
         .where(DanhGiaThang.is_deleted == False)
     )

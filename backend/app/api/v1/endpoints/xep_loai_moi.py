@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
+from app.core.ky_tieu_chi import thang_neo
 from app.core.kpi_calculator_v2 import calculate_kpi_score_v2
 from app.core.kpi_version import resolve_kpi_version, VERSION_V2
 from app.core.hdld_vb714 import is_hdld_vb714_active, tinh_diem_kpi_70_hdld_vb714
@@ -754,7 +755,8 @@ async def get_tong_hop_xep_loai(
                 selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
             )
             .where(DanhGiaThang.cong_chuc_id == cc.id)
-            .where(DanhGiaThang.thang == thang)
+            # CV 21169: kỳ theo quý → tiêu chí nằm ở bản ghi tháng cuối quý
+            .where(DanhGiaThang.thang == thang_neo(thang, nam))
             .where(DanhGiaThang.nam == nam)
             .where(DanhGiaThang.is_deleted == False)
         )
@@ -940,7 +942,8 @@ async def get_chi_tiet_xep_loai(
             selectinload(DanhGiaThang.nguoi_phe_duyet_tc_cap2),
         )
         .where(DanhGiaThang.cong_chuc_id == cong_chuc_id)
-        .where(DanhGiaThang.thang == thang)
+        # CV 21169: kỳ theo quý → tiêu chí nằm ở bản ghi tháng cuối quý
+        .where(DanhGiaThang.thang == thang_neo(thang, nam))
         .where(DanhGiaThang.nam == nam)
         .where(DanhGiaThang.is_deleted == False)
     )

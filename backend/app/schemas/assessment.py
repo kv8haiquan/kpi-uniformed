@@ -721,6 +721,19 @@ class DanhSachChoPheDuyetItem(BaseModel):
         default=None,
         description="Người gọi API có quyền phê duyệt đơn này lúc này không"
     )
+    # CV 21169 (18/09/2026): kỳ chấm tiêu chí chung — 'QUY' từ Q3/2026, 'THANG' trước đó
+    ky: Optional[str] = Field(
+        default=None,
+        description="Loại kỳ chấm tiêu chí: 'QUY' hoặc 'THANG'"
+    )
+    nhan_ky: Optional[str] = Field(
+        default=None,
+        description="Nhãn kỳ để hiển thị: 'Quý 3/2026' hoặc 'Tháng 5/2026'"
+    )
+    cac_thang_ap_dung: Optional[List[int]] = Field(
+        default=None,
+        description="Các tháng dùng chung điểm tiêu chí của kỳ này"
+    )
 
 
 class DanhSachChoPheDuyetResponse(BaseModel):

@@ -31,6 +31,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 
 from app.api.deps import DatabaseDep, ActiveUserDep
+from app.core.ky_tieu_chi import thang_neo
 from app.models.user_org import CongChuc, DonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_assessment import DanhGiaThang
 from app.models.kpi_submission import KeKhaiCongViec
@@ -209,6 +210,8 @@ async def _thu_thap_doi_soat(
     set_kk_cv = {r[0] for r in kk_cv_rows}
 
     # 2b. Đánh giá tháng (tiêu chí chung): trạng thái + người duyệt
+    # CV 21169: kỳ theo quý → phiếu tiêu chí neo ở tháng cuối quý. Không đọc theo
+    # tháng neo thì mọi công chức của T7/T8 bị báo nhầm "chưa chấm tiêu chí".
     dgt_rows = await db.execute(
         select(
             DanhGiaThang.cong_chuc_id,
@@ -217,7 +220,7 @@ async def _thu_thap_doi_soat(
             DanhGiaThang.nguoi_phe_duyet_tc_cap2_id,
         ).where(
             DanhGiaThang.cong_chuc_id.in_(cc_ids),
-            DanhGiaThang.thang == thang,
+            DanhGiaThang.thang == thang_neo(thang, nam),
             DanhGiaThang.nam == nam,
             DanhGiaThang.is_deleted == False,  # noqa: E712
         )

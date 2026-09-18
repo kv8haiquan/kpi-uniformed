@@ -7,11 +7,67 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `4aaa43e` |
-| **Ngắn** | `4aaa43e` |
-| **Nhánh nguồn** | `feature/kpi-dieu-chuyen-hang-loat` (fast-forward thẳng từ `2bd8508`, không phải rebase) |
-| **Ngày ghi mốc** | 13/09/2026 21:26 |
-| **Alembic** | `lms_reset_luot_thi_20260831` — **KHÔNG migration mới** |
+| **Commit** | `41058a3` |
+| **Ngắn** | `41058a3` |
+| **Nhánh nguồn** | `feature/kpi-tieu-chi-theo-quy` (fast-forward thẳng từ `c825d1d`) |
+| **Ngày ghi mốc** | 18/09/2026 21:27 |
+| **Alembic** | `kpi_tc_theo_quy_20260918` — **CÓ migration** (thêm cột `danh_gia_thang.la_phieu_tc_quy`) |
+
+Nội dung: **KPI — chấm tiêu chí chung theo QUÝ từ quý III/2026 (Công văn 21169).**
+
+Công văn số 21169/CHQ-TCCB ngày 28/8/2026 của Cục Hải quan và công văn triển khai
+của Chi cục (đã ký): *"Từ quý III/2026, kỳ đánh giá, xếp loại trên Phần mềm được
+thiết lập theo quý"*, giao hoàn thành **trước kỳ đánh giá quý III**. Hồ sơ quý nộp
+chậm nhất **ngày 23 tháng cuối quý** — với quý III là 23/9/2026, năm ngày sau khi
+phát hành bản này. Công văn cũng **thay thế 6 công văn cũ** của Chi cục, trong đó
+có CV 1909 hướng dẫn đánh giá hằng tháng ⇒ kỳ đánh giá THÁNG hết hiệu lực.
+
+**Cách làm — phiếu tiêu chí của quý NEO ở tháng cuối quý.** Không tạo bảng mới:
+việc chấm và duyệt chỉ diễn ra trên MỘT bản ghi `danh_gia_thang` — bản ghi tháng
+cuối quý (T3/T6/T9/T12), đánh dấu bằng cột mới `la_phieu_tc_quy`. Hai tháng còn
+lại đọc xuyên sang bản ghi neo qua `app/core/ky_tieu_chi.py`. Lý do chọn hướng
+này: toàn bộ luồng duyệt 2 cấp (tự chấm · duyệt · từ chối · trả lại · duyệt hàng
+loạt · lịch sử · khoá CCT · xử lý đơn mồ côi khi chuyển đơn vị) khoảng 1.300 dòng
+backend và màn hình duyệt 1.568 dòng được tái dùng NGUYÊN VẸN; dựng bảng riêng
+nghĩa là viết lại tất cả, không khả thi trong năm ngày.
+
+**Nguyên tắc an toàn: chỉ đổi nơi ĐỌC, không ghi đè dữ liệu cũ.** KHÔNG đồng bộ
+ngược điểm quý vào bản ghi T7/T8 — việc đó sẽ đè 517 + 322 đơn đã duyệt trên
+production và không hoàn tác được. Đổi lại, tám điểm đọc phải rà đủ:
+`xep_loai_quy_helpers._lay_tc_chung_thang` (cửa vào của TOÀN BỘ điểm quý),
+`bao_cao_xep_loai` (2 chỗ), `xep_loai_moi` (2 chỗ), `in_bang_ke` (phiếu tháng +
+phiếu quý), `doi_soat_danh_gia` (bỏ qua thì báo nhầm cả 544 người "chưa chấm"),
+`phieu_danh_gia_thang`/`_quy`, `export_bao_cao`.
+
+Phiếu quý 02A/02B nay lấy thẳng chi tiết của phiếu quý, bỏ bước gộp trung bình
+ba tháng. Kỳ tháng bị chặn LẬP MỚI (báo cáo xếp loại tháng + phiếu đánh giá
+tháng) và ẩn khỏi giao diện; bản ghi cũ vẫn xem và in bình thường.
+
+Kiểm chứng trước khi phát hành, trên `kpi_haiquan_test` nhân bản từ prod:
+**116 passed** (11 test mới đều PASS), trong đó phép thử **không hồi tố** đối
+chiếu 160 bản ghi thật của T1/T4/T5/T6 2026 — điểm trước và sau giống hệt — và
+phép thử luồng thật: CC gửi duyệt → lọc bằng tháng 7 vẫn ra phiếu quý → Phó
+duyệt cấp 1 → Trưởng duyệt cấp 2 → cả ba tháng đọc ra cùng con điểm. Hai test đỏ
+còn lại (`test_bao_cao_da_phe_duyet_bao_400`, `test_cct_no_assignment_empty_scope`)
+đã đỏ SẴN trên code gốc, đã đối chứng bằng cách stash thay đổi và chạy lại.
+Sau triển khai: 8/8 dịch vụ health 200, `kpihaiquan.vn` 200, migration đã áp,
+dữ liệu cũ nguyên vẹn (T7 còn đủ 517 đơn có điểm, 34.680 dòng chi tiết tiêu chí).
+
+**Quay lui không cần migration ngược:** đặt `TC_THEO_QUY_TU = (9999, 1)` trong
+`app/core/ky_tieu_chi.py` rồi phát hành lại — toàn hệ thống trở về chấm theo
+tháng ngay, dữ liệu phiếu quý nằm im, cột mới vô hại.
+
+**Lưu ý vận hành:** lúc phát hành đã có **87 công chức tự chấm cho tháng 9/2026**
+theo luồng cũ. Vì T9 chính là tháng neo của quý III, các đơn đó trở thành phiếu
+Quý 3 luôn, không phải nhập lại — nhưng họ điền khi đang nghĩ là "tháng 9", nên
+cần nhắc rà lại cho đúng phạm vi cả quý.
+
+Phần còn lại của công văn (cờ định tính hạ loại, trần "lãnh đạo không cao hơn đơn
+vị", tỷ lệ HTXS, quy tắc công tác ≤ 1 tháng/quý, nhắc hạn ngày 23, xếp loại NĂM
+từ 4 quý) chưa làm trong đợt này — xem
+`docs/cong-van-21169/KE_HOACH_TIEU_CHI_CHUNG_THEO_QUY.md` mục 9.
+
+### Mốc trước — `4aaa43e`
 
 Nội dung: **KPI — điều chuyển nhân sự hàng loạt theo quyết định, bằng file Excel.**
 
@@ -247,6 +303,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 10/09/2026 | `13647f8` | ĐGNL: công cụ reset lượt thi cho quản trị đào tạo — 2 endpoint chỉ-admin, nút Reset + Nhật ký trên trang thống kê kỳ thi, migration `lms_reset_luot_thi_20260831` thêm bảng `lms.lich_su_reset_thi`. Rebase `6c7270d` lên `prod` trước khi phát hành (SHA gốc đã tụt sau prod 9 commit) |
 | 10/09/2026 | `2bd8508` | ĐGNL: bộ lọc danh sách thí sinh trên trang thống kê kỳ thi — thuần frontend, không migration. **Phát hành nhưng khi đó chưa ghi sổ** |
 | 13/09/2026 | `4aaa43e` | KPI: điều chuyển nhân sự hàng loạt theo QĐ bằng Excel — 3 endpoint (`mau-excel`/`xem-truoc`/`ghi`), mẫu 4 sheet, trang `/admin/dieu-chuyen-hang-loat`; tách `app/core/dieu_chuyen.py` dùng chung với điều chuyển lẻ — **không migration** |
+| 18/09/2026 | `41058a3` | KPI: chấm tiêu chí chung theo QUÝ từ Q3/2026 theo CV 21169 — phiếu quý neo ở tháng cuối quý (`la_phieu_tc_quy`), 8 điểm đọc chuyển sang tháng neo, chặn lập mới báo cáo/phiếu THÁNG, ẩn kỳ tháng khỏi giao diện. **Migration `kpi_tc_theo_quy_20260918`** (chỉ thêm cột, không đụng dữ liệu) |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

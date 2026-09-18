@@ -35,6 +35,13 @@ import {
 } from '@/types/tieu-chi-chung';
 
 import { formatScore } from '@/lib/format';
+import {
+  cacThangApDung,
+  danhSachKyTrongNam,
+  kyDaBatDau,
+  nhanKy,
+  tcTheoQuy,
+} from '@/lib/ky-tieu-chi';
 export default function TuChamDiemPage() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthStore();
@@ -146,13 +153,38 @@ export default function TuChamDiemPage() {
 
   const trangThai = ketQua?.trang_thai || TrangThaiTieuChiChung.CHUA_DANH_GIA;
   const isNewRecord = ketQua?.is_new_record ?? true;
-  
+
+  // CV 21169 (18/09/2026): kỳ chấm tiêu chí — Quý từ Q3/2026, Tháng trước đó.
+  const danhSachKy = useMemo(() => danhSachKyTrongNam(selectedNam), [selectedNam]);
+  const laKyQuy = useMemo(() => tcTheoQuy(selectedThang, selectedNam), [selectedThang, selectedNam]);
+  const tenKy = useMemo(() => nhanKy(selectedThang, selectedNam), [selectedThang, selectedNam]);
+  const thangApDung = useMemo(
+    () => cacThangApDung(selectedThang, selectedNam),
+    [selectedThang, selectedNam],
+  );
+
+  // Khi đổi năm, kỳ đang chọn có thể không còn hợp lệ (ví dụ Tháng 7/2026 nay
+  // thuộc Quý 3) → nhảy về kỳ hợp lệ gần nhất.
+  useEffect(() => {
+    if (!danhSachKy.some((k) => k.thang === selectedThang)) {
+      const thayThe = danhSachKy.find((k) => k.thang >= selectedThang) ?? danhSachKy[danhSachKy.length - 1];
+      if (thayThe) setSelectedThang(thayThe.thang);
+    }
+  }, [danhSachKy, selectedThang]);
+
   // Check if deadline has passed for this month
   const isDeadlinePassed = useMemo(() => {
     const today = new Date();
     const todayMonth = today.getMonth() + 1;
     const todayYear = today.getFullYear();
     const todayDay = today.getDate();
+
+    // CV 21169: kỳ theo quý neo ở tháng cuối quý → tháng neo có thể ở tương lai
+    // trong khi quý đã bắt đầu (chấm Quý IV từ tháng 10). Đồng bộ backend
+    // `ky_da_bat_dau`.
+    if (tcTheoQuy(selectedThang, selectedNam)) {
+      return !kyDaBatDau(selectedThang, selectedNam, today);
+    }
 
     // NỚI HẠN (2026-04-21, cập nhật 2026-07-04): mở VÔ THỜI HẠN cho mọi tháng
     // ≥ 2026-01 (bỏ mốc hết hạn theo ngày). Đồng bộ với backend
@@ -322,8 +354,14 @@ export default function TuChamDiemPage() {
           <span>Quay lại Dashboard</span>
         </button>
         
-        <h1 className="text-2xl font-bold text-gray-900">Tự chấm điểm Tiêu chí chung</h1>
-        <p className="text-gray-600 mt-1">Đánh giá 30 điểm tiêu chí chung hàng tháng</p>
+        <h1 className="text-2xl font-bold text-gray-900">
+          Tự chấm điểm Tiêu chí chung — {tenKy}
+        </h1>
+        <p className="text-gray-600 mt-1">
+          {laKyQuy
+            ? `Đánh giá 30 điểm tiêu chí chung theo quý (áp dụng cho tháng ${thangApDung.join(', ')})`
+            : 'Đánh giá 30 điểm tiêu chí chung hàng tháng'}
+        </p>
       </div>
 
       {/* Error Banner */}
@@ -344,11 +382,14 @@ export default function TuChamDiemPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tháng</label>
+              {/* CV 21169: từ Quý 3/2026 chấm theo QUÝ → bộ chọn liệt kê quý thay vì
+                  tháng. Năm 2026 lẫn cả hai (Tháng 1..6 + Quý 3 + Quý 4). Giá trị gửi
+                  lên luôn là một số tháng; backend tự quy về tháng neo của quý. */}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Kỳ đánh giá</label>
               <select value={selectedThang} onChange={(e) => setSelectedThang(Number(e.target.value))}
                 className="border border-gray-300 rounded-md px-3 py-2">
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m: number) => (
-                  <option key={m} value={m}>Tháng {m}</option>
+                {danhSachKy.map((k) => (
+                  <option key={k.thang} value={k.thang}>{k.nhan}</option>
                 ))}
               </select>
             </div>
@@ -383,6 +424,17 @@ export default function TuChamDiemPage() {
           </div>
         )}
 
+        {/* CV 21169: nhắc rõ điểm chấm một lần dùng chung cho cả 3 tháng của quý */}
+        {laKyQuy && (
+          <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-md">
+            <p className="text-sm text-emerald-900">
+              🗓️ <strong>Chấm tiêu chí chung theo quý.</strong> Theo Công văn 21169/CHQ-TCCB,
+              từ Quý 3/2026 tiêu chí chung chấm <strong>một lần cho cả quý</strong>. Điểm của{' '}
+              <strong>{tenKy}</strong> áp dụng cho tháng {thangApDung.join(', ')}.
+            </p>
+          </div>
+        )}
+
         {isNewRecord && !isDeadlinePassed && (
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
             <p className="text-sm text-blue-800">
@@ -394,7 +446,11 @@ export default function TuChamDiemPage() {
         {isDeadlinePassed && !isStatusLocked && (
           <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-md">
             <p className="text-sm text-orange-800">
-              ⏰ <strong>Đã hết hạn tự đánh giá tháng {selectedThang}/{selectedNam}.</strong> Thời hạn: trước ngày 10 tháng sau. Vui lòng liên hệ lãnh đạo nếu cần điều chỉnh.
+              {laKyQuy ? (
+                <>⏰ <strong>{tenKy} chưa bắt đầu.</strong> Chỉ chấm được khi kỳ đã bắt đầu.</>
+              ) : (
+                <>⏰ <strong>Đã hết hạn tự đánh giá tháng {selectedThang}/{selectedNam}.</strong> Thời hạn: trước ngày 10 tháng sau. Vui lòng liên hệ lãnh đạo nếu cần điều chỉnh.</>
+              )}
             </p>
           </div>
         )}

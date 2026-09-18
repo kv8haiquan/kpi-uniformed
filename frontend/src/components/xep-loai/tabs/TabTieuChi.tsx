@@ -62,6 +62,10 @@ interface ITieuChiItem {
   nguoi_tu_choi_tc?: { ho_ten: string } | null;
   ngay_tu_choi_tc?: string | null;
   cap_phe_duyet_hien_tai?: string | null;  // "cap1" | "cap2"
+  // CV 21169 (18/09/2026): kỳ chấm tiêu chí — 'QUY' từ Q3/2026, 'THANG' trước đó
+  ky?: string | null;
+  nhan_ky?: string | null;
+  cac_thang_ap_dung?: number[] | null;
   // Thêm cho lịch sử
   trang_thai_tieu_chi?: string;
   // compat
@@ -489,9 +493,14 @@ function TieuChiRow({ item, isSelected, onSelect, onApprove, onReject, onTraLai,
         </div>
       </td>
 
-      {/* Tháng/Năm */}
+      {/* Kỳ đánh giá — CV 21169: 'Quý 3/2026' từ Q3/2026, 'Tháng N/NNNN' trước đó */}
       <td className="px-3 py-3 text-center text-sm text-gray-600 whitespace-nowrap">
-        {item.thang}/{item.nam}
+        {item.nhan_ky ?? `${item.thang}/${item.nam}`}
+        {item.ky === 'QUY' && item.cac_thang_ap_dung?.length ? (
+          <span className="block text-[11px] text-gray-400">
+            áp dụng T{item.cac_thang_ap_dung.join(', T')}
+          </span>
+        ) : null}
       </td>
 
       {/* Điểm CC tự chấm */}
@@ -1142,7 +1151,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
                   </th>
                 )}
                 <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Công chức</th>
-                <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-20">Tháng</th>
+                <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Kỳ</th>
                 <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-20">CC chấm</th>
                 <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-20">Phó duyệt</th>
                 <th className="px-3 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider w-24">Trưởng duyệt</th>
@@ -1193,7 +1202,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
               <p className="font-medium text-gray-900">{selectedItem.ho_ten}</p>
               <p className="text-sm text-gray-600 mt-1">{selectedItem.ma_cc} • {selectedItem.don_vi_ten}</p>
               <div className="flex flex-wrap gap-3 mt-2 text-sm">
-                <span className="text-gray-500">Tháng {selectedItem.thang}/{selectedItem.nam}</span>
+                <span className="text-gray-500">{selectedItem.nhan_ky ?? `Tháng ${selectedItem.thang}/${selectedItem.nam}`}</span>
                 <span className="text-blue-600 font-medium">CC tự chấm: {selectedItem.diem_tu_cham}</span>
                 {/* Snapshot tổng tại thời điểm PDV duyệt — lấy từ danh_gia_thang.diem_tc_cap1 */}
                 {selectedItem.diem_tc_cap1 != null && (
@@ -1320,7 +1329,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
               <p className="font-medium text-gray-900">{selectedItem.ho_ten}</p>
               <p className="text-sm text-gray-600 mt-1">{selectedItem.ma_cc} • {selectedItem.don_vi_ten}</p>
               <div className="flex flex-wrap gap-3 mt-2 text-sm">
-                <span className="text-gray-500">Tháng {selectedItem.thang}/{selectedItem.nam}</span>
+                <span className="text-gray-500">{selectedItem.nhan_ky ?? `Tháng ${selectedItem.thang}/${selectedItem.nam}`}</span>
                 <span className="text-blue-600 font-medium">CC tự chấm: {selectedItem.diem_tu_cham}</span>
                 {/* ✅ FIX: Tính Phó duyệt từ chi tiết */}
                 {chiTietData.some(tc => tc.is_achieved_ld !== null && tc.is_achieved_ld !== undefined) && (
@@ -1533,7 +1542,7 @@ export default function TabTieuChi({ thang, nam, canApprove, onPendingCountChang
             </div>
             <div className="px-6 py-4 space-y-4">
               <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-800">
-                ⚠️ Tiêu chí chung của <strong>{traLaiItem.ho_ten}</strong> (tháng {traLaiItem.thang}/{traLaiItem.nam}) sẽ được chuyển về trạng thái <strong>Nháp</strong>.
+                ⚠️ Tiêu chí chung của <strong>{traLaiItem.ho_ten}</strong> ({traLaiItem.nhan_ky ?? `tháng ${traLaiItem.thang}/${traLaiItem.nam}`}) sẽ được chuyển về trạng thái <strong>Nháp</strong>.
                 Toàn bộ điểm phê duyệt (cấp 1 + cấp 2) sẽ bị xóa.
               </div>
               <div>

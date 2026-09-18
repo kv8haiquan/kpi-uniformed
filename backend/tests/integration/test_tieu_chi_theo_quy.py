@@ -237,6 +237,95 @@ async def test_ba_thang_trong_quy_dung_chung_mot_diem():
             await _cleanup_quy(db, cc.id)
 
 
+@pytest.mark.asyncio
+async def test_luong_duyet_2_cap_tren_phieu_quy():
+    """
+    Đường đi chính của kỳ quý: CC gửi duyệt (chọn Phó đơn vị) → Phó duyệt cấp 1
+    → Trưởng duyệt cấp 2 → điểm quý chốt và cả 3 tháng đọc ra cùng con số.
+    """
+    from app.api.v1.endpoints.danh_gia import (
+        get_danh_sach_cho_phe_duyet,
+        phe_duyet_tieu_chi_chung,
+    )
+    from app.models.kpi_assessment import TrangThaiTieuChi
+    from app.schemas.assessment import PheDuyetTieuChiRequest
+
+    async with AsyncSessionLocal() as db:
+        # Một đơn vị có đủ cả Phó đơn vị, Trưởng đơn vị và công chức chưa có dữ liệu quý
+        row = (await db.execute(text("""
+            SELECT cc.id AS cc_id, pdv.id AS pdv_id, tdv.id AS tdv_id
+            FROM cong_chuc cc
+            JOIN vai_tro vt ON cc.vai_tro_id = vt.id AND vt.cap_bac = 'CONG_CHUC'
+            JOIN cong_chuc pdv ON pdv.don_vi_id = cc.don_vi_id AND pdv.is_active
+            JOIN vai_tro vp ON pdv.vai_tro_id = vp.id AND vp.cap_bac = 'PHO_DON_VI'
+            JOIN cong_chuc tdv ON tdv.don_vi_id = cc.don_vi_id AND tdv.is_active
+            JOIN vai_tro vtr ON tdv.vai_tro_id = vtr.id AND vtr.cap_bac = 'TRUONG_DON_VI'
+            WHERE cc.is_active AND NOT cc.is_deleted
+              AND NOT EXISTS (
+                  SELECT 1 FROM danh_gia_thang dg
+                  WHERE dg.cong_chuc_id = cc.id AND dg.nam = 2026 AND dg.thang IN (7, 8, 9))
+            LIMIT 1
+        """))).first()
+        if not row:
+            pytest.skip("DB test không có đơn vị đủ Phó + Trưởng + CC chưa chấm quý III")
+
+        async def _load(cc_id):
+            from sqlalchemy.orm import selectinload
+            return (await db.execute(
+                select(CongChuc).options(selectinload(CongChuc.vai_tro))
+                .where(CongChuc.id == cc_id)
+            )).scalar_one()
+
+        cc = await _load(row.cc_id)
+        pdv = await _load(row.pdv_id)
+        tdv = await _load(row.tdv_id)
+
+        await _cleanup_quy(db, cc.id)
+        try:
+            # 1. CC tự chấm và gửi duyệt cho Phó đơn vị — gửi tháng 7 (giữa quý)
+            payload = _payload_tu_cham(thang=7)
+            payload.gui_phe_duyet = True
+            payload.nguoi_phe_duyet_id = pdv.id
+            await tu_danh_gia_tieu_chi(db, cc, payload)
+            await db.commit()
+
+            dg = (await db.execute(
+                select(DanhGiaThang)
+                .where(DanhGiaThang.cong_chuc_id == cc.id)
+                .where(DanhGiaThang.nam == NAM_TEST)
+                .where(DanhGiaThang.thang == THANG_NEO_TEST)
+            )).scalar_one()
+            assert dg.trang_thai_tc == TrangThaiTieuChi.CHO_PHE_DUYET
+
+            # 2. Phó đơn vị thấy đơn khi lọc bằng THÁNG 7 (backend quy về tháng neo)
+            ds = await get_danh_sach_cho_phe_duyet(db, pdv, 1, 100, 7, NAM_TEST)
+            ids = [str(i.danh_gia_thang_id) for i in ds["data"].danh_sach]
+            assert str(dg.id) in ids, "Lọc tháng 7 phải ra phiếu quý (bản ghi tháng 9)"
+            item = next(i for i in ds["data"].danh_sach if str(i.danh_gia_thang_id) == str(dg.id))
+            assert item.nhan_ky == "Quý 3/2026"
+            assert item.cac_thang_ap_dung == [7, 8, 9]
+
+            # 3. Phó duyệt cấp 1
+            await phe_duyet_tieu_chi_chung(db, pdv, dg.id, PheDuyetTieuChiRequest())
+            await db.commit()
+            await db.refresh(dg)
+            assert dg.ngay_phe_duyet_tc_cap1 is not None
+            assert dg.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2
+
+            # 4. Trưởng duyệt cấp 2 → chốt
+            await phe_duyet_tieu_chi_chung(db, tdv, dg.id, PheDuyetTieuChiRequest())
+            await db.commit()
+            await db.refresh(dg)
+            assert dg.trang_thai_tc == TrangThaiTieuChi.DA_PHE_DUYET
+            assert dg.diem_tieu_chi_chung == Decimal("20.00")
+
+            # 5. Cả ba tháng của quý đọc ra cùng con điểm đã chốt
+            diem = [await _lay_tc_chung_thang(db, cc.id, t, NAM_TEST) for t in (7, 8, 9)]
+            assert diem == [Decimal("20.00")] * 3
+        finally:
+            await _cleanup_quy(db, cc.id)
+
+
 # =============================================================================
 # 4. Chốt chặn — không thao tác trên bản ghi khác tháng neo
 # =============================================================================

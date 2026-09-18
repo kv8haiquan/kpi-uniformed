@@ -33,6 +33,15 @@ from sqlalchemy.orm import selectinload, aliased
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.core.kpi_version import resolve_kpi_version
+from app.core.ky_tieu_chi import (
+    cac_thang_ap_dung,
+    ky_da_bat_dau,
+    la_thang_neo,
+    nhan_ky,
+    tc_theo_quy,
+    thang_neo,
+    thong_tin_ky,
+)
 from app.core.thong_bao_helper import gui_thong_bao
 from app.models.kpi_assessment import (
     DanhGiaThang,
@@ -200,11 +209,15 @@ def kiem_tra_thoi_han_tu_danh_gia(thang: int, nam: int) -> bool:
     Quy tắc: Trước ngày 10 tháng sau (BUSINESS_RULES §1.2)
     - Tháng hiện tại: luôn cho phép
     - Tháng trước: cho phép nếu ngày ≤ 10
+
+    CV 21169 (18/09/2026): kỳ theo QUÝ thì phiếu neo ở THÁNG CUỐI QUÝ, nên tháng
+    neo có thể nằm ở tương lai trong khi quý đã bắt đầu (chấm Quý IV từ tháng 10,
+    phiếu neo ở T12). `ky_da_bat_dau` xử lý đúng cả hai kiểu kỳ.
     """
     # Nới tạm thời đến HAN_MO_RONG_TAM_THOI_DEN — cho phép mọi tháng ≥ 2026-01
-    # Vẫn chặn tháng tương lai
+    # Vẫn chặn kỳ tương lai
     today = date.today()
-    if _trong_han_mo_rong_tam_thoi(thang, nam) and (nam, thang) <= (today.year, today.month):
+    if _trong_han_mo_rong_tam_thoi(thang, nam) and ky_da_bat_dau(thang, nam, today):
         return True
 
     if thang == today.month and nam == today.year:
@@ -224,6 +237,29 @@ def _dang_bi_khoa(danh_gia: "DanhGiaThang") -> bool:
     vẫn được tôn trọng để bảo toàn dữ liệu đã chốt.
     """
     return bool(danh_gia.is_khoa)
+
+
+def _chan_neu_khong_phai_thang_neo(dg: "DanhGiaThang") -> None:
+    """
+    CV 21169: với kỳ chấm theo QUÝ, mọi thao tác tiêu chí chung chỉ được thực hiện
+    trên bản ghi THÁNG NEO (tháng cuối quý). Chặn thao tác nhầm vào bản ghi tháng
+    khác của cùng quý — dữ liệu tiêu chí cũ của các tháng đó giữ nguyên, chỉ đọc.
+    """
+    if not tc_theo_quy(dg.thang, dg.nam):
+        return
+    if la_thang_neo(dg.thang, dg.nam):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=error_response(
+            code="BIZ_005",
+            message=(
+                f"Từ {nhan_ky(dg.thang, dg.nam)}, tiêu chí chung chấm theo quý. "
+                f"Thao tác trên phiếu của tháng {thang_neo(dg.thang, dg.nam)}/{dg.nam}, "
+                f"không phải tháng {dg.thang}/{dg.nam}."
+            ),
+        ),
+    )
 
 
 def _co_the_duyet_tc(dg: "DanhGiaThang", current_user) -> bool:
@@ -449,6 +485,10 @@ def build_danh_gia_thang_response(danh_gia: DanhGiaThang) -> dict:
         
         # v3.5: Cấp phê duyệt hiện tại
         "cap_phe_duyet_hien_tai": "cap2" if danh_gia.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2 else ("cap1" if danh_gia.trang_thai_tc in [TrangThaiTieuChi.CHO_PHE_DUYET, None] else None),
+
+        # CV 21169 (18/09/2026): kỳ chấm tiêu chí — FE dùng để hiển thị "Quý 3/2026"
+        **thong_tin_ky(danh_gia.thang, danh_gia.nam),
+        "la_phieu_tc_quy": bool(getattr(danh_gia, "la_phieu_tc_quy", False)),
     }
 
 
@@ -574,7 +614,12 @@ async def get_tu_danh_gia_tieu_chi(
     """
     if thang < 1 or thang > 12:
         raise HTTPException(status_code=400, detail=error_response(code="VAL_003", message="Tháng phải từ 1-12"))
-    
+
+    # CV 21169: kỳ theo quý → đọc phiếu của THÁNG NEO (tháng cuối quý).
+    # FE có thể gửi bất kỳ tháng nào trong quý, luôn nhận về đúng một phiếu.
+    ky = thong_tin_ky(thang, nam)
+    thang = ky["thang_neo"]
+
     so_ngay_thang = calendar.monthrange(nam, thang)[1]
     so_ngay_nghi = 0  # TODO: Tích hợp module nghỉ phép
     so_ngay_lv = so_ngay_thang - so_ngay_nghi
@@ -610,7 +655,7 @@ async def get_tu_danh_gia_tieu_chi(
                 trang_thai_danh_gia_thang=TrangThaiDanhGiaThangEnum.CHUA_DANH_GIA,
                 tong_hop=build_virtual_tong_hop(),
                 tieu_chi=tieu_chi,
-            ),
+            ).model_dump() | ky,
             message="Chưa có dữ liệu. Hiển thị giá trị mặc định."
         )
     
@@ -648,6 +693,7 @@ async def get_tu_danh_gia_tieu_chi(
         data={
             **response_data.model_dump(),
             **extra_data,
+            **ky,
         },
         message="Lấy dữ liệu tự đánh giá thành công"
     )
@@ -665,8 +711,15 @@ async def tu_danh_gia_tieu_chi(
     """
     if not kiem_tra_thoi_han_tu_danh_gia(payload.thang, payload.nam):
         raise HTTPException(status_code=400, detail=error_response(code="BIZ_004", message="Đã hết hạn tự đánh giá"))
-    
-    danh_gia, is_new = await get_or_create_danh_gia_thang(db, current_user.id, payload.thang, payload.nam)
+
+    # CV 21169: kỳ theo quý → phiếu tiêu chí nằm ở THÁNG NEO (tháng cuối quý).
+    # FE gửi tháng nào trong quý cũng ghi về đúng một phiếu.
+    ky = thong_tin_ky(payload.thang, payload.nam)
+    thang_ghi = ky["thang_neo"]
+
+    danh_gia, is_new = await get_or_create_danh_gia_thang(db, current_user.id, thang_ghi, payload.nam)
+    if ky["ky"] == "QUY":
+        danh_gia.la_phieu_tc_quy = True
     
     # v2.6: Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
     if _dang_bi_khoa(danh_gia):
@@ -779,12 +832,12 @@ async def tu_danh_gia_tieu_chi(
             success=True,
             message="Đã gửi phê duyệt" if payload.gui_phe_duyet else "Lưu nháp thành công",
             danh_gia_thang_id=danh_gia.id, cong_chuc_id=current_user.id,
-            thang=payload.thang, nam=payload.nam, is_new_record=is_new,
+            thang=thang_ghi, nam=payload.nam, is_new_record=is_new,
             trang_thai=TrangThaiTieuChiEnum.CHO_PHE_DUYET if payload.gui_phe_duyet else TrangThaiTieuChiEnum.NHAP,
             tong_hop=tong_hop, tieu_chi=tc_responses,
             ngay_gui=now if payload.gui_phe_duyet else None,
             nguoi_phe_duyet_id=nguoi_pd.id if nguoi_pd else None,
-        ),
+        ).model_dump() | ky,
         message="Tự đánh giá tiêu chí chung thành công"
     )
 
@@ -903,11 +956,15 @@ async def get_danh_sach_cho_phe_duyet(
         ).distinct().order_by(DanhGiaThang.created_at.desc())
     
     # ✅ FIX: Filter theo tháng/năm nếu có
+    # CV 21169: kỳ theo quý → phiếu nằm ở tháng neo, FE lọc tháng nào trong quý
+    # cũng phải ra đúng phiếu quý đó.
+    if thang and nam:
+        thang = thang_neo(thang, nam)
     if thang:
         stmt = stmt.where(DanhGiaThang.thang == thang)
     if nam:
         stmt = stmt.where(DanhGiaThang.nam == nam)
-    
+
     # Fallback: Cũng lọc theo cách cũ (TieuChiChungDanhGia.nguoi_phe_duyet_id)
     # QLDV không cần fallback vì đã lấy theo đơn vị
     if is_qldv_user:
@@ -984,6 +1041,9 @@ async def get_danh_sach_cho_phe_duyet(
             cap_phe_duyet_hien_tai="cap2" if dg.trang_thai_tc == TrangThaiTieuChi.CHO_CAP2 else "cap1",
             # v3.7 (02/06/2026): cờ cho FE — gồm cả LĐ ĐV hiện tại (xử lý chuyển ĐV)
             co_the_duyet=_co_the_duyet_tc(dg, current_user),
+            # CV 21169: nhãn kỳ để FE phân biệt phiếu quý với phiếu tháng cũ
+            **{k: v for k, v in thong_tin_ky(dg.thang, dg.nam).items()
+               if k in ("ky", "nhan_ky", "cac_thang_ap_dung")},
         ))
     
     return success_response(
@@ -1046,11 +1106,14 @@ async def get_lich_su_tieu_chi(
                 )
             )
     
+    # CV 21169: kỳ theo quý → lịch sử nằm ở bản ghi tháng neo
+    if thang and nam:
+        thang = thang_neo(thang, nam)
     if thang:
         stmt = stmt.where(DanhGiaThang.thang == thang)
     if nam:
         stmt = stmt.where(DanhGiaThang.nam == nam)
-    
+
     # Count & Pagination
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
     stmt = stmt.order_by(DanhGiaThang.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
@@ -1171,11 +1234,14 @@ async def phe_duyet_tieu_chi_chung(
     danh_gia = (await db.execute(stmt)).scalar_one_or_none()
     if not danh_gia:
         raise HTTPException(status_code=404, detail=error_response(code="NOT_FOUND", message="Không tìm thấy"))
-    
+
+    # CV 21169: kỳ theo quý chỉ duyệt trên phiếu của tháng neo
+    _chan_neu_khong_phai_thang_neo(danh_gia)
+
     # Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
     if _dang_bi_khoa(danh_gia):
         raise HTTPException(status_code=400, detail=error_response(code="BIZ_002", message="Dữ liệu đã bị khóa"))
-    
+
     # Lấy cấp bậc người đăng ký và current_user
     cap_bac_nguoi_dk = None
     if danh_gia.cong_chuc and danh_gia.cong_chuc.vai_tro:
@@ -1516,7 +1582,10 @@ async def tu_choi_tieu_chi_chung(
             status_code=404,
             detail=error_response(code="NOT_FOUND", message="Không tìm thấy đánh giá")
         )
-    
+
+    # CV 21169: kỳ theo quý chỉ thao tác trên phiếu của tháng neo
+    _chan_neu_khong_phai_thang_neo(danh_gia)
+
     # Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
     if _dang_bi_khoa(danh_gia):
         raise HTTPException(
@@ -1688,6 +1757,9 @@ async def tra_lai_tieu_chi_da_duyet(
             detail=error_response(code="NOT_FOUND", message="Không tìm thấy đánh giá")
         )
     
+    # CV 21169: kỳ theo quý chỉ thao tác trên phiếu của tháng neo
+    _chan_neu_khong_phai_thang_neo(danh_gia)
+
     # Kiểm tra khóa dữ liệu (bypass trong window nới tạm thời)
     if _dang_bi_khoa(danh_gia):
         raise HTTPException(
@@ -1839,7 +1911,11 @@ async def phe_duyet_tieu_chi_bulk(
         danh_gia = (await db.execute(stmt)).scalar_one_or_none()
         if not danh_gia:
             continue
-        
+
+        # CV 21169: bỏ qua bản ghi tháng không phải tháng neo của kỳ theo quý
+        if tc_theo_quy(danh_gia.thang, danh_gia.nam) and not la_thang_neo(danh_gia.thang, danh_gia.nam):
+            continue
+
         # Kiểm tra khóa (bypass trong window nới tạm thời)
         if _dang_bi_khoa(danh_gia):
             continue
@@ -2072,6 +2148,10 @@ async def get_tieu_chi_cong_chuc(
     # =========================================================================
     # 4. Tính số ngày làm việc
     # =========================================================================
+    # CV 21169: kỳ theo quý → đọc phiếu tiêu chí ở THÁNG NEO (tháng cuối quý)
+    ky = thong_tin_ky(thang, nam)
+    thang = ky["thang_neo"]
+
     so_ngay_thang = calendar.monthrange(nam, thang)[1]
     so_ngay_nghi = 0  # TODO: Tích hợp module nghỉ phép
     so_ngay_lv = so_ngay_thang - so_ngay_nghi
@@ -2109,7 +2189,7 @@ async def get_tieu_chi_cong_chuc(
                 trang_thai_danh_gia_thang=TrangThaiDanhGiaThangEnum.CHUA_DANH_GIA,
                 tong_hop=build_virtual_tong_hop(),
                 tieu_chi=tieu_chi,
-            ),
+            ).model_dump() | ky,
             message="Chưa có dữ liệu tiêu chí. Hiển thị giá trị mặc định."
         )
     
@@ -2139,8 +2219,11 @@ async def get_tieu_chi_cong_chuc(
         ngay_gui=first_tc.ngay_gui if first_tc else None,
         ngay_phe_duyet=first_tc.ngay_phe_duyet if first_tc else None,
     )
-    
-    return success_response(data=response_data, message="Lấy tiêu chí chung thành công")
+
+    return success_response(
+        data=response_data.model_dump() | ky,
+        message="Lấy tiêu chí chung thành công",
+    )
 
 
 async def _dong_bo_chi_tiet_bao_cao_chot(
@@ -2233,6 +2316,9 @@ async def dieu_chinh_danh_gia_thang(
             code="NOT_FOUND", message="Không tìm thấy đánh giá tháng"
         ))
 
+    # CV 21169: kỳ theo quý chỉ điều chỉnh trên phiếu của tháng neo
+    _chan_neu_khong_phai_thang_neo(danh_gia)
+
     cong_chuc = (await db.execute(
         select(CongChuc).where(CongChuc.id == danh_gia.cong_chuc_id)
     )).scalar_one_or_none()
@@ -2314,11 +2400,29 @@ async def dieu_chinh_danh_gia_thang(
 
     # 6. Báo cáo ĐÃ CHỐT (CCT/admin sửa) → đồng bộ snapshot chi_tiet + xếp loại + thống kê
     #    để báo cáo chính thức phản ánh điểm mới. Báo cáo chưa chốt tự refresh khi tải lại.
+    #    CV 21169: kỳ theo quý → một điểm dùng chung cho cả 3 tháng, nên phải đồng bộ
+    #    báo cáo ĐÃ CHỐT của MỌI tháng trong quý, không chỉ tháng neo.
     xep_loai_moi = None
-    if bc and bao_cao_da_chot:
-        xep_loai_moi = await _dong_bo_chi_tiet_bao_cao_chot(
-            db, bc, cong_chuc, danh_gia.thang, danh_gia.nam
+    for thang_dong_bo in cac_thang_ap_dung(danh_gia.thang, danh_gia.nam):
+        bc_thang = bc if thang_dong_bo == danh_gia.thang else (await db.execute(
+            select(BaoCaoXepLoai).where(
+                BaoCaoXepLoai.don_vi_id == cong_chuc.don_vi_id,
+                BaoCaoXepLoai.thang == thang_dong_bo,
+                BaoCaoXepLoai.nam == danh_gia.nam,
+                BaoCaoXepLoai.is_deleted == False,
+            )
+        )).scalar_one_or_none()
+        da_chot = bool(
+            bc_thang
+            and bc_thang.trang_thai not in [TrangThaiBaoCao.NHAP.value, TrangThaiBaoCao.TU_CHOI.value]
         )
+        if not da_chot:
+            continue
+        ket_qua_dong_bo = await _dong_bo_chi_tiet_bao_cao_chot(
+            db, bc_thang, cong_chuc, thang_dong_bo, danh_gia.nam
+        )
+        if thang_dong_bo == danh_gia.thang:
+            xep_loai_moi = ket_qua_dong_bo
         await db.flush()
 
     return success_response(
@@ -2426,12 +2530,15 @@ async def get_kpi_summary(
 # =============================================================================
 
 async def get_tieu_chi_chung(db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int) -> Optional[dict]:
-    """Lấy dữ liệu tiêu chí chung cho KPI summary."""
+    """Lấy dữ liệu tiêu chí chung cho KPI summary.
+
+    CV 21169: kỳ theo quý → đọc phiếu ở tháng neo (tháng cuối quý).
+    """
     stmt = select(DanhGiaThang).options(
         selectinload(DanhGiaThang.tieu_chi_chungs).selectinload(TieuChiChungDanhGia.tieu_chi)
     ).where(
         DanhGiaThang.cong_chuc_id == cong_chuc_id,
-        DanhGiaThang.thang == thang,
+        DanhGiaThang.thang == thang_neo(thang, nam),
         DanhGiaThang.nam == nam,
         DanhGiaThang.is_deleted == False
     )

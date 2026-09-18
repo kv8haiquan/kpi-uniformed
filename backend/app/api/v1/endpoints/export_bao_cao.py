@@ -42,6 +42,7 @@ from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.user_org import CongChuc, DonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, TrangThaiHoanThanh
+from app.core.ky_tieu_chi import thang_neo
 from app.models.kpi_assessment import DanhGiaThang, TieuChiChung, TieuChiChungDanhGia
 from app.api.v1.endpoints.bao_cao_xep_loai import (
     cap_nhat_chi_tiet_tu_du_lieu,
@@ -209,7 +210,10 @@ def _is_lanh_dao_don_vi(user: CongChuc) -> bool:
 async def _get_danh_gia_thang(
     db: AsyncSession, cong_chuc_id: UUID, thang: int, nam: int
 ) -> Optional[DanhGiaThang]:
-    """Lấy đánh giá tháng (tiêu chí chung) của 1 CC."""
+    """Lấy đánh giá tháng (tiêu chí chung) của 1 CC.
+
+    CV 21169: kỳ theo quý → tiêu chí nằm ở bản ghi tháng cuối quý.
+    """
     stmt = (
         select(DanhGiaThang)
         .options(
@@ -218,7 +222,7 @@ async def _get_danh_gia_thang(
         )
         .where(
             DanhGiaThang.cong_chuc_id == cong_chuc_id,
-            DanhGiaThang.thang == thang,
+            DanhGiaThang.thang == thang_neo(thang, nam),
             DanhGiaThang.nam == nam,
             DanhGiaThang.is_deleted == False,
         )

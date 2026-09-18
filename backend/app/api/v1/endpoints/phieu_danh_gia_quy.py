@@ -32,6 +32,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import ActiveUserDep, DatabaseDep
+from app.core.ky_tieu_chi import la_thang_neo
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChungDanhGia,
@@ -781,17 +782,23 @@ async def kiem_tra_du_dieu_kien(
         cv_chua = (await db.scalar(cv_stmt)) or 0
 
         # Đếm tiêu chí đang tạm tính (dựa trên danh_gia_thang của CC).
-        tc_stmt = (
-            select(func.count())
-            .select_from(TieuChiChungDanhGia)
-            .join(DanhGiaThang, DanhGiaThang.id == TieuChiChungDanhGia.danh_gia_thang_id)
-            .where(DanhGiaThang.cong_chuc_id == current_user.id)
-            .where(DanhGiaThang.thang == thang)
-            .where(DanhGiaThang.nam == nam)
-            .where(DanhGiaThang.is_deleted == False)
-            .where(TieuChiChungDanhGia.trang_thai.in_(tc_dang_tam_tinh))
-        )
-        tc_chua = (await db.scalar(tc_stmt)) or 0
+        # CV 21169: kỳ theo quý chỉ có MỘT phiếu tiêu chí, neo ở tháng cuối quý →
+        # chỉ đếm ở tháng neo; các tháng khác trong quý không còn phiếu để chờ duyệt
+        # (dữ liệu tiêu chí cũ của chúng giữ nguyên nhưng không dùng nữa).
+        if not la_thang_neo(thang, nam):
+            tc_chua = 0
+        else:
+            tc_stmt = (
+                select(func.count())
+                .select_from(TieuChiChungDanhGia)
+                .join(DanhGiaThang, DanhGiaThang.id == TieuChiChungDanhGia.danh_gia_thang_id)
+                .where(DanhGiaThang.cong_chuc_id == current_user.id)
+                .where(DanhGiaThang.thang == thang)
+                .where(DanhGiaThang.nam == nam)
+                .where(DanhGiaThang.is_deleted == False)
+                .where(TieuChiChungDanhGia.trang_thai.in_(tc_dang_tam_tinh))
+            )
+            tc_chua = (await db.scalar(tc_stmt)) or 0
 
         tong_cv_chua += cv_chua
         tong_tc_chua += tc_chua

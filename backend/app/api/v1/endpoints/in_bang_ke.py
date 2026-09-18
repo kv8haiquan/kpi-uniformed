@@ -34,6 +34,7 @@ from docx.oxml import OxmlElement
 from docx.shared import Pt
 
 from app.api.deps import DatabaseDep, ActiveUserDep
+from app.core.ky_tieu_chi import tc_theo_quy_cua_quy, thang_cuoi_quy, thang_neo
 from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.kpi_assessment import (
@@ -580,7 +581,8 @@ async def export_phieu_danh_gia(
         .where(
             and_(
                 DanhGiaThang.cong_chuc_id == cc.id,
-                DanhGiaThang.thang == thang,
+                # CV 21169: kỳ theo quý → tiêu chí nằm ở bản ghi tháng cuối quý
+                DanhGiaThang.thang == thang_neo(thang, nam),
                 DanhGiaThang.nam == nam,
             )
         )
@@ -1659,13 +1661,23 @@ async def export_phieu_danh_gia_quy(
             thang_thuc_te = list(thang_list)
         so_thang_tt = ket_qua.get("so_thang_thuc_te") or len(thang_thuc_te)
 
-        # Lấy DanhGiaThang CHỈ của các tháng thực tế trong quý
+        # CV 21169 (18/09/2026): từ Q3/2026 tiêu chí chung chấm MỘT LẦN cho cả quý,
+        # phiếu neo ở tháng cuối quý → lấy thẳng chi tiết của bản ghi neo, KHÔNG
+        # gộp trung bình 3 tháng. Kỳ cũ giữ nguyên cách tính bình quân bên dưới.
+        if tc_theo_quy_cua_quy(quy, nam):
+            thang_lay_tc = [thang_cuoi_quy(quy)]
+            mau_so_tc = Decimal("1")
+        else:
+            thang_lay_tc = thang_thuc_te
+            mau_so_tc = Decimal(str(so_thang_tt)) if so_thang_tt else Decimal("3")
+
+        # Lấy DanhGiaThang chứa tiêu chí của kỳ
         stmt_dg_quy = (
             select(DanhGiaThang)
             .where(
                 and_(
                     DanhGiaThang.cong_chuc_id == cc.id,
-                    DanhGiaThang.thang.in_(thang_thuc_te),
+                    DanhGiaThang.thang.in_(thang_lay_tc),
                     DanhGiaThang.nam == nam,
                     DanhGiaThang.is_deleted == False,
                 )
@@ -1700,8 +1712,10 @@ async def export_phieu_danh_gia_quy(
                         tc_quy_map[ma] = {"diem_values": [], "nhom": nhom, "diem_toi_da": diem_toi_da}
                     tc_quy_map[ma]["diem_values"].append(diem)
 
-        # Điểm quý mỗi tiêu chí = trung bình theo số tháng thực tế (thiếu → tính 0)
-        mau_so = Decimal(str(so_thang_tt)) if so_thang_tt else Decimal("3")
+        # Điểm quý mỗi tiêu chí:
+        #   - Kỳ theo quý (CV 21169): mẫu số = 1 → chính điểm trên phiếu quý.
+        #   - Kỳ cũ: trung bình theo số tháng thực tế (tháng thiếu → tính 0).
+        mau_so = mau_so_tc
         tc_quy_diem = {}  # ma_tieu_chi → Decimal (điểm quý)
         for ma, info in tc_quy_map.items():
             values = info["diem_values"]

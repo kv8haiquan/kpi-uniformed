@@ -31,6 +31,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, aliased
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
+from app.core.ky_tieu_chi import (
+    ky_thang_con_hieu_luc,
+    nhan_ky,
+    quy_cua_thang,
+    thang_neo,
+)
 from app.models.user_org import CongChuc, DonVi, LoaiDonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_assessment import DanhGiaThang
 from app.models.admin import LichSuDieuChuyen
@@ -214,7 +220,8 @@ async def tinh_diem_cong_chuc(
     # =========================================================================
     dg_stmt = select(DanhGiaThang).where(
         DanhGiaThang.cong_chuc_id == cong_chuc_id,
-        DanhGiaThang.thang == thang,
+        # CV 21169: kỳ theo quý → điểm tiêu chí lấy từ bản ghi tháng cuối quý
+        DanhGiaThang.thang == thang_neo(thang, nam),
         DanhGiaThang.nam == nam,
         DanhGiaThang.is_deleted == False,
     )
@@ -386,7 +393,8 @@ async def tinh_diem_lanh_dao(
     # Lấy điểm tiêu chí chung từ danh_gia_thang
     dg_stmt = select(DanhGiaThang).where(
         DanhGiaThang.cong_chuc_id == cong_chuc_id,
-        DanhGiaThang.thang == thang,
+        # CV 21169: kỳ theo quý → điểm tiêu chí lấy từ bản ghi tháng cuối quý
+        DanhGiaThang.thang == thang_neo(thang, nam),
         DanhGiaThang.nam == nam,
         DanhGiaThang.is_deleted == False,
     )
@@ -1342,6 +1350,18 @@ async def get_bao_cao_don_vi(
     
     is_new = False
     if not bao_cao:
+        # CV 21169 (18/09/2026): từ Q3/2026 kỳ đánh giá, xếp loại là QUÝ — không
+        # lập mới báo cáo xếp loại THÁNG nữa. Báo cáo tháng đã có vẫn xem/in được.
+        if not ky_thang_con_hieu_luc(thang, nam):
+            raise HTTPException(status_code=400, detail=error_response(
+                code="BIZ_006",
+                message=(
+                    f"Từ {nhan_ky(thang, nam)}, đánh giá và xếp loại thực hiện theo QUÝ "
+                    f"(Công văn 21169/CHQ-TCCB). Không lập báo cáo xếp loại tháng {thang}/{nam}. "
+                    f"Dùng báo cáo xếp loại quý {quy_cua_thang(thang)}/{nam}."
+                ),
+            ))
+
         # Tự động tạo mới với trạng thái NHAP
         bao_cao = BaoCaoXepLoai(
             don_vi_id=don_vi_id,

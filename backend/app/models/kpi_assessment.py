@@ -351,6 +351,21 @@ class DanhGiaThang(BaseModelWithSoftDelete):
     )
 
     # -------------------------------------------------------------------------
+    # TIÊU CHÍ CHUNG THEO QUÝ (18/09/2026 — Công văn 21169/CHQ-TCCB)
+    # Từ Q3/2026, tiêu chí chung chấm 1 lần cho cả quý. Phiếu quý NEO vào bản ghi
+    # của THÁNG CUỐI QUÝ (T3/T6/T9/T12); 2 tháng còn lại đọc xuyên sang bản ghi
+    # này (xem app/core/ky_tieu_chi.py). Cờ dưới đánh dấu bản ghi neo đó.
+    # -------------------------------------------------------------------------
+
+    la_phieu_tc_quy: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+        comment="Bản ghi này chứa phiếu tiêu chí chung của CẢ QUÝ (CV 21169, từ Q3/2026)"
+    )
+
+    # -------------------------------------------------------------------------
     # PL3 V2 (28/04/2026) — VERSION + CACHE MẪU SỐ (LOCKED 11, 12)
     # -------------------------------------------------------------------------
 

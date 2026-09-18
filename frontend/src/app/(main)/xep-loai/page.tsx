@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { kyThangConHieuLuc, nhanKy } from '@/lib/ky-tieu-chi';
 
 import {
   TabId,
@@ -59,7 +60,16 @@ export default function XepLoaiPage() {
   const [pendingCounts, setPendingCounts] = useState<IPendingCounts>(createDefaultPendingCounts());
 
   const capBac = getCapBacFromUser(user);
-  const accessibleTabs = useMemo(() => getAccessibleTabs(capBac, user), [capBac, user]);
+  // CV 21169 (18/09/2026): từ Q3/2026 kỳ đánh giá, xếp loại là QUÝ → ẩn tab
+  // "Duyệt đánh giá tháng" cho các kỳ thuộc phạm vi công văn. Kỳ cũ (đến Q2/2026)
+  // vẫn hiện để tra cứu và hoàn tất hồ sơ còn dở.
+  const accessibleTabs = useMemo(() => {
+    const tabs = getAccessibleTabs(capBac, user);
+    if (!kyThangConHieuLuc(selectedThang, selectedNam)) {
+      return tabs.filter((t) => t.id !== 'bao-cao');
+    }
+    return tabs;
+  }, [capBac, user, selectedThang, selectedNam]);
   const activeTab = useMemo(() => {
     if (urlTab && accessibleTabs.find((t) => t.id === urlTab)) return urlTab;
     return accessibleTabs[0]?.id || 'cong-viec';
@@ -120,7 +130,7 @@ export default function XepLoaiPage() {
               <button onClick={() => router.push('/dashboard')} className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">{Icons.back}</button>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">📋 Phê duyệt</h1>
-                <p className="text-sm text-gray-500">{getCapBacLabel(capBac)} • {user?.don_vi?.ten_don_vi || 'Chi cục'}</p>
+                <p className="text-sm text-gray-500">{getCapBacLabel(capBac)} • {user?.don_vi?.ten_don_vi || 'Chi cục'} • Tiêu chí chung: {nhanKy(selectedThang, selectedNam)}</p>
               </div>
             </div>
             <MonthYearSelector thang={selectedThang} nam={selectedNam} onThangChange={setSelectedThang} onNamChange={setSelectedNam} />

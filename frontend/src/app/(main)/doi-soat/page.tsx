@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { doiSoatService } from '@/services/doi-soat.service';
+import { danhSachKyTrongNam, nhanKy, thangNeo } from '@/lib/ky-tieu-chi';
 import { IDoiSoatData, IDoiSoatNhomMeta, MucDo } from '@/types/doi-soat';
 import { ClipboardCheck, Download, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -52,6 +53,12 @@ export default function DoiSoatPage() {
     }
   }, [thang, nam, canView]);
 
+  // Kỳ đang chọn phải hợp lệ với năm (2026 lẫn tháng và quý) → quy về tháng neo.
+  useEffect(() => {
+    const hopLe = danhSachKyTrongNam(nam).some((k) => k.thang === thang);
+    if (!hopLe) setThang(thangNeo(thang, nam));
+  }, [nam, thang]);
+
   useEffect(() => { load(); }, [load]);
 
   const handleExport = async () => {
@@ -100,13 +107,15 @@ export default function DoiSoatPage() {
 
       {/* Bộ lọc */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
+        {/* CV 21169: từ Q3/2026 đối soát theo QUÝ — mỗi quý một phiếu tiêu chí.
+            Giá trị vẫn là một số tháng; backend tự quy về tháng neo của quý. */}
         <select
           value={thang}
           onChange={(e) => setThang(Number(e.target.value))}
           className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
         >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>Tháng {m}</option>
+          {danhSachKyTrongNam(nam).map((k) => (
+            <option key={k.thang} value={k.thang}>{k.nhan}</option>
           ))}
         </select>
         <select
@@ -144,7 +153,7 @@ export default function DoiSoatPage() {
         <>
           {/* Tổng hợp */}
           <div className="mb-4 text-sm text-gray-600">
-            Tháng {data.thang}/{data.nam}:{' '}
+            {nhanKy(data.thang, data.nam)}:{' '}
             <span className="font-semibold text-gray-900">{data.tong_so_ca}</span> công chức cần xử lý.{' '}
             <span className="text-gray-400">(Mỗi người chỉ xuất hiện một lần, ở nhóm cần xử lý chính.)</span>
           </div>

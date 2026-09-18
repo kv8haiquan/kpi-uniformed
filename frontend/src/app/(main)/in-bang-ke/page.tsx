@@ -14,6 +14,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { kyThangConHieuLuc } from '@/lib/ky-tieu-chi';
 import apiClient from '@/lib/axios';
 import { phieuDanhGiaService } from '@/services/phieu-danh-gia.service';
 import type { IUser } from '@/types/auth';
@@ -62,7 +63,13 @@ export default function InBangKePage() {
   const { user } = useAuthStore();
 
   const currentDate = new Date();
-  const [loaiKy, setLoaiKy] = useState<LoaiKy>('thang');
+  // CV 21169 (18/09/2026): từ Q3/2026 phiếu đánh giá lập theo QUÝ (Mẫu 02A/02B).
+  // Mặc định mở tab Quý và ẩn nút "Theo Tháng" cho các kỳ thuộc phạm vi công văn.
+  const kyHienTaiTheoQuy = !kyThangConHieuLuc(
+    currentDate.getMonth() + 1,
+    currentDate.getFullYear(),
+  );
+  const [loaiKy, setLoaiKy] = useState<LoaiKy>(kyHienTaiTheoQuy ? 'quy' : 'thang');
   const [thang, setThang] = useState(currentDate.getMonth() + 1);
   const [quy, setQuy] = useState(Math.ceil((currentDate.getMonth() + 1) / 3));
   const [nam, setNam] = useState(currentDate.getFullYear());
@@ -206,6 +213,9 @@ function KeKhaiTab({
   setNam,
   currentYear,
 }: KeKhaiTabProps) {
+  // CV 21169: kỳ tháng hết hiệu lực từ Q3/2026 → ẩn lựa chọn "Theo Tháng".
+  // Tính theo kỳ ĐANG CHỌN để vẫn in được phiếu tháng của kỳ cũ.
+  const kyHienTaiTheoQuy = !kyThangConHieuLuc(loaiKy === 'quy' ? quy * 3 : thang, nam);
   const [downloading, setDownloading] = useState(false);
 
   // Phiếu THÁNG hoặc QUÝ — cùng shape mục 4/5/6 nên dùng chung component.
@@ -463,6 +473,8 @@ function KeKhaiTab({
         </h2>
 
         <div className="flex gap-2 mb-6 bg-gray-100 p-1.5 rounded-xl">
+          {/* CV 21169: kỳ tháng hết hiệu lực từ Q3/2026 → chỉ còn lựa chọn Quý */}
+          {!kyHienTaiTheoQuy && (
           <button
             onClick={() => setLoaiKy('thang')}
             className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${
@@ -473,6 +485,7 @@ function KeKhaiTab({
           >
             Theo Tháng
           </button>
+          )}
           <button
             onClick={() => setLoaiKy('quy')}
             className={`flex-1 px-4 py-2.5 rounded-lg font-medium transition-all duration-200 ${

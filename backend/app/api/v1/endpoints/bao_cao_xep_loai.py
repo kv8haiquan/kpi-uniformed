@@ -134,6 +134,32 @@ def check_can_view_bao_cao(user: CongChuc) -> bool:
     ]
 
 
+def ky_bao_cao_thang_chi_doc(thang: int, nam: int) -> bool:
+    """
+    Báo cáo xếp loại THÁNG của kỳ này chỉ được XEM, không được sửa.
+
+    CV 21169 (từ Q3/2026): kỳ đánh giá, xếp loại là QUÝ. Báo cáo tháng của các kỳ
+    đó giữ lại để tra cứu, nhưng mọi thao tác ghi (đề xuất, gửi duyệt, quyết định,
+    phê duyệt, trả lại) đều bị chặn — nếu không, `phe_duyet_bao_cao` còn đặt
+    `is_khoa` và khoá luôn phiếu tiêu chí quý khi tháng đó là tháng neo.
+    """
+    return not ky_thang_con_hieu_luc(thang, nam)
+
+
+def _chan_neu_ky_thang_chi_doc(thang: int, nam: int) -> None:
+    """Ném 400 nếu báo cáo tháng của kỳ này chỉ được xem."""
+    if not ky_bao_cao_thang_chi_doc(thang, nam):
+        return
+    raise HTTPException(status_code=400, detail=error_response(
+        code="BIZ_007",
+        message=(
+            f"Từ {nhan_ky(thang, nam)}, đánh giá và xếp loại thực hiện theo QUÝ "
+            f"(Công văn 21169/CHQ-TCCB). Báo cáo tháng {thang}/{nam} chỉ để tra cứu, "
+            f"không chỉnh sửa. Dùng báo cáo xếp loại quý {quy_cua_thang(thang)}/{nam}."
+        ),
+    ))
+
+
 def check_can_edit_bao_cao(user: CongChuc) -> bool:
     """
     Kiểm tra user có quyền CHỈNH SỬA báo cáo không.
@@ -1350,18 +1376,9 @@ async def get_bao_cao_don_vi(
     
     is_new = False
     if not bao_cao:
-        # CV 21169 (18/09/2026): từ Q3/2026 kỳ đánh giá, xếp loại là QUÝ — không
-        # lập mới báo cáo xếp loại THÁNG nữa. Báo cáo tháng đã có vẫn xem/in được.
-        if not ky_thang_con_hieu_luc(thang, nam):
-            raise HTTPException(status_code=400, detail=error_response(
-                code="BIZ_006",
-                message=(
-                    f"Từ {nhan_ky(thang, nam)}, đánh giá và xếp loại thực hiện theo QUÝ "
-                    f"(Công văn 21169/CHQ-TCCB). Không lập báo cáo xếp loại tháng {thang}/{nam}. "
-                    f"Dùng báo cáo xếp loại quý {quy_cua_thang(thang)}/{nam}."
-                ),
-            ))
-
+        # CV 21169: từ Q3/2026 kỳ đánh giá, xếp loại là QUÝ. Báo cáo THÁNG vẫn
+        # dựng được để TRA CỨU (quyết định 21/09/2026) — mọi thao tác ghi bị chặn
+        # riêng ở 5 endpoint sửa/duyệt, xem `_chan_neu_ky_thang_chi_doc`.
         # Tự động tạo mới với trạng thái NHAP
         bao_cao = BaoCaoXepLoai(
             don_vi_id=don_vi_id,
@@ -1401,9 +1418,18 @@ async def get_bao_cao_don_vi(
     bao_cao = reload_result.scalar_one()
     
     response_data = build_bao_cao_response(bao_cao)
-    response_data["can_edit"] = can_edit
-    response_data["can_approve"] = can_approve
+    # CV 21169: kỳ đã chuyển sang quý → báo cáo tháng CHỈ XEM (quyết định 21/09/2026).
+    # Giao diện dựa vào 2 cờ này để ẩn mọi nút ghi; backend vẫn chặn độc lập.
+    chi_doc = ky_bao_cao_thang_chi_doc(thang, nam)
+    response_data["can_edit"] = can_edit and not chi_doc
+    response_data["can_approve"] = can_approve and not chi_doc
     response_data["is_auto_calculated"] = True
+    response_data["chi_doc"] = chi_doc
+    response_data["ly_do_chi_doc"] = (
+        f"Từ {nhan_ky(thang, nam)}, đánh giá và xếp loại thực hiện theo QUÝ "
+        f"(Công văn 21169/CHQ-TCCB). Báo cáo tháng chỉ để tra cứu."
+        if chi_doc else None
+    )
     
     # v1.4: Bổ sung số CV C3+ cho từng CC
     await enrich_chi_tiet_with_cv_c3(db, response_data, thang, nam)
@@ -1448,6 +1474,9 @@ async def de_xuat_xep_loai(
         raise HTTPException(status_code=404, detail=error_response(
             code="NOT_FOUND", message="Không tìm thấy chi tiết xếp loại"
         ))
+
+    # CV 21169: báo cáo tháng của kỳ đã chuyển sang quý chỉ được XEM
+    _chan_neu_ky_thang_chi_doc(chi_tiet.bao_cao.thang, chi_tiet.bao_cao.nam)
     
     # Kiểm tra quyền: phải là Đội trưởng của đơn vị này
     is_tdv = check_is_truong_don_vi(current_user)
@@ -1520,6 +1549,9 @@ async def gui_duyet_bao_cao(
         raise HTTPException(status_code=404, detail=error_response(
             code="NOT_FOUND", message="Không tìm thấy báo cáo"
         ))
+
+    # CV 21169: báo cáo tháng của kỳ đã chuyển sang quý chỉ được XEM
+    _chan_neu_ky_thang_chi_doc(bao_cao.thang, bao_cao.nam)
     
     if bao_cao.don_vi_id != current_user.don_vi_id:
         raise HTTPException(status_code=403, detail=error_response(
@@ -1725,8 +1757,11 @@ async def get_bao_cao_chi_tiet(
         ))
     
     response_data = build_bao_cao_response(bao_cao)
-    response_data["can_edit"] = check_can_edit_bao_cao(current_user)
-    response_data["can_approve"] = check_can_approve_bao_cao(current_user)
+    # CV 21169: báo cáo tháng của kỳ đã chuyển sang quý chỉ được XEM
+    chi_doc = ky_bao_cao_thang_chi_doc(bao_cao.thang, bao_cao.nam)
+    response_data["can_edit"] = check_can_edit_bao_cao(current_user) and not chi_doc
+    response_data["can_approve"] = check_can_approve_bao_cao(current_user) and not chi_doc
+    response_data["chi_doc"] = chi_doc
     
     # v1.4: Bổ sung số CV C3+ cho từng CC
     await enrich_chi_tiet_with_cv_c3(db, response_data, bao_cao.thang, bao_cao.nam)
@@ -1776,6 +1811,9 @@ async def quyet_dinh_xep_loai(
         raise HTTPException(status_code=404, detail=error_response(
             code="NOT_FOUND", message="Không tìm thấy chi tiết xếp loại"
         ))
+
+    # CV 21169: báo cáo tháng của kỳ đã chuyển sang quý chỉ được XEM
+    _chan_neu_ky_thang_chi_doc(chi_tiet.bao_cao.thang, chi_tiet.bao_cao.nam)
     
     # Kiểm tra trạng thái báo cáo
     if chi_tiet.bao_cao.trang_thai != TrangThaiBaoCao.CHO_PHE_DUYET.value:
@@ -1901,6 +1939,9 @@ async def phe_duyet_bao_cao(
         raise HTTPException(status_code=404, detail=error_response(
             code="NOT_FOUND", message="Không tìm thấy báo cáo"
         ))
+
+    # CV 21169: báo cáo tháng của kỳ đã chuyển sang quý chỉ được XEM
+    _chan_neu_ky_thang_chi_doc(bao_cao.thang, bao_cao.nam)
     
     if bao_cao.trang_thai != TrangThaiBaoCao.CHO_PHE_DUYET.value:
         raise HTTPException(status_code=400, detail=error_response(
@@ -1987,6 +2028,9 @@ async def tra_lai_bao_cao(
         raise HTTPException(status_code=404, detail=error_response(
             code="NOT_FOUND", message="Không tìm thấy báo cáo"
         ))
+
+    # CV 21169: báo cáo tháng của kỳ đã chuyển sang quý chỉ được XEM
+    _chan_neu_ky_thang_chi_doc(bao_cao.thang, bao_cao.nam)
     
     if bao_cao.trang_thai != TrangThaiBaoCao.DA_PHE_DUYET.value:
         raise HTTPException(status_code=400, detail=error_response(

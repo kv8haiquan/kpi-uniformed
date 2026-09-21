@@ -14,8 +14,9 @@ Phạm vi:
    cuối quý, cờ la_phieu_tc_quy bật.
 3. Ba tháng dùng chung một điểm — resolver trả cùng con số cho cả quý.
 4. Chốt chặn — thao tác trên bản ghi không phải tháng neo bị từ chối.
-5. Kỳ tháng hết hiệu lực — không lập mới báo cáo/phiếu tháng từ Q3/2026,
-   nhưng bản ghi cũ vẫn đọc được.
+5. Kỳ tháng hết hiệu lực — không lập mới PHIẾU cá nhân tháng từ Q3/2026. Báo cáo
+   xếp loại tháng vẫn dựng và xem được nhưng CHỈ ĐỌC (quyết định 21/09/2026, chốt
+   chặn ghi nằm ở test_bao_cao_thang_chi_doc.py).
 """
 
 from __future__ import annotations
@@ -357,12 +358,17 @@ async def test_chan_thao_tac_tren_thang_khong_phai_neo():
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_khong_lap_moi_bao_cao_xep_loai_thang():
-    """Báo cáo xếp loại tháng 7/2026 chưa có → từ chối tạo mới, kèm hướng dẫn."""
+async def test_bao_cao_xep_loai_thang_chi_doc():
+    """
+    Báo cáo xếp loại tháng của kỳ quý vẫn DỰNG được để tra cứu, nhưng chỉ đọc.
+
+    Ngày 18/09 bản đầu chặn hẳn việc lập mới; ngày 21/09 người dùng đổi quyết định:
+    các đơn vị cần tra cứu báo cáo tháng, nên mở lại đường XEM và chặn mọi thao tác
+    GHI ở 5 endpoint sửa/duyệt (xem test_bao_cao_thang_chi_doc.py).
+    """
     from app.api.v1.endpoints.bao_cao_xep_loai import get_bao_cao_don_vi
 
     async with AsyncSessionLocal() as db:
-        # Tìm một cặp (Trưởng đơn vị, tháng thuộc kỳ quý) CHƯA có báo cáo tháng
         row = (await db.execute(text("""
             SELECT cc.id, t.thang
             FROM cong_chuc cc
@@ -370,19 +376,16 @@ async def test_khong_lap_moi_bao_cao_xep_loai_thang():
             CROSS JOIN generate_series(7, 12) AS t(thang)
             WHERE vt.cap_bac = 'TRUONG_DON_VI' AND cc.is_active = true
               AND cc.is_deleted = false AND cc.don_vi_id IS NOT NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM bao_cao_xep_loai bc
-                  WHERE bc.don_vi_id = cc.don_vi_id AND bc.thang = t.thang
-                    AND bc.nam = 2026 AND bc.is_deleted = false)
             LIMIT 1
         """))).first()
-        assert row, "DB test không còn tháng nào của kỳ quý để thử tạo báo cáo mới"
+        assert row, "DB test không có Trưởng đơn vị"
 
         tdv = (await db.execute(select(CongChuc).where(CongChuc.id == row[0]))).scalar_one()
-        with pytest.raises(HTTPException) as exc:
-            await get_bao_cao_don_vi(db, tdv, row[1], 2026)
-        assert exc.value.status_code == 400
-        assert "QUÝ" in str(exc.value.detail)
+        res = await get_bao_cao_don_vi(db, tdv, row[1], 2026)
+        assert res["success"] is True
+        assert res["data"]["chi_doc"] is True
+        assert res["data"]["can_edit"] is False
+        assert res["data"]["can_approve"] is False
         await db.rollback()
 
 

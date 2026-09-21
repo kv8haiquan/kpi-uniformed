@@ -29,9 +29,26 @@ import {
 } from '../shared';
 
 import { formatScore } from '@/lib/format';
+// CV 21169 (21/09/2026): điểm tiêu chí chung nay chấm theo QUÝ → sửa ngay tại màn
+// báo cáo quý. Modal nhận `thang` = tháng cuối quý (tháng neo của phiếu tiêu chí).
+import SuaDiemTieuChiModal from '@/components/xep-loai/modals/SuaDiemTieuChiModal';
+import { thangCuoiQuy } from '@/lib/ky-tieu-chi';
 // =============================================================================
 // CONSTANTS
 // =============================================================================
+
+/**
+ * Ai được sửa điểm tiêu chí chung ở màn báo cáo quý.
+ * Giữ đúng nhóm của trang "Điều chỉnh điểm TC": CCT, PCCT, Trưởng đơn vị, admin.
+ * Backend vẫn chặn Trưởng đơn vị đụng công chức đơn vị khác (PERM_002).
+ */
+function duocSuaDiemTieuChi(
+  user: { is_system_admin?: boolean; vai_tro?: { ma_vai_tro?: string } | null } | null,
+): boolean {
+  if (!user) return false;
+  if (user.is_system_admin === true) return true;
+  return ['CCT', 'PCCT', 'TDV'].includes(user.vai_tro?.ma_vai_tro ?? '');
+}
 
 const TRANG_THAI_MAP: Record<string, { label: string; color: string }> = {
   NHAP: { label: 'Nháp', color: 'bg-gray-100 text-gray-700' },
@@ -291,6 +308,10 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
     ly_do_dieu_chinh: string;
   }>({ xep_loai_de_xuat: 'B', ly_do_dieu_chinh: '' });
   const [selectedChiTiet, setSelectedChiTiet] = useState<ChiTietXepLoaiQuy | null>(null);
+  // CV 21169: sửa điểm tiêu chí chung của quý ngay tại đây
+  const [suaTieuChiCC, setSuaTieuChiCC] = useState<ChiTietXepLoaiQuy | null>(null);
+  const currentUser = useAuthStore((state) => state.user);
+  const coQuyenSuaDiem = duocSuaDiemTieuChi(currentUser);
 
   const loadBaoCao = async () => {
     setLoading(true);
@@ -481,6 +502,9 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
                         {canEdit && (
                           <button onClick={() => handleEdit(ct)} className="text-amber-600 hover:text-amber-800 text-xs font-medium">Sửa XL</button>
                         )}
+                        {coQuyenSuaDiem && (
+                          <button onClick={() => setSuaTieuChiCC(ct)} className="text-emerald-700 hover:text-emerald-900 text-xs font-medium whitespace-nowrap">Sửa điểm TC</button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -503,6 +527,17 @@ function WorkflowViewTDV({ quy, nam }: WorkflowViewTDVProps) {
       {/* Modal chi tiết */}
       {selectedChiTiet && (
         <ChiTietModal chiTiet={selectedChiTiet} quy={quy} nam={nam} onClose={() => setSelectedChiTiet(null)} />
+      )}
+
+      {/* Modal sửa điểm tiêu chí chung của QUÝ — phiếu neo ở tháng cuối quý */}
+      {suaTieuChiCC && (
+        <SuaDiemTieuChiModal
+          congChuc={suaTieuChiCC}
+          thang={thangCuoiQuy(quy)}
+          nam={nam}
+          onClose={() => setSuaTieuChiCC(null)}
+          onSaved={async () => { setSuaTieuChiCC(null); await loadBaoCao(); }}
+        />
       )}
     </div>
   );
@@ -538,6 +573,10 @@ function WorkflowViewCCT({ quy, nam, canApprove }: WorkflowViewCCTProps) {
   const [selectedChiTiet, setSelectedChiTiet] = useState<ChiTietXepLoaiQuy | null>(null);
   const [filterTrangThai, setFilterTrangThai] = useState<'' | TrangThaiBaoCaoQuy>('');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // CV 21169: sửa điểm tiêu chí chung của quý ngay tại màn báo cáo quý
+  const [suaTieuChiCC, setSuaTieuChiCC] = useState<ChiTietXepLoaiQuy | null>(null);
+  const currentUser = useAuthStore((state) => state.user);
+  const coQuyenSuaDiem = duocSuaDiemTieuChi(currentUser);
 
   const loadDanhSach = useCallback(async () => {
     setLoading(true);
@@ -680,9 +719,16 @@ function WorkflowViewCCT({ quy, nam, canApprove }: WorkflowViewCCTProps) {
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center"><XepLoaiBadge xepLoai={ct.xep_loai_de_xuat || ct.xep_loai_he_thong} /></td>
                   <td className="px-3 py-2 text-center">
-                    <button onClick={() => setSelectedChiTiet(ct)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
-                      Chi tiết
-                    </button>
+                    <div className="flex gap-2 justify-center">
+                      <button onClick={() => setSelectedChiTiet(ct)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                        Chi tiết
+                      </button>
+                      {coQuyenSuaDiem && (
+                        <button onClick={() => setSuaTieuChiCC(ct)} className="text-emerald-700 hover:text-emerald-900 text-xs font-medium whitespace-nowrap">
+                          Sửa điểm TC
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -710,6 +756,20 @@ function WorkflowViewCCT({ quy, nam, canApprove }: WorkflowViewCCTProps) {
 
         {selectedChiTiet && (
           <ChiTietModal chiTiet={selectedChiTiet} quy={quy} nam={nam} onClose={() => setSelectedChiTiet(null)} />
+        )}
+
+        {/* Modal sửa điểm tiêu chí chung của QUÝ — phiếu neo ở tháng cuối quý */}
+        {suaTieuChiCC && (
+          <SuaDiemTieuChiModal
+            congChuc={suaTieuChiCC}
+            thang={thangCuoiQuy(quy)}
+            nam={nam}
+            onClose={() => setSuaTieuChiCC(null)}
+            onSaved={async () => {
+              setSuaTieuChiCC(null);
+              await handleSelectBaoCao(selectedBaoCao.id);
+            }}
+          />
         )}
       </div>
     );

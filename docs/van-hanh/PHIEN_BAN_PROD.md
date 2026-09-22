@@ -7,11 +7,63 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `6fef2e7` |
-| **Ngắn** | `6fef2e7` |
-| **Nhánh nguồn** | `feature/kpi-bao-cao-thang-chi-doc` (fast-forward thẳng từ `525f1c4`) |
-| **Ngày ghi mốc** | 22/09/2026 07:05 |
+| **Commit** | `9b49390` |
+| **Ngắn** | `9b49390` |
+| **Nhánh nguồn** | `feature/kpi-bo-chon-ky-danh-gia` (fast-forward thẳng từ `0086dd6`) |
+| **Ngày ghi mốc** | 22/09/2026 09:37 |
 | **Alembic** | `kpi_tc_theo_quy_20260918` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — bộ chọn kỳ (Tháng 1–7, Quý III, Quý IV) ở trang Đánh giá và trang Tiêu chí chung.**
+
+Sau khi chuyển sang kỳ quý, ba trang cá nhân vẫn chỉ chọn được Tháng 1–12: công
+chức không xem được điểm quý — thứ nay quyết định xếp loại — mà cũng không xem lại
+được các tháng đã chấm xong hồi đầu năm.
+
+**Bộ chọn dựng từ hai mốc**, không cắm cứng số tháng:
+- `TC_THEO_QUY_TU = (2026, 3)` — từ đây kỳ là quý.
+- `THANG_XEM_LAI_DEN = (2026, 7)` — vẫn hiện mục **Tháng** đến mốc này. Chọn tháng 7
+  vì đó là tháng cuối cùng chấm xong theo tháng (517 đơn đã duyệt); tháng 8 chấm dở
+  322/458 rồi dừng khi chuyển kỳ.
+
+Kết quả: 2026 ra Tháng 1…7 + Quý III + Quý IV · 2025 ra 12 tháng · 2027 ra 4 quý.
+Mặc định là quý hiện hành theo đồng hồ hệ thống; sang tháng 10 tự nhảy Quý IV.
+
+**Bất biến phải giữ:** lựa chọn kỳ lưu bằng MỘT số tháng (quý mang số tháng cuối
+quý — Quý 3 là 9). Cách này chỉ đúng khi mốc xem lại KHÔNG rơi vào tháng cuối quý;
+đổi mốc thành 9 hay 12 thì "Tháng 9" và "Quý III" trùng giá trị, chọn cái này nhảy
+sang cái kia. Đã khoá bằng test riêng trong `src/__tests__/ky-tieu-chi.test.ts`.
+
+**Backend — một cờ đọc lịch sử.** Từ 18/09 mọi truy vấn tiêu chí bị quy về tháng
+neo, nên 517 đơn của tháng 7 còn nguyên trong CSDL mà không đường nào đọc ra. Thêm
+tham số `theo_dung_thang` cho HAI endpoint ĐỌC (`/danh-gia/tieu-chi/thang/…` và
+`/danh-gia/tieu-chi/cong-chuc/…`), mặc định tắt để giữ nguyên hành vi đã phát hành;
+kỳ trả về là `THANG_LICH_SU` để giao diện dán nhãn. **Đường GHI không nhận cờ** —
+tự chấm, duyệt, điều chỉnh vẫn vào phiếu quý.
+
+> Bẫy đã xử lý: gọi TRỰC TIẾP hàm endpoint (test hoặc code nội bộ) nhận nguyên
+> object `Query(False)` — vốn truthy — chứ không phải `False`, nên cờ tự bật. Nay
+> ép về bool thật ngay trong thân hàm. Test bắt được ca này.
+
+**An toàn ở trang tự chấm:** tháng lịch sử để form CHỈ ĐỌC — khoá ô nhập, ẩn nút
+Lưu nháp và Gửi phê duyệt, kèm banner. Nếu để form mở, công chức tưởng đang sửa
+tháng 7 nhưng thực ra ghi đè phiếu Quý III đang có hiệu lực — lỗi âm thầm, người
+dùng không thể tự phát hiện.
+
+**Chế độ Quý** ở `/danh-gia` và `/danh-gia-v2`: ba thẻ điểm lấy từ điểm quý lũy kế
+(API `/xep-loai-quy/chi-tiet` đã có sẵn, công chức gọi được cho chính mình), thêm
+bảng tổng hợp ba tháng, ẩn danh sách bản kê khai (muốn xem chi tiết thì chọn đích
+danh tháng đó). Sửa cả `/danh-gia` vì trang này vẫn phục vụ 106 HĐLĐ 111 — các đối
+tượng khác bị `router.replace` đá sang v2.
+
+Kiểm chứng: 11 test vitest mới cho logic kỳ; `DB_NAME=kpi_haiquan_test pytest
+tests/` → 125 passed (2 test đỏ sẵn có từ trước); `build_frontend.sh` và
+`tsc --noEmit` sạch. Ba test đỏ của `tai-lieu-upload` cũng đã đỏ sẵn trên code gốc
+(đối chứng bằng `git stash`). Sau triển khai: 8/8 dịch vụ health 200,
+`kpihaiquan.vn` 200, dữ liệu tháng 7 còn nguyên 517 đơn.
+
+Ảnh hưởng dữ liệu đang chạy: không sửa dòng nào.
+
+### Mốc trước — `6fef2e7`
 
 Nội dung: **KPI — báo cáo xếp loại THÁNG chuyển sang chế độ CHỈ XEM; sửa điểm tiêu chí chung chuyển về màn báo cáo QUÝ.**
 
@@ -360,6 +412,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 13/09/2026 | `4aaa43e` | KPI: điều chuyển nhân sự hàng loạt theo QĐ bằng Excel — 3 endpoint (`mau-excel`/`xem-truoc`/`ghi`), mẫu 4 sheet, trang `/admin/dieu-chuyen-hang-loat`; tách `app/core/dieu_chuyen.py` dùng chung với điều chuyển lẻ — **không migration** |
 | 18/09/2026 | `41058a3` | KPI: chấm tiêu chí chung theo QUÝ từ Q3/2026 theo CV 21169 — phiếu quý neo ở tháng cuối quý (`la_phieu_tc_quy`), 8 điểm đọc chuyển sang tháng neo, chặn lập mới báo cáo/phiếu THÁNG, ẩn kỳ tháng khỏi giao diện. **Migration `kpi_tc_theo_quy_20260918`** (chỉ thêm cột, không đụng dữ liệu) |
 | 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
+| 22/09/2026 | `9b49390` | KPI: bộ chọn kỳ Tháng 1–7 + Quý III + Quý IV ở `/danh-gia`, `/danh-gia-v2`, `/danh-gia/tu-cham-diem`; mặc định quý hiện hành; chế độ Quý hiện điểm quý lũy kế + bảng ba tháng; cờ `theo_dung_thang` cho 2 endpoint ĐỌC để xem lại số liệu tháng 7 (đường ghi không nhận cờ); tháng lịch sử ở trang tự chấm để CHỈ ĐỌC — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

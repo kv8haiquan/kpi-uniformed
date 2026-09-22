@@ -42,7 +42,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore, useIsHd111 } from '@/stores/useAuthStore';
 import { kpiService } from '@/services/kpi.service';
@@ -59,6 +59,17 @@ import ExportButton, { ExportFormat } from '@/components/common/ExportButton';
 import { exportService } from '@/services/export.service';
 
 import { formatScore } from '@/lib/format';
+// CV 21169 (22/09/2026): bộ chọn KỲ — Tháng 1–7 rồi Quý III, Quý IV; mặc định quý hiện hành
+import {
+  danhSachKyXemLai,
+  kyMacDinh,
+  laThangLichSu,
+  nhanKy,
+  quyCuaThang,
+  tcTheoQuy,
+} from '@/lib/ky-tieu-chi';
+import { xepLoaiQuyService } from '@/services/xepLoaiQuyService';
+import type { ChiTietQuyResponse } from '@/types/xep-loai-quy';
 // =============================================================================
 // CONSTANTS & HELPERS
 // =============================================================================
@@ -253,8 +264,12 @@ export default function DanhGiaPage() {
 
   // Tháng/Năm
   const currentDate = new Date();
-  const [selectedThang, setSelectedThang] = useState(currentDate.getMonth() + 1);
+  // Giá trị vẫn là một số tháng: tháng thường giữ nguyên, quý mang tháng cuối quý.
+  const [selectedThang, setSelectedThang] = useState(
+    () => kyMacDinh(currentDate.getFullYear(), currentDate).thang,
+  );
   const [selectedNam, setSelectedNam] = useState(currentDate.getFullYear());
+  const [diemQuy, setDiemQuy] = useState<ChiTietQuyResponse | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) router.push('/login');
@@ -283,13 +298,37 @@ export default function DanhGiaPage() {
     setError(null);
 
     try {
+      // CV 21169: kỳ QUÝ → nạp thêm điểm quý lũy kế cho ba thẻ điểm và bảng 3 tháng
+      const xemTheoQuy =
+        tcTheoQuy(selectedThang, selectedNam) && !laThangLichSu(selectedThang, selectedNam);
+      if (xemTheoQuy && user?.id) {
+        try {
+          setDiemQuy(
+            await xepLoaiQuyService.getChiTietQuy(
+              user.id,
+              quyCuaThang(selectedThang),
+              selectedNam,
+              kpiTab === 'tam_tinh',
+            ),
+          );
+        } catch {
+          setDiemQuy(null);
+        }
+      } else {
+        setDiemQuy(null);
+      }
+
       if (usesLeaderForm) {
         // LÃNH ĐẠO + HĐ 111: Load thống kê kê khai LĐ + Tiêu chí chung.
         // HĐ 111 không có d/đ/e (backend chặn) → bỏ qua DDE.
         // (Phase 3: LĐ thật + tháng ≥ 4/2026 đã được redirect sang /danh-gia-v2.)
         const [thongKeResult, tcResult, ddeResult, hdldResult] = await Promise.allSettled([
           leaderKPIService.getThongKe(selectedThang, selectedNam),
-          tieuChiChungService.getKetQuaThang(selectedThang, selectedNam),
+          tieuChiChungService.getKetQuaThang(
+            selectedThang,
+            selectedNam,
+            laThangLichSu(selectedThang, selectedNam),
+          ),
           isHd111
             ? Promise.resolve(null)
             : leaderKPIService.getDanhGiaDDE(selectedThang, selectedNam),
@@ -314,7 +353,11 @@ export default function DanhGiaPage() {
         const [keKhaiResult, nghiResult, tcResult] = await Promise.allSettled([
           kpiService.getMonthSummary(selectedThang, selectedNam),
           leaveService.getTongNgayNghiThangChiTiet(selectedThang, selectedNam),
-          tieuChiChungService.getKetQuaThang(selectedThang, selectedNam),
+          tieuChiChungService.getKetQuaThang(
+            selectedThang,
+            selectedNam,
+            laThangLichSu(selectedThang, selectedNam),
+          ),
         ]);
 
         if (keKhaiResult.status === 'fulfilled') setKeKhaiSummaryCC(keKhaiResult.value);
@@ -326,7 +369,7 @@ export default function DanhGiaPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedThang, selectedNam, usesLeaderForm, isHd111, isLanhDao]);
+  }, [selectedThang, selectedNam, usesLeaderForm, isHd111, isLanhDao, user?.id, kpiTab]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -517,12 +560,36 @@ export default function DanhGiaPage() {
   // Điểm tiêu chí chung theo tab
   // Chính thức: chỉ lấy điểm khi đã phê duyệt, ngược lại = 0
   // Tạm tính: lấy điểm tự chấm (tong_hop.tong_diem bao gồm cả tự chấm)
-  const diemTCHienThi = kpiTab === 'chinh_thuc'
+  const diemTCTheoThang = kpiTab === 'chinh_thuc'
     ? (tcDaPheDuyet ? diemTieuChiChung : 0)
     : diemTieuChiChung;
 
+  // ===========================================================================
+  // KỲ ĐANG XEM (CV 21169)
+  // ===========================================================================
+  const danhSachKy = useMemo(() => danhSachKyXemLai(selectedNam), [selectedNam]);
+  const laKyLichSu = laThangLichSu(selectedThang, selectedNam);
+  const laKyQuy = tcTheoQuy(selectedThang, selectedNam) && !laKyLichSu;
+  const tenKy = laKyLichSu
+    ? `Tháng ${selectedThang}/${selectedNam} (số liệu lịch sử)`
+    : nhanKy(selectedThang, selectedNam);
+
+  // Đổi năm → kỳ đang chọn có thể không còn hợp lệ. Xử lý ngay trong handler.
+  const doiNam = useCallback((namMoi: number) => {
+    setSelectedNam(namMoi);
+    if (!danhSachKyXemLai(namMoi).some((k) => k.thang === selectedThang)) {
+      setSelectedThang(kyMacDinh(namMoi, new Date()).thang);
+    }
+  }, [selectedThang]);
+
+  // Điểm TIÊU CHÍ CHUNG: ở kỳ quý, `selectedThang` là tháng neo nên `tieuChiChung`
+  // đã là PHIẾU QUÝ — dùng luôn, đúng như chế độ tháng. KHÔNG lấy `diem_tc_quy`
+  // vì cột đó chỉ có số sau khi phiếu được DUYỆT.
+  const diemTCHienThi = diemTCTheoThang;
+  const diemKPIHienThi = laKyQuy ? (diemQuy?.diem_kpi_quy ?? 0) : diemKPIQuyDoi;
+
   // Tổng điểm hiển thị theo tab (tiêu chí chung + KPI)
-  const diemTongHienThi = diemTCHienThi + diemKPIQuyDoi;
+  const diemTongHienThi = diemTCHienThi + diemKPIHienThi;
   const xepLoaiHienThi = kpiTab === 'chinh_thuc' && tcChuaPheDuyet
     ? tinhXepLoai(diemTongHienThi)  // Tạm tính xếp loại dù TC chung = 0
     : tinhXepLoai(diemTongHienThi);
@@ -566,7 +633,7 @@ export default function DanhGiaPage() {
                 <h1 className="text-2xl font-bold text-gray-900">
                   📊 Đánh giá KPI {isLanhDao ? '(Lãnh đạo)' : isHd111 ? '(HĐ 111)' : '(Công chức)'}
                 </h1>
-                <p className="text-gray-600 mt-1">Tổng hợp kết quả đánh giá tháng {selectedThang}/{selectedNam}</p>
+                <p className="text-gray-600 mt-1">Tổng hợp kết quả đánh giá {tenKy}</p>
               </div>
             </div>
 
@@ -586,14 +653,17 @@ export default function DanhGiaPage() {
           <div className="flex items-center justify-between mt-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Tháng:</label>
+                {/* CV 21169: 2026 hiện Tháng 1–7 rồi Quý III, Quý IV */}
+                <label className="text-sm text-gray-600">Kỳ:</label>
                 <select
                   value={selectedThang}
                   onChange={(e) => setSelectedThang(Number(e.target.value))}
                   className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
                 >
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                    <option key={m} value={m}>Tháng {m}</option>
+                  {danhSachKy.map((k) => (
+                    <option key={`${k.laQuy ? 'Q' : 'T'}${k.thang}`} value={k.thang}>
+                      {k.nhan}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -601,7 +671,7 @@ export default function DanhGiaPage() {
                 <label className="text-sm text-gray-600">Năm:</label>
                 <select
                   value={selectedNam}
-                  onChange={(e) => setSelectedNam(Number(e.target.value))}
+                  onChange={(e) => doiNam(Number(e.target.value))}
                   className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
                 >
                   {[2025, 2026, 2027].map((y) => (
@@ -627,6 +697,13 @@ export default function DanhGiaPage() {
             )}
           </div>
         </div>
+
+        {/* Thay cho bảng ba tháng (bỏ theo yêu cầu 22/09) */}
+        {!isLoading && !error && laKyQuy && diemQuy?.ghi_chu && (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            ⚠️ {diemQuy.ghi_chu}
+          </div>
+        )}
 
         {/* ========== v2.10: GLOBAL TAB SELECTOR ========== */}
         {!isLoading && !error && (

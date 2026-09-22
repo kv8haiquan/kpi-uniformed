@@ -63,18 +63,33 @@ export default function XepLoaiPage() {
   // CV 21169 (18/09/2026): từ Q3/2026 kỳ đánh giá, xếp loại là QUÝ → ẩn tab
   // "Duyệt đánh giá tháng" cho các kỳ thuộc phạm vi công văn. Kỳ cũ (đến Q2/2026)
   // vẫn hiện để tra cứu và hoàn tất hồ sơ còn dở.
+  // CV 21169 (21/09/2026): tab "Duyệt đánh giá tháng" KHÔNG còn bị ẩn — các đơn
+  // vị vẫn cần tra cứu báo cáo tháng cũ. Thay vào đó kỳ từ Q3/2026 chuyển sang
+  // chế độ CHỈ XEM: đổi nhãn tab, và backend chặn mọi thao tác ghi.
+  const baoCaoThangChiDoc = !kyThangConHieuLuc(selectedThang, selectedNam);
   const accessibleTabs = useMemo(() => {
     const tabs = getAccessibleTabs(capBac, user);
-    if (!kyThangConHieuLuc(selectedThang, selectedNam)) {
-      return tabs.filter((t) => t.id !== 'bao-cao');
-    }
-    return tabs;
-  }, [capBac, user, selectedThang, selectedNam]);
+    if (!baoCaoThangChiDoc) return tabs;
+    return tabs.map((t) =>
+      t.id === 'bao-cao'
+        ? { ...t, label: 'Đánh giá tháng (chỉ xem)', shortLabel: 'Tháng (xem)',
+            description: 'Tra cứu báo cáo xếp loại tháng — kỳ này đánh giá theo quý' }
+        : t,
+    );
+  }, [capBac, user, baoCaoThangChiDoc]);
   const activeTab = useMemo(() => {
     if (urlTab && accessibleTabs.find((t) => t.id === urlTab)) return urlTab;
     return accessibleTabs[0]?.id || 'cong-viec';
   }, [urlTab, accessibleTabs]);
-  const activeTabConfig = useMemo(() => TABS_CONFIG.find((t) => t.id === activeTab) || TABS_CONFIG[0], [activeTab]);
+  // Lấy từ accessibleTabs (đã đổi nhãn theo kỳ) chứ KHÔNG từ TABS_CONFIG gốc,
+  // nếu không tiêu đề khung nội dung sẽ vẫn ghi "Duyệt đánh giá tháng".
+  const activeTabConfig = useMemo(
+    () =>
+      accessibleTabs.find((t) => t.id === activeTab) ||
+      TABS_CONFIG.find((t) => t.id === activeTab) ||
+      TABS_CONFIG[0],
+    [accessibleTabs, activeTab],
+  );
   const canApproveActiveTab = useMemo(() => {
     // v1.1.0: User có can_view_all_units nhưng là CC → KHÔNG được phê duyệt
     if (user && user.can_view_all_units && capBac === CapBacVaiTro.CONG_CHUC) return false;

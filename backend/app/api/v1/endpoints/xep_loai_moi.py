@@ -46,12 +46,34 @@ from app.schemas.common import success_response, error_response
 router = APIRouter()
 
 
+def _loc_cua_so_ngay(stmt, tu_ngay: Optional[date], den_ngay: Optional[date]):
+    """
+    Giới hạn kê khai theo NGÀY THỰC HIỆN (mốc chuyển kỳ 16/9/2026 — CV 21169).
+
+    Bản ghi THIẾU ngày thực hiện được giữ ở quý GỐC: lọt vào vế `den_ngay`
+    (quý cũ) và bị loại khỏi vế `tu_ngay` (quý mới). Nếu loại ở cả hai vế thì
+    16 bản của tháng 9/2026 sẽ biến mất khỏi mọi bảng điểm.
+    """
+    if den_ngay is not None:
+        stmt = stmt.where(
+            or_(
+                KeKhaiCongViec.ngay_thuc_hien == None,  # noqa: E711
+                KeKhaiCongViec.ngay_thuc_hien <= den_ngay,
+            )
+        )
+    if tu_ngay is not None:
+        stmt = stmt.where(KeKhaiCongViec.ngay_thuc_hien >= tu_ngay)
+    return stmt
+
+
 async def tinh_diem_kpi_70_v2(
     db: AsyncSession,
     cong_chuc_id: UUID,
     thang: int,
     nam: int,
     tam_tinh: bool = False,
+    tu_ngay: Optional[date] = None,
+    den_ngay: Optional[date] = None,
 ) -> dict:
     """
     PL3 V2 — Tính điểm KPI 70 cho CC từ kê khai V2_PL3.
@@ -92,6 +114,7 @@ async def tinh_diem_kpi_70_v2(
         .where(KeKhaiCongViec.is_deleted == False)  # noqa: E712
         .where(KeKhaiCongViec.trang_thai.in_(allowed))
     )
+    stmt = _loc_cua_so_ngay(stmt, tu_ngay, den_ngay)
     rows = (await db.execute(stmt)).all()
 
     tong_sp_ke_khai = Decimal("0")
@@ -171,6 +194,8 @@ async def tinh_diem_kpi_70(
     thang: int,
     nam: int,
     tam_tinh: bool = False,
+    tu_ngay: Optional[date] = None,
+    den_ngay: Optional[date] = None,
 ) -> dict:
     """
     Tính điểm KPI 70 điểm từ kê khai công việc đã duyệt (hoặc tạm tính).
@@ -195,7 +220,10 @@ async def tinh_diem_kpi_70(
     # =========================================================================
     version = await resolve_kpi_version(db, cong_chuc_id, thang, nam)
     if version == VERSION_V2:
-        return await tinh_diem_kpi_70_v2(db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh)
+        return await tinh_diem_kpi_70_v2(
+            db, cong_chuc_id, thang, nam, tam_tinh=tam_tinh,
+            tu_ngay=tu_ngay, den_ngay=den_ngay,
+        )
     # =========================================================================
     # V1 logic (giữ nguyên)
     # =========================================================================
@@ -332,6 +360,8 @@ async def tinh_diem_kpi_70_lanh_dao(
     thang: int,
     nam: int,
     tam_tinh: bool = False,
+    tu_ngay: Optional[date] = None,
+    den_ngay: Optional[date] = None,
 ) -> dict:
     """
     Tính điểm KPI 70 điểm cho LÃNH ĐẠO từ KeKhaiLanhDao + DanhGiaDDE.
@@ -356,7 +386,9 @@ async def tinh_diem_kpi_70_lanh_dao(
 
     if not tam_tinh and is_kpi_lanh_dao_v2_active(thang, nam):
         try:
-            v2 = await calc_kpi_lanh_dao_v2(db, cong_chuc_id, thang, nam)
+            v2 = await calc_kpi_lanh_dao_v2(
+                db, cong_chuc_id, thang, nam, tu_ngay=tu_ngay, den_ngay=den_ngay
+            )
             diem_kpi = v2["kpi_tong"]
             diem_70 = min(70.0, diem_kpi * 70.0)
             return {

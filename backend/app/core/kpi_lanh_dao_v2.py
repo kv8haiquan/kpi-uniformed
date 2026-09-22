@@ -295,12 +295,31 @@ def _allowed_states(tam_tinh: bool) -> list[TrangThaiKeKhai]:
     return [TrangThaiKeKhai.DA_PHE_DUYET]
 
 
+def _loc_cua_so_ngay(stmt, tu_ngay: Optional[date], den_ngay: Optional[date]):
+    """
+    Giới hạn kê khai theo NGÀY THỰC HIỆN — mốc chuyển kỳ 16/9/2026 (CV 21169).
+    Bản thiếu ngày thực hiện giữ ở quý GỐC (xem app/core/ky_tieu_chi.py).
+    """
+    if den_ngay is not None:
+        stmt = stmt.where(
+            or_(
+                KeKhaiCongViec.ngay_thuc_hien == None,  # noqa: E711
+                KeKhaiCongViec.ngay_thuc_hien <= den_ngay,
+            )
+        )
+    if tu_ngay is not None:
+        stmt = stmt.where(KeKhaiCongViec.ngay_thuc_hien >= tu_ngay)
+    return stmt
+
+
 async def _sp_pdv_scope(
     db: AsyncSession,
     user_id: UUID,
     thang: int,
     nam: int,
     tam_tinh: bool = False,
+    tu_ngay: Optional[date] = None,
+    den_ngay: Optional[date] = None,
 ) -> list[_SP]:
     """
     PDV: SP do user_id tự kê + SP do user_id trực tiếp duyệt.
@@ -316,6 +335,7 @@ async def _sp_pdv_scope(
             KeKhaiCongViec.nguoi_phe_duyet_id == user_id,
         ),
     )
+    stmt = _loc_cua_so_ngay(stmt, tu_ngay, den_ngay)
     rows = (await db.execute(stmt)).all()
     scope = [_row_to_sp(r) for r in rows]
     overrides = await _load_dieu_chinh_overrides(db, [sp.ke_khai_id for sp in scope])
@@ -329,6 +349,8 @@ async def _sp_trong_don_vi(
     thang: int,
     nam: int,
     tam_tinh: bool = False,
+    tu_ngay: Optional[date] = None,
+    den_ngay: Optional[date] = None,
 ) -> list[_SP]:
     """Toàn bộ SP của user thuộc các đơn vị (CC + PDV/TDV tự kê).
     Apply override từ dieu_chinh_kqcv (chỉ ảnh hưởng KPI LĐ)."""
@@ -341,6 +363,7 @@ async def _sp_trong_don_vi(
         KeKhaiCongViec.trang_thai.in_(_allowed_states(tam_tinh)),
         CongChuc.don_vi_id.in_(list(don_vi_ids)),
     )
+    stmt = _loc_cua_so_ngay(stmt, tu_ngay, den_ngay)
     rows = (await db.execute(stmt)).all()
     scope = [_row_to_sp(r) for r in rows]
     overrides = await _load_dieu_chinh_overrides(db, [sp.ke_khai_id for sp in scope])
@@ -540,6 +563,8 @@ async def calc_kpi_lanh_dao_v2(
     nam: int,
     *,
     tam_tinh: bool = False,
+    tu_ngay: Optional[date] = None,
+    den_ngay: Optional[date] = None,
 ) -> dict:
     """
     Tính KPI lãnh đạo theo công thức MỚI cho 1 LĐ ở 1 tháng.
@@ -578,24 +603,29 @@ async def calc_kpi_lanh_dao_v2(
     # Resolve scope SP TỔNG (theo cấp)
     has_phan_cong: Optional[bool] = None
     if cap_bac == CapBacVaiTro.PHO_DON_VI:
-        scope_total = await _sp_pdv_scope(db, user.id, thang, nam, tam_tinh=tam_tinh)
+        scope_total = await _sp_pdv_scope(
+            db, user.id, thang, nam, tam_tinh=tam_tinh, tu_ngay=tu_ngay, den_ngay=den_ngay
+        )
     elif cap_bac == CapBacVaiTro.TRUONG_DON_VI:
         scope_total = await _sp_trong_don_vi(
-            db, [user.don_vi_id], thang, nam, tam_tinh=tam_tinh
+            db, [user.don_vi_id], thang, nam, tam_tinh=tam_tinh,
+            tu_ngay=tu_ngay, den_ngay=den_ngay,
         )
     elif cap_bac == CapBacVaiTro.PHO_CHI_CUC_TRUONG:
         ngay_chot = _ngay_chot_cua_thang(thang, nam)
         don_vi_ids = await get_don_vi_phu_trach(db, user.id, ngay_chot)
         has_phan_cong = len(don_vi_ids) > 0
         scope_total = await _sp_trong_don_vi(
-            db, don_vi_ids, thang, nam, tam_tinh=tam_tinh
+            db, don_vi_ids, thang, nam, tam_tinh=tam_tinh,
+            tu_ngay=tu_ngay, den_ngay=den_ngay,
         )
     else:  # CCT — gộp đơn vị của TẤT CẢ PCCT + đơn vị CCT tự phụ trách trực tiếp
         ngay_chot = _ngay_chot_cua_thang(thang, nam)
         don_vi_ids = await get_don_vi_scope_cct(db, user.id, ngay_chot)
         has_phan_cong = len(don_vi_ids) > 0
         scope_total = await _sp_trong_don_vi(
-            db, don_vi_ids, thang, nam, tam_tinh=tam_tinh
+            db, don_vi_ids, thang, nam, tam_tinh=tam_tinh,
+            tu_ngay=tu_ngay, den_ngay=den_ngay,
         )
 
     # Tách SP CHÍNH LĐ TỰ KÊ (cong_chuc_id == user.id) vs SP TỔNG

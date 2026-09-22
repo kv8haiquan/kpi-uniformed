@@ -27,8 +27,8 @@ QUAY LUI:
 Phiên bản: 1.0.0 (18/09/2026)
 """
 
-from datetime import date
-from typing import List, Optional, Tuple
+from datetime import date, timedelta
+from typing import Dict, List, Optional, Tuple
 
 # (năm, quý) — mọi kỳ TỪ mốc này trở đi chấm tiêu chí chung theo QUÝ.
 # Quý III/2026 theo Công văn 21169.
@@ -98,8 +98,23 @@ def loai_ky(thang: int, nam: int) -> str:
     return "QUY" if tc_theo_quy(thang, nam) else "THANG"
 
 
-def thong_tin_ky(thang: int, nam: int) -> dict:
-    """Gói thông tin kỳ trả về cho FE (đính kèm mọi response tiêu chí chung)."""
+def thong_tin_ky(thang: int, nam: int, theo_dung_thang: bool = False) -> dict:
+    """
+    Gói thông tin kỳ trả về cho FE (đính kèm mọi response tiêu chí chung).
+
+    `theo_dung_thang=True` — chỉ dùng cho đường ĐỌC LỊCH SỬ: người dùng xem lại
+    điểm tiêu chí đã chấm theo tháng trước khi công văn 21169 có hiệu lực. Khi đó
+    loại kỳ là THANG_LICH_SU để giao diện dán nhãn "số liệu lịch sử", tránh hiểu
+    nhầm đây là điểm đang có hiệu lực.
+    """
+    if theo_dung_thang and tc_theo_quy(thang, nam):
+        return {
+            "ky": "THANG_LICH_SU",
+            "quy": quy_cua_thang(thang),
+            "thang_neo": int(thang),
+            "cac_thang_ap_dung": [int(thang)],
+            "nhan_ky": f"Tháng {thang}/{nam} (số liệu lịch sử)",
+        }
     return {
         "ky": loai_ky(thang, nam),
         "quy": quy_cua_thang(thang) if tc_theo_quy(thang, nam) else None,
@@ -136,3 +151,63 @@ def ky_da_bat_dau(thang: int, nam: int, hom_nay: Optional[date] = None) -> bool:
             quy_cua_thang(hom_nay.month),
         )
     return (int(nam), int(thang)) <= (hom_nay.year, hom_nay.month)
+
+
+# =============================================================================
+# MỐC CHUYỂN KỲ CỦA KÊ KHAI CÔNG VIỆC (22/09/2026)
+# -----------------------------------------------------------------------------
+# Hồ sơ đánh giá quý phải nộp ngày 23 của tháng cuối quý (CV 21169), nên công
+# việc làm sau mốc chốt số liệu không kịp vào hồ sơ quý đó. Quyết định của Chi
+# cục: kê khai có NGÀY THỰC HIỆN từ 16/9/2026 trở đi tính vào quý IV.
+#
+# Phạm vi hẹp, cố ý:
+#   • CHỈ áp cho phần điểm tính từ KÊ KHAI CÔNG VIỆC (a/b/c) — cũng là phần
+#     điểm lãnh đạo cộng SP cấp dưới.
+#   • KHÔNG đụng điểm THÁNG: tháng 9 vẫn tính trọn 1–30/9 để tra cứu.
+#   • KHÔNG đụng d/đ/e, tiêu chí chung, hay HĐLĐ 111 (điểm từ VB714 theo tháng).
+#   • Chỉ một lần cho Q3→Q4/2026; các quý sau vẫn chia theo tháng như cũ.
+#
+# Bản ghi THIẾU ngày thực hiện (16 bản của T9/2026) được giữ ở quý GỐC — nếu lọc
+# cứng theo ngày thì chúng rơi khỏi cả hai quý và biến mất khỏi mọi bảng điểm.
+# =============================================================================
+
+# (năm, quý) → ngày đầu tiên thuộc quý KẾ TIẾP
+MOC_CHUYEN_KY_KE_KHAI: dict = {
+    (2026, 3): date(2026, 9, 16),
+}
+
+
+def _moc_cua_quy(quy: int, nam: int) -> Optional[date]:
+    return MOC_CHUYEN_KY_KE_KHAI.get((int(nam), int(quy)))
+
+
+def cac_thang_ke_khai_cua_quy(quy: int, nam: int) -> List[Tuple[int, Optional[date], Optional[date]]]:
+    """
+    Các tháng đóng góp KÊ KHAI cho quý, kèm cửa sổ ngày (tu_ngay, den_ngay).
+
+    None = không giới hạn. Ví dụ năm 2026:
+        quý 3 → [(7, None, None), (8, None, None), (9, None, 15/9)]
+        quý 4 → [(9, 16/9, None), (10, None, None), (11, None, None), (12, None, None)]
+    """
+    ds: List[Tuple[int, Optional[date], Optional[date]]] = []
+
+    # Phần đuôi của quý trước bị đẩy sang quý này
+    moc_truoc = _moc_cua_quy(quy - 1, nam) if quy > 1 else None
+    if moc_truoc is not None:
+        ds.append((thang_cuoi_quy(quy - 1), moc_truoc, None))
+
+    moc = _moc_cua_quy(quy, nam)
+    for thang in cac_thang_trong_quy(quy):
+        if moc is not None and thang == thang_cuoi_quy(quy):
+            # Tháng cuối quý chỉ tính đến hôm trước mốc
+            ds.append((thang, None, moc - timedelta(days=1)))
+        else:
+            ds.append((thang, None, None))
+    return ds
+
+
+def co_moc_chuyen_ky(quy: int, nam: int) -> bool:
+    """Quý này có dính mốc chuyển kỳ (của chính nó hoặc của quý trước) không."""
+    return _moc_cua_quy(quy, nam) is not None or (
+        quy > 1 and _moc_cua_quy(quy - 1, nam) is not None
+    )

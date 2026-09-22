@@ -194,6 +194,13 @@ async def get_chi_tiet_quy(
     cong_chuc_id: UUID,
     quy: int = Query(..., ge=1, le=4, description="Quý (1-4)"),
     nam: int = Query(..., ge=2025, description="Năm"),
+    tam_tinh: bool = Query(
+        default=True,
+        description=(
+            "True (mặc định, giữ nguyên hành vi cũ) = gộp cả bản chưa duyệt. "
+            "False = chỉ số liệu đã phê duyệt — dùng cho tab Chính thức."
+        ),
+    ),
 ) -> dict:
     """
     Lấy chi tiết đánh giá quý của 1 công chức.
@@ -231,8 +238,9 @@ async def get_chi_tiet_quy(
                 detail="Bạn không có quyền xem công chức đơn vị khác"
             )
 
-    # Tính điểm quý
-    ket_qua = await tinh_diem_quy(db, cong_chuc_id, quy, nam)
+    # Tính điểm quý. Gọi TRỰC TIẾP hàm này (test/nội bộ) nhận nguyên object
+    # Query(...) vốn truthy → ép về bool thật, mặc định vẫn là tạm tính.
+    ket_qua = await tinh_diem_quy(db, cong_chuc_id, quy, nam, tam_tinh=tam_tinh is not False)
 
     # Build response
     cac_thang = [DanhGiaThangTrongQuy(**t) for t in ket_qua["cac_thang"]]

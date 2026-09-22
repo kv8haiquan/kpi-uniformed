@@ -7,11 +7,170 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `41058a3` |
-| **Ngắn** | `41058a3` |
-| **Nhánh nguồn** | `feature/kpi-tieu-chi-theo-quy` (fast-forward thẳng từ `c825d1d`) |
-| **Ngày ghi mốc** | 18/09/2026 21:27 |
-| **Alembic** | `kpi_tc_theo_quy_20260918` — **CÓ migration** (thêm cột `danh_gia_thang.la_phieu_tc_quy`) |
+| **Commit** | `11791c7` |
+| **Ngắn** | `11791c7` |
+| **Nhánh nguồn** | `feature/kpi-sua-lech-diem-quy` (fast-forward thẳng từ `e933380`) |
+| **Ngày ghi mốc** | 22/09/2026 10:13 |
+| **Alembic** | `kpi_tc_theo_quy_20260918` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — sửa ba sai lệch của điểm quý, phát hiện khi rà lại trên dữ liệu thật.**
+
+**1. HĐLĐ 111 bỏ sót tháng đã tự chấm.** `tinh_diem_kpi_70_hdld_vb714` luôn đọc
+cột `diem_ql` (cấp quản lý chấm), kể cả khi `tam_tinh=True` đã lấy về bản
+CHO_DUYET. Bản chưa duyệt thì `diem_ql` trống → a=b=c=0 → điểm tháng ra 0 → và vì
+bộ lọc `_co_diem` đòi điểm > 0 nên tháng đó bị **loại khỏi trung bình quý**. Trong
+khi trang Đánh giá đọc `diem_tu` ở tab Tạm tính.
+
+> Ca thật **20ZZ-0531** (HQCK cảng Vạn Gia): T7 đã duyệt 62,7667 · T8 tự chấm 100
+> (trang tháng hiện 70) · T9 nháp. Điểm quý tạm tính ra **62,7667** thay vì
+> **66,3833** vì bỏ hẳn tháng 8. Sau sửa, đo lại trên chính production: T7 =
+> 62,7667 · T8 = 70,0 · quý tạm tính = 66,3833 (2/3 tháng) · chính thức = 62,7667
+> (1/3 tháng). Lỗi ảnh hưởng mọi HĐLĐ 111 có tháng tự chấm mà lãnh đạo chưa duyệt.
+
+**2. Tiêu chí chung quý hiện 0/30 cho 527/541 người (97%).**
+`_lay_tc_chung_thang` đọc `diem_tieu_chi_chung` — cột chỉ ghi khi phiếu ĐƯỢC
+DUYỆT, mà phiếu Quý III mới 14/158 đã duyệt. Trang Đánh giá vốn đã tải sẵn phiếu
+quý (vì tháng đang chọn chính là tháng neo) nên nay dùng luôn nó cho thẻ điểm 30,
+đúng như chế độ tháng: tab Tạm tính hiện điểm tự chấm, tab Chính thức chỉ hiện khi
+đã duyệt. **Ngữ nghĩa `diem_tc_quy` ở API xếp loại quý GIỮ NGUYÊN** (chỉ đếm điểm
+đã duyệt) để không đụng báo cáo quý của đơn vị.
+
+**3. Tab Tạm tính / Chính thức không tác dụng với điểm KPI quý.** Endpoint
+`/xep-loai-quy/chi-tiet` không nhận `tam_tinh`, luôn chạy mặc định True. Nay nhận
+tham số (mặc định vẫn True cho các nơi gọi khác) và hai trang Đánh giá truyền tab.
+
+Kèm theo, theo yêu cầu người dùng:
+- **Không làm tròn khi tính**: bỏ `.quantize(0.01)` ở `tb_3_tieu_chi` và
+  `kpi_70_tu_tb`; điểm KPI-70 tính lại từ chi tiết thay vì lấy số đã cắt 2 chữ số
+  trong `hdld_danh_gia.diem_kpi_70` — trước đây cùng một tháng ra 62,77 ở chế độ
+  này và 62,7667 ở chế độ kia. Hiển thị vẫn cắt số lẻ (`formatScore`, truncate).
+- **Bỏ bảng chi tiết từng tháng** ở hai trang Đánh giá, thay bằng một dòng ghi chú
+  khi điểm quý dựng từ thiếu tháng — **355/541 người** đang ở tình trạng đó (283
+  người có 2/3 tháng, 68 người 1/3, 4 người 0/3), không nói ra thì họ tưởng điểm
+  đã chốt.
+- Đổi năm xử lý ngay trong handler thay vì `useEffect` gọi `setState` (eslint từ
+  12 vấn đề còn 9).
+
+Ghi nhận thêm một nợ kỹ thuật chưa gây sai số: nhánh dự phòng "tạm tính" cho lãnh
+đạo trong `tinh_diem_quy` gọi công thức V1 cũ (đếm công việc) trong khi nhánh
+chính thức dùng V2 (cộng SP cấp dưới) — quét cả 54 lãnh đạo, **0 người** rơi vào
+nhánh này.
+
+Kiểm chứng: 2 test mới khoá ca 20ZZ-0531 và ca không làm tròn;
+`DB_NAME=kpi_haiquan_test pytest tests/` → 127 passed (2 test đỏ sẵn có từ trước);
+vitest 11/11; `build_frontend.sh` và `tsc` sạch. Sau triển khai: 8/8 dịch vụ health
+200, và đo lại chính 20ZZ-0531 trên production cho đúng con số nêu trên.
+
+Ảnh hưởng dữ liệu đang chạy: không sửa dòng nào — thay đổi ở tầng tính và hiển thị.
+
+### Mốc trước — `9b49390`
+
+Nội dung: **KPI — bộ chọn kỳ (Tháng 1–7, Quý III, Quý IV) ở trang Đánh giá và trang Tiêu chí chung.**
+
+Sau khi chuyển sang kỳ quý, ba trang cá nhân vẫn chỉ chọn được Tháng 1–12: công
+chức không xem được điểm quý — thứ nay quyết định xếp loại — mà cũng không xem lại
+được các tháng đã chấm xong hồi đầu năm.
+
+**Bộ chọn dựng từ hai mốc**, không cắm cứng số tháng:
+- `TC_THEO_QUY_TU = (2026, 3)` — từ đây kỳ là quý.
+- `THANG_XEM_LAI_DEN = (2026, 7)` — vẫn hiện mục **Tháng** đến mốc này. Chọn tháng 7
+  vì đó là tháng cuối cùng chấm xong theo tháng (517 đơn đã duyệt); tháng 8 chấm dở
+  322/458 rồi dừng khi chuyển kỳ.
+
+Kết quả: 2026 ra Tháng 1…7 + Quý III + Quý IV · 2025 ra 12 tháng · 2027 ra 4 quý.
+Mặc định là quý hiện hành theo đồng hồ hệ thống; sang tháng 10 tự nhảy Quý IV.
+
+**Bất biến phải giữ:** lựa chọn kỳ lưu bằng MỘT số tháng (quý mang số tháng cuối
+quý — Quý 3 là 9). Cách này chỉ đúng khi mốc xem lại KHÔNG rơi vào tháng cuối quý;
+đổi mốc thành 9 hay 12 thì "Tháng 9" và "Quý III" trùng giá trị, chọn cái này nhảy
+sang cái kia. Đã khoá bằng test riêng trong `src/__tests__/ky-tieu-chi.test.ts`.
+
+**Backend — một cờ đọc lịch sử.** Từ 18/09 mọi truy vấn tiêu chí bị quy về tháng
+neo, nên 517 đơn của tháng 7 còn nguyên trong CSDL mà không đường nào đọc ra. Thêm
+tham số `theo_dung_thang` cho HAI endpoint ĐỌC (`/danh-gia/tieu-chi/thang/…` và
+`/danh-gia/tieu-chi/cong-chuc/…`), mặc định tắt để giữ nguyên hành vi đã phát hành;
+kỳ trả về là `THANG_LICH_SU` để giao diện dán nhãn. **Đường GHI không nhận cờ** —
+tự chấm, duyệt, điều chỉnh vẫn vào phiếu quý.
+
+> Bẫy đã xử lý: gọi TRỰC TIẾP hàm endpoint (test hoặc code nội bộ) nhận nguyên
+> object `Query(False)` — vốn truthy — chứ không phải `False`, nên cờ tự bật. Nay
+> ép về bool thật ngay trong thân hàm. Test bắt được ca này.
+
+**An toàn ở trang tự chấm:** tháng lịch sử để form CHỈ ĐỌC — khoá ô nhập, ẩn nút
+Lưu nháp và Gửi phê duyệt, kèm banner. Nếu để form mở, công chức tưởng đang sửa
+tháng 7 nhưng thực ra ghi đè phiếu Quý III đang có hiệu lực — lỗi âm thầm, người
+dùng không thể tự phát hiện.
+
+**Chế độ Quý** ở `/danh-gia` và `/danh-gia-v2`: ba thẻ điểm lấy từ điểm quý lũy kế
+(API `/xep-loai-quy/chi-tiet` đã có sẵn, công chức gọi được cho chính mình), thêm
+bảng tổng hợp ba tháng, ẩn danh sách bản kê khai (muốn xem chi tiết thì chọn đích
+danh tháng đó). Sửa cả `/danh-gia` vì trang này vẫn phục vụ 106 HĐLĐ 111 — các đối
+tượng khác bị `router.replace` đá sang v2.
+
+Kiểm chứng: 11 test vitest mới cho logic kỳ; `DB_NAME=kpi_haiquan_test pytest
+tests/` → 125 passed (2 test đỏ sẵn có từ trước); `build_frontend.sh` và
+`tsc --noEmit` sạch. Ba test đỏ của `tai-lieu-upload` cũng đã đỏ sẵn trên code gốc
+(đối chứng bằng `git stash`). Sau triển khai: 8/8 dịch vụ health 200,
+`kpihaiquan.vn` 200, dữ liệu tháng 7 còn nguyên 517 đơn.
+
+Ảnh hưởng dữ liệu đang chạy: không sửa dòng nào.
+
+### Mốc trước — `6fef2e7`
+
+Nội dung: **KPI — báo cáo xếp loại THÁNG chuyển sang chế độ CHỈ XEM; sửa điểm tiêu chí chung chuyển về màn báo cáo QUÝ.**
+
+Đợt `41058a3` (18/09) xử lý kỳ tháng bằng cách **ẩn** tab khỏi giao diện. Cách đó
+sai ở hai điểm, đợt này sửa cả hai.
+
+**Gốc rễ 1 — ẩn ở giao diện không phải là chặn.** Năm endpoint ghi của báo cáo
+tháng (`de-xuat`, `gui-duyet`, `quyet-dinh`, `phe-duyet`, `tra-lai`) vẫn mở: ai
+còn giữ link cũ `/xep-loai?tab=bao-cao` hoặc gọi thẳng API vẫn sửa và **phê duyệt
+được báo cáo tháng 7, 8, 9/2026**. Nguy hiểm nhất là `phe-duyet` — nó đặt
+`is_khoa` cho mọi `danh_gia_thang` của tháng đó, nên nếu rơi vào THÁNG NEO (T9)
+thì khoá luôn phiếu tiêu chí của cả quý, công chức hết sửa được. Nay chặn ở
+backend; giao diện chỉ phản ánh điều đó.
+
+**Gốc rễ 2 — ẩn tab làm mất đường tra cứu** 35 báo cáo tháng đang có của T7–T12
+(khoảng 1.400 dòng chi tiết). Quyết định người dùng 21/09: mở lại để XEM, đồng
+thời **gỡ** chốt chặn "không lập mới" thêm hôm 18/9 — mở tháng nào cũng dựng được
+bản nháp để tra cứu, vẫn tự tính lại điểm nên số liệu khớp điểm quý mới.
+
+Thay đổi:
+- `ky_bao_cao_thang_chi_doc` + `_chan_neu_ky_thang_chi_doc` gắn vào đúng 5 endpoint
+  ghi; các đường đọc (`get_bao_cao_chi_tiet`, `danh-sach`, `cho-phe-duyet`,
+  `thong-ke`, xuất Excel) KHÔNG đụng tới
+- `get_bao_cao_don_vi` trả `can_edit`/`can_approve` = false kèm cờ `chi_doc` và
+  `ly_do_chi_doc` cho banner
+- Giao diện: tab hiện lại với nhãn "Đánh giá tháng (chỉ xem)", ẩn mọi nút ghi kể
+  cả "Sửa điểm TC chung" (nút này trước nay bỏ qua `can_edit`, bật cho CCT/TDV/
+  admin ở mọi trạng thái); màn CCT lấy quyền duyệt từ vai trò chứ không qua API
+  nên chặn thêm ngay tại tab
+- **Thêm nút "Sửa điểm TC" vào màn báo cáo QUÝ** (cả view Trưởng đơn vị và view
+  CCT), modal nhận tháng cuối quý = tháng neo của phiếu tiêu chí
+- Sửa nhãn đánh lừa: modal và trang Điều chỉnh điểm TC vẫn ghi "Tháng 7/2026"
+  trong khi từ 18/9 backend đã quy về tháng neo, tức đang sửa điểm **Quý 3** —
+  nay ghi đúng nhãn kỳ
+
+Sau đợt này, điểm tiêu chí chung của quý sửa được ở đúng ba nơi, đều mang nhãn
+quý: lúc duyệt (tab Duyệt tiêu chí) · màn báo cáo quý (mới) · trang Điều chỉnh
+điểm TC.
+
+Kiểm chứng: `DB_NAME=kpi_haiquan_test pytest tests/` → **123 passed**, 6 test mới
+gồm ca "cả 5 endpoint ghi trả 400 và dữ liệu không suy suyển một dòng" và ca
+"phê duyệt bị chặn ⇒ không bản ghi nào của tháng neo bị khoá nhầm"; kèm ca không
+hồi tố (kỳ đến hết Q2/2026 vẫn sửa bình thường). Hai test đỏ còn lại đã đỏ sẵn
+trên code gốc. `build_frontend.sh` và `tsc --noEmit` sạch. Sau triển khai: 8/8
+dịch vụ health 200, `kpihaiquan.vn` 200.
+
+Ảnh hưởng dữ liệu đang chạy: không sửa dòng nào. Bốn báo cáo tháng đang ở
+`CHO_PHE_DUYET` (3 của T7, 1 của T8) giữ nguyên trạng thái — hồ sơ dở dang của kỳ
+cũ, chỉ còn xem được.
+
+Quay lui: chế độ chỉ-đọc dùng chung mốc `TC_THEO_QUY_TU` trong
+`app/core/ky_tieu_chi.py`; đặt `(9999, 1)` rồi phát hành lại là trở về như cũ.
+Không có migration nào để gỡ.
+
+### Mốc trước — `41058a3`
 
 Nội dung: **KPI — chấm tiêu chí chung theo QUÝ từ quý III/2026 (Công văn 21169).**
 
@@ -304,6 +463,9 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 10/09/2026 | `2bd8508` | ĐGNL: bộ lọc danh sách thí sinh trên trang thống kê kỳ thi — thuần frontend, không migration. **Phát hành nhưng khi đó chưa ghi sổ** |
 | 13/09/2026 | `4aaa43e` | KPI: điều chuyển nhân sự hàng loạt theo QĐ bằng Excel — 3 endpoint (`mau-excel`/`xem-truoc`/`ghi`), mẫu 4 sheet, trang `/admin/dieu-chuyen-hang-loat`; tách `app/core/dieu_chuyen.py` dùng chung với điều chuyển lẻ — **không migration** |
 | 18/09/2026 | `41058a3` | KPI: chấm tiêu chí chung theo QUÝ từ Q3/2026 theo CV 21169 — phiếu quý neo ở tháng cuối quý (`la_phieu_tc_quy`), 8 điểm đọc chuyển sang tháng neo, chặn lập mới báo cáo/phiếu THÁNG, ẩn kỳ tháng khỏi giao diện. **Migration `kpi_tc_theo_quy_20260918`** (chỉ thêm cột, không đụng dữ liệu) |
+| 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
+| 22/09/2026 | `9b49390` | KPI: bộ chọn kỳ Tháng 1–7 + Quý III + Quý IV ở `/danh-gia`, `/danh-gia-v2`, `/danh-gia/tu-cham-diem`; mặc định quý hiện hành; chế độ Quý hiện điểm quý lũy kế + bảng ba tháng; cờ `theo_dung_thang` cho 2 endpoint ĐỌC để xem lại số liệu tháng 7 (đường ghi không nhận cờ); tháng lịch sử ở trang tự chấm để CHỈ ĐỌC — **không migration** |
+| 22/09/2026 | `11791c7` | KPI: sửa điểm quý HĐLĐ 111 bỏ sót tháng tự chấm (ca 20ZZ-0531: 62,7667 → 66,3833), tiêu chí quý không còn hiện 0/30 cho 97% người dùng, tab Tạm tính/Chính thức có tác dụng với điểm KPI quý; bỏ làm tròn khi tính; bỏ bảng chi tiết từng tháng — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

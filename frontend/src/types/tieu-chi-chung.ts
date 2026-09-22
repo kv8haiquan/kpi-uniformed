@@ -142,7 +142,15 @@ export interface IKetQuaTieuChiChungResponse {
   trang_thai_danh_gia_thang?: TrangThaiDanhGiaThang;
   tong_hop: ITieuChiChungTongHop;
   tieu_chi: ITieuChiChungResponse[];
-  
+
+  // === KỲ CHẤM (CV 21169, 18/09/2026 + 22/09/2026) ===
+  /** 'QUY' | 'THANG' | 'THANG_LICH_SU' (xem lại số liệu đã chấm theo tháng) */
+  ky?: string | null;
+  quy?: number | null;
+  thang_neo?: number | null;
+  cac_thang_ap_dung?: number[] | null;
+  nhan_ky?: string | null;
+
   // === PHÊ DUYỆT CẤP 1 (v2.6) ===
   nguoi_phe_duyet_tc_cap1_id?: string | null;
   nguoi_phe_duyet_tc_cap1?: ICongChucBrief | null;

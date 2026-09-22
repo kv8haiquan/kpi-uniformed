@@ -605,7 +605,18 @@ async def get_nguoi_phe_duyet(db: DatabaseDep, current_user: ActiveUserDep) -> d
 
 @router.get("/tieu-chi/thang/{thang}/nam/{nam}")
 async def get_tu_danh_gia_tieu_chi(
-    db: DatabaseDep, current_user: ActiveUserDep, thang: int, nam: int
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    thang: int,
+    nam: int,
+    theo_dung_thang: bool = Query(
+        default=False,
+        description=(
+            "CHỈ ĐỌC LỊCH SỬ: đọc đúng bản ghi của tháng này thay vì quy về phiếu quý. "
+            "Dùng để xem lại điểm tiêu chí đã chấm theo tháng trước CV 21169. "
+            "Đường GHI không nhận cờ này — tự chấm vẫn luôn ghi vào phiếu quý."
+        ),
+    ),
 ) -> dict:
     """
     Xem tự đánh giá tiêu chí chung của bản thân.
@@ -615,9 +626,15 @@ async def get_tu_danh_gia_tieu_chi(
     if thang < 1 or thang > 12:
         raise HTTPException(status_code=400, detail=error_response(code="VAL_003", message="Tháng phải từ 1-12"))
 
+    # Gọi TRỰC TIẾP hàm này (test, code nội bộ) sẽ nhận nguyên object Query(...)
+    # — vốn truthy — thay vì giá trị mặc định False. Ép về bool thật để mặc định
+    # luôn là "không đọc lịch sử", dù đi qua HTTP hay gọi thẳng.
+    theo_dung_thang = theo_dung_thang is True
+
     # CV 21169: kỳ theo quý → đọc phiếu của THÁNG NEO (tháng cuối quý).
     # FE có thể gửi bất kỳ tháng nào trong quý, luôn nhận về đúng một phiếu.
-    ky = thong_tin_ky(thang, nam)
+    # Ngoại lệ `theo_dung_thang`: xem lại số liệu đã chấm theo tháng (chỉ đọc).
+    ky = thong_tin_ky(thang, nam, theo_dung_thang=theo_dung_thang)
     thang = ky["thang_neo"]
 
     so_ngay_thang = calendar.monthrange(nam, thang)[1]
@@ -2078,6 +2095,13 @@ async def get_tieu_chi_cong_chuc(
     nam: int,
     db: DatabaseDep,
     current_user: ActiveUserDep,
+    theo_dung_thang: bool = Query(
+        default=False,
+        description=(
+            "CHỈ ĐỌC LỊCH SỬ: đọc đúng bản ghi của tháng này thay vì quy về phiếu quý "
+            "(xem lại điểm đã chấm theo tháng trước CV 21169)."
+        ),
+    ),
 ) -> dict:
     """
     Xem tiêu chí chung của một công chức cụ thể.
@@ -2148,8 +2172,12 @@ async def get_tieu_chi_cong_chuc(
     # =========================================================================
     # 4. Tính số ngày làm việc
     # =========================================================================
-    # CV 21169: kỳ theo quý → đọc phiếu tiêu chí ở THÁNG NEO (tháng cuối quý)
-    ky = thong_tin_ky(thang, nam)
+    # Ép về bool thật — xem ghi chú ở get_tu_danh_gia_tieu_chi.
+    theo_dung_thang = theo_dung_thang is True
+
+    # CV 21169: kỳ theo quý → đọc phiếu tiêu chí ở THÁNG NEO (tháng cuối quý).
+    # Ngoại lệ `theo_dung_thang`: xem lại số liệu đã chấm theo tháng (chỉ đọc).
+    ky = thong_tin_ky(thang, nam, theo_dung_thang=theo_dung_thang)
     thang = ky["thang_neo"]
 
     so_ngay_thang = calendar.monthrange(nam, thang)[1]

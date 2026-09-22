@@ -114,11 +114,18 @@ export const tieuChiChungService = {
    */
   async getKetQuaThang(
     thang: number,
-    nam: number
+    nam: number,
+    /**
+     * CV 21169 (22/09/2026): đọc ĐÚNG bản ghi của tháng này thay vì quy về phiếu
+     * quý — dùng khi xem lại số liệu đã chấm theo tháng (tháng 7/2026 trở về
+     * trước). Chỉ cho ĐỌC; mọi thao tác ghi vẫn vào phiếu quý.
+     */
+    theoDungThang = false,
   ): Promise<IKetQuaTieuChiChungResponse> {
-    console.log('=== [getKetQuaThang] Starting ===', { thang, nam });
+    console.log('=== [getKetQuaThang] Starting ===', { thang, nam, theoDungThang });
     const response = await apiClient.get(
-      `${API_PREFIX}/tieu-chi/thang/${thang}/nam/${nam}`
+      `${API_PREFIX}/tieu-chi/thang/${thang}/nam/${nam}`,
+      theoDungThang ? { params: { theo_dung_thang: true } } : undefined,
     );
     
     // Unwrap từ success_response wrapper

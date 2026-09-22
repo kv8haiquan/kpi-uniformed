@@ -37,14 +37,16 @@ def tb_3_tieu_chi(diem_list: List[Optional[Decimal]]) -> Optional[Decimal]:
     if len(vals) != 3:
         return None
     tong = sum(Decimal(str(v)) for v in vals)
-    return (tong / Decimal(3)).quantize(Decimal("0.01"))
+    # KHÔNG làm tròn ở bước tính (yêu cầu 22/09/2026) — chỗ hiển thị tự cắt số lẻ.
+    return tong / Decimal(3)
 
 
 def kpi_70_tu_tb(diem_tb: Optional[Decimal]) -> Optional[Decimal]:
     """Quy TB (0-100) về điểm KPI-70."""
     if diem_tb is None:
         return None
-    return (Decimal(str(diem_tb)) / Decimal(100) * Decimal(70)).quantize(Decimal("0.01"))
+    # KHÔNG làm tròn ở bước tính (yêu cầu 22/09/2026).
+    return Decimal(str(diem_tb)) / Decimal(100) * Decimal(70)
 
 
 async def get_hdld_in_data(
@@ -146,21 +148,41 @@ async def tinh_diem_kpi_70_hdld_vb714(
     if dg is None:
         return None
 
-    diem_70 = dg.diem_kpi_70
+    # CỘT ĐIỂM THEO CHẾ ĐỘ XEM (sửa 22/09/2026)
+    # -------------------------------------------------------------------------
+    # Trang Đánh giá đọc `diem_tu` (HĐLĐ tự chấm) ở tab TẠM TÍNH và `diem_ql`
+    # (cấp quản lý chấm) ở tab CHÍNH THỨC. Trước đây hàm này luôn đọc `diem_ql`,
+    # kể cả khi tam_tinh=True lấy về bản CHO_DUYET — mà bản chưa duyệt thì
+    # `diem_ql` còn trống → a=b=c=0, điểm tháng ra 0 và tháng đó bị loại khỏi
+    # điểm quý. Ca thật: 20ZZ-0531 tháng 8/2026 tự chấm 100 (trang tháng hiện
+    # 70 điểm) nhưng điểm quý bỏ hẳn tháng 8.
+    ct_by_sott = {ct.so_tt: ct for ct in dg.chi_tiets}
+
+    def _diem_ct(ct) -> Optional[Decimal]:
+        """Điểm của một tiêu chí theo chế độ xem, có dự phòng sang cột kia."""
+        if ct is None:
+            return None
+        chinh, du_phong = (ct.diem_tu, ct.diem_ql) if tam_tinh else (ct.diem_ql, ct.diem_tu)
+        return chinh if chinh is not None else du_phong
+
+    diem_3_tc = [_diem_ct(ct_by_sott.get(i)) for i in (1, 2, 3)]
+
+    # Điểm KPI-70 tính lại từ đúng cột đang xem, KHÔNG làm tròn. Số chốt trong
+    # header (`diem_kpi_70`, numeric(6,2) nên đã bị cắt còn 2 chữ số) chỉ dùng
+    # khi thiếu chi tiết — nếu không, cùng một tháng sẽ ra 62.77 ở chế độ này và
+    # 62.7667 ở chế độ kia.
+    diem_70 = kpi_70_tu_tb(tb_3_tieu_chi(diem_3_tc))
     if diem_70 is None:
-        # Fallback: tính lại từ chi tiết (cột cấp quản lý) nếu header chưa chốt
-        diem_tb = tb_3_tieu_chi([ct.diem_ql for ct in dg.chi_tiets])
-        diem_70 = kpi_70_tu_tb(diem_tb)
+        diem_70 = dg.diem_kpi_70
 
     diem_70_f = float(diem_70) if diem_70 is not None else 0.0
 
-    # Map 3 tiêu chí VB714 (cột cấp quản lý, 0-100) về tỉ lệ 0-1 cho các slot a/b/c
-    ct_by_sott = {ct.so_tt: ct for ct in dg.chi_tiets}
+    # Map 3 tiêu chí VB714 (0-100) về tỉ lệ 0-1 cho các slot a/b/c
     def _ratio(sott: int) -> float:
-        ct = ct_by_sott.get(sott)
-        if ct is None or ct.diem_ql is None:
+        d = _diem_ct(ct_by_sott.get(sott))
+        if d is None:
             return 0.0
-        return min(1.0, float(ct.diem_ql) / 100.0)
+        return min(1.0, float(d) / 100.0)
     tc1, tc2, tc3 = _ratio(1), _ratio(2), _ratio(3)  # chất lượng / tuân thủ / hiệu quả
     diem_kpi = (tc1 + tc2 + tc3) / 3 if dg.chi_tiets else 0.0
 

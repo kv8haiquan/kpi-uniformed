@@ -12,6 +12,8 @@ import { useState, useEffect } from 'react';
 import { baoCaoXepLoaiService } from '@/services/bao-cao-xep-loai.service';
 import type { ITieuChiChungItemDgt } from '@/types/bao-cao-xep-loai';
 import { formatScore } from '@/lib/format';
+// CV 21169: từ Q3/2026 đây là điểm tiêu chí của CẢ QUÝ — nhãn phải ghi 'Quý N/NNNN'
+import { nhanKy } from '@/lib/ky-tieu-chi';
 
 /** Thông tin công chức tối thiểu modal cần (IChiTietXepLoai thỏa mãn shape này). */
 export interface ISuaDiemCongChuc {
@@ -131,7 +133,7 @@ export default function SuaDiemTieuChiModal({
             {readOnly ? 'Xem điểm tiêu chí chung' : 'Sửa điểm tiêu chí chung'}
           </h3>
           <p className="text-sm text-gray-600 mt-0.5">
-            {congChuc.cong_chuc?.ho_ten} ({congChuc.cong_chuc?.ma_cc}) — Tháng {thang}/{nam}
+            {congChuc.cong_chuc?.ho_ten} ({congChuc.cong_chuc?.ma_cc}) — {nhanKy(thang, nam)}
           </p>
         </div>
 

@@ -14,8 +14,9 @@ Phạm vi:
    cuối quý, cờ la_phieu_tc_quy bật.
 3. Ba tháng dùng chung một điểm — resolver trả cùng con số cho cả quý.
 4. Chốt chặn — thao tác trên bản ghi không phải tháng neo bị từ chối.
-5. Kỳ tháng hết hiệu lực — không lập mới báo cáo/phiếu tháng từ Q3/2026,
-   nhưng bản ghi cũ vẫn đọc được.
+5. Kỳ tháng hết hiệu lực — không lập mới PHIẾU cá nhân tháng từ Q3/2026. Báo cáo
+   xếp loại tháng vẫn dựng và xem được nhưng CHỈ ĐỌC (quyết định 21/09/2026, chốt
+   chặn ghi nằm ở test_bao_cao_thang_chi_doc.py).
 """
 
 from __future__ import annotations
@@ -327,6 +328,76 @@ async def test_luong_duyet_2_cap_tren_phieu_quy():
 
 
 # =============================================================================
+# 3b. Đọc lịch sử: xem lại điểm đã chấm theo THÁNG (CV 21169 + quyết định 22/09)
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_doc_lich_su_theo_dung_thang():
+    """
+    Cờ `theo_dung_thang` cho phép xem lại điểm tiêu chí đã chấm hồi tháng 7 —
+    dữ liệu vẫn nằm trong CSDL nhưng từ 18/09 mọi truy vấn đều bị quy về phiếu quý.
+
+    Đo trên dữ liệu thật của DB test (chỉ đọc).
+    """
+    from app.api.v1.endpoints.danh_gia import get_tu_danh_gia_tieu_chi
+
+    async with AsyncSessionLocal() as db:
+        # CC có ĐỦ hai thứ: điểm tiêu chí tháng 7 (số liệu cũ) và bản ghi tháng 9
+        row = (await db.execute(text("""
+            SELECT t7.cong_chuc_id, t7.diem_tieu_chi_chung
+            FROM danh_gia_thang t7
+            JOIN danh_gia_thang t9
+              ON t9.cong_chuc_id = t7.cong_chuc_id AND t9.nam = 2026 AND t9.thang = 9
+             AND t9.is_deleted = false
+            WHERE t7.nam = 2026 AND t7.thang = 7 AND t7.is_deleted = false
+              AND t7.diem_tieu_chi_chung IS NOT NULL
+              AND EXISTS (SELECT 1 FROM tieu_chi_chung_danh_gia tc
+                          WHERE tc.danh_gia_thang_id = t7.id)
+            LIMIT 1
+        """))).first()
+        if not row:
+            pytest.skip("DB test không có công chức đủ dữ liệu T7 và T9 để đối chiếu")
+
+        cc = (await db.execute(
+            select(CongChuc).where(CongChuc.id == row[0])
+        )).scalar_one()
+        # Dùng endpoint "xem tiêu chí CỦA MÌNH" — đúng đường mà trang Đánh giá gọi
+        res_ls = await get_tu_danh_gia_tieu_chi(db, cc, 7, NAM_TEST, theo_dung_thang=True)
+        data_ls = res_ls["data"]
+        assert data_ls["ky"] == "THANG_LICH_SU"
+        assert data_ls["thang_neo"] == 7, "Đọc lịch sử KHÔNG được quy về tháng neo"
+        assert "lịch sử" in data_ls["nhan_ky"]
+        assert abs(data_ls["tong_hop"]["tong_diem"] - float(row[1])) < 0.01, (
+            "Điểm đọc lịch sử phải khớp danh_gia_thang của tháng 7"
+        )
+
+        # Không bật cờ → vẫn quy về phiếu quý như đã phát hành ngày 18/09
+        res_quy = await get_tu_danh_gia_tieu_chi(db, cc, 7, NAM_TEST)
+        assert res_quy["data"]["ky"] == "QUY"
+        assert res_quy["data"]["thang_neo"] == THANG_NEO_TEST
+
+
+@pytest.mark.asyncio
+async def test_duong_ghi_khong_nhan_co_doc_lich_su():
+    """Tự chấm với tháng 7 vẫn ghi vào bản ghi tháng 9 — cờ chỉ áp cho đường ĐỌC."""
+    async with AsyncSessionLocal() as db:
+        cc = await _pick_cc_sach(db)
+        await _cleanup_quy(db, cc.id)
+        try:
+            await tu_danh_gia_tieu_chi(db, cc, _payload_tu_cham(thang=7))
+            await db.commit()
+            rows = (await db.execute(
+                select(DanhGiaThang)
+                .where(DanhGiaThang.cong_chuc_id == cc.id)
+                .where(DanhGiaThang.nam == NAM_TEST)
+                .where(DanhGiaThang.thang.in_([7, 8, 9]))
+            )).scalars().all()
+            assert len(rows) == 1 and rows[0].thang == THANG_NEO_TEST
+        finally:
+            await _cleanup_quy(db, cc.id)
+
+
+# =============================================================================
 # 4. Chốt chặn — không thao tác trên bản ghi khác tháng neo
 # =============================================================================
 
@@ -357,12 +428,17 @@ async def test_chan_thao_tac_tren_thang_khong_phai_neo():
 # =============================================================================
 
 @pytest.mark.asyncio
-async def test_khong_lap_moi_bao_cao_xep_loai_thang():
-    """Báo cáo xếp loại tháng 7/2026 chưa có → từ chối tạo mới, kèm hướng dẫn."""
+async def test_bao_cao_xep_loai_thang_chi_doc():
+    """
+    Báo cáo xếp loại tháng của kỳ quý vẫn DỰNG được để tra cứu, nhưng chỉ đọc.
+
+    Ngày 18/09 bản đầu chặn hẳn việc lập mới; ngày 21/09 người dùng đổi quyết định:
+    các đơn vị cần tra cứu báo cáo tháng, nên mở lại đường XEM và chặn mọi thao tác
+    GHI ở 5 endpoint sửa/duyệt (xem test_bao_cao_thang_chi_doc.py).
+    """
     from app.api.v1.endpoints.bao_cao_xep_loai import get_bao_cao_don_vi
 
     async with AsyncSessionLocal() as db:
-        # Tìm một cặp (Trưởng đơn vị, tháng thuộc kỳ quý) CHƯA có báo cáo tháng
         row = (await db.execute(text("""
             SELECT cc.id, t.thang
             FROM cong_chuc cc
@@ -370,19 +446,16 @@ async def test_khong_lap_moi_bao_cao_xep_loai_thang():
             CROSS JOIN generate_series(7, 12) AS t(thang)
             WHERE vt.cap_bac = 'TRUONG_DON_VI' AND cc.is_active = true
               AND cc.is_deleted = false AND cc.don_vi_id IS NOT NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM bao_cao_xep_loai bc
-                  WHERE bc.don_vi_id = cc.don_vi_id AND bc.thang = t.thang
-                    AND bc.nam = 2026 AND bc.is_deleted = false)
             LIMIT 1
         """))).first()
-        assert row, "DB test không còn tháng nào của kỳ quý để thử tạo báo cáo mới"
+        assert row, "DB test không có Trưởng đơn vị"
 
         tdv = (await db.execute(select(CongChuc).where(CongChuc.id == row[0]))).scalar_one()
-        with pytest.raises(HTTPException) as exc:
-            await get_bao_cao_don_vi(db, tdv, row[1], 2026)
-        assert exc.value.status_code == 400
-        assert "QUÝ" in str(exc.value.detail)
+        res = await get_bao_cao_don_vi(db, tdv, row[1], 2026)
+        assert res["success"] is True
+        assert res["data"]["chi_doc"] is True
+        assert res["data"]["can_edit"] is False
+        assert res["data"]["can_approve"] is False
         await db.rollback()
 
 
@@ -425,3 +498,61 @@ async def test_khong_tao_moi_phieu_danh_gia_thang():
         assert exc.value.status_code == 400
         assert "QUÝ" in str(exc.value.detail)
         await db.rollback()
+
+
+# =============================================================================
+# 6. HĐLĐ 111 — điểm quý phải khớp điểm tháng mà trang Đánh giá hiển thị
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_hdld_111_tam_tinh_dung_cot_tu_cham():
+    """
+    Ca thật 20ZZ-0531 (22/09/2026): tháng 8 tự chấm 100 điểm, chưa duyệt.
+    Trang Đánh giá tab Tạm tính hiện 70 điểm cho tháng 8, nhưng
+    `tinh_diem_kpi_70_hdld_vb714` chỉ đọc cột cấp quản lý (`diem_ql`, còn trống)
+    nên trả 0 → tháng 8 bị loại khỏi điểm quý.
+
+    Sau khi sửa: tạm tính đọc `diem_tu`, chính thức đọc `diem_ql`.
+    """
+    from app.core.hdld_vb714 import tinh_diem_kpi_70_hdld_vb714
+
+    async with AsyncSessionLocal() as db:
+        # Bản VB714 CHỜ DUYỆT: có điểm tự chấm, chưa có điểm cấp quản lý
+        row = (await db.execute(text("""
+            SELECT h.cong_chuc_id, h.thang,
+                   (SELECT count(*) FROM hdld_danh_gia_chi_tiet c
+                     WHERE c.danh_gia_id = h.id AND c.diem_tu IS NOT NULL) AS co_tu,
+                   (SELECT count(*) FROM hdld_danh_gia_chi_tiet c
+                     WHERE c.danh_gia_id = h.id AND c.diem_ql IS NOT NULL) AS co_ql
+            FROM hdld_danh_gia h
+            WHERE h.nam = 2026 AND h.thang IN (7, 8, 9) AND h.trang_thai = 'CHO_DUYET'
+            LIMIT 1
+        """))).first()
+        if not row or row.co_tu < 3 or row.co_ql > 0:
+            pytest.skip("DB test không có bản VB714 chờ duyệt đủ 3 tiêu chí tự chấm")
+
+        cc_id, thang = row.cong_chuc_id, row.thang
+
+        tam = await tinh_diem_kpi_70_hdld_vb714(db, cc_id, thang, 2026, tam_tinh=True)
+        assert tam is not None, "Tạm tính phải thấy bản chờ duyệt"
+        assert tam["diem_70"] > 0, "Tạm tính phải lấy điểm TỰ CHẤM, không để 0"
+        assert tam["a_so_luong"] > 0 and tam["b_tien_do"] > 0 and tam["c_chat_luong"] > 0
+
+        chinh_thuc = await tinh_diem_kpi_70_hdld_vb714(db, cc_id, thang, 2026, tam_tinh=False)
+        assert chinh_thuc is None, "Chính thức KHÔNG được lấy bản chưa duyệt"
+
+
+@pytest.mark.asyncio
+async def test_hdld_111_khong_lam_tron_khi_tinh():
+    """Điểm tính ra giữ nguyên số lẻ; chỉ chỗ hiển thị mới cắt bớt."""
+    from decimal import Decimal
+
+    from app.core.hdld_vb714 import kpi_70_tu_tb, tb_3_tieu_chi
+
+    # 89.67 + 100 + 85 → TB = 91.5566666…, KPI-70 = 64.0896666…
+    tb = tb_3_tieu_chi([Decimal("89.67"), Decimal("100"), Decimal("85")])
+    assert tb is not None
+    assert tb != tb.quantize(Decimal("0.01")), "TB không được làm tròn về 2 chữ số"
+    diem = kpi_70_tu_tb(tb)
+    assert diem is not None
+    assert abs(float(diem) - 64.0896666666) < 1e-6

@@ -29,6 +29,7 @@ import { exportService } from '@/services/export.service';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 import { formatScore } from '@/lib/format';
+import { kyThangConHieuLuc } from '@/lib/ky-tieu-chi';
 import SuaDiemTieuChiModal from '@/components/xep-loai/modals/SuaDiemTieuChiModal';
 // =============================================================================
 // TYPES
@@ -91,6 +92,9 @@ interface IBaoCaoXepLoai {
   chi_tiet?: IChiTietXepLoai[];
   can_edit?: boolean;
   can_approve?: boolean;
+  // CV 21169 (21/09/2026): kỳ từ Q3/2026 → báo cáo tháng CHỈ XEM
+  chi_doc?: boolean;
+  ly_do_chi_doc?: string | null;
 }
 
 // Thông tin kê khai công việc
@@ -1125,14 +1129,18 @@ function BaoCaoTableView({
   const sortedChiTiet = baoCao.chi_tiet ? sortChiTietByDiem(baoCao.chi_tiet) : [];
 
   const trangThaiInfo = TRANG_THAI_MAP[baoCao.trang_thai] || TRANG_THAI_MAP.NHAP;
-  const canGuiDuyet = canEdit && (baoCao.trang_thai === 'NHAP' || baoCao.trang_thai === 'TRA_LAI' || baoCao.trang_thai === 'TU_CHOI');
+  const canGuiDuyet = canEdit && baoCao.chi_doc !== true && (baoCao.trang_thai === 'NHAP' || baoCao.trang_thai === 'TRA_LAI' || baoCao.trang_thai === 'TU_CHOI');
   // CCT, Trưởng đơn vị (và admin) được sửa điểm tiêu chí chung BẤT KỂ trạng thái
   // (kể cả báo cáo đã chốt). TDV chỉ chạm được đơn vị mình — backend chặn (PERM_002).
   const currentUser = useAuthStore((state) => state.user);
+  // CV 21169: kỳ đã chuyển sang quý → không thao tác gì trên báo cáo tháng.
+  // Điểm tiêu chí chung nay sửa ở màn báo cáo QUÝ hoặc trang Điều chỉnh điểm TC.
+  const chiDoc = baoCao.chi_doc === true;
   const suaDiemMoiTrangThai =
-    currentUser?.is_system_admin === true ||
-    ['CCT', 'TDV'].includes(currentUser?.vai_tro?.ma_vai_tro ?? '');
-  const showActions = (canEdit && canGuiDuyet) || suaDiemMoiTrangThai;
+    !chiDoc &&
+    (currentUser?.is_system_admin === true ||
+      ['CCT', 'TDV'].includes(currentUser?.vai_tro?.ma_vai_tro ?? ''));
+  const showActions = !chiDoc && ((canEdit && canGuiDuyet) || suaDiemMoiTrangThai);
 
   const handleDeXuat = (ct: IChiTietXepLoai) => {
     setSelectedChiTiet(ct);
@@ -1174,6 +1182,21 @@ function BaoCaoTableView({
 
   return (
     <div className="space-y-4">
+      {/* CV 21169: báo cáo tháng của kỳ đã chuyển sang quý — chỉ tra cứu */}
+      {chiDoc && (
+        <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-4">
+          <p className="text-sm text-amber-900">
+            🔒 <strong>Chỉ xem.</strong>{' '}
+            {baoCao.ly_do_chi_doc ??
+              'Từ Quý 3/2026, đánh giá và xếp loại thực hiện theo QUÝ (Công văn 21169/CHQ-TCCB). Báo cáo tháng chỉ để tra cứu.'}
+          </p>
+          <p className="text-sm text-amber-800 mt-1">
+            Xếp loại chính thức và việc sửa điểm tiêu chí chung nay làm ở tab{' '}
+            <strong>Đánh giá Quý</strong>. Báo cáo tháng vẫn xuất Excel được.
+          </p>
+        </div>
+      )}
+
       {/* Header Card */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1953,10 +1976,15 @@ export default function TabBaoCao({ thang, nam, canApprove, capBac, onPendingCou
   const user = useAuthStore((state) => state.user);
   const isCCT = capBac === CapBacVaiTro.CHI_CUC_TRUONG;
   const hasViewAll = user?.can_view_all_units === true;
+  // CV 21169 (21/09/2026): kỳ từ Q3/2026 → báo cáo tháng chỉ tra cứu, không duyệt.
+  // Màn CCT lấy quyền duyệt từ vai trò (không qua API) nên phải chặn ngay tại đây;
+  // backend vẫn chặn độc lập ở 5 endpoint ghi.
+  const chiDocTheoKy = !kyThangConHieuLuc(thang, nam);
+  const canApproveKy = canApprove && !chiDocTheoKy;
   // CCT hoặc user có can_view_all_units → xem tất cả đơn vị
   if (isCCT || hasViewAll) {
-    return <CCTView thang={thang} nam={nam} canApprove={isCCT ? canApprove : false} onPendingCountChange={onPendingCountChange} />;
+    return <CCTView thang={thang} nam={nam} canApprove={isCCT ? canApproveKy : false} onPendingCountChange={onPendingCountChange} />;
   }
   // Phó ĐT, ĐT, Phó CCT xem báo cáo đơn vị
-  return <DonViView thang={thang} nam={nam} canApprove={canApprove} />;
+  return <DonViView thang={thang} nam={nam} canApprove={canApproveKy} />;
 } 

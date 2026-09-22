@@ -13,6 +13,7 @@ import { SlidersHorizontal, Search } from 'lucide-react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { baoCaoXepLoaiService } from '@/services/bao-cao-xep-loai.service';
 import SuaDiemTieuChiModal from '@/components/xep-loai/modals/SuaDiemTieuChiModal';
+import { cacThangApDung, danhSachKyTrongNam, nhanKy, tcTheoQuy } from '@/lib/ky-tieu-chi';
 import type { IBaoCaoXepLoai, IChiTietXepLoai } from '@/types/bao-cao-xep-loai';
 import { formatScore } from '@/lib/format';
 
@@ -118,22 +119,28 @@ export default function DieuChinhTieuChiPage() {
           <SlidersHorizontal className="w-6 h-6 text-emerald-600" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Điều chỉnh điểm tiêu chí chung</h1>
+          <h1 className="text-xl font-bold text-gray-900">
+            Điều chỉnh điểm tiêu chí chung — {nhanKy(thang, nam)}
+          </h1>
           <p className="text-sm text-gray-500">
-            Sửa trực tiếp điểm tiêu chí chung (Đánh giá tháng) của công chức. Điểm tổng và xếp loại tự cập nhật.
+            {tcTheoQuy(thang, nam)
+              ? `Sửa trực tiếp điểm tiêu chí chung của quý. Điểm này áp dụng cho tháng ${cacThangApDung(thang, nam).join(', ')}; điểm tổng và xếp loại tự cập nhật.`
+              : 'Sửa trực tiếp điểm tiêu chí chung (Đánh giá tháng) của công chức. Điểm tổng và xếp loại tự cập nhật.'}
           </p>
         </div>
       </div>
 
       {/* Bộ lọc */}
       <div className="flex flex-wrap items-center gap-3 mb-5">
+        {/* CV 21169: từ Q3/2026 tiêu chí chấm theo QUÝ — bộ chọn liệt kê quý, giá trị
+            vẫn là một số tháng (backend tự quy về tháng neo của quý). */}
         <select
           value={thang}
           onChange={(e) => setThang(Number(e.target.value))}
           className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm bg-white"
         >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>Tháng {m}</option>
+          {danhSachKyTrongNam(nam).map((k) => (
+            <option key={k.thang} value={k.thang}>{k.nhan}</option>
           ))}
         </select>
         <select
@@ -197,7 +204,7 @@ export default function DieuChinhTieuChiPage() {
           <div className="py-16 text-center text-gray-500">Đang tải...</div>
         ) : !baoCao ? (
           <div className="py-16 text-center text-gray-500">
-            {danhSach.length === 0 ? `Chưa có báo cáo xếp loại tháng ${thang}/${nam}.` : 'Chọn một đơn vị để xem danh sách công chức.'}
+            {danhSach.length === 0 ? `Chưa có báo cáo xếp loại tháng ${thang}/${nam} để lấy danh sách công chức.` : 'Chọn một đơn vị để xem danh sách công chức.'}
           </div>
         ) : chiTietList.length === 0 ? (
           <div className="py-16 text-center text-gray-500">Không có công chức phù hợp.</div>

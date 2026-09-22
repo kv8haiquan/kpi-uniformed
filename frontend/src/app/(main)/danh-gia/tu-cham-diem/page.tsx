@@ -37,8 +37,10 @@ import {
 import { formatScore } from '@/lib/format';
 import {
   cacThangApDung,
-  danhSachKyTrongNam,
+  danhSachKyXemLai,
   kyDaBatDau,
+  kyMacDinh,
+  laThangLichSu,
   nhanKy,
   tcTheoQuy,
 } from '@/lib/ky-tieu-chi';
@@ -53,8 +55,11 @@ export default function TuChamDiemPage() {
   const [ghiChuNguoiPheDuyet, setGhiChuNguoiPheDuyet] = useState<string | null>(null);
   
   const currentDate = new Date();
-  const [selectedThang, setSelectedThang] = useState(currentDate.getMonth() + 1);
+  // CV 21169: mặc định mở đúng KỲ hiện hành (Quý 3/2026), không phải tháng hiện tại.
   const [selectedNam, setSelectedNam] = useState(currentDate.getFullYear());
+  const [selectedThang, setSelectedThang] = useState(
+    () => kyMacDinh(currentDate.getFullYear(), currentDate).thang,
+  );
   
   const [formState, setFormState] = useState<ITieuChiFormState>({});
   const [ghiChu, setGhiChu] = useState<ITieuChiGhiChu>({});
@@ -100,7 +105,11 @@ export default function TuChamDiemPage() {
     let response: IKetQuaTieuChiChungResponse | null = null;
     try {
       console.log('[TuChamDiem] Step 2: Calling getKetQuaThang...');
-      response = await tieuChiChungService.getKetQuaThang(selectedThang, selectedNam);
+      response = await tieuChiChungService.getKetQuaThang(
+        selectedThang,
+        selectedNam,
+        laThangLichSu(selectedThang, selectedNam),
+      );
       console.log('[TuChamDiem] getKetQuaThang returned:', response);
       setKetQua(response);
     } catch (err: unknown) {
@@ -155,9 +164,26 @@ export default function TuChamDiemPage() {
   const isNewRecord = ketQua?.is_new_record ?? true;
 
   // CV 21169 (18/09/2026): kỳ chấm tiêu chí — Quý từ Q3/2026, Tháng trước đó.
-  const danhSachKy = useMemo(() => danhSachKyTrongNam(selectedNam), [selectedNam]);
-  const laKyQuy = useMemo(() => tcTheoQuy(selectedThang, selectedNam), [selectedThang, selectedNam]);
-  const tenKy = useMemo(() => nhanKy(selectedThang, selectedNam), [selectedThang, selectedNam]);
+  const danhSachKy = useMemo(() => danhSachKyXemLai(selectedNam), [selectedNam]);
+  // Tháng đã nằm trong một kỳ quý nhưng vẫn cho xem lại (T7/2026): CHỈ ĐỌC.
+  // Mọi thao tác ghi đều bị backend quy về phiếu quý, nên để form mở ở đây
+  // đồng nghĩa người dùng tưởng sửa tháng 7 mà thực ra ghi đè phiếu Quý III.
+  const laKyLichSu = useMemo(
+    () => laThangLichSu(selectedThang, selectedNam),
+    [selectedThang, selectedNam],
+  );
+  // Kỳ quý = đang chấm thật. Tháng lịch sử tuy cũng thuộc một quý nhưng chỉ để xem.
+  const laKyQuy = useMemo(
+    () => tcTheoQuy(selectedThang, selectedNam) && !laKyLichSu,
+    [selectedThang, selectedNam, laKyLichSu],
+  );
+  const tenKy = useMemo(
+    () =>
+      laKyLichSu
+        ? `Tháng ${selectedThang}/${selectedNam} (số liệu lịch sử)`
+        : nhanKy(selectedThang, selectedNam),
+    [selectedThang, selectedNam, laKyLichSu],
+  );
   const thangApDung = useMemo(
     () => cacThangApDung(selectedThang, selectedNam),
     [selectedThang, selectedNam],
@@ -216,7 +242,7 @@ export default function TuChamDiemPage() {
   const isStatusLocked = trangThai === TrangThaiTieuChiChung.CHO_PHE_DUYET 
     || trangThai === TrangThaiTieuChiChung.DA_PHE_DUYET
     || trangThai === 'CHO_CAP2' as TrangThaiTieuChiChung;
-  const isDisabled = isStatusLocked || isDeadlinePassed;
+  const isDisabled = isStatusLocked || isDeadlinePassed || laKyLichSu;
 
   const handleDiemChange = (maTieuChi: string, diem: number) => {
     setFormState((prev: ITieuChiFormState) => ({
@@ -358,7 +384,9 @@ export default function TuChamDiemPage() {
           Tự chấm điểm Tiêu chí chung — {tenKy}
         </h1>
         <p className="text-gray-600 mt-1">
-          {laKyQuy
+          {laKyLichSu
+            ? 'Xem lại điểm đã chấm theo tháng — không sửa được ở đây'
+            : laKyQuy
             ? `Đánh giá 30 điểm tiêu chí chung theo quý (áp dụng cho tháng ${thangApDung.join(', ')})`
             : 'Đánh giá 30 điểm tiêu chí chung hàng tháng'}
         </p>
@@ -424,6 +452,20 @@ export default function TuChamDiemPage() {
           </div>
         )}
 
+        {/* CV 21169: tháng đã thuộc một kỳ quý — chỉ xem lại, không chấm ở đây */}
+        {laKyLichSu && (
+          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+            <p className="text-sm text-amber-900">
+              🔒 <strong>Số liệu lịch sử — chỉ xem.</strong> Đây là điểm tiêu chí đã chấm
+              theo tháng {selectedThang}/{selectedNam}, trước khi áp dụng Công văn 21169.
+            </p>
+            <p className="text-sm text-amber-800 mt-1">
+              Tiêu chí chung nay chấm <strong>một lần cho cả quý</strong> — chọn{' '}
+              <strong>Quý {Math.ceil(selectedThang / 3)}</strong> ở ô Kỳ đánh giá để chấm.
+            </p>
+          </div>
+        )}
+
         {/* CV 21169: nhắc rõ điểm chấm một lần dùng chung cho cả 3 tháng của quý */}
         {laKyQuy && (
           <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-md">
@@ -443,7 +485,7 @@ export default function TuChamDiemPage() {
           </div>
         )}
 
-        {isDeadlinePassed && !isStatusLocked && (
+        {isDeadlinePassed && !isStatusLocked && !laKyLichSu && (
           <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-md">
             <p className="text-sm text-orange-800">
               {laKyQuy ? (
@@ -747,7 +789,9 @@ export default function TuChamDiemPage() {
               const nguoiDuyet = cap2?.ho_ten || cap1?.ho_ten;
               return nguoiDuyet ? `✅ Đã được phê duyệt bởi ${nguoiDuyet}.` : '✅ Đã được phê duyệt.';
             })()}
-            {!isStatusLocked && isDeadlinePassed && `⏰ Đã hết hạn tự đánh giá tháng ${selectedThang}/${selectedNam}.`}
+            {laKyLichSu &&
+              `🔒 Số liệu lịch sử của tháng ${selectedThang}/${selectedNam} — chỉ xem. Muốn chấm thì chọn Quý ${Math.ceil(selectedThang / 3)}.`}
+            {!laKyLichSu && !isStatusLocked && isDeadlinePassed && `⏰ Đã hết hạn tự đánh giá tháng ${selectedThang}/${selectedNam}.`}
           </p>
         </div>
       )}

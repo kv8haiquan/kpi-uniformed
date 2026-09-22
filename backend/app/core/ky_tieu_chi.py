@@ -98,8 +98,23 @@ def loai_ky(thang: int, nam: int) -> str:
     return "QUY" if tc_theo_quy(thang, nam) else "THANG"
 
 
-def thong_tin_ky(thang: int, nam: int) -> dict:
-    """Gói thông tin kỳ trả về cho FE (đính kèm mọi response tiêu chí chung)."""
+def thong_tin_ky(thang: int, nam: int, theo_dung_thang: bool = False) -> dict:
+    """
+    Gói thông tin kỳ trả về cho FE (đính kèm mọi response tiêu chí chung).
+
+    `theo_dung_thang=True` — chỉ dùng cho đường ĐỌC LỊCH SỬ: người dùng xem lại
+    điểm tiêu chí đã chấm theo tháng trước khi công văn 21169 có hiệu lực. Khi đó
+    loại kỳ là THANG_LICH_SU để giao diện dán nhãn "số liệu lịch sử", tránh hiểu
+    nhầm đây là điểm đang có hiệu lực.
+    """
+    if theo_dung_thang and tc_theo_quy(thang, nam):
+        return {
+            "ky": "THANG_LICH_SU",
+            "quy": quy_cua_thang(thang),
+            "thang_neo": int(thang),
+            "cac_thang_ap_dung": [int(thang)],
+            "nhan_ky": f"Tháng {thang}/{nam} (số liệu lịch sử)",
+        }
     return {
         "ky": loai_ky(thang, nam),
         "quy": quy_cua_thang(thang) if tc_theo_quy(thang, nam) else None,

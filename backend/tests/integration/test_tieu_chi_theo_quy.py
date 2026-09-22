@@ -328,6 +328,76 @@ async def test_luong_duyet_2_cap_tren_phieu_quy():
 
 
 # =============================================================================
+# 3b. Đọc lịch sử: xem lại điểm đã chấm theo THÁNG (CV 21169 + quyết định 22/09)
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_doc_lich_su_theo_dung_thang():
+    """
+    Cờ `theo_dung_thang` cho phép xem lại điểm tiêu chí đã chấm hồi tháng 7 —
+    dữ liệu vẫn nằm trong CSDL nhưng từ 18/09 mọi truy vấn đều bị quy về phiếu quý.
+
+    Đo trên dữ liệu thật của DB test (chỉ đọc).
+    """
+    from app.api.v1.endpoints.danh_gia import get_tu_danh_gia_tieu_chi
+
+    async with AsyncSessionLocal() as db:
+        # CC có ĐỦ hai thứ: điểm tiêu chí tháng 7 (số liệu cũ) và bản ghi tháng 9
+        row = (await db.execute(text("""
+            SELECT t7.cong_chuc_id, t7.diem_tieu_chi_chung
+            FROM danh_gia_thang t7
+            JOIN danh_gia_thang t9
+              ON t9.cong_chuc_id = t7.cong_chuc_id AND t9.nam = 2026 AND t9.thang = 9
+             AND t9.is_deleted = false
+            WHERE t7.nam = 2026 AND t7.thang = 7 AND t7.is_deleted = false
+              AND t7.diem_tieu_chi_chung IS NOT NULL
+              AND EXISTS (SELECT 1 FROM tieu_chi_chung_danh_gia tc
+                          WHERE tc.danh_gia_thang_id = t7.id)
+            LIMIT 1
+        """))).first()
+        if not row:
+            pytest.skip("DB test không có công chức đủ dữ liệu T7 và T9 để đối chiếu")
+
+        cc = (await db.execute(
+            select(CongChuc).where(CongChuc.id == row[0])
+        )).scalar_one()
+        # Dùng endpoint "xem tiêu chí CỦA MÌNH" — đúng đường mà trang Đánh giá gọi
+        res_ls = await get_tu_danh_gia_tieu_chi(db, cc, 7, NAM_TEST, theo_dung_thang=True)
+        data_ls = res_ls["data"]
+        assert data_ls["ky"] == "THANG_LICH_SU"
+        assert data_ls["thang_neo"] == 7, "Đọc lịch sử KHÔNG được quy về tháng neo"
+        assert "lịch sử" in data_ls["nhan_ky"]
+        assert abs(data_ls["tong_hop"]["tong_diem"] - float(row[1])) < 0.01, (
+            "Điểm đọc lịch sử phải khớp danh_gia_thang của tháng 7"
+        )
+
+        # Không bật cờ → vẫn quy về phiếu quý như đã phát hành ngày 18/09
+        res_quy = await get_tu_danh_gia_tieu_chi(db, cc, 7, NAM_TEST)
+        assert res_quy["data"]["ky"] == "QUY"
+        assert res_quy["data"]["thang_neo"] == THANG_NEO_TEST
+
+
+@pytest.mark.asyncio
+async def test_duong_ghi_khong_nhan_co_doc_lich_su():
+    """Tự chấm với tháng 7 vẫn ghi vào bản ghi tháng 9 — cờ chỉ áp cho đường ĐỌC."""
+    async with AsyncSessionLocal() as db:
+        cc = await _pick_cc_sach(db)
+        await _cleanup_quy(db, cc.id)
+        try:
+            await tu_danh_gia_tieu_chi(db, cc, _payload_tu_cham(thang=7))
+            await db.commit()
+            rows = (await db.execute(
+                select(DanhGiaThang)
+                .where(DanhGiaThang.cong_chuc_id == cc.id)
+                .where(DanhGiaThang.nam == NAM_TEST)
+                .where(DanhGiaThang.thang.in_([7, 8, 9]))
+            )).scalars().all()
+            assert len(rows) == 1 and rows[0].thang == THANG_NEO_TEST
+        finally:
+            await _cleanup_quy(db, cc.id)
+
+
+# =============================================================================
 # 4. Chốt chặn — không thao tác trên bản ghi khác tháng neo
 # =============================================================================
 

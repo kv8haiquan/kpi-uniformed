@@ -7,11 +7,66 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `41058a3` |
-| **Ngắn** | `41058a3` |
-| **Nhánh nguồn** | `feature/kpi-tieu-chi-theo-quy` (fast-forward thẳng từ `c825d1d`) |
-| **Ngày ghi mốc** | 18/09/2026 21:27 |
-| **Alembic** | `kpi_tc_theo_quy_20260918` — **CÓ migration** (thêm cột `danh_gia_thang.la_phieu_tc_quy`) |
+| **Commit** | `6fef2e7` |
+| **Ngắn** | `6fef2e7` |
+| **Nhánh nguồn** | `feature/kpi-bao-cao-thang-chi-doc` (fast-forward thẳng từ `525f1c4`) |
+| **Ngày ghi mốc** | 22/09/2026 07:05 |
+| **Alembic** | `kpi_tc_theo_quy_20260918` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — báo cáo xếp loại THÁNG chuyển sang chế độ CHỈ XEM; sửa điểm tiêu chí chung chuyển về màn báo cáo QUÝ.**
+
+Đợt `41058a3` (18/09) xử lý kỳ tháng bằng cách **ẩn** tab khỏi giao diện. Cách đó
+sai ở hai điểm, đợt này sửa cả hai.
+
+**Gốc rễ 1 — ẩn ở giao diện không phải là chặn.** Năm endpoint ghi của báo cáo
+tháng (`de-xuat`, `gui-duyet`, `quyet-dinh`, `phe-duyet`, `tra-lai`) vẫn mở: ai
+còn giữ link cũ `/xep-loai?tab=bao-cao` hoặc gọi thẳng API vẫn sửa và **phê duyệt
+được báo cáo tháng 7, 8, 9/2026**. Nguy hiểm nhất là `phe-duyet` — nó đặt
+`is_khoa` cho mọi `danh_gia_thang` của tháng đó, nên nếu rơi vào THÁNG NEO (T9)
+thì khoá luôn phiếu tiêu chí của cả quý, công chức hết sửa được. Nay chặn ở
+backend; giao diện chỉ phản ánh điều đó.
+
+**Gốc rễ 2 — ẩn tab làm mất đường tra cứu** 35 báo cáo tháng đang có của T7–T12
+(khoảng 1.400 dòng chi tiết). Quyết định người dùng 21/09: mở lại để XEM, đồng
+thời **gỡ** chốt chặn "không lập mới" thêm hôm 18/9 — mở tháng nào cũng dựng được
+bản nháp để tra cứu, vẫn tự tính lại điểm nên số liệu khớp điểm quý mới.
+
+Thay đổi:
+- `ky_bao_cao_thang_chi_doc` + `_chan_neu_ky_thang_chi_doc` gắn vào đúng 5 endpoint
+  ghi; các đường đọc (`get_bao_cao_chi_tiet`, `danh-sach`, `cho-phe-duyet`,
+  `thong-ke`, xuất Excel) KHÔNG đụng tới
+- `get_bao_cao_don_vi` trả `can_edit`/`can_approve` = false kèm cờ `chi_doc` và
+  `ly_do_chi_doc` cho banner
+- Giao diện: tab hiện lại với nhãn "Đánh giá tháng (chỉ xem)", ẩn mọi nút ghi kể
+  cả "Sửa điểm TC chung" (nút này trước nay bỏ qua `can_edit`, bật cho CCT/TDV/
+  admin ở mọi trạng thái); màn CCT lấy quyền duyệt từ vai trò chứ không qua API
+  nên chặn thêm ngay tại tab
+- **Thêm nút "Sửa điểm TC" vào màn báo cáo QUÝ** (cả view Trưởng đơn vị và view
+  CCT), modal nhận tháng cuối quý = tháng neo của phiếu tiêu chí
+- Sửa nhãn đánh lừa: modal và trang Điều chỉnh điểm TC vẫn ghi "Tháng 7/2026"
+  trong khi từ 18/9 backend đã quy về tháng neo, tức đang sửa điểm **Quý 3** —
+  nay ghi đúng nhãn kỳ
+
+Sau đợt này, điểm tiêu chí chung của quý sửa được ở đúng ba nơi, đều mang nhãn
+quý: lúc duyệt (tab Duyệt tiêu chí) · màn báo cáo quý (mới) · trang Điều chỉnh
+điểm TC.
+
+Kiểm chứng: `DB_NAME=kpi_haiquan_test pytest tests/` → **123 passed**, 6 test mới
+gồm ca "cả 5 endpoint ghi trả 400 và dữ liệu không suy suyển một dòng" và ca
+"phê duyệt bị chặn ⇒ không bản ghi nào của tháng neo bị khoá nhầm"; kèm ca không
+hồi tố (kỳ đến hết Q2/2026 vẫn sửa bình thường). Hai test đỏ còn lại đã đỏ sẵn
+trên code gốc. `build_frontend.sh` và `tsc --noEmit` sạch. Sau triển khai: 8/8
+dịch vụ health 200, `kpihaiquan.vn` 200.
+
+Ảnh hưởng dữ liệu đang chạy: không sửa dòng nào. Bốn báo cáo tháng đang ở
+`CHO_PHE_DUYET` (3 của T7, 1 của T8) giữ nguyên trạng thái — hồ sơ dở dang của kỳ
+cũ, chỉ còn xem được.
+
+Quay lui: chế độ chỉ-đọc dùng chung mốc `TC_THEO_QUY_TU` trong
+`app/core/ky_tieu_chi.py`; đặt `(9999, 1)` rồi phát hành lại là trở về như cũ.
+Không có migration nào để gỡ.
+
+### Mốc trước — `41058a3`
 
 Nội dung: **KPI — chấm tiêu chí chung theo QUÝ từ quý III/2026 (Công văn 21169).**
 
@@ -304,6 +359,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 10/09/2026 | `2bd8508` | ĐGNL: bộ lọc danh sách thí sinh trên trang thống kê kỳ thi — thuần frontend, không migration. **Phát hành nhưng khi đó chưa ghi sổ** |
 | 13/09/2026 | `4aaa43e` | KPI: điều chuyển nhân sự hàng loạt theo QĐ bằng Excel — 3 endpoint (`mau-excel`/`xem-truoc`/`ghi`), mẫu 4 sheet, trang `/admin/dieu-chuyen-hang-loat`; tách `app/core/dieu_chuyen.py` dùng chung với điều chuyển lẻ — **không migration** |
 | 18/09/2026 | `41058a3` | KPI: chấm tiêu chí chung theo QUÝ từ Q3/2026 theo CV 21169 — phiếu quý neo ở tháng cuối quý (`la_phieu_tc_quy`), 8 điểm đọc chuyển sang tháng neo, chặn lập mới báo cáo/phiếu THÁNG, ẩn kỳ tháng khỏi giao diện. **Migration `kpi_tc_theo_quy_20260918`** (chỉ thêm cột, không đụng dữ liệu) |
+| 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

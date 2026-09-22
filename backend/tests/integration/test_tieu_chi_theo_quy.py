@@ -498,3 +498,61 @@ async def test_khong_tao_moi_phieu_danh_gia_thang():
         assert exc.value.status_code == 400
         assert "QUÝ" in str(exc.value.detail)
         await db.rollback()
+
+
+# =============================================================================
+# 6. HĐLĐ 111 — điểm quý phải khớp điểm tháng mà trang Đánh giá hiển thị
+# =============================================================================
+
+@pytest.mark.asyncio
+async def test_hdld_111_tam_tinh_dung_cot_tu_cham():
+    """
+    Ca thật 20ZZ-0531 (22/09/2026): tháng 8 tự chấm 100 điểm, chưa duyệt.
+    Trang Đánh giá tab Tạm tính hiện 70 điểm cho tháng 8, nhưng
+    `tinh_diem_kpi_70_hdld_vb714` chỉ đọc cột cấp quản lý (`diem_ql`, còn trống)
+    nên trả 0 → tháng 8 bị loại khỏi điểm quý.
+
+    Sau khi sửa: tạm tính đọc `diem_tu`, chính thức đọc `diem_ql`.
+    """
+    from app.core.hdld_vb714 import tinh_diem_kpi_70_hdld_vb714
+
+    async with AsyncSessionLocal() as db:
+        # Bản VB714 CHỜ DUYỆT: có điểm tự chấm, chưa có điểm cấp quản lý
+        row = (await db.execute(text("""
+            SELECT h.cong_chuc_id, h.thang,
+                   (SELECT count(*) FROM hdld_danh_gia_chi_tiet c
+                     WHERE c.danh_gia_id = h.id AND c.diem_tu IS NOT NULL) AS co_tu,
+                   (SELECT count(*) FROM hdld_danh_gia_chi_tiet c
+                     WHERE c.danh_gia_id = h.id AND c.diem_ql IS NOT NULL) AS co_ql
+            FROM hdld_danh_gia h
+            WHERE h.nam = 2026 AND h.thang IN (7, 8, 9) AND h.trang_thai = 'CHO_DUYET'
+            LIMIT 1
+        """))).first()
+        if not row or row.co_tu < 3 or row.co_ql > 0:
+            pytest.skip("DB test không có bản VB714 chờ duyệt đủ 3 tiêu chí tự chấm")
+
+        cc_id, thang = row.cong_chuc_id, row.thang
+
+        tam = await tinh_diem_kpi_70_hdld_vb714(db, cc_id, thang, 2026, tam_tinh=True)
+        assert tam is not None, "Tạm tính phải thấy bản chờ duyệt"
+        assert tam["diem_70"] > 0, "Tạm tính phải lấy điểm TỰ CHẤM, không để 0"
+        assert tam["a_so_luong"] > 0 and tam["b_tien_do"] > 0 and tam["c_chat_luong"] > 0
+
+        chinh_thuc = await tinh_diem_kpi_70_hdld_vb714(db, cc_id, thang, 2026, tam_tinh=False)
+        assert chinh_thuc is None, "Chính thức KHÔNG được lấy bản chưa duyệt"
+
+
+@pytest.mark.asyncio
+async def test_hdld_111_khong_lam_tron_khi_tinh():
+    """Điểm tính ra giữ nguyên số lẻ; chỉ chỗ hiển thị mới cắt bớt."""
+    from decimal import Decimal
+
+    from app.core.hdld_vb714 import kpi_70_tu_tb, tb_3_tieu_chi
+
+    # 89.67 + 100 + 85 → TB = 91.5566666…, KPI-70 = 64.0896666…
+    tb = tb_3_tieu_chi([Decimal("89.67"), Decimal("100"), Decimal("85")])
+    assert tb is not None
+    assert tb != tb.quantize(Decimal("0.01")), "TB không được làm tròn về 2 chữ số"
+    diem = kpi_70_tu_tb(tb)
+    assert diem is not None
+    assert abs(float(diem) - 64.0896666666) < 1e-6

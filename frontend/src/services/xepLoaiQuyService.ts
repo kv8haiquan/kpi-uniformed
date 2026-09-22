@@ -42,11 +42,13 @@ class XepLoaiQuyService {
   async getChiTietQuy(
     congChucId: string,
     quy: number,
-    nam: number
+    nam: number,
+    /** true = gộp cả bản chưa duyệt (tab Tạm tính); false = chỉ số đã duyệt. */
+    tamTinh = true,
   ): Promise<ChiTietQuyResponse> {
     const { data } = await apiClient.get<{ success: boolean; data: ChiTietQuyResponse }>(
       `${BASE_URL}/chi-tiet/${congChucId}`,
-      { params: { quy, nam } }
+      { params: { quy, nam, tam_tinh: tamTinh } }
     );
 
     if (!data.success) {

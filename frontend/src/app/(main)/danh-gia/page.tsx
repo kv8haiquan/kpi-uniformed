@@ -308,6 +308,7 @@ export default function DanhGiaPage() {
               user.id,
               quyCuaThang(selectedThang),
               selectedNam,
+              kpiTab === 'tam_tinh',
             ),
           );
         } catch {
@@ -368,7 +369,7 @@ export default function DanhGiaPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedThang, selectedNam, usesLeaderForm, isHd111, isLanhDao, user?.id]);
+  }, [selectedThang, selectedNam, usesLeaderForm, isHd111, isLanhDao, user?.id, kpiTab]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -573,20 +574,22 @@ export default function DanhGiaPage() {
     ? `Tháng ${selectedThang}/${selectedNam} (số liệu lịch sử)`
     : nhanKy(selectedThang, selectedNam);
 
-  useEffect(() => {
-    if (!danhSachKy.some((k) => k.thang === selectedThang)) {
-      setSelectedThang(kyMacDinh(selectedNam, new Date()).thang);
+  // Đổi năm → kỳ đang chọn có thể không còn hợp lệ. Xử lý ngay trong handler.
+  const doiNam = useCallback((namMoi: number) => {
+    setSelectedNam(namMoi);
+    if (!danhSachKyXemLai(namMoi).some((k) => k.thang === selectedThang)) {
+      setSelectedThang(kyMacDinh(namMoi, new Date()).thang);
     }
-  }, [danhSachKy, selectedThang, selectedNam]);
+  }, [selectedThang]);
 
-  // Kỳ QUÝ: ba con số lấy từ điểm quý lũy kế (API /xep-loai-quy/chi-tiet)
-  const diemTCHienThi = laKyQuy ? (diemQuy?.diem_tc_quy ?? 0) : diemTCTheoThang;
+  // Điểm TIÊU CHÍ CHUNG: ở kỳ quý, `selectedThang` là tháng neo nên `tieuChiChung`
+  // đã là PHIẾU QUÝ — dùng luôn, đúng như chế độ tháng. KHÔNG lấy `diem_tc_quy`
+  // vì cột đó chỉ có số sau khi phiếu được DUYỆT.
+  const diemTCHienThi = diemTCTheoThang;
   const diemKPIHienThi = laKyQuy ? (diemQuy?.diem_kpi_quy ?? 0) : diemKPIQuyDoi;
 
   // Tổng điểm hiển thị theo tab (tiêu chí chung + KPI)
-  const diemTongHienThi = laKyQuy
-    ? (diemQuy?.diem_tong_quy ?? diemTCHienThi + diemKPIHienThi)
-    : diemTCHienThi + diemKPIQuyDoi;
+  const diemTongHienThi = diemTCHienThi + diemKPIHienThi;
   const xepLoaiHienThi = kpiTab === 'chinh_thuc' && tcChuaPheDuyet
     ? tinhXepLoai(diemTongHienThi)  // Tạm tính xếp loại dù TC chung = 0
     : tinhXepLoai(diemTongHienThi);
@@ -668,7 +671,7 @@ export default function DanhGiaPage() {
                 <label className="text-sm text-gray-600">Năm:</label>
                 <select
                   value={selectedNam}
-                  onChange={(e) => setSelectedNam(Number(e.target.value))}
+                  onChange={(e) => doiNam(Number(e.target.value))}
                   className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
                 >
                   {[2025, 2026, 2027].map((y) => (
@@ -695,62 +698,10 @@ export default function DanhGiaPage() {
           </div>
         </div>
 
-        {/* CV 21169: kỳ QUÝ → bảng tổng hợp ba tháng trong quý */}
-        {!isLoading && !error && laKyQuy && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-base font-medium text-gray-900">
-                Ba tháng trong {nhanKy(selectedThang, selectedNam)}
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Điểm tiêu chí chung giống nhau cả ba tháng vì nay chấm một lần cho cả quý.
-                Chọn một tháng ở ô Kỳ để xem chi tiết tháng đó.
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tháng</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Tiêu chí chung</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm KPI</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm tổng</th>
-                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Xếp loại</th>
-                    <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Nguồn</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {(diemQuy?.cac_thang ?? []).map((t) => (
-                    <tr key={t.thang} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 font-medium text-gray-900">Tháng {t.thang}</td>
-                      <td className="px-4 py-2 text-right">{formatScore(t.diem_tc ?? 0)}</td>
-                      <td className="px-4 py-2 text-right">{formatScore(t.diem_kpi ?? 0)}</td>
-                      <td className="px-4 py-2 text-right font-semibold">{formatScore(t.diem_tong ?? 0)}</td>
-                      <td className="px-4 py-2 text-center">{t.xep_loai_thang ?? '—'}</td>
-                      <td className="px-4 py-2 text-center text-xs text-gray-500">
-                        {t.nguon === 'tam_tinh'
-                          ? 'Tạm tính'
-                          : t.nguon === 'da_duyet'
-                          ? 'Đã duyệt'
-                          : t.nguon ?? '—'}
-                      </td>
-                    </tr>
-                  ))}
-                  {(diemQuy?.cac_thang ?? []).length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
-                        Chưa có dữ liệu tháng nào trong quý này.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {diemQuy?.ghi_chu && (
-              <p className="px-6 py-3 text-xs text-amber-700 bg-amber-50 border-t border-amber-100">
-                {diemQuy.ghi_chu}
-              </p>
-            )}
+        {/* Thay cho bảng ba tháng (bỏ theo yêu cầu 22/09) */}
+        {!isLoading && !error && laKyQuy && diemQuy?.ghi_chu && (
+          <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            ⚠️ {diemQuy.ghi_chu}
           </div>
         )}
 

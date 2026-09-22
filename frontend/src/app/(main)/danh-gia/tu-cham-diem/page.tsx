@@ -189,14 +189,16 @@ export default function TuChamDiemPage() {
     [selectedThang, selectedNam],
   );
 
-  // Khi đổi năm, kỳ đang chọn có thể không còn hợp lệ (ví dụ Tháng 7/2026 nay
-  // thuộc Quý 3) → nhảy về kỳ hợp lệ gần nhất.
-  useEffect(() => {
-    if (!danhSachKy.some((k) => k.thang === selectedThang)) {
-      const thayThe = danhSachKy.find((k) => k.thang >= selectedThang) ?? danhSachKy[danhSachKy.length - 1];
-      if (thayThe) setSelectedThang(thayThe.thang);
+  // Đổi năm thì kỳ đang chọn có thể không còn hợp lệ (2027 không có "Tháng 7").
+  // Xử lý NGAY trong handler thay vì trong useEffect — tránh render thừa một nhịp
+  // với kỳ sai trước khi hiệu ứng kịp sửa.
+  const doiNam = useCallback((namMoi: number) => {
+    setSelectedNam(namMoi);
+    const ds = danhSachKyXemLai(namMoi);
+    if (!ds.some((k) => k.thang === selectedThang)) {
+      setSelectedThang(kyMacDinh(namMoi, new Date()).thang);
     }
-  }, [danhSachKy, selectedThang]);
+  }, [selectedThang]);
 
   // Check if deadline has passed for this month
   const isDeadlinePassed = useMemo(() => {
@@ -423,7 +425,7 @@ export default function TuChamDiemPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Năm</label>
-              <select value={selectedNam} onChange={(e) => setSelectedNam(Number(e.target.value))}
+              <select value={selectedNam} onChange={(e) => doiNam(Number(e.target.value))}
                 className="border border-gray-300 rounded-md px-3 py-2">
                 {[2025, 2026, 2027].map((y: number) => (<option key={y} value={y}>{y}</option>))}
               </select>

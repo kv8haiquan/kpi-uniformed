@@ -390,7 +390,12 @@ export default function DanhGiaV2Page() {
           ? kpiLanhDaoV2Service.getMyKpi(selectedThang, selectedNam, tab === 'tam_tinh')
           : Promise.resolve(null),
         laKyQuy && user?.id
-          ? xepLoaiQuyService.getChiTietQuy(user.id, quyCuaThang(selectedThang), selectedNam)
+          ? xepLoaiQuyService.getChiTietQuy(
+              user.id,
+              quyCuaThang(selectedThang),
+              selectedNam,
+              tab === 'tam_tinh',
+            )
           : Promise.resolve(null),
       ]);
       setDiemQuy(quyRes.status === 'fulfilled' ? (quyRes.value as ChiTietQuyResponse | null) : null);
@@ -479,24 +484,25 @@ export default function DanhGiaV2Page() {
     ? `Tháng ${selectedThang}/${selectedNam} (số liệu lịch sử)`
     : nhanKy(selectedThang, selectedNam);
 
-  // Kỳ đang chọn có thể không còn trong danh sách khi đổi năm → về kỳ mặc định.
-  useEffect(() => {
-    if (!danhSachKy.some((k) => k.thang === selectedThang)) {
-      setSelectedThang(kyMacDinh(selectedNam, new Date()).thang);
+  // Đổi năm → kỳ đang chọn có thể không còn hợp lệ. Xử lý ngay trong handler.
+  const doiNam = useCallback((namMoi: number) => {
+    setSelectedNam(namMoi);
+    if (!danhSachKyXemLai(namMoi).some((k) => k.thang === selectedThang)) {
+      setSelectedThang(kyMacDinh(namMoi, new Date()).thang);
     }
-  }, [danhSachKy, selectedThang, selectedNam]);
+  }, [selectedThang]);
 
   // Tab chính thức + chưa duyệt → TC = 0; tab tạm tính → tự chấm
   const diemTCThang = tab === 'chinh_thuc' && tcChuaPheDuyet ? 0 : diemTieuChi;
-  // Kỳ QUÝ: ba thẻ điểm lấy từ điểm quý lũy kế (API /xep-loai-quy/chi-tiet).
-  const diemTCHienThi = laKyQuy ? (diemQuy?.diem_tc_quy ?? 0) : diemTCThang;
+  // Điểm TIÊU CHÍ CHUNG: ở kỳ quý, `selectedThang` chính là tháng neo nên
+  // `tieuChi` đã là PHIẾU QUÝ — dùng luôn nó, đúng như chế độ tháng. KHÔNG lấy
+  // `diem_tc_quy` của API xếp loại quý: cột đó chỉ có số sau khi phiếu được
+  // DUYỆT, mà 97% phiếu quý III đang chờ duyệt → tab Tạm tính sẽ hiện 0/30 dù
+  // công chức đã tự chấm 20 điểm.
+  const diemTCHienThi = diemTCThang;
   const diemKPIHienThi = laKyQuy ? (diemQuy?.diem_kpi_quy ?? 0) : diemKPI;
-  const diemTong = laKyQuy
-    ? (diemQuy?.diem_tong_quy ?? diemTCHienThi + diemKPIHienThi)
-    : diemTCHienThi + diemKPI;
-  const xepLoai = laKyQuy && diemQuy?.xep_loai_quy
-    ? (diemQuy.xep_loai_quy as ReturnType<typeof tinhXepLoai>)
-    : tinhXepLoai(diemTong);
+  const diemTong = diemTCHienThi + diemKPIHienThi;
+  const xepLoai = tinhXepLoai(diemTong);
   const xlColor = getXepLoaiColor(xepLoai);
 
   // Stats kê khai (CC V2: từ thongKe; LĐ V2: từ kpiV2LD scope mở rộng)
@@ -574,7 +580,7 @@ export default function DanhGiaV2Page() {
               <label className="text-sm text-gray-600">Năm:</label>
               <select
                 value={selectedNam}
-                onChange={(e) => setSelectedNam(Number(e.target.value))}
+                onChange={(e) => doiNam(Number(e.target.value))}
                 className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
               >
                 {[2025, 2026, 2027].map((y) => (
@@ -663,6 +669,14 @@ export default function DanhGiaV2Page() {
                   </div>
                 )}
               </div>
+
+              {/* Thay cho bảng ba tháng (bỏ theo yêu cầu 22/09): giữ một dòng ghi
+                  chú, vì 355/541 người đang được tính điểm quý từ 1–2 tháng. */}
+              {laKyQuy && diemQuy?.ghi_chu && (
+                <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+                  ⚠️ {diemQuy.ghi_chu}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <ScoreCard
@@ -935,66 +949,6 @@ export default function DanhGiaV2Page() {
                 )}
               </div>
             </div>
-
-            {/* CV 21169: kỳ QUÝ → bảng tổng hợp ba tháng thay cho danh sách kê khai.
-                Muốn xem chi tiết bản kê khai thì chọn đích danh tháng đó. */}
-            {laKyQuy && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h2 className="text-base font-medium text-gray-900">
-                    Ba tháng trong {nhanKy(selectedThang, selectedNam)}
-                  </h2>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Điểm tiêu chí chung giống nhau cả ba tháng vì nay chấm một lần cho cả quý.
-                    Chọn một tháng ở ô Kỳ để xem chi tiết bản kê khai của tháng đó.
-                  </p>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tháng</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Tiêu chí chung</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm KPI</th>
-                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Điểm tổng</th>
-                        <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Xếp loại</th>
-                        <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Nguồn</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {(diemQuy?.cac_thang ?? []).map((t) => (
-                        <tr key={t.thang} className="hover:bg-gray-50">
-                          <td className="px-4 py-2 font-medium text-gray-900">Tháng {t.thang}</td>
-                          <td className="px-4 py-2 text-right">{formatScore(t.diem_tc ?? 0)}</td>
-                          <td className="px-4 py-2 text-right">{formatScore(t.diem_kpi ?? 0)}</td>
-                          <td className="px-4 py-2 text-right font-semibold">{formatScore(t.diem_tong ?? 0)}</td>
-                          <td className="px-4 py-2 text-center">{t.xep_loai_thang ?? '—'}</td>
-                          <td className="px-4 py-2 text-center text-xs text-gray-500">
-                            {t.nguon === 'tam_tinh'
-                              ? 'Tạm tính'
-                              : t.nguon === 'da_duyet'
-                              ? 'Đã duyệt'
-                              : t.nguon ?? '—'}
-                          </td>
-                        </tr>
-                      ))}
-                      {(diemQuy?.cac_thang ?? []).length === 0 && (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
-                            Chưa có dữ liệu tháng nào trong quý này.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {diemQuy?.ghi_chu && (
-                  <p className="px-6 py-3 text-xs text-amber-700 bg-amber-50 border-t border-amber-100">
-                    {diemQuy.ghi_chu}
-                  </p>
-                )}
-              </div>
-            )}
 
             {/* BLOCK CHI TIẾT CV TRONG SCOPE LĐ (Yêu cầu 1, 06/05/2026) — chỉ LĐ thật V2 */}
             {!laKyQuy && useLeaderV2 && (

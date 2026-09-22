@@ -47,7 +47,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.ky_tieu_chi import thang_neo
+from app.core.ky_tieu_chi import cac_thang_ke_khai_cua_quy, co_moc_chuyen_ky, thang_neo
 from app.models.kpi_assessment import DanhGiaThang
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import (
@@ -542,6 +542,22 @@ async def tinh_diem_quy(
     # 3. Build map thang → chi tiết ngày làm việc
     thang_info = {c["thang"]: c for c in chi_tiet_thuc_te}
 
+    # 3b. MỐC CHUYỂN KỲ CỦA KÊ KHAI (22/09/2026 — CV 21169)
+    # Kê khai có NGÀY THỰC HIỆN từ 16/9/2026 tính vào quý IV. Chỉ phần điểm a/b/c
+    # (tính từ kê khai công việc) đi theo cửa sổ ngày này; d/đ/e, tiêu chí chung,
+    # HĐLĐ 111 và điểm THÁNG vẫn chia theo tháng như cũ.
+    thang_ke_khai = cac_thang_ke_khai_cua_quy(quy, nam)
+
+    # Tháng của quý TRƯỚC bị mốc đẩy sang quý này (T9 khi tính quý IV) vẫn phải
+    # tôn trọng thai sản / chưa về Chi cục của chính tháng đó. Chỉ bổ sung vào
+    # `thang_info` để dùng khi lọc, KHÔNG cộng vào `so_thang_thuc_te` — nếu không
+    # mẫu số của điểm tiêu chí chung quý sẽ bị chia cho 4 tháng.
+    thang_ngoai = [t for t, _, _ in thang_ke_khai if t not in thang_info]
+    if thang_ngoai:
+        _, chi_tiet_ngoai = await _xac_dinh_thang_thuc_te(db, cc, thang_ngoai, nam)
+        for c in chi_tiet_ngoai:
+            thang_info[c["thang"]] = c
+
     # 4. Lũy kế a/b/c qua các tháng thực tế
     cac_thang = []
     so_thang_co_du_lieu = 0
@@ -650,18 +666,20 @@ async def tinh_diem_quy(
         dd_values: List[Optional[float]] = []
         e_values: List[Optional[float]] = []
 
-        for thang in thang_list:
-            info = thang_info[thang]
+        for thang, tu_ngay, den_ngay in thang_ke_khai:
+            info = thang_info.get(thang) or {"thang": thang, "ly_do_loai": None}
             if info["ly_do_loai"]:
                 cac_thang.append(_thang_placeholder(thang, info))
                 continue
 
             # Ưu tiên đã duyệt; nếu tháng chưa có dữ liệu duyệt (mẫu số = 0) → tạm tính
-            r = await tinh_diem_kpi_70_lanh_dao(db, cong_chuc_id, thang, nam, tam_tinh=False)
+            r = await tinh_diem_kpi_70_lanh_dao(db, cong_chuc_id, thang, nam, tam_tinh=False,
+                                                tu_ngay=tu_ngay, den_ngay=den_ngay)
             w = float(r.get("sp_duoc_giao") or 0) or float(r.get("tong_cong_viec") or 0)
             thang_tam = False
             if w <= 0 and tam_tinh:
-                r = await tinh_diem_kpi_70_lanh_dao(db, cong_chuc_id, thang, nam, tam_tinh=True)
+                r = await tinh_diem_kpi_70_lanh_dao(db, cong_chuc_id, thang, nam, tam_tinh=True,
+                                                    tu_ngay=tu_ngay, den_ngay=den_ngay)
                 w = float(r.get("sp_duoc_giao") or 0) or float(r.get("tong_cong_viec") or 0)
                 if w > 0:
                     thang_tam = True
@@ -740,8 +758,8 @@ async def tinh_diem_quy(
         tong_cl = 0.0      # tử số c (SP đạt chất lượng)
         tong_mau = 0.0     # mẫu số (sp_duoc_giao: V1=ngày×96, V2=tổng SP kê khai)
 
-        for thang in thang_list:
-            info = thang_info[thang]
+        for thang, tu_ngay, den_ngay in thang_ke_khai:
+            info = thang_info.get(thang) or {"thang": thang, "ly_do_loai": None}
             if info["ly_do_loai"]:
                 cac_thang.append(_thang_placeholder(thang, info))
                 continue
@@ -749,9 +767,11 @@ async def tinh_diem_quy(
             has_approved = await _co_cv_da_duyet(db, cong_chuc_id, thang, nam)
             thang_tam = False
             if has_approved:
-                r = await tinh_diem_kpi_70(db, cong_chuc_id, thang, nam, tam_tinh=False)
+                r = await tinh_diem_kpi_70(db, cong_chuc_id, thang, nam, tam_tinh=False,
+                                           tu_ngay=tu_ngay, den_ngay=den_ngay)
             elif tam_tinh:
-                r = await tinh_diem_kpi_70(db, cong_chuc_id, thang, nam, tam_tinh=True)
+                r = await tinh_diem_kpi_70(db, cong_chuc_id, thang, nam, tam_tinh=True,
+                                           tu_ngay=tu_ngay, den_ngay=den_ngay)
                 thang_tam = True
             else:
                 r = None
@@ -855,6 +875,17 @@ async def tinh_diem_quy(
         ghi_chu_parts.append(
             f"Chỉ có dữ liệu {so_thang_co_du_lieu}/{so_thang_thuc_te} tháng thực tế"
         )
+    # Mốc chuyển kỳ của kê khai — nói rõ để không ai tưởng điểm bị tính sai
+    if co_moc_chuyen_ky(quy, nam):
+        if quy == 3 and nam == 2026:
+            ghi_chu_parts.append(
+                "Kê khai có ngày thực hiện từ 16/9/2026 được tính sang quý IV"
+            )
+        elif quy == 4 and nam == 2026:
+            ghi_chu_parts.append(
+                "Đã gộp phần kê khai từ 16/9/2026 của tháng 9 vào quý IV"
+            )
+
     ghi_chu = " | ".join(ghi_chu_parts) if ghi_chu_parts else None
 
     return {

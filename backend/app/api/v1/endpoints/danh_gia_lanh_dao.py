@@ -23,6 +23,14 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep
+from app.core.ky_tieu_chi import (
+    cac_thang_ap_dung_dde,
+    dde_theo_quy,
+    la_thang_neo_dde,
+    nhan_ky_dde,
+    thang_neo_dde,
+    thong_tin_ky_dde,
+)
 from app.models.leader_kpi import DanhGiaDDE, TrangThaiDDE
 from app.models.user_org import CongChuc, VaiTro, CapBacVaiTro
 from app.schemas.common import success_response, error_response, Pagination
@@ -105,12 +113,39 @@ def build_dde_response(dde: DanhGiaDDE) -> dict:
         "d_phe_duyet": dde.d_phe_duyet, "dd_phe_duyet": dde.dd_phe_duyet, "e_phe_duyet": dde.e_phe_duyet,
         "d_final": d_final, "dd_final": dd_final, "e_final": e_final,
         "created_at": dde.created_at, "updated_at": dde.updated_at,
+        # CV 21169 — cho FE biết bản ghi này thuộc kỳ nào và có phải phiếu của
+        # kỳ không (bản ghi tháng cũ trong kỳ quý: chỉ tra cứu, không duyệt).
+        "ky_dde": nhan_ky_dde(dde.thang, dde.nam),
+        "dde_theo_quy": dde_theo_quy(dde.thang, dde.nam),
+        "la_phieu_ky": la_thang_neo_dde(dde.thang, dde.nam),
+        "thang_phieu_ky": thang_neo_dde(dde.thang, dde.nam),
     }
 
 
 # =============================================================================
 # GET - Danh sách người phê duyệt (ĐẶT TRƯỚC các route có path param)
 # =============================================================================
+
+def _chan_neu_khong_phai_thang_neo_dde(dde: DanhGiaDDE) -> None:
+    """
+    CV 21169: với kỳ kê d/đ/e theo QUÝ, mọi thao tác chỉ thực hiện trên bản ghi
+    THÁNG NEO (tháng cuối quý). Bản ghi tháng khác của cùng quý giữ nguyên làm
+    dữ liệu tra cứu, không duyệt/trả lại nữa — nếu không, duyệt một bản tháng 7
+    sẽ không ảnh hưởng gì tới điểm quý mà người duyệt vẫn tưởng là đã xong.
+    """
+    if not dde_theo_quy(dde.thang, dde.nam):
+        return
+    if la_thang_neo_dde(dde.thang, dde.nam):
+        return
+    raise HTTPException(status_code=400, detail=error_response(
+        code="BIZ_008",
+        message=(
+            f"Từ quý III/2026, d/đ/e kê một lần cho cả quý (Mẫu 02B, CV 21169). "
+            f"Bản ghi tháng {dde.thang}/{dde.nam} là số liệu cũ, chỉ để tra cứu — "
+            f"thao tác trên phiếu của tháng {thang_neo_dde(dde.thang, dde.nam)}/{dde.nam}."
+        ),
+    ))
+
 
 @router.get("/dde/nguoi-phe-duyet")
 async def get_nguoi_phe_duyet_dde_api(db: DatabaseDep, current_user: ActiveUserDep) -> dict:
@@ -168,8 +203,15 @@ async def get_dde_cho_phe_duyet(
         )
     )
     
-    if thang: stmt = stmt.where(DanhGiaDDE.thang == thang)
-    if nam: stmt = stmt.where(DanhGiaDDE.nam == nam)
+    # CV 21169: kỳ theo quý → lọc theo CẢ QUÝ chứ không riêng tháng, để người
+    # duyệt vẫn nhìn thấy bản còn treo ở tháng không phải tháng neo (bản đó nay
+    # chỉ để tra cứu — `la_thang_neo` dưới đây cho FE biết mà khoá nút duyệt).
+    if thang and nam:
+        stmt = stmt.where(DanhGiaDDE.thang.in_(cac_thang_ap_dung_dde(thang, nam)))
+        stmt = stmt.where(DanhGiaDDE.nam == nam)
+    else:
+        if thang: stmt = stmt.where(DanhGiaDDE.thang == thang)
+        if nam: stmt = stmt.where(DanhGiaDDE.nam == nam)
     
     dde_list = (await db.execute(stmt)).scalars().all()
     
@@ -201,7 +243,12 @@ async def get_danh_gia_dde(
     
     if thang < 1 or thang > 12:
         raise HTTPException(status_code=400, detail=error_response(code="VAL_003", message="Tháng phải từ 1-12"))
-    
+
+    # CV 21169 (Mẫu 02B): từ Q3/2026 d/đ/e kê MỘT LẦN cho cả quý, phiếu neo ở
+    # tháng cuối quý. FE gửi tháng nào trong quý cũng nhận về đúng một phiếu.
+    ky = thong_tin_ky_dde(thang, nam)
+    thang = ky["thang_neo"]
+
     stmt = select(DanhGiaDDE).where(
         DanhGiaDDE.cong_chuc_id == current_user.id,
         DanhGiaDDE.thang == thang, DanhGiaDDE.nam == nam,
@@ -210,9 +257,15 @@ async def get_danh_gia_dde(
     
     if not dde:
         # Trả về null nếu chưa có đánh giá
-        return success_response(data=None, message="Chưa có đánh giá d, đ, e cho tháng này")
-    
-    return success_response(data=build_dde_response(dde), message="Lấy đánh giá thành công")
+        return success_response(
+            data=None,
+            message=f"Chưa có đánh giá d, đ, e cho {ky['nhan_ky'].lower()}",
+        )
+
+    return success_response(
+        data={**build_dde_response(dde), **ky},
+        message="Lấy đánh giá thành công",
+    )
 
 
 # =============================================================================
@@ -232,10 +285,14 @@ async def create_or_update_dde(
     if not check_is_lanh_dao(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
     
+    # CV 21169 (Mẫu 02B): kỳ theo quý → ghi vào bản ghi THÁNG NEO (tháng cuối quý)
+    ky = thong_tin_ky_dde(payload.thang, payload.nam)
+    thang_ghi = ky["thang_neo"]
+
     # Kiểm tra đã có chưa
     stmt = select(DanhGiaDDE).where(
         DanhGiaDDE.cong_chuc_id == current_user.id,
-        DanhGiaDDE.thang == payload.thang, DanhGiaDDE.nam == payload.nam,
+        DanhGiaDDE.thang == thang_ghi, DanhGiaDDE.nam == payload.nam,
     )
     existing = (await db.execute(stmt)).scalar_one_or_none()
     
@@ -255,15 +312,21 @@ async def create_or_update_dde(
         existing.dd_ghi_chu = db_values["dd_ghi_chu"]
         existing.e_doan_ket_noi_bo = db_values["e_doan_ket_noi_bo"]
         existing.e_ghi_chu = db_values["e_ghi_chu"]
-        
+        if ky["ky"] == "QUY":
+            existing.la_phieu_dde_quy = True
+
         await db.flush()
         await db.refresh(existing)  # QUAN TRỌNG: refresh sau flush
-        return success_response(data=build_dde_response(existing), message="Cập nhật đánh giá thành công")
+        return success_response(
+            data={**build_dde_response(existing), **ky},
+            message="Cập nhật đánh giá thành công",
+        )
     else:
         # Insert
         dde = DanhGiaDDE(
             cong_chuc_id=current_user.id,
-            thang=payload.thang, nam=payload.nam,
+            thang=thang_ghi, nam=payload.nam,
+            la_phieu_dde_quy=(ky["ky"] == "QUY"),
             d_ket_qua_don_vi=db_values["d_ket_qua_don_vi"], d_ghi_chu=db_values["d_ghi_chu"],
             dd_to_chuc_trien_khai=db_values["dd_to_chuc_trien_khai"], dd_ghi_chu=db_values["dd_ghi_chu"],
             e_doan_ket_noi_bo=db_values["e_doan_ket_noi_bo"], e_ghi_chu=db_values["e_ghi_chu"],
@@ -272,7 +335,10 @@ async def create_or_update_dde(
         db.add(dde)
         await db.flush()
         await db.refresh(dde)  # QUAN TRỌNG: refresh sau flush
-        return success_response(data=build_dde_response(dde), message="Tạo đánh giá thành công")
+        return success_response(
+            data={**build_dde_response(dde), **ky},
+            message="Tạo đánh giá thành công",
+        )
 
 
 # =============================================================================
@@ -288,6 +354,9 @@ async def gui_duyet_dde(
     if not check_is_lanh_dao(current_user):
         raise HTTPException(status_code=403, detail=error_response(code="PERM_003", message="Chỉ Lãnh đạo"))
     
+    # CV 21169: kỳ theo quý → gửi duyệt phiếu của tháng neo
+    thang = thang_neo_dde(thang, nam)
+
     stmt = select(DanhGiaDDE).where(
         DanhGiaDDE.cong_chuc_id == current_user.id,
         DanhGiaDDE.thang == thang, DanhGiaDDE.nam == nam,
@@ -330,7 +399,9 @@ async def phe_duyet_dde(
     
     if not dde:
         raise HTTPException(status_code=404, detail=error_response(code="NOT_FOUND", message="Không tìm thấy"))
-    
+
+    _chan_neu_khong_phai_thang_neo_dde(dde)
+
     # Kiểm tra quyền phê duyệt
     is_cct = current_user.vai_tro and current_user.vai_tro.cap_bac == CapBacVaiTro.CHI_CUC_TRUONG
     if dde.nguoi_phe_duyet_id != current_user.id and not is_cct:
@@ -380,7 +451,9 @@ async def tra_lai_dde(
     
     if not dde:
         raise HTTPException(status_code=404, detail=error_response(code="NOT_FOUND", message="Không tìm thấy"))
-    
+
+    _chan_neu_khong_phai_thang_neo_dde(dde)
+
     if dde.trang_thai != TrangThaiDDE.DA_PHE_DUYET.value:
         raise HTTPException(status_code=400, detail=error_response(
             code="INVALID_STATE", message=f"Chỉ trả lại được ở trạng thái DA_PHE_DUYET (hiện tại: {dde.trang_thai})"
@@ -442,11 +515,16 @@ async def get_lich_su_danh_gia_dde(
     if not is_cct:
         stmt = stmt.where(DanhGiaDDE.nguoi_phe_duyet_id == current_user.id)
     
-    # Filter tháng/năm
-    if thang:
-        stmt = stmt.where(DanhGiaDDE.thang == thang)
-    if nam:
+    # Filter tháng/năm — kỳ theo quý thì lọc theo cả quý (CV 21169), để các bản
+    # đã duyệt theo tháng của kỳ cũ vẫn tra cứu được.
+    if thang and nam:
+        stmt = stmt.where(DanhGiaDDE.thang.in_(cac_thang_ap_dung_dde(thang, nam)))
         stmt = stmt.where(DanhGiaDDE.nam == nam)
+    else:
+        if thang:
+            stmt = stmt.where(DanhGiaDDE.thang == thang)
+        if nam:
+            stmt = stmt.where(DanhGiaDDE.nam == nam)
     
     # Count total
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -515,7 +593,8 @@ async def get_dde_cong_chuc(
         )
         .where(
             DanhGiaDDE.cong_chuc_id == cong_chuc_id,
-            DanhGiaDDE.thang == thang,
+            # CV 21169: kỳ theo quý → phiếu neo ở tháng cuối quý
+            DanhGiaDDE.thang == thang_neo_dde(thang, nam),
             DanhGiaDDE.nam == nam,
         )
     )
@@ -523,6 +602,9 @@ async def get_dde_cong_chuc(
     dde = result.scalar_one_or_none()
     
     if not dde:
-        return success_response(data=None, message="Chưa có đánh giá d,đ,e cho tháng này")
+        return success_response(
+            data=None,
+            message=f"Chưa có đánh giá d,đ,e cho {nhan_ky_dde(thang, nam).lower()}",
+        )
     
     return success_response(data=build_dde_response(dde))

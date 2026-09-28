@@ -67,6 +67,8 @@ import {
   nhanKy,
   quyCuaThang,
   tcTheoQuy,
+  ddeTheoQuy,
+  nhanKyDDE,
 } from '@/lib/ky-tieu-chi';
 import { xepLoaiQuyService } from '@/services/xepLoaiQuyService';
 import type { ChiTietQuyResponse } from '@/types/xep-loai-quy';
@@ -1282,6 +1284,13 @@ export default function DanhGiaPage() {
                           percent={eLD * 100}
                         />
                       </div>
+
+                      {ddeTheoQuy(selectedThang, selectedNam) && (
+                        <p className="mt-2 text-xs text-gray-500 text-center">
+                          d, đ, e lấy từ phiếu {nhanKyDDE(selectedThang, selectedNam)} — kê một lần
+                          cho cả quý (Mẫu 02B, CV 21169), dùng chung cho các tháng trong quý.
+                        </p>
+                      )}
 
                       {/* Công thức */}
                       <div className="mt-6 bg-gray-50 rounded-lg p-4 border border-gray-200">

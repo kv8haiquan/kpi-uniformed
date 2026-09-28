@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
-from app.core.ky_tieu_chi import thang_neo
+from app.core.ky_tieu_chi import thang_neo, thang_neo_dde
 from app.core.kpi_calculator_v2 import calculate_kpi_score_v2
 from app.core.kpi_version import resolve_kpi_version, VERSION_V2
 from app.core.hdld_vb714 import is_hdld_vb714_active, tinh_diem_kpi_70_hdld_vb714
@@ -477,11 +477,12 @@ async def tinh_diem_kpi_70_lanh_dao(
     b = min(tong_diem_tien_do / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
     c = min(tong_diem_chat_luong / tong_cong_viec, 1) if tong_cong_viec > 0 else 0
 
-    # Query DDE
+    # Query DDE — CV 21169: từ Q3/2026 phiếu d/đ/e neo ở tháng cuối quý,
+    # ba tháng trong quý đọc chung một bản ghi.
     stmt_dde = (
         select(DanhGiaDDE)
         .where(DanhGiaDDE.cong_chuc_id == cong_chuc_id)
-        .where(DanhGiaDDE.thang == thang)
+        .where(DanhGiaDDE.thang == thang_neo_dde(thang, nam))
         .where(DanhGiaDDE.nam == nam)
         .where(DanhGiaDDE.trang_thai.in_(dde_statuses))
     )

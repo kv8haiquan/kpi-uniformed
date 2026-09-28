@@ -29,7 +29,7 @@ import { exportService } from '@/services/export.service';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 import { formatScore } from '@/lib/format';
-import { kyThangConHieuLuc } from '@/lib/ky-tieu-chi';
+import { ddeTheoQuy, kyThangConHieuLuc, nhanKyDDE } from '@/lib/ky-tieu-chi';
 import SuaDiemTieuChiModal from '@/components/xep-loai/modals/SuaDiemTieuChiModal';
 // =============================================================================
 // TYPES
@@ -943,12 +943,17 @@ function ChiTietCongChucModal({ congChuc, thang, nam, onClose }: ChiTietCongChuc
               {activeDetailTab === 'dde' && isLanhDao && (
                 <div>
                   {!ddeData ? (
-                    <div className="text-center py-8 text-gray-500">Chưa có đánh giá d, đ, e tháng {thang}/{nam}</div>
+                    <div className="text-center py-8 text-gray-500">Chưa có đánh giá d, đ, e {nhanKyDDE(thang, nam).toLowerCase()}</div>
                   ) : (
                     <div className="space-y-4">
                       {/* Tổng quan */}
                       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4">
                         <div className="text-sm text-gray-500 mb-2">Điểm KPI lãnh đạo = (a + b + c + d + đ + e) / 6 × 70</div>
+                        {ddeTheoQuy(thang, nam) && (
+                          <div className="text-xs text-gray-500 mb-2">
+                            Nguồn d, đ, e: phiếu {nhanKyDDE(thang, nam)} (kê một lần cho cả quý — Mẫu 02B, CV 21169)
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-gray-500">Trạng thái:</span>
                           <StatusBadge status={ddeData.trang_thai as any} />

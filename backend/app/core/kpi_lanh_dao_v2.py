@@ -41,6 +41,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
+from app.core.ky_tieu_chi import thang_neo_dde
 from app.models.leader_kpi import DanhGiaDDE
 from app.models.phan_cong_phu_trach import PhanCongPhuTrach
 from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
@@ -389,6 +390,10 @@ async def _get_dde(
                   rơi xuống giá trị tự đánh giá. KHÔNG ảnh hưởng engine
                   chính thức (vẫn DA_PHE_DUYET only).
     """
+    # CV 21169: từ Q3/2026 d/đ/e kê một lần cho cả quý, phiếu neo ở tháng cuối
+    # quý → cả ba tháng đọc chung bản ghi neo.
+    thang = thang_neo_dde(thang, nam)
+
     if tam_tinh:
         statuses = ("NHAP", "CHO_PHE_DUYET", "DA_PHE_DUYET")
         stmt = select(DanhGiaDDE).where(

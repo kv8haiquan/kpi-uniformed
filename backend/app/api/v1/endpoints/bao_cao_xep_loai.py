@@ -36,6 +36,7 @@ from app.core.ky_tieu_chi import (
     nhan_ky,
     quy_cua_thang,
     thang_neo,
+    thang_neo_dde,
 )
 from app.models.user_org import CongChuc, DonVi, LoaiDonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_assessment import DanhGiaThang
@@ -547,10 +548,11 @@ async def tinh_diem_lanh_dao(
         # HĐ 111: KPI = (a + b + c) / 3 — bỏ qua d/đ/e
         kpi_ratio = (a + b + c) / Decimal("3")
     else:
-        # Lãnh đạo: lấy d/đ/e từ danh_gia_dde (đã phê duyệt)
+        # Lãnh đạo: lấy d/đ/e từ danh_gia_dde (đã phê duyệt).
+        # CV 21169: từ Q3/2026 phiếu d/đ/e neo ở tháng cuối quý.
         dde_stmt = select(DanhGiaDDE).where(
             DanhGiaDDE.cong_chuc_id == cong_chuc_id,
-            DanhGiaDDE.thang == thang,
+            DanhGiaDDE.thang == thang_neo_dde(thang, nam),
             DanhGiaDDE.nam == nam,
             DanhGiaDDE.trang_thai == TrangThaiDDE.DA_PHE_DUYET.value,
         )

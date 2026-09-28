@@ -7,11 +7,150 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `11791c7` |
-| **Ngắn** | `11791c7` |
-| **Nhánh nguồn** | `feature/kpi-sua-lech-diem-quy` (fast-forward thẳng từ `e933380`) |
-| **Ngày ghi mốc** | 22/09/2026 10:13 |
-| **Alembic** | `kpi_tc_theo_quy_20260918` — **KHÔNG migration mới** |
+| **Commit** | `60b8932` |
+| **Ngắn** | `60b8932` |
+| **Nhánh nguồn** | `feature/kpi-phieu-tong-hop` (fast-forward thẳng từ `fe71cea`) |
+| **Ngày ghi mốc** | 29/09/2026 11:42 |
+| **Alembic** | `kpi_dde_theo_quy_20260928` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — xem tổng hợp phiếu Mẫu 02 toàn Chi cục (chỉ đọc).**
+
+Quyền xem phiếu đánh giá quý xưa nay bám theo phạm vi DUYỆT, nên ai không duyệt
+phiếu của người khác thì không xem được phiếu người đó. Đo trên prod 28/09: trong
+**450 phiếu quý III, 439 phiếu chỉ mỗi Trưởng đơn vị của người đó nhìn thấy**; Chi
+cục trưởng xem được 7; TCCB — nơi phải tổng hợp hồ sơ nộp trước ngày 23 tháng cuối
+quý — không xem được phiếu nào.
+
+Mở quyền **XEM (CHỈ ĐỌC)** toàn Chi cục cho **CCT, PCCT, TCCB** và cờ
+`can_view_all_units`, gom về một chỗ duy nhất `app/core/quyen_xem_phieu.py`:
+
+- `in_bang_ke._load_cc_cho_in_boi_tdv`: nhóm này tải được phiếu + bảng kê của MỌI
+  công chức (hai endpoint phiếu THÁNG dùng chung hàm quyền nên mở theo).
+- `GET /phieu-danh-gia-quy/toan-chi-cuc` và `.../export` — lọc theo đơn vị, trạng
+  thái, xếp loại, tìm theo tên/mã; số đếm tính trên TOÀN BỘ kết quả lọc; Excel một
+  sheet 17 cột.
+- Trang `/phieu-tong-hop` — xem thẳng nội dung Mẫu 02 không phải tải .docx; mục
+  "Tổng hợp phiếu 02" trên sidebar, cùng nhóm quyền với Đối soát đánh giá.
+
+> **CỐ Ý KHÔNG mở cho Trưởng đơn vị xem đơn vị khác** — phiếu chứa nhận xét cá nhân
+> và phần "hạn chế, khuyết điểm". Quyết định 29/09; mở thêm sau chỉ là một dòng
+> trong `quyen_xem_phieu.py`.
+
+> **Quyền DUYỆT KHÔNG đụng tới:** `_co_quyen_duyet` giữ nguyên, có test khoá lại.
+> Trang tổng hợp không có thao tác ghi nào.
+
+> **Người CHƯA soạn phiếu vẫn có một dòng** (trạng thái NHAP, `id = null`) — đây là
+> nhóm TCCB cần thấy nhất khi đi đòi hồ sơ, không được lọc mất.
+
+Sửa kèm một lỗi phát hiện khi viết test: lọc người "không thuộc diện đánh giá" theo
+**mã vai trò** (`TCCB`, `SUPER_ADMIN`) để lọt tài khoản quản trị vào bảng, vì tài
+khoản đó mang mã `ADMIN` còn cấp bậc mới là `SUPER_ADMIN`. Đã đổi sang lọc theo
+**cấp bậc**. `doi_soat_danh_gia.py` vẫn lọc theo cách cũ → nhiều khả năng tài khoản
+admin đang lọt vào bảng đối soát; chưa sửa, chờ xác nhận.
+
+Kiểm chứng: `test_phieu_tong_hop.py` **12/12 PASS** (toàn bộ chỉ đọc); toàn bộ
+backend **154 PASS / 2 FAIL** (hai test đỏ sẵn từ trước); `tsc --noEmit` sạch; build
+Next.js PASS. Đo trên bản sao dữ liệu prod: bảng tổng hợp **542 dòng / 0,19s**,
+Excel **109 KB / 0,33s**. Sau phát hành: API không token trả 401 đúng như mong đợi.
+
+Ảnh hưởng dữ liệu đang chạy: **KHÔNG sửa dòng nào, không migration** — mọi đường mới
+đều là đọc.
+
+Còn nợ: tải hàng loạt .docx theo ZIP; trang Đối soát mới chỉ có theo THÁNG trong khi
+từ Q3/2026 kỳ đánh giá đã sang quý.
+
+### Mốc trước — `67bda67`
+
+Nội dung: **KPI — lãnh đạo kê d/đ/e một lần cho cả quý (Mẫu 02B, CV 21169).**
+
+Mẫu 02B kèm công văn chỉ có MỘT ô cho mỗi chỉ số d/đ/e trong cả quý, trong khi
+phần mềm bắt lãnh đạo kê ba lần mỗi quý rồi lấy **MIN ba tháng** khi tính điểm quý
+— quy ước nội bộ, không có trong công văn, khiến một tháng 50% kéo cả quý xuống
+50% dù hai tháng kia đạt 100%.
+
+Từ **Quý III/2026** (mốc `DDE_THEO_QUY_TU`, dời mốc là quay lui được), phiếu d/đ/e
+của quý **neo vào bản ghi `danh_gia_dde` của tháng cuối quý** (T3/T6/T9/T12); hai
+tháng còn lại đọc xuyên sang. Điểm quý lấy thẳng giá trị phiếu quý, **không còn
+MIN**; kỳ trước mốc giữ nguyên MIN. Mọi điểm đọc (điểm quý, điểm KPI tháng của
+lãnh đạo V1+V2, báo cáo, xuất Excel) đều đi qua `thang_neo_dde`.
+
+> **CHỐT CHẶN `BIZ_008`:** duyệt / trả lại trên bản ghi KHÔNG phải tháng neo bị từ
+> chối. Nếu không, duyệt một bản tháng 7 sẽ chẳng ảnh hưởng gì tới điểm quý mà
+> người duyệt vẫn tưởng là đã xong.
+
+> **KHÔNG FALLBACK (quyết định 28/09):** thiếu phiếu quý thì d/đ/e lấy mặc định
+> 100%, KHÔNG lùi về đọc bản tháng 7/8. Chỗ hở phải biết: lãnh đạo có bản tháng đã
+> duyệt mang 50% rồi không kê phiếu quý sẽ được 100% thay vì 50% như cách MIN cũ.
+> Đo ngày 28/09: **không ai** đang ở tình huống này. Bù lại bằng việc nhắc kê phiếu
+> quý, không bằng fallback tự động.
+
+**Migration cần thao tác tay trước khi chạy:** bảng `danh_gia_dde` thuộc sở hữu
+`postgres` chứ không phải `kpi_user` (17/37 bảng public như vậy), Alembic chạy bằng
+`kpi_user` sẽ dừng với `must be owner of table`. Đã chạy trước khi triển khai:
+`ALTER TABLE danh_gia_dde OWNER TO kpi_user;` — 206 dòng dữ liệu nguyên vẹn.
+
+Kiểm chứng: `test_dde_theo_quy.py` 9/9 PASS; toàn bộ backend 142 PASS / 2 FAIL (hai
+test đỏ sẵn từ trước, đã đối chứng bằng cách cất thay đổi đi chạy lại); FE
+`ky-tieu-chi.test.ts` 13/13 PASS; build Next.js PASS. **Đối chiếu điểm quý của toàn
+bộ 55 lãnh đạo trước/sau thay đổi ở quý I, II, III/2026 trên bản sao dữ liệu: 0
+người đổi điểm.** Đo lại trên chính production sau khi phát hành: 24 lãnh đạo có
+d/đ/e quý III đã duyệt, **0 người lệch**.
+
+Ảnh hưởng dữ liệu đang chạy: **không sửa dòng nào.** Migration chỉ thêm một cột mặc
+định `false`. Các bản T9 sẵn có trở thành phiếu quý III luôn — không ai phải nhập
+lại (cột cờ `la_phieu_dde_quy` chỉ bật khi ghi mới; việc đọc dựa vào THÁNG NEO chứ
+không dựa vào cờ). Dữ liệu d/đ/e theo tháng của T7/T8 giữ nguyên để tra cứu.
+
+Việc phải làm sau phát hành: nhắc **18 lãnh đạo** có bản T7/T8 nhưng chưa có bản T9
+kê phiếu quý III cho đủ hồ sơ; báo người duyệt biết bản T7 của 20ZZ-0231 (đ = 50,
+đang chờ duyệt) nay không duyệt được nữa và không còn được tính — người này cần kê
+lại phiếu quý III.
+
+### Mốc trước — `08cf400`
+
+Nội dung: **KPI — kê khai có ngày thực hiện từ 16/9/2026 tính vào quý IV.**
+
+Hồ sơ đánh giá quý phải nộp ngày 23 của tháng cuối quý (CV 21169), nên công việc
+làm sau mốc chốt số liệu không kịp vào hồ sơ quý đó. Quyết định của Chi cục: kê
+khai có **NGÀY THỰC HIỆN** từ 16/9/2026 trở đi tính sang quý IV.
+
+**Phạm vi cố ý hẹp** (quyết định 22/09):
+- Chỉ phần điểm tính từ KÊ KHAI CÔNG VIỆC (a/b/c) đi theo mốc ngày — cũng là phần
+  điểm lãnh đạo cộng SP cấp dưới.
+- Điểm **THÁNG 9 giữ nguyên trọn 1–30/9** để tra cứu.
+- Không đụng d/đ/e, tiêu chí chung, HĐLĐ 111 (điểm từ VB714 theo tháng).
+- Một lần cho Q3→Q4/2026; các quý khác vẫn chia theo tháng — có test khoá lại.
+
+Cách làm: `cac_thang_ke_khai_cua_quy(quy, nam)` trả (tháng, từ ngày, đến ngày) —
+quý III ra `[(7,·,·), (8,·,·), (9, ·, 15/9)]`, quý IV ra `[(9, 16/9, ·), (10..12)]`.
+Các hàm tính nhận thêm cửa sổ ngày: `tinh_diem_kpi_70`/`_v2`,
+`tinh_diem_kpi_70_lanh_dao`, `calc_kpi_lanh_dao_v2`.
+
+> **BẢN THIẾU NGÀY THỰC HIỆN — quyết định phải nhớ:** 16 bản của tháng 9/2026 bỏ
+> trống trường này (trường không bắt buộc nhập). Chúng được giữ ở **quý GỐC**:
+> lọt vào vế "đến ngày" và bị loại khỏi vế "từ ngày". Nếu lọc cứng theo ngày ở cả
+> hai vế thì số bản đó rơi khỏi CẢ HAI quý và biến mất khỏi mọi bảng điểm mà
+> không ai phát hiện.
+
+Tháng 9 khi chuyển sang quý IV vẫn tôn trọng thai sản / chưa về Chi cục của chính
+tháng đó, nhưng KHÔNG cộng vào `so_thang_thuc_te` — nếu không, mẫu số điểm tiêu
+chí chung quý IV bị chia cho 4 tháng thay vì 3. Kèm ghi chú hiển thị ở cả hai quý
+để không ai tưởng điểm bị tính sai.
+
+Kiểm chứng: 6 test mới, then chốt là ca "SP nửa đầu + SP nửa sau = SP trọn tháng"
+chạy trên 15 công chức (không rơi bản nào) và ca "bản thiếu ngày ở lại quý cũ".
+Đo tay: 20ZZ-0315 có 11.705,2 SP tháng 9 đều thực hiện từ 16/9 → chuyển trọn sang
+quý IV. `DB_NAME=kpi_haiquan_test pytest tests/` → 133 passed (2 test đỏ sẵn có),
+chạy lại trên bản sao dữ liệu ngày 28/09 trước khi phát hành.
+
+Diện ảnh hưởng: **640 bản kê khai của 131 công chức** chuyển từ quý III sang quý
+IV. Báo cáo xếp loại quý và phiếu in quý tự theo mốc mới vì dùng chung hàm tính.
+Lúc phát hành, 13 báo cáo xếp loại quý III đều còn ở trạng thái NHAP nên không có
+hồ sơ đã chốt nào bị đổi số.
+
+Ảnh hưởng dữ liệu đang chạy: không sửa dòng nào — chỉ đổi cách gom khi tính.
+
+### Mốc trước — `11791c7`
 
 Nội dung: **KPI — sửa ba sai lệch của điểm quý, phát hiện khi rà lại trên dữ liệu thật.**
 
@@ -466,6 +605,9 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
 | 22/09/2026 | `9b49390` | KPI: bộ chọn kỳ Tháng 1–7 + Quý III + Quý IV ở `/danh-gia`, `/danh-gia-v2`, `/danh-gia/tu-cham-diem`; mặc định quý hiện hành; chế độ Quý hiện điểm quý lũy kế + bảng ba tháng; cờ `theo_dung_thang` cho 2 endpoint ĐỌC để xem lại số liệu tháng 7 (đường ghi không nhận cờ); tháng lịch sử ở trang tự chấm để CHỈ ĐỌC — **không migration** |
 | 22/09/2026 | `11791c7` | KPI: sửa điểm quý HĐLĐ 111 bỏ sót tháng tự chấm (ca 20ZZ-0531: 62,7667 → 66,3833), tiêu chí quý không còn hiện 0/30 cho 97% người dùng, tab Tạm tính/Chính thức có tác dụng với điểm KPI quý; bỏ làm tròn khi tính; bỏ bảng chi tiết từng tháng — **không migration** |
+| 29/09/2026 | `60b8932` | KPI: xem **tổng hợp phiếu Mẫu 02 toàn Chi cục** (chỉ đọc) cho CCT/PCCT/TCCB/`can_view_all_units` — trang `/phieu-tong-hop` + xuất Excel + tải bản in của mọi CC; TDV vẫn chỉ đơn vị mình; quyền duyệt không đổi — **không migration** |
+| 28/09/2026 | `67bda67` | KPI: lãnh đạo kê d/đ/e **một lần cho cả quý** (Mẫu 02B, CV 21169) từ Q3/2026 — phiếu neo ở tháng cuối quý, bỏ MIN ba tháng, chốt chặn `BIZ_008`, KHÔNG fallback về T7/T8; 0/55 lãnh đạo đổi điểm; **migration `kpi_dde_theo_quy_20260928`** (thêm 1 cột) + `ALTER TABLE danh_gia_dde OWNER TO kpi_user` chạy tay trước |
+| 28/09/2026 | `08cf400` | KPI: kê khai có NGÀY THỰC HIỆN từ 16/9/2026 tính vào quý IV (640 bản của 131 công chức); chỉ phần a/b/c đi theo mốc, điểm tháng và d/đ/e giữ nguyên; bản thiếu ngày ở lại quý gốc — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

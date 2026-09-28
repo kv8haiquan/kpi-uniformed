@@ -8,7 +8,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DDE_THEO_QUY_TU,
   THANG_XEM_LAI_DEN,
+  cacThangApDungDDE,
+  ddeTheoQuy,
+  nhanKyDDE,
+  thangNeoDDE,
   conXemLaiTheoThang,
   danhSachKyXemLai,
   kyMacDinh,
@@ -100,5 +105,30 @@ describe('tháng lịch sử — màn hình phải khoá form', () => {
   it('tháng neo và quý khớp nhau', () => {
     expect(thangNeo(7, 2026)).toBe(9);
     expect(thangCuoiQuy(quyCuaThang(7))).toBe(9);
+  });
+});
+
+describe('kỳ kê d/đ/e của lãnh đạo (Mẫu 02B, CV 21169)', () => {
+  it('mốc khớp backend: từ Quý III/2026 kê theo quý', () => {
+    expect(DDE_THEO_QUY_TU).toEqual({ nam: 2026, quy: 3 });
+
+    for (const thang of [1, 4, 5, 6]) {
+      expect(ddeTheoQuy(thang, 2026)).toBe(false);
+      expect(thangNeoDDE(thang, 2026)).toBe(thang);
+      expect(cacThangApDungDDE(thang, 2026)).toEqual([thang]);
+      expect(nhanKyDDE(thang, 2026)).toBe(`Tháng ${thang}/2026`);
+    }
+    expect(ddeTheoQuy(12, 2025)).toBe(false);
+  });
+
+  it('ba tháng của quý neo về tháng cuối quý', () => {
+    for (const thang of [7, 8, 9]) {
+      expect(ddeTheoQuy(thang, 2026)).toBe(true);
+      expect(thangNeoDDE(thang, 2026)).toBe(9);
+      expect(cacThangApDungDDE(thang, 2026)).toEqual([7, 8, 9]);
+      expect(nhanKyDDE(thang, 2026)).toBe('Quý 3/2026');
+    }
+    expect(thangNeoDDE(10, 2026)).toBe(12);
+    expect(thangNeoDDE(1, 2027)).toBe(3);
   });
 });

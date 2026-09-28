@@ -211,3 +211,65 @@ def co_moc_chuyen_ky(quy: int, nam: int) -> bool:
     return _moc_cua_quy(quy, nam) is not None or (
         quy > 1 and _moc_cua_quy(quy - 1, nam) is not None
     )
+
+
+# =============================================================================
+# KỲ KÊ KHAI d/đ/e CỦA LÃNH ĐẠO (28/09/2026)
+# -----------------------------------------------------------------------------
+# Mẫu 02B kèm CV 21169 chỉ có MỘT ô cho mỗi chỉ số d, đ, e trong cả quý. Trước
+# đây phần mềm bắt lãnh đạo kê ba lần mỗi quý rồi lấy MIN ba tháng — quy ước nội
+# bộ, không có trong công văn, và khắt khe: một tháng 50% kéo cả quý xuống 50%.
+#
+# Cách làm giống tiêu chí chung: phiếu d/đ/e của quý NEO vào bản ghi
+# `danh_gia_dde` của THÁNG CUỐI QUÝ; hai tháng còn lại đọc xuyên sang.
+# Mốc riêng để có thể bật/tắt độc lập với tiêu chí chung.
+# =============================================================================
+
+# (năm, quý) — mọi kỳ TỪ mốc này trở đi kê d/đ/e theo QUÝ. Hồi tố quý III/2026:
+# tháng neo là T9, mà T9 đã có sẵn 19 bản nên chúng thành phiếu quý luôn.
+DDE_THEO_QUY_TU: Tuple[int, int] = (2026, 3)
+
+
+def dde_theo_quy(thang: int, nam: int) -> bool:
+    """True nếu kỳ này kê d/đ/e theo QUÝ."""
+    return (int(nam), quy_cua_thang(thang)) >= DDE_THEO_QUY_TU
+
+
+def thang_neo_dde(thang: int, nam: int) -> int:
+    """Tháng chứa phiếu d/đ/e của kỳ (kỳ quý → tháng cuối quý)."""
+    if dde_theo_quy(thang, nam):
+        return thang_cuoi_quy(quy_cua_thang(thang))
+    return int(thang)
+
+
+def la_thang_neo_dde(thang: int, nam: int) -> bool:
+    """True nếu bản ghi tháng này là nơi kê d/đ/e của kỳ."""
+    return int(thang) == thang_neo_dde(thang, nam)
+
+
+def cac_thang_ap_dung_dde(thang: int, nam: int) -> List[int]:
+    """Các tháng dùng chung phiếu d/đ/e của kỳ."""
+    if dde_theo_quy(thang, nam):
+        return cac_thang_trong_quy(quy_cua_thang(thang))
+    return [int(thang)]
+
+
+def nhan_ky_dde(thang: int, nam: int) -> str:
+    """Nhãn kỳ d/đ/e: 'Quý 3/2026' hoặc 'Tháng 5/2026'."""
+    if dde_theo_quy(thang, nam):
+        return f"Quý {quy_cua_thang(thang)}/{nam}"
+    return f"Tháng {thang}/{nam}"
+
+
+def thong_tin_ky_dde(thang: int, nam: int) -> dict:
+    """Gói thông tin kỳ d/đ/e trả cho FE."""
+    theo_quy = dde_theo_quy(thang, nam)
+    return {
+        "ky": "QUY" if theo_quy else "THANG",
+        "quy": quy_cua_thang(thang) if theo_quy else None,
+        "thang_neo": thang_neo_dde(thang, nam),
+        "cac_thang_ap_dung": (
+            cac_thang_trong_quy(quy_cua_thang(thang)) if theo_quy else [int(thang)]
+        ),
+        "nhan_ky": nhan_ky(thang, nam) if theo_quy else f"Tháng {thang}/{nam}",
+    }

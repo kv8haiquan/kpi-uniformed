@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import ActiveUserDep, DatabaseDep
 from app.core.ky_tieu_chi import la_thang_neo
+from app.core.quyen_xem_phieu import xem_duoc_toan_chi_cuc
 from app.models.kpi_assessment import (
     DanhGiaThang,
     TieuChiChungDanhGia,
@@ -41,7 +42,7 @@ from app.models.kpi_assessment import (
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD
 from app.models.phieu_danh_gia import PhieuDanhGiaQuy, TrangThaiPhieuDanhGia
-from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
+from app.models.user_org import CapBacVaiTro, CongChuc, DonVi, VaiTro
 from app.schemas.common import error_response, success_response
 from app.schemas.phieu_danh_gia import (
     ChiTietThangThieu,
@@ -50,6 +51,7 @@ from app.schemas.phieu_danh_gia import (
     PheDuyetPhieuRequest,
     PhieuChoPheDuyetItem,
     PhieuDanhGiaQuyResponse,
+    PhieuTongHopItem,
     TraLaiPhieuRequest,
     TuChoiPhieuRequest,
     UpsertPhieuQuyRequest,
@@ -702,6 +704,321 @@ async def tra_lai_phieu(
     await db.flush()
     phieu = await _lay_phieu_after_mutate(db, phieu.id)
     return success_response(data=_serialize(phieu), message="Đã trả lại phiếu")
+
+
+# =============================================================================
+# ENDPOINT — TỔNG HỢP PHIẾU TOÀN CHI CỤC (CCT / PCCT / TCCB — CHỈ ĐỌC)
+# =============================================================================
+
+#: Cấp bậc KHÔNG có phiếu đánh giá quý:
+#:  - CHI_CUC_TRUONG: không ai duyệt phiếu của CCT nên CCT không dùng phiếu này.
+#:  - TCCB, SUPER_ADMIN: không thuộc diện đánh giá KPI.
+#: Lọc theo CẤP BẬC chứ không theo mã vai trò — tài khoản quản trị mang mã
+#: `ADMIN` nhưng cấp bậc `SUPER_ADMIN`, lọc theo mã sẽ để lọt nó vào bảng.
+CAP_BAC_KHONG_CO_PHIEU = (
+    CapBacVaiTro.CHI_CUC_TRUONG,
+    CapBacVaiTro.TCCB,
+    CapBacVaiTro.SUPER_ADMIN,
+)
+
+#: Nhãn hiển thị của mã xếp loại (Nghị định 335/2025/NĐ-CP).
+NHAN_XEP_LOAI = {
+    "HTXSNV": "Hoàn thành xuất sắc nhiệm vụ",
+    "HTTNV": "Hoàn thành tốt nhiệm vụ",
+    "HTNV": "Hoàn thành nhiệm vụ",
+    "KHTNV": "Không hoàn thành nhiệm vụ",
+}
+
+NHAN_TRANG_THAI = {
+    "NHAP": "Chưa gửi",
+    "CHO_PHE_DUYET": "Chờ duyệt",
+    "DA_PHE_DUYET": "Đã duyệt",
+    "BI_TU_CHOI": "Bị từ chối",
+}
+
+
+def _chan_neu_khong_duoc_xem_toan_chi_cuc(user: CongChuc) -> None:
+    """Chốt chặn cho hai endpoint tổng hợp. Xem `app/core/quyen_xem_phieu.py`."""
+    if not xem_duoc_toan_chi_cuc(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=error_response(
+                code="PHIEU_010",
+                message=(
+                    "Chỉ Chi cục trưởng, Phó Chi cục trưởng, TCCB hoặc tài khoản "
+                    "được cấp quyền xem toàn đơn vị mới xem được tổng hợp phiếu"
+                ),
+            ),
+        )
+
+
+async def _thu_thap_phieu_toan_chi_cuc(
+    db,
+    quy: int,
+    nam: int,
+    don_vi_id: Optional[UUID] = None,
+    trang_thai: Optional[str] = None,
+    xep_loai: Optional[str] = None,
+    tim: Optional[str] = None,
+) -> list[PhieuTongHopItem]:
+    """
+    Dựng bảng tổng hợp: MỌI công chức thuộc diện đánh giá, kèm phiếu của họ.
+
+    Người CHƯA soạn phiếu vẫn có một dòng (trạng thái NHAP, `id=None`) — không
+    được lọc họ đi, vì đúng nhóm này mới là thứ TCCB phải đi đòi trước hạn nộp.
+    Bộ lọc áp SAU khi ghép, để dòng giả cũng lọc được theo đơn vị và trạng thái.
+    """
+    cc_stmt = (
+        select(CongChuc)
+        .options(
+            selectinload(CongChuc.don_vi),
+            selectinload(CongChuc.vai_tro),
+        )
+        .join(VaiTro, VaiTro.id == CongChuc.vai_tro_id)
+        .where(CongChuc.is_active == True)
+        .where(CongChuc.is_deleted == False)
+        .where(VaiTro.cap_bac.notin_(CAP_BAC_KHONG_CO_PHIEU))
+    )
+    if don_vi_id is not None:
+        cc_stmt = cc_stmt.where(CongChuc.don_vi_id == don_vi_id)
+    all_cc = (await db.execute(cc_stmt)).scalars().all()
+    if not all_cc:
+        return []
+
+    phieu_stmt = (
+        select(PhieuDanhGiaQuy)
+        .options(selectinload(PhieuDanhGiaQuy.nguoi_phe_duyet))
+        .where(PhieuDanhGiaQuy.quy == quy)
+        .where(PhieuDanhGiaQuy.nam == nam)
+        .where(PhieuDanhGiaQuy.cong_chuc_id.in_([c.id for c in all_cc]))
+    )
+    phieu_by_cc = {p.cong_chuc_id: p for p in (await db.execute(phieu_stmt)).scalars().all()}
+
+    tim_chuan = (tim or "").strip().lower()
+    items: list[PhieuTongHopItem] = []
+    for cc in all_cc:
+        p = phieu_by_cc.get(cc.id)
+        tt = p.trang_thai if p else TrangThaiPhieuDanhGia.NHAP.value
+
+        if trang_thai and tt != trang_thai:
+            continue
+        if xep_loai and (p is None or p.quyet_dinh_xep_loai != xep_loai):
+            continue
+        if tim_chuan and tim_chuan not in (cc.ho_ten or "").lower() \
+                and tim_chuan not in (cc.ma_cc or "").lower():
+            continue
+
+        items.append(PhieuTongHopItem(
+            id=p.id if p else None,
+            cong_chuc_id=cc.id,
+            ma_cc=cc.ma_cc,
+            ho_ten=cc.ho_ten,
+            chuc_vu=cc.chuc_vu,
+            don_vi_id=cc.don_vi_id,
+            don_vi_ten=cc.don_vi.ten_don_vi if cc.don_vi else None,
+            vai_tro=cc.vai_tro.ma_vai_tro if cc.vai_tro else None,
+            is_lanh_dao=bool(cc.is_lanh_dao),
+            quy=quy,
+            nam=nam,
+            trang_thai=tt,
+            ngay_gui_duyet=p.ngay_gui_duyet if p else None,
+            ngay_phe_duyet=p.ngay_phe_duyet if p else None,
+            nguoi_phe_duyet_ten=(
+                p.nguoi_phe_duyet.ho_ten if p and p.nguoi_phe_duyet else None
+            ),
+            uu_diem=p.uu_diem if p else None,
+            han_che=p.han_che if p else None,
+            y_kien_lanh_dao=p.y_kien_lanh_dao if p else None,
+            tu_de_xuat_xep_loai=p.tu_de_xuat_xep_loai if p else None,
+            de_xuat_xep_loai=p.de_xuat_xep_loai if p else None,
+            quyet_dinh_xep_loai=p.quyet_dinh_xep_loai if p else None,
+            y_kien_cap_tham_quyen=p.y_kien_cap_tham_quyen if p else None,
+            dd_quy_ke_khai=p.dd_quy_ke_khai if p else None,
+            dd_quy_ghi_chu=p.dd_quy_ghi_chu if p else None,
+            dd_quy_phe_duyet=p.dd_quy_phe_duyet if p else None,
+        ))
+
+    # Sắp xếp theo đơn vị rồi tới họ tên — bảng trải 15 đơn vị nên gom theo đơn
+    # vị dễ rà hơn là gom theo trạng thái.
+    items.sort(key=lambda it: ((it.don_vi_ten or "zzz"), it.ho_ten or ""))
+    return items
+
+
+@router.get("/toan-chi-cuc", response_model=dict)
+async def get_phieu_toan_chi_cuc(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    quy: int = Query(..., ge=1, le=4),
+    nam: int = Query(..., ge=2020, le=2100),
+    don_vi_id: Optional[UUID] = Query(None, description="Lọc theo đơn vị"),
+    trang_thai: Optional[str] = Query(
+        None, description="NHAP | CHO_PHE_DUYET | DA_PHE_DUYET | BI_TU_CHOI"
+    ),
+    xep_loai: Optional[str] = Query(
+        None, description="Lọc theo mức xếp loại ĐÃ QUYẾT ĐỊNH: HTXSNV|HTTNV|HTNV|KHTNV"
+    ),
+    tim: Optional[str] = Query(None, description="Tìm theo họ tên hoặc mã công chức"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=1000),
+) -> dict:
+    """
+    Tổng hợp phiếu đánh giá quý (Mẫu 02A/02B) của TOÀN CHI CỤC — CHỈ ĐỌC.
+
+    Quyền: CCT, PCCT, TCCB, tài khoản có cờ `can_view_all_units`.
+    KHÔNG kéo theo quyền duyệt: endpoint này không sửa gì, và việc duyệt vẫn do
+    `_co_quyen_duyet` quyết định như cũ.
+
+    Trả kèm `tong_hop` — đếm theo trạng thái và theo mức xếp loại trên TOÀN BỘ
+    kết quả lọc (không phải chỉ trang hiện tại), để trang tổng hợp hiện được số
+    liệu mà không phải tải hết về.
+    """
+    _chan_neu_khong_duoc_xem_toan_chi_cuc(current_user)
+
+    if trang_thai is not None and trang_thai not in {t.value for t in TrangThaiPhieuDanhGia}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="PHIEU_009", message=f"Trạng thái không hợp lệ: {trang_thai}"
+            ),
+        )
+    if xep_loai is not None and xep_loai not in NHAN_XEP_LOAI:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(
+                code="PHIEU_011", message=f"Mức xếp loại không hợp lệ: {xep_loai}"
+            ),
+        )
+
+    items = await _thu_thap_phieu_toan_chi_cuc(
+        db, quy, nam, don_vi_id, trang_thai, xep_loai, tim
+    )
+
+    tong_hop = {
+        "tong_so": len(items),
+        "theo_trang_thai": {t.value: 0 for t in TrangThaiPhieuDanhGia},
+        "theo_xep_loai": {ma: 0 for ma in NHAN_XEP_LOAI},
+        "chua_quyet_dinh_xep_loai": 0,
+    }
+    for it in items:
+        tong_hop["theo_trang_thai"][it.trang_thai] = (
+            tong_hop["theo_trang_thai"].get(it.trang_thai, 0) + 1
+        )
+        if it.quyet_dinh_xep_loai in tong_hop["theo_xep_loai"]:
+            tong_hop["theo_xep_loai"][it.quyet_dinh_xep_loai] += 1
+        else:
+            tong_hop["chua_quyet_dinh_xep_loai"] += 1
+
+    total = len(items)
+    start = (page - 1) * page_size
+    trang = items[start:start + page_size]
+
+    return success_response(
+        data={
+            "items": [it.model_dump(mode="json") for it in trang],
+            "tong_hop": tong_hop,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_items": total,
+                "total_pages": (total + page_size - 1) // page_size if page_size else 0,
+            },
+        }
+    )
+
+
+@router.get("/toan-chi-cuc/export")
+async def export_phieu_toan_chi_cuc(
+    db: DatabaseDep,
+    current_user: ActiveUserDep,
+    quy: int = Query(..., ge=1, le=4),
+    nam: int = Query(..., ge=2020, le=2100),
+    don_vi_id: Optional[UUID] = Query(None),
+    trang_thai: Optional[str] = Query(None),
+    xep_loai: Optional[str] = Query(None),
+    tim: Optional[str] = Query(None),
+):
+    """
+    Xuất Excel bảng tổng hợp phiếu quý toàn Chi cục (một sheet phẳng).
+
+    Dùng đúng bộ lọc của `/toan-chi-cuc` nhưng KHÔNG phân trang — xuất trọn bộ
+    kết quả lọc để TCCB tổng hợp hồ sơ.
+    """
+    _chan_neu_khong_duoc_xem_toan_chi_cuc(current_user)
+
+    items = await _thu_thap_phieu_toan_chi_cuc(
+        db, quy, nam, don_vi_id, trang_thai, xep_loai, tim
+    )
+
+    # Lazy import — chỉ cần khi thực sự xuất file
+    import io as _io
+
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Phieu Q{quy}-{nam}"
+
+    tieu_de = [
+        "STT", "Mã CC", "Họ tên", "Chức vụ", "Đơn vị", "Vai trò",
+        "Trạng thái phiếu", "Ngày gửi", "Ngày duyệt", "Người duyệt",
+        "Ưu điểm", "Hạn chế, khuyết điểm",
+        "Tự đề xuất", "Đề xuất của người duyệt", "Quyết định xếp loại",
+        "Ý kiến người trực tiếp sử dụng", "Ý kiến cấp có thẩm quyền",
+    ]
+    ws.append([f"TỔNG HỢP PHIẾU ĐÁNH GIÁ, XẾP LOẠI QUÝ {quy}/{nam} (Mẫu 02A/02B)"])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(tieu_de))
+    ws["A1"].font = Font(bold=True, size=13)
+    ws["A1"].alignment = Alignment(horizontal="center")
+    ws.append([])
+    ws.append(tieu_de)
+    header_row = ws.max_row
+    fill = PatternFill("solid", fgColor="D9E1F2")
+    for c in range(1, len(tieu_de) + 1):
+        cell = ws.cell(row=header_row, column=c)
+        cell.font = Font(bold=True)
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    def _ngay(v) -> str:
+        return v.strftime("%d/%m/%Y %H:%M") if v else ""
+
+    for i, it in enumerate(items, start=1):
+        ws.append([
+            i,
+            it.ma_cc,
+            it.ho_ten,
+            it.chuc_vu or "",
+            it.don_vi_ten or "",
+            it.vai_tro or "",
+            NHAN_TRANG_THAI.get(it.trang_thai, it.trang_thai),
+            _ngay(it.ngay_gui_duyet),
+            _ngay(it.ngay_phe_duyet),
+            it.nguoi_phe_duyet_ten or "",
+            it.uu_diem or "",
+            it.han_che or "",
+            NHAN_XEP_LOAI.get(it.tu_de_xuat_xep_loai or "", ""),
+            NHAN_XEP_LOAI.get(it.de_xuat_xep_loai or "", ""),
+            NHAN_XEP_LOAI.get(it.quyet_dinh_xep_loai or "", ""),
+            it.y_kien_lanh_dao or "",
+            it.y_kien_cap_tham_quyen or "",
+        ])
+
+    widths = [5, 12, 26, 20, 28, 10, 15, 17, 17, 22, 50, 50, 24, 24, 24, 45, 45]
+    for idx, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=header_row, column=idx).column_letter].width = w
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"TongHopPhieu_Q{quy}_{nam}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # =============================================================================

@@ -35,6 +35,7 @@ from docx.shared import Pt
 
 from app.api.deps import DatabaseDep, ActiveUserDep
 from app.core.ky_tieu_chi import tc_theo_quy_cua_quy, thang_cuoi_quy, thang_neo
+from app.core.quyen_xem_phieu import xem_duoc_toan_chi_cuc
 from app.models.user_org import CapBacVaiTro, CongChuc, VaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.kpi_assessment import (
@@ -2200,6 +2201,9 @@ async def _load_cc_cho_in_boi_tdv(
     - TDV cùng đơn vị → tải được bảng in của CC / Phó ĐV trong đơn vị mình.
     - CCT → tải được bảng in của TDV / Phó CCT toàn chi cục.
     - Chính CC vẫn được tải bảng in của mình (phục vụ fallback).
+    - 29/09/2026: CCT / PCCT / TCCB / cờ `can_view_all_units` tải được bảng in
+      của MỌI công chức (chỉ đọc) — xem `app/core/quyen_xem_phieu.py`. Trước đó
+      TCCB không tải được phiếu nào trong khi vẫn phải tổng hợp hồ sơ quý.
     """
     stmt = (
         select(CongChuc)
@@ -2214,6 +2218,9 @@ async def _load_cc_cho_in_boi_tdv(
         raise HTTPException(status_code=404, detail="Không tìm thấy công chức đích")
 
     if nguoi_in.id == target_cc.id:
+        return target_cc
+
+    if xem_duoc_toan_chi_cuc(nguoi_in):
         return target_cc
 
     cb_nguoi = nguoi_in.vai_tro.cap_bac if nguoi_in.vai_tro else None

@@ -47,7 +47,13 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.ky_tieu_chi import cac_thang_ke_khai_cua_quy, co_moc_chuyen_ky, thang_neo
+from app.core.ky_tieu_chi import (
+    cac_thang_ke_khai_cua_quy,
+    co_moc_chuyen_ky,
+    dde_theo_quy,
+    thang_neo,
+    thang_neo_dde,
+)
 from app.models.kpi_assessment import DanhGiaThang
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import (
@@ -349,11 +355,15 @@ async def _lay_dde_thang(
     thang: int,
     nam: int,
 ) -> Optional[dict]:
-    """Lấy d/đ/e đã duyệt của 1 tháng (scale 0-1). Trả None nếu không có."""
+    """Lấy d/đ/e đã duyệt của 1 tháng (scale 0-1). Trả None nếu không có.
+
+    CV 21169 (Mẫu 02B): từ Q3/2026 d/đ/e kê MỘT LẦN cho cả quý, phiếu neo ở
+    tháng cuối quý → mọi tháng trong quý đọc chung bản ghi neo.
+    """
     stmt = (
         select(DanhGiaDDE)
         .where(DanhGiaDDE.cong_chuc_id == cong_chuc_id)
-        .where(DanhGiaDDE.thang == thang)
+        .where(DanhGiaDDE.thang == thang_neo_dde(thang, nam))
         .where(DanhGiaDDE.nam == nam)
         .where(DanhGiaDDE.trang_thai == TrangThaiDDE.DA_PHE_DUYET.value)
     )
@@ -723,10 +733,22 @@ async def tinh_diem_quy(
         b_quy = min(1.0, b_num / tong_mau_ld) if tong_mau_ld > 0 else 0.0
         c_quy = min(1.0, c_num / tong_mau_ld) if tong_mau_ld > 0 else 0.0
 
-        # d/đ/e QUÝ = MIN các tháng thực tế; NULL coi như 100% (tháng chưa có DDE)
-        d_quy = min((v if v is not None else 1.0) for v in d_values) if d_values else 1.0
-        dd_quy = min((v if v is not None else 1.0) for v in dd_values) if dd_values else 1.0
-        e_quy = min((v if v is not None else 1.0) for v in e_values) if e_values else 1.0
+        if dde_theo_quy(QUY_TO_THANG[quy][0], nam):
+            # CV 21169 (Mẫu 02B): d/đ/e kê MỘT LẦN cho cả quý → lấy thẳng phiếu
+            # quý (neo ở tháng cuối quý), KHÔNG còn MIN ba tháng. Cách lấy MIN
+            # là quy ước nội bộ cũ, không có trong công văn.
+            # Đọc ở tháng đầu quý cũng ra bản ghi neo (xem _lay_dde_thang), nên
+            # phiếu quý vẫn được tính kể cả khi tháng cuối quý bị loại (thai sản).
+            dde_quy = await _lay_dde_thang(db, cong_chuc_id, QUY_TO_THANG[quy][0], nam)
+            d_quy = dde_quy["d"] if dde_quy else 1.0
+            dd_quy = dde_quy["dd"] if dde_quy else 1.0
+            e_quy = dde_quy["e"] if dde_quy else 1.0
+        else:
+            # Kỳ trước mốc: giữ nguyên MIN các tháng thực tế;
+            # NULL coi như 100% (tháng chưa có DDE)
+            d_quy = min((v if v is not None else 1.0) for v in d_values) if d_values else 1.0
+            dd_quy = min((v if v is not None else 1.0) for v in dd_values) if dd_values else 1.0
+            e_quy = min((v if v is not None else 1.0) for v in e_values) if e_values else 1.0
 
         # Quy định mới: LĐ được kê khai lại đ cấp quý (chỉ nâng ≥ MIN).
         dd_quy_ke_khai = await _lay_dd_quy_ke_khai(db, cong_chuc_id, quy, nam, tam_tinh)

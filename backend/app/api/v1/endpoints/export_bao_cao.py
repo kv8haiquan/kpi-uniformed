@@ -42,7 +42,7 @@ from app.api.deps import DatabaseDep, ActiveUserDep, is_qldv
 from app.models.user_org import CongChuc, DonVi, VaiTro, CapBacVaiTro
 from app.models.kpi_submission import KeKhaiCongViec, TrangThaiKeKhai
 from app.models.leader_kpi import KeKhaiLanhDao, TrangThaiKeKhaiLD, TrangThaiHoanThanh
-from app.core.ky_tieu_chi import thang_neo
+from app.core.ky_tieu_chi import thang_neo, thang_neo_dde
 from app.models.kpi_assessment import DanhGiaThang, TieuChiChung, TieuChiChungDanhGia
 from app.api.v1.endpoints.bao_cao_xep_loai import (
     cap_nhat_chi_tiet_tu_du_lieu,
@@ -2853,7 +2853,7 @@ async def _load_dde_finals(db: AsyncSession, thang: int, nam: int) -> dict:
         FROM danh_gia_dde
         WHERE thang = :thang AND nam = :nam
               AND trang_thai IN ('CHO_PHE_DUYET', 'DA_PHE_DUYET')
-    """), {"thang": thang, "nam": nam})
+    """), {"thang": thang_neo_dde(thang, nam), "nam": nam})
 
     dde_by_cc = {}
     for row in result:
@@ -5002,6 +5002,9 @@ async def _get_data_03_quy(db: AsyncSession, quy: int, nam: int) -> list:
     from collections import defaultdict
 
     thang_list = QUY_TO_THANG[quy]
+    # CV 21169: từ Q3/2026 d/đ/e kê một lần cho cả quý — chỉ đọc phiếu quý
+    # (bản ghi tháng cuối quý), không gom bản theo tháng của kỳ cũ nữa.
+    thang_list_dde = sorted({thang_neo_dde(t, nam) for t in thang_list})
 
     # 1. Lấy danh sách LĐ (distinct, từ chi_tiet_xep_loai 3 tháng)
     ld_stmt = sa_text("""
@@ -5044,7 +5047,7 @@ async def _get_data_03_quy(db: AsyncSession, quy: int, nam: int) -> list:
               AND trang_thai IN ('CHO_PHE_DUYET', 'DA_PHE_DUYET')
     """).bindparams(bindparam('thang_list', expanding=True))
 
-    dde_result = await db.execute(dde_stmt, {"thang_list": thang_list, "nam": nam})
+    dde_result = await db.execute(dde_stmt, {"thang_list": thang_list_dde, "nam": nam})
 
     dde_by_cc = defaultdict(lambda: {
         "d_thang_tru": [], "dd_thang_tru": [], "e_thang_tru": [],

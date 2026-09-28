@@ -7,11 +7,58 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `08cf400` |
-| **Ngắn** | `08cf400` |
-| **Nhánh nguồn** | `feature/kpi-moc-ke-khai-quy4` (fast-forward thẳng từ `5af5086`) |
-| **Ngày ghi mốc** | 28/09/2026 10:23 |
-| **Alembic** | `kpi_tc_theo_quy_20260918` — **KHÔNG migration mới** |
+| **Commit** | `67bda67` |
+| **Ngắn** | `67bda67` |
+| **Nhánh nguồn** | `feature/kpi-dde-theo-quy` (fast-forward thẳng từ `e3b4f45`) |
+| **Ngày ghi mốc** | 28/09/2026 11:05 |
+| **Alembic** | `kpi_dde_theo_quy_20260928` — **CÓ migration mới** (thêm 1 cột) |
+
+Nội dung: **KPI — lãnh đạo kê d/đ/e một lần cho cả quý (Mẫu 02B, CV 21169).**
+
+Mẫu 02B kèm công văn chỉ có MỘT ô cho mỗi chỉ số d/đ/e trong cả quý, trong khi
+phần mềm bắt lãnh đạo kê ba lần mỗi quý rồi lấy **MIN ba tháng** khi tính điểm quý
+— quy ước nội bộ, không có trong công văn, khiến một tháng 50% kéo cả quý xuống
+50% dù hai tháng kia đạt 100%.
+
+Từ **Quý III/2026** (mốc `DDE_THEO_QUY_TU`, dời mốc là quay lui được), phiếu d/đ/e
+của quý **neo vào bản ghi `danh_gia_dde` của tháng cuối quý** (T3/T6/T9/T12); hai
+tháng còn lại đọc xuyên sang. Điểm quý lấy thẳng giá trị phiếu quý, **không còn
+MIN**; kỳ trước mốc giữ nguyên MIN. Mọi điểm đọc (điểm quý, điểm KPI tháng của
+lãnh đạo V1+V2, báo cáo, xuất Excel) đều đi qua `thang_neo_dde`.
+
+> **CHỐT CHẶN `BIZ_008`:** duyệt / trả lại trên bản ghi KHÔNG phải tháng neo bị từ
+> chối. Nếu không, duyệt một bản tháng 7 sẽ chẳng ảnh hưởng gì tới điểm quý mà
+> người duyệt vẫn tưởng là đã xong.
+
+> **KHÔNG FALLBACK (quyết định 28/09):** thiếu phiếu quý thì d/đ/e lấy mặc định
+> 100%, KHÔNG lùi về đọc bản tháng 7/8. Chỗ hở phải biết: lãnh đạo có bản tháng đã
+> duyệt mang 50% rồi không kê phiếu quý sẽ được 100% thay vì 50% như cách MIN cũ.
+> Đo ngày 28/09: **không ai** đang ở tình huống này. Bù lại bằng việc nhắc kê phiếu
+> quý, không bằng fallback tự động.
+
+**Migration cần thao tác tay trước khi chạy:** bảng `danh_gia_dde` thuộc sở hữu
+`postgres` chứ không phải `kpi_user` (17/37 bảng public như vậy), Alembic chạy bằng
+`kpi_user` sẽ dừng với `must be owner of table`. Đã chạy trước khi triển khai:
+`ALTER TABLE danh_gia_dde OWNER TO kpi_user;` — 206 dòng dữ liệu nguyên vẹn.
+
+Kiểm chứng: `test_dde_theo_quy.py` 9/9 PASS; toàn bộ backend 142 PASS / 2 FAIL (hai
+test đỏ sẵn từ trước, đã đối chứng bằng cách cất thay đổi đi chạy lại); FE
+`ky-tieu-chi.test.ts` 13/13 PASS; build Next.js PASS. **Đối chiếu điểm quý của toàn
+bộ 55 lãnh đạo trước/sau thay đổi ở quý I, II, III/2026 trên bản sao dữ liệu: 0
+người đổi điểm.** Đo lại trên chính production sau khi phát hành: 24 lãnh đạo có
+d/đ/e quý III đã duyệt, **0 người lệch**.
+
+Ảnh hưởng dữ liệu đang chạy: **không sửa dòng nào.** Migration chỉ thêm một cột mặc
+định `false`. Các bản T9 sẵn có trở thành phiếu quý III luôn — không ai phải nhập
+lại (cột cờ `la_phieu_dde_quy` chỉ bật khi ghi mới; việc đọc dựa vào THÁNG NEO chứ
+không dựa vào cờ). Dữ liệu d/đ/e theo tháng của T7/T8 giữ nguyên để tra cứu.
+
+Việc phải làm sau phát hành: nhắc **18 lãnh đạo** có bản T7/T8 nhưng chưa có bản T9
+kê phiếu quý III cho đủ hồ sơ; báo người duyệt biết bản T7 của 20ZZ-0231 (đ = 50,
+đang chờ duyệt) nay không duyệt được nữa và không còn được tính — người này cần kê
+lại phiếu quý III.
+
+### Mốc trước — `08cf400`
 
 Nội dung: **KPI — kê khai có ngày thực hiện từ 16/9/2026 tính vào quý IV.**
 
@@ -510,6 +557,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
 | 22/09/2026 | `9b49390` | KPI: bộ chọn kỳ Tháng 1–7 + Quý III + Quý IV ở `/danh-gia`, `/danh-gia-v2`, `/danh-gia/tu-cham-diem`; mặc định quý hiện hành; chế độ Quý hiện điểm quý lũy kế + bảng ba tháng; cờ `theo_dung_thang` cho 2 endpoint ĐỌC để xem lại số liệu tháng 7 (đường ghi không nhận cờ); tháng lịch sử ở trang tự chấm để CHỈ ĐỌC — **không migration** |
 | 22/09/2026 | `11791c7` | KPI: sửa điểm quý HĐLĐ 111 bỏ sót tháng tự chấm (ca 20ZZ-0531: 62,7667 → 66,3833), tiêu chí quý không còn hiện 0/30 cho 97% người dùng, tab Tạm tính/Chính thức có tác dụng với điểm KPI quý; bỏ làm tròn khi tính; bỏ bảng chi tiết từng tháng — **không migration** |
+| 28/09/2026 | `67bda67` | KPI: lãnh đạo kê d/đ/e **một lần cho cả quý** (Mẫu 02B, CV 21169) từ Q3/2026 — phiếu neo ở tháng cuối quý, bỏ MIN ba tháng, chốt chặn `BIZ_008`, KHÔNG fallback về T7/T8; 0/55 lãnh đạo đổi điểm; **migration `kpi_dde_theo_quy_20260928`** (thêm 1 cột) + `ALTER TABLE danh_gia_dde OWNER TO kpi_user` chạy tay trước |
 | 28/09/2026 | `08cf400` | KPI: kê khai có NGÀY THỰC HIỆN từ 16/9/2026 tính vào quý IV (640 bản của 131 công chức); chỉ phần a/b/c đi theo mốc, điểm tháng và d/đ/e giữ nguyên; bản thiếu ngày ở lại quý gốc — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực

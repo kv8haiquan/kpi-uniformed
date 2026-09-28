@@ -7,11 +7,55 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `11791c7` |
-| **Ngắn** | `11791c7` |
-| **Nhánh nguồn** | `feature/kpi-sua-lech-diem-quy` (fast-forward thẳng từ `e933380`) |
-| **Ngày ghi mốc** | 22/09/2026 10:13 |
+| **Commit** | `08cf400` |
+| **Ngắn** | `08cf400` |
+| **Nhánh nguồn** | `feature/kpi-moc-ke-khai-quy4` (fast-forward thẳng từ `5af5086`) |
+| **Ngày ghi mốc** | 28/09/2026 10:23 |
 | **Alembic** | `kpi_tc_theo_quy_20260918` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — kê khai có ngày thực hiện từ 16/9/2026 tính vào quý IV.**
+
+Hồ sơ đánh giá quý phải nộp ngày 23 của tháng cuối quý (CV 21169), nên công việc
+làm sau mốc chốt số liệu không kịp vào hồ sơ quý đó. Quyết định của Chi cục: kê
+khai có **NGÀY THỰC HIỆN** từ 16/9/2026 trở đi tính sang quý IV.
+
+**Phạm vi cố ý hẹp** (quyết định 22/09):
+- Chỉ phần điểm tính từ KÊ KHAI CÔNG VIỆC (a/b/c) đi theo mốc ngày — cũng là phần
+  điểm lãnh đạo cộng SP cấp dưới.
+- Điểm **THÁNG 9 giữ nguyên trọn 1–30/9** để tra cứu.
+- Không đụng d/đ/e, tiêu chí chung, HĐLĐ 111 (điểm từ VB714 theo tháng).
+- Một lần cho Q3→Q4/2026; các quý khác vẫn chia theo tháng — có test khoá lại.
+
+Cách làm: `cac_thang_ke_khai_cua_quy(quy, nam)` trả (tháng, từ ngày, đến ngày) —
+quý III ra `[(7,·,·), (8,·,·), (9, ·, 15/9)]`, quý IV ra `[(9, 16/9, ·), (10..12)]`.
+Các hàm tính nhận thêm cửa sổ ngày: `tinh_diem_kpi_70`/`_v2`,
+`tinh_diem_kpi_70_lanh_dao`, `calc_kpi_lanh_dao_v2`.
+
+> **BẢN THIẾU NGÀY THỰC HIỆN — quyết định phải nhớ:** 16 bản của tháng 9/2026 bỏ
+> trống trường này (trường không bắt buộc nhập). Chúng được giữ ở **quý GỐC**:
+> lọt vào vế "đến ngày" và bị loại khỏi vế "từ ngày". Nếu lọc cứng theo ngày ở cả
+> hai vế thì số bản đó rơi khỏi CẢ HAI quý và biến mất khỏi mọi bảng điểm mà
+> không ai phát hiện.
+
+Tháng 9 khi chuyển sang quý IV vẫn tôn trọng thai sản / chưa về Chi cục của chính
+tháng đó, nhưng KHÔNG cộng vào `so_thang_thuc_te` — nếu không, mẫu số điểm tiêu
+chí chung quý IV bị chia cho 4 tháng thay vì 3. Kèm ghi chú hiển thị ở cả hai quý
+để không ai tưởng điểm bị tính sai.
+
+Kiểm chứng: 6 test mới, then chốt là ca "SP nửa đầu + SP nửa sau = SP trọn tháng"
+chạy trên 15 công chức (không rơi bản nào) và ca "bản thiếu ngày ở lại quý cũ".
+Đo tay: 20ZZ-0315 có 11.705,2 SP tháng 9 đều thực hiện từ 16/9 → chuyển trọn sang
+quý IV. `DB_NAME=kpi_haiquan_test pytest tests/` → 133 passed (2 test đỏ sẵn có),
+chạy lại trên bản sao dữ liệu ngày 28/09 trước khi phát hành.
+
+Diện ảnh hưởng: **640 bản kê khai của 131 công chức** chuyển từ quý III sang quý
+IV. Báo cáo xếp loại quý và phiếu in quý tự theo mốc mới vì dùng chung hàm tính.
+Lúc phát hành, 13 báo cáo xếp loại quý III đều còn ở trạng thái NHAP nên không có
+hồ sơ đã chốt nào bị đổi số.
+
+Ảnh hưởng dữ liệu đang chạy: không sửa dòng nào — chỉ đổi cách gom khi tính.
+
+### Mốc trước — `11791c7`
 
 Nội dung: **KPI — sửa ba sai lệch của điểm quý, phát hiện khi rà lại trên dữ liệu thật.**
 
@@ -466,6 +510,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
 | 22/09/2026 | `9b49390` | KPI: bộ chọn kỳ Tháng 1–7 + Quý III + Quý IV ở `/danh-gia`, `/danh-gia-v2`, `/danh-gia/tu-cham-diem`; mặc định quý hiện hành; chế độ Quý hiện điểm quý lũy kế + bảng ba tháng; cờ `theo_dung_thang` cho 2 endpoint ĐỌC để xem lại số liệu tháng 7 (đường ghi không nhận cờ); tháng lịch sử ở trang tự chấm để CHỈ ĐỌC — **không migration** |
 | 22/09/2026 | `11791c7` | KPI: sửa điểm quý HĐLĐ 111 bỏ sót tháng tự chấm (ca 20ZZ-0531: 62,7667 → 66,3833), tiêu chí quý không còn hiện 0/30 cho 97% người dùng, tab Tạm tính/Chính thức có tác dụng với điểm KPI quý; bỏ làm tròn khi tính; bỏ bảng chi tiết từng tháng — **không migration** |
+| 28/09/2026 | `08cf400` | KPI: kê khai có NGÀY THỰC HIỆN từ 16/9/2026 tính vào quý IV (640 bản của 131 công chức); chỉ phần a/b/c đi theo mốc, điểm tháng và d/đ/e giữ nguyên; bản thiếu ngày ở lại quý gốc — **không migration** |
 
 > Ghi chú 25/08/2026: mục "Hiện tại" từng ghi `e005660` trong khi cây prod thực
 > tế đã ở `cc254be` — sổ tụt sau thực tế 2 commit. Đã đối chiếu lại bằng

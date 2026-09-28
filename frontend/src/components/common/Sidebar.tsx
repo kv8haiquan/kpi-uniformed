@@ -37,6 +37,7 @@ import {
   CalendarCheck,
   Target,
   ClipboardCheck,
+  ClipboardList,
   SlidersHorizontal,
   ChevronRight,
   Menu,
@@ -132,6 +133,14 @@ function useMenuSections(): MenuSection[] {
     user?.can_view_all_units === true ||
     ['CCT', 'PCCT', 'TCCB'].includes(maVaiTro ?? '')
       ? [{ label: 'Đối soát đánh giá', href: '/doi-soat', icon: ClipboardCheck }]
+      : []),
+    // Tổng hợp phiếu Mẫu 02 toàn Chi cục (29/09/2026) — CHỈ ĐỌC, cùng nhóm quyền
+    // với Đối soát. Trưởng đơn vị KHÔNG có mục này: phiếu chứa nhận xét cá nhân
+    // và phần hạn chế, khuyết điểm nên không mở chéo giữa các đơn vị.
+    ...(user?.is_system_admin === true ||
+    user?.can_view_all_units === true ||
+    ['CCT', 'PCCT', 'TCCB'].includes(maVaiTro ?? '')
+      ? [{ label: 'Tổng hợp phiếu 02', href: '/phieu-tong-hop', icon: ClipboardList }]
       : []),
     { label: 'Nghỉ phép', href: '/nghi-phep', icon: CalendarDays },
     // Yêu cầu 2 (06/05/2026): điều chỉnh KQCV — chỉ LĐ thật (không phải HĐ 111)

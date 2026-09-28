@@ -190,6 +190,44 @@ class PhieuChoPheDuyetItem(BaseModel):
     dd_quy_phe_duyet: Optional[int] = None
 
 
+class PhieuTongHopItem(BaseModel):
+    """
+    1 dòng trong bảng TỔNG HỢP PHIẾU TOÀN CHI CỤC (CCT / PCCT / TCCB, chỉ đọc).
+
+    Khác `PhieuChoPheDuyetItem` ở chỗ có thêm đơn vị, vai trò và người duyệt —
+    bảng này trải trên cả 15 đơn vị nên phải phân biệt được ai thuộc đâu.
+    `id = None` nghĩa là người đó CHƯA soạn phiếu (dòng giả trạng thái NHAP), đây
+    chính là thứ TCCB cần thấy khi rà hồ sơ trước hạn nộp ngày 23.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    id: Optional[UUID] = None
+    cong_chuc_id: UUID
+    ma_cc: str
+    ho_ten: str
+    chuc_vu: Optional[str] = None
+    don_vi_id: Optional[UUID] = None
+    don_vi_ten: Optional[str] = None
+    vai_tro: Optional[str] = None
+    is_lanh_dao: bool = False
+    quy: int
+    nam: int
+    trang_thai: str
+    ngay_gui_duyet: Optional[datetime] = None
+    ngay_phe_duyet: Optional[datetime] = None
+    nguoi_phe_duyet_ten: Optional[str] = None
+    uu_diem: Optional[str] = None
+    han_che: Optional[str] = None
+    y_kien_lanh_dao: Optional[str] = None
+    tu_de_xuat_xep_loai: Optional[str] = None
+    de_xuat_xep_loai: Optional[str] = None
+    quyet_dinh_xep_loai: Optional[str] = None
+    y_kien_cap_tham_quyen: Optional[str] = None
+    dd_quy_ke_khai: Optional[int] = None
+    dd_quy_ghi_chu: Optional[str] = None
+    dd_quy_phe_duyet: Optional[int] = None
+
+
 class ChiTietThangThieu(BaseModel):
     """Chi tiết số lượng còn chưa duyệt trong 1 tháng."""
 

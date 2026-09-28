@@ -1,6 +1,6 @@
 # Kế hoạch: chuyển kê khai d/đ/e của lãnh đạo từ THÁNG sang QUÝ
 
-> Tiếp theo `08cf400` (live 28/09/2026). Ngày lập: 28/09/2026 · **DỰ THẢO, chờ duyệt**
+> Tiếp theo `08cf400` (live 28/09/2026). Ngày lập: 28/09/2026 · **ĐÃ DUYỆT, ĐÃ CODE XONG 28/09/2026 — chờ phát hành**
 >
 > Yêu cầu: *"chỉnh sửa kê khai d đ e của lãnh đạo sang theo quý thay vì theo tháng"*.
 
@@ -180,3 +180,72 @@ Cũng **không ai đổi điểm** — nhưng nhóm này nên được nhắc k�
 
 Migration chỉ thêm một cột mặc định `false`, không đụng dữ liệu. Quay lui bằng cách
 đặt mốc `DDE_THEO_QUY_TU` ra xa — như cách `TC_THEO_QUY_TU` đang làm.
+
+---
+
+## 7. Kết quả thực hiện (28/09/2026)
+
+Toàn bộ 14 việc ở mục 4 đã làm xong trên nhánh `feature/kpi-dde-theo-quy`.
+
+### 7.1 Đã sửa những gì
+
+| Tệp | Thay đổi |
+|---|---|
+| `core/ky_tieu_chi.py` | `DDE_THEO_QUY_TU = (2026, 3)`, `dde_theo_quy`, `thang_neo_dde`, `la_thang_neo_dde`, `cac_thang_ap_dung_dde`, `nhan_ky_dde`, `thong_tin_ky_dde` |
+| `models/leader_kpi.py` + migration `kpi_dde_theo_quy_20260928` | cột `la_phieu_dde_quy` + chỉ mục riêng phần |
+| `danh_gia_lanh_dao.py` | tự kê / gửi duyệt / lấy phiếu quy về tháng neo; chốt chặn `BIZ_008` ở phê duyệt và trả lại; danh sách chờ duyệt + lịch sử lọc theo cả quý; mỗi bản ghi trả kèm `ky_dde`, `la_phieu_ky` |
+| `xep_loai_quy_helpers.py` | `_lay_dde_thang` đọc xuyên sang bản ghi neo; **bỏ MIN ba tháng** từ mốc áp dụng (kỳ cũ giữ nguyên MIN) |
+| `kpi_lanh_dao_v2.py`, `xep_loai_moi.py` | điểm KPI **tháng** của lãnh đạo đọc d/đ/e từ bản ghi neo |
+| `bao_cao_xep_loai.py`, `export_bao_cao.py` | báo cáo và xuất Excel đọc qua tháng neo; File 03 quý chỉ lấy phiếu quý |
+| FE `lib/ky-tieu-chi.ts` | bản sao mốc d/đ/e cho phía hiển thị |
+| FE `LeaderAssessmentDDE.tsx` | nhãn kỳ quý + banner "kê một lần cho cả quý" |
+| FE `TabDanhGiaLD.tsx` | cột Kỳ, khoá nút duyệt/trả lại trên bản ghi tháng cũ kèm lời giải thích |
+| FE `/danh-gia`, `/danh-gia-v2`, `TabBaoCao` | ghi rõ nguồn "phiếu Quý N/NNNN" |
+
+### 7.2 Kiểm thử
+
+- `tests/integration/test_dde_theo_quy.py` — **9/9 PASS** (mốc kỳ · kỳ cũ không hồi tố ·
+  quý III không ai đổi điểm · neo đúng chỗ · ba tháng đọc chung · bỏ MIN · chốt chặn).
+- Toàn bộ backend: **142 PASS / 2 FAIL** — hai test đỏ
+  (`test_cct_no_assignment_empty_scope`, `test_bao_cao_da_phe_duyet_bao_400`) đỏ
+  **sẵn từ trước** khi có thay đổi này, đã đối chứng bằng cách cất thay đổi đi chạy lại.
+- FE `src/__tests__/ky-tieu-chi.test.ts` — **13/13 PASS**; build Next.js PASS.
+
+**Phép đo 11b — đối chiếu điểm quý của toàn bộ 55 lãnh đạo, trước và sau thay đổi:**
+
+| Kỳ | Số lãnh đạo | Số người đổi điểm |
+|---|---|---|
+| Quý I/2026 | 55 | **0** |
+| Quý II/2026 | 55 | **0** |
+| Quý III/2026 | 55 | **0** |
+
+Đúng như dự đoán ở mục 5b.
+
+### 7.3 Việc phải làm KHI PHÁT HÀNH
+
+1. **Bảng `danh_gia_dde` đang thuộc sở hữu của `postgres`, không phải `kpi_user`** (17/37
+   bảng trong schema public như vậy). Alembic chạy bằng `kpi_user` nên migration sẽ
+   dừng với `must be owner of table danh_gia_dde`. Trước khi chạy `trien_khai.sh`:
+
+   ```bash
+   sudo -u postgres psql -d kpi_haiquan -c "ALTER TABLE danh_gia_dde OWNER TO kpi_user;"
+   ```
+
+2. **Báo cho người duyệt hai bản đang treo** (mục 5b): bản tháng 9 của 20ZZ-0185 khi
+   duyệt sẽ thành d = 50% cho cả quý III; bản tháng 7 của 20ZZ-0231 sẽ không còn được
+   tính và không duyệt được nữa — người này cần kê lại phiếu quý III.
+
+3. **Nhắc 18 lãnh đạo có bản T7/T8 nhưng chưa có bản tháng 9** kê phiếu quý III cho đủ
+   hồ sơ (điểm không đổi, nhưng hồ sơ thiếu phiếu). Đo lại trên prod 28/09: 11 người có
+   bản ĐÃ DUYỆT (đều 100/100/100), 7 người còn ở NHAP/chờ duyệt.
+
+### 7.4 Quyết định 28/09/2026: KHÔNG fallback về tháng 7/8
+
+Thiếu phiếu quý thì d/đ/e lấy mặc định 100%, KHÔNG lùi về đọc bản tháng 7/8 — đúng luật
+chung lâu nay của hệ thống (không kê thì không bị trừ) và đúng tinh thần công văn: bản
+theo tháng chỉ còn để tra cứu.
+
+Chỗ hở phải biết: lãnh đạo có bản tháng đã duyệt mang 50% rồi KHÔNG kê phiếu quý sẽ được
+100% thay vì 50% như cách MIN cũ. Đo ngày 28/09: **không ai** đang ở tình huống này (11
+bản T7/T8 đã duyệt mà thiếu T9 đều là 100/100/100), nên không có điểm nào đổi. Bù lại
+bằng việc nhắc kê phiếu quý, không bằng fallback tự động.

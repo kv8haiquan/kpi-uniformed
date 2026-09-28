@@ -38,6 +38,38 @@ export function thangNeo(thang: number, nam: number): number {
   return tcTheoQuy(thang, nam) ? thangCuoiQuy(quyCuaThang(thang)) : thang;
 }
 
+// =============================================================================
+// KỲ KÊ d/đ/e CỦA LÃNH ĐẠO (28/09/2026)
+// -----------------------------------------------------------------------------
+// Mẫu 02B kèm CV 21169 chỉ có MỘT ô cho mỗi chỉ số d/đ/e trong cả quý. Từ mốc
+// dưới, phiếu d/đ/e của quý neo ở bản ghi THÁNG CUỐI QUÝ; hai tháng còn lại đọc
+// xuyên sang. Giữ đồng bộ với backend `DDE_THEO_QUY_TU` trong ky_tieu_chi.py.
+// =============================================================================
+
+/** (năm, quý) — mọi kỳ TỪ mốc này trở đi kê d/đ/e theo QUÝ. */
+export const DDE_THEO_QUY_TU = { nam: 2026, quy: 3 };
+
+/** Kỳ này kê d/đ/e theo quý chưa? */
+export function ddeTheoQuy(thang: number, nam: number): boolean {
+  const quy = quyCuaThang(thang);
+  return nam > DDE_THEO_QUY_TU.nam || (nam === DDE_THEO_QUY_TU.nam && quy >= DDE_THEO_QUY_TU.quy);
+}
+
+/** Tháng chứa phiếu d/đ/e của kỳ (kỳ quý → tháng cuối quý). */
+export function thangNeoDDE(thang: number, nam: number): number {
+  return ddeTheoQuy(thang, nam) ? thangCuoiQuy(quyCuaThang(thang)) : thang;
+}
+
+/** Các tháng dùng chung phiếu d/đ/e của kỳ. */
+export function cacThangApDungDDE(thang: number, nam: number): number[] {
+  return ddeTheoQuy(thang, nam) ? cacThangTrongQuy(quyCuaThang(thang)) : [thang];
+}
+
+/** Nhãn kỳ d/đ/e: 'Quý 3/2026' hoặc 'Tháng 5/2026'. */
+export function nhanKyDDE(thang: number, nam: number): string {
+  return ddeTheoQuy(thang, nam) ? `Quý ${quyCuaThang(thang)}/${nam}` : `Tháng ${thang}/${nam}`;
+}
+
 /** Các tháng dùng chung điểm tiêu chí của kỳ. */
 export function cacThangApDung(thang: number, nam: number): number[] {
   return tcTheoQuy(thang, nam) ? cacThangTrongQuy(quyCuaThang(thang)) : [thang];

@@ -27,6 +27,7 @@ import {
   boolToPercent,
 } from '@/types/leader-kpi';
 import { leaderKPIService } from '@/services/leader-kpi.service';
+import { cacThangApDungDDE, ddeTheoQuy, nhanKyDDE, thangNeoDDE } from '@/lib/ky-tieu-chi';
 
 // =============================================================================
 // PROPS
@@ -142,6 +143,14 @@ export default function LeaderAssessmentDDE({ thang, nam, onSaveSuccess }: Leade
 
   const isApproved = existingData?.trang_thai === TrangThaiKeKhaiLD.DA_PHE_DUYET;
   const isPending = existingData?.trang_thai === TrangThaiKeKhaiLD.CHO_PHE_DUYET;
+
+  // CV 21169 (Mẫu 02B): từ Q3/2026 d/đ/e kê MỘT LẦN cho cả quý. Backend tự quy
+  // tháng gửi lên về tháng neo (tháng cuối quý) nên form vẫn gửi `thang` như cũ;
+  // phía này chỉ cần nói đúng cho người dùng biết họ đang kê cho kỳ nào.
+  const theoQuy = ddeTheoQuy(thang, nam);
+  const nhanKy = nhanKyDDE(thang, nam);
+  const thangPhieu = thangNeoDDE(thang, nam);
+  const thangDungChung = cacThangApDungDDE(thang, nam);
 
   useEffect(() => {
     const loadData = async () => {
@@ -268,7 +277,7 @@ export default function LeaderAssessmentDDE({ thang, nam, onSaveSuccess }: Leade
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-white">📊 Đánh giá d, đ, e</h3>
-            <p className="text-purple-100 text-sm mt-1">Tháng {thang}/{nam} • Tự đánh giá năng lực lãnh đạo</p>
+            <p className="text-purple-100 text-sm mt-1">{nhanKy} • Tự đánh giá năng lực lãnh đạo</p>
           </div>
           {existingData && (
             <span className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -283,6 +292,18 @@ export default function LeaderAssessmentDDE({ thang, nam, onSaveSuccess }: Leade
       <div className="p-6 space-y-4">
         {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-700 text-sm">{error}</p></div>}
         {successMessage && <div className="bg-green-50 border border-green-200 rounded-lg p-3"><p className="text-green-700 text-sm">{successMessage}</p></div>}
+
+        {theoQuy && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="text-amber-900 text-sm">
+              <strong>d, đ, e nay kê một lần cho cả {nhanKy}.</strong> Theo Mẫu 02B kèm
+              Công văn 21169/CHQ-TCCB, mỗi chỉ số chỉ có một ô cho cả quý. Phiếu được
+              lưu ở tháng {thangPhieu}/{nam} và dùng chung cho tháng{' '}
+              {thangDungChung.join(', ')}; kê ở tháng nào trong quý cũng ghi vào đúng
+              phiếu này.
+            </p>
+          </div>
+        )}
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-blue-800 text-sm"><strong>Hướng dẫn:</strong> Tích checkbox nếu đạt tiêu chuẩn (100%). Bỏ tích nếu có vấn đề (50%) và ghi chú lý do.</p>
@@ -325,7 +346,7 @@ export default function LeaderAssessmentDDE({ thang, nam, onSaveSuccess }: Leade
       {showGuiDuyetModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Gửi phê duyệt đánh giá d, đ, e</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Gửi phê duyệt đánh giá d, đ, e — {nhanKy}</h3>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Chọn người phê duyệt <span className="text-red-500">*</span></label>
               {nguoiPheDuyetList.length > 0 ? (

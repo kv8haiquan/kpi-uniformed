@@ -24,6 +24,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import apiClient from '@/lib/axios';
 import { ITabProps } from '@/types/xep-loai';
+import { ddeTheoQuy, nhanKyDDE, thangNeoDDE } from '@/lib/ky-tieu-chi';
 import {
   LoadingSpinner,
   EmptyState,
@@ -62,6 +63,11 @@ interface IDDEItem {
   dd_final?: number;
   e_final?: number;
   trang_thai: string;
+  // CV 21169 — backend gắn kèm: bản ghi này thuộc kỳ nào, có phải phiếu của kỳ không
+  ky_dde?: string;
+  dde_theo_quy?: boolean;
+  la_phieu_ky?: boolean;
+  thang_phieu_ky?: number;
   nguoi_phe_duyet_id?: string;
   nguoi_phe_duyet?: { ho_ten: string } | null;
   ngay_phe_duyet?: string;
@@ -171,6 +177,13 @@ interface DDECardProps {
 function DDECard({ item, onApprove, onReject, onTraLai, canApprove }: DDECardProps) {
   const isPending = item.trang_thai === 'CHO_PHE_DUYET';
   const isApproved = item.trang_thai === 'DA_PHE_DUYET';
+  // CV 21169: kỳ quý chỉ duyệt trên phiếu của kỳ (bản ghi tháng cuối quý).
+  // Backend chặn bằng BIZ_008; phía này khoá nút để người duyệt khỏi bấm vô ích.
+  const theoQuy = item.dde_theo_quy ?? ddeTheoQuy(item.thang, item.nam);
+  const laPhieuKy = item.la_phieu_ky ?? item.thang === thangNeoDDE(item.thang, item.nam);
+  const nhanKy = item.ky_dde ?? nhanKyDDE(item.thang, item.nam);
+  const thangPhieuKy = item.thang_phieu_ky ?? thangNeoDDE(item.thang, item.nam);
+  const chiTraCuu = theoQuy && !laPhieuKy;
   // Giá trị final = LĐ duyệt nếu có, fallback CC tự chấm. Ưu tiên *_final do backend computed.
   const dFinal = item.d_final ?? item.d_phe_duyet ?? item.d_ket_qua_don_vi;
   const ddFinal = item.dd_final ?? item.dd_phe_duyet ?? item.dd_to_chuc_trien_khai;
@@ -186,7 +199,10 @@ function DDECard({ item, onApprove, onReject, onTraLai, canApprove }: DDECardPro
         </div>
         <div className="text-right">
           <StatusBadge status={isPending ? 'pending' : 'approved'} label={isPending ? 'Chờ duyệt' : 'Đã duyệt'} />
-          <p className="text-xs text-gray-500 mt-1">Tháng {item.thang}/{item.nam}</p>
+          <p className="text-xs text-gray-500 mt-1">{nhanKy}</p>
+          {chiTraCuu && (
+            <p className="text-[11px] text-amber-700 mt-0.5">số liệu tháng {item.thang} (cũ)</p>
+          )}
         </div>
       </div>
 
@@ -216,13 +232,23 @@ function DDECard({ item, onApprove, onReject, onTraLai, canApprove }: DDECardPro
         <span className={`text-lg font-bold ${tongDiem >= 80 ? 'text-green-600' : 'text-amber-600'}`}>{tongDiem}%</span>
       </div>
 
-      {canApprove && isPending && (
+      {chiTraCuu && (
+        <div className="mt-1 mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-xs text-amber-900">
+            Từ Quý {Math.floor((item.thang - 1) / 3) + 1}/{item.nam}, d/đ/e kê một lần cho cả quý
+            (Mẫu 02B, CV 21169). Bản tháng {item.thang} này chỉ để tra cứu — duyệt trên phiếu
+            tháng {thangPhieuKy}/{item.nam}.
+          </p>
+        </div>
+      )}
+
+      {canApprove && isPending && !chiTraCuu && (
         <div className="flex gap-2 pt-3 border-t border-gray-100">
           <button onClick={() => onApprove(item.id)} className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors">Duyệt</button>
           <button onClick={() => onReject(item.id)} className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">Từ chối</button>
         </div>
       )}
-      {canApprove && isApproved && (
+      {canApprove && isApproved && !chiTraCuu && (
         <div className="flex gap-2 pt-3 border-t border-gray-100">
           <button
             onClick={() => onTraLai(item)}
@@ -489,7 +515,7 @@ export default function TabDanhGiaLD({ thang, nam, canApprove, onPendingCountCha
             <div className="bg-gray-50 rounded-lg p-4 mb-4">
               <p className="font-medium text-gray-900">{selectedItem.cong_chuc?.ho_ten}</p>
               <p className="text-sm text-gray-600 mt-1">{selectedItem.cong_chuc?.ma_cc} • {selectedItem.cong_chuc?.chuc_vu}</p>
-              <p className="text-sm text-gray-500 mt-1">Tháng {selectedItem.thang}/{selectedItem.nam}</p>
+              <p className="text-sm text-gray-500 mt-1">{selectedItem.ky_dde ?? nhanKyDDE(selectedItem.thang, selectedItem.nam)}</p>
             </div>
 
             {modalAction === 'approve' && (

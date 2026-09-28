@@ -386,6 +386,20 @@ class DanhGiaDDE(BaseModel):
     )
     
     # =========================================================================
+    # KỲ KÊ KHAI (28/09/2026 — CV 21169, Mẫu 02B)
+    # Từ Q3/2026, d/đ/e kê MỘT LẦN cho cả quý. Phiếu quý neo vào bản ghi của
+    # THÁNG CUỐI QUÝ; hai tháng còn lại đọc xuyên sang (app/core/ky_tieu_chi.py).
+    # =========================================================================
+
+    la_phieu_dde_quy: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="Bản ghi này là phiếu d/đ/e của CẢ QUÝ (CV 21169, từ Q3/2026)"
+    )
+
+    # =========================================================================
     # TRẠNG THÁI PHÊ DUYỆT
     # =========================================================================
     

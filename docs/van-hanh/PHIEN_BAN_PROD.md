@@ -7,11 +7,59 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `67bda67` |
-| **Ngắn** | `67bda67` |
-| **Nhánh nguồn** | `feature/kpi-dde-theo-quy` (fast-forward thẳng từ `e3b4f45`) |
-| **Ngày ghi mốc** | 28/09/2026 11:05 |
-| **Alembic** | `kpi_dde_theo_quy_20260928` — **CÓ migration mới** (thêm 1 cột) |
+| **Commit** | `60b8932` |
+| **Ngắn** | `60b8932` |
+| **Nhánh nguồn** | `feature/kpi-phieu-tong-hop` (fast-forward thẳng từ `fe71cea`) |
+| **Ngày ghi mốc** | 29/09/2026 11:42 |
+| **Alembic** | `kpi_dde_theo_quy_20260928` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — xem tổng hợp phiếu Mẫu 02 toàn Chi cục (chỉ đọc).**
+
+Quyền xem phiếu đánh giá quý xưa nay bám theo phạm vi DUYỆT, nên ai không duyệt
+phiếu của người khác thì không xem được phiếu người đó. Đo trên prod 28/09: trong
+**450 phiếu quý III, 439 phiếu chỉ mỗi Trưởng đơn vị của người đó nhìn thấy**; Chi
+cục trưởng xem được 7; TCCB — nơi phải tổng hợp hồ sơ nộp trước ngày 23 tháng cuối
+quý — không xem được phiếu nào.
+
+Mở quyền **XEM (CHỈ ĐỌC)** toàn Chi cục cho **CCT, PCCT, TCCB** và cờ
+`can_view_all_units`, gom về một chỗ duy nhất `app/core/quyen_xem_phieu.py`:
+
+- `in_bang_ke._load_cc_cho_in_boi_tdv`: nhóm này tải được phiếu + bảng kê của MỌI
+  công chức (hai endpoint phiếu THÁNG dùng chung hàm quyền nên mở theo).
+- `GET /phieu-danh-gia-quy/toan-chi-cuc` và `.../export` — lọc theo đơn vị, trạng
+  thái, xếp loại, tìm theo tên/mã; số đếm tính trên TOÀN BỘ kết quả lọc; Excel một
+  sheet 17 cột.
+- Trang `/phieu-tong-hop` — xem thẳng nội dung Mẫu 02 không phải tải .docx; mục
+  "Tổng hợp phiếu 02" trên sidebar, cùng nhóm quyền với Đối soát đánh giá.
+
+> **CỐ Ý KHÔNG mở cho Trưởng đơn vị xem đơn vị khác** — phiếu chứa nhận xét cá nhân
+> và phần "hạn chế, khuyết điểm". Quyết định 29/09; mở thêm sau chỉ là một dòng
+> trong `quyen_xem_phieu.py`.
+
+> **Quyền DUYỆT KHÔNG đụng tới:** `_co_quyen_duyet` giữ nguyên, có test khoá lại.
+> Trang tổng hợp không có thao tác ghi nào.
+
+> **Người CHƯA soạn phiếu vẫn có một dòng** (trạng thái NHAP, `id = null`) — đây là
+> nhóm TCCB cần thấy nhất khi đi đòi hồ sơ, không được lọc mất.
+
+Sửa kèm một lỗi phát hiện khi viết test: lọc người "không thuộc diện đánh giá" theo
+**mã vai trò** (`TCCB`, `SUPER_ADMIN`) để lọt tài khoản quản trị vào bảng, vì tài
+khoản đó mang mã `ADMIN` còn cấp bậc mới là `SUPER_ADMIN`. Đã đổi sang lọc theo
+**cấp bậc**. `doi_soat_danh_gia.py` vẫn lọc theo cách cũ → nhiều khả năng tài khoản
+admin đang lọt vào bảng đối soát; chưa sửa, chờ xác nhận.
+
+Kiểm chứng: `test_phieu_tong_hop.py` **12/12 PASS** (toàn bộ chỉ đọc); toàn bộ
+backend **154 PASS / 2 FAIL** (hai test đỏ sẵn từ trước); `tsc --noEmit` sạch; build
+Next.js PASS. Đo trên bản sao dữ liệu prod: bảng tổng hợp **542 dòng / 0,19s**,
+Excel **109 KB / 0,33s**. Sau phát hành: API không token trả 401 đúng như mong đợi.
+
+Ảnh hưởng dữ liệu đang chạy: **KHÔNG sửa dòng nào, không migration** — mọi đường mới
+đều là đọc.
+
+Còn nợ: tải hàng loạt .docx theo ZIP; trang Đối soát mới chỉ có theo THÁNG trong khi
+từ Q3/2026 kỳ đánh giá đã sang quý.
+
+### Mốc trước — `67bda67`
 
 Nội dung: **KPI — lãnh đạo kê d/đ/e một lần cho cả quý (Mẫu 02B, CV 21169).**
 
@@ -557,6 +605,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
 | 22/09/2026 | `9b49390` | KPI: bộ chọn kỳ Tháng 1–7 + Quý III + Quý IV ở `/danh-gia`, `/danh-gia-v2`, `/danh-gia/tu-cham-diem`; mặc định quý hiện hành; chế độ Quý hiện điểm quý lũy kế + bảng ba tháng; cờ `theo_dung_thang` cho 2 endpoint ĐỌC để xem lại số liệu tháng 7 (đường ghi không nhận cờ); tháng lịch sử ở trang tự chấm để CHỈ ĐỌC — **không migration** |
 | 22/09/2026 | `11791c7` | KPI: sửa điểm quý HĐLĐ 111 bỏ sót tháng tự chấm (ca 20ZZ-0531: 62,7667 → 66,3833), tiêu chí quý không còn hiện 0/30 cho 97% người dùng, tab Tạm tính/Chính thức có tác dụng với điểm KPI quý; bỏ làm tròn khi tính; bỏ bảng chi tiết từng tháng — **không migration** |
+| 29/09/2026 | `60b8932` | KPI: xem **tổng hợp phiếu Mẫu 02 toàn Chi cục** (chỉ đọc) cho CCT/PCCT/TCCB/`can_view_all_units` — trang `/phieu-tong-hop` + xuất Excel + tải bản in của mọi CC; TDV vẫn chỉ đơn vị mình; quyền duyệt không đổi — **không migration** |
 | 28/09/2026 | `67bda67` | KPI: lãnh đạo kê d/đ/e **một lần cho cả quý** (Mẫu 02B, CV 21169) từ Q3/2026 — phiếu neo ở tháng cuối quý, bỏ MIN ba tháng, chốt chặn `BIZ_008`, KHÔNG fallback về T7/T8; 0/55 lãnh đạo đổi điểm; **migration `kpi_dde_theo_quy_20260928`** (thêm 1 cột) + `ALTER TABLE danh_gia_dde OWNER TO kpi_user` chạy tay trước |
 | 28/09/2026 | `08cf400` | KPI: kê khai có NGÀY THỰC HIỆN từ 16/9/2026 tính vào quý IV (640 bản của 131 công chức); chỉ phần a/b/c đi theo mốc, điểm tháng và d/đ/e giữ nguyên; bản thiếu ngày ở lại quý gốc — **không migration** |
 

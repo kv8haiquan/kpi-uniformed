@@ -7,11 +7,41 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `60b8932` |
-| **Ngắn** | `60b8932` |
-| **Nhánh nguồn** | `feature/kpi-phieu-tong-hop` (fast-forward thẳng từ `fe71cea`) |
-| **Ngày ghi mốc** | 29/09/2026 11:42 |
+| **Commit** | `d8762c2` |
+| **Ngắn** | `d8762c2` |
+| **Nhánh nguồn** | `feature/kpi-bo-ke-khai-lai-dd` (fast-forward thẳng từ `ed203c9`) |
+| **Ngày ghi mốc** | 29/09/2026 15:36 |
 | **Alembic** | `kpi_dde_theo_quy_20260928` — **KHÔNG migration mới** |
+
+Nội dung: **KPI — gỡ tính năng "kê khai lại tiêu chí đ cấp quý".**
+
+Miếng vá này sinh ra để chữa chuyện điểm quý lấy **MIN ba tháng**: một tháng bị 50%
+kéo cả quý xuống 50%, nên cho lãnh đạo kê khai lại đ ở cấp quý rồi lấy `max`. Từ
+Q3/2026 (mốc `67bda67`) d/đ/e kê **một lần cho cả quý**, không còn MIN — miếng vá
+thành thừa, lại là ô nhập thứ hai cho cùng một chỉ số nên dễ gây nhầm.
+
+**Gỡ KHÔNG hồi tố** (quyết định người dùng 29/09):
+
+- API không còn nhận `dd_quy_ke_khai` / `dd_quy_ghi_chu` / `dd_quy_phe_duyet`; ô nhập
+  của lãnh đạo và ô "chốt mức đ" của người duyệt đã bỏ khỏi giao diện.
+- Phần tính điểm chỉ còn áp miếng vá cho kỳ **TRƯỚC** mốc `DDE_THEO_QUY_TU`, nên điểm
+  quý I và II/2026 giữ nguyên.
+
+> **Vì sao không gỡ hồi tố:** đo trên prod trước khi quyết — gỡ cả quý II sẽ làm
+> **20ZZ-0084 tụt từ loại A xuống B** (90,31 → 84,48) và 20ZZ-0105 giảm 5,83 điểm.
+> Chỉ 10 phiếu từng dùng tính năng này (quý II: 5, quý III: 5), tất cả đều kê 100%.
+
+> **Cột và dữ liệu cũ GIỮ NGUYÊN**, không migration. Endpoint *trả lại phiếu* nay
+> KHÔNG xoá `dd_quy_phe_duyet` nữa — không ai nhập lại được thì xoá đi là mất vĩnh
+> viễn số liệu mà điểm quý II đang dựa vào.
+
+Kiểm chứng: `test_bo_ke_khai_lai_dd.py` **4/4 PASS**; toàn bộ backend **158 PASS /
+2 FAIL** (hai test đỏ sẵn từ trước); `tsc --noEmit` sạch; build Next.js PASS. **Đối
+chiếu điểm quý của cả 55 lãnh đạo trước/sau ở quý I, II, III/2026: 0 người đổi điểm.**
+
+Ảnh hưởng dữ liệu đang chạy: **không sửa dòng nào, không migration.**
+
+### Mốc trước — `60b8932`
 
 Nội dung: **KPI — xem tổng hợp phiếu Mẫu 02 toàn Chi cục (chỉ đọc).**
 
@@ -605,6 +635,7 @@ Hiện tồn kho ngân hàng câu hỏi ngay cạnh ô nhập số câu.
 | 22/09/2026 | `6fef2e7` | KPI: báo cáo xếp loại THÁNG chuyển sang CHỈ XEM — chặn 5 endpoint ghi ở backend (trước đó chỉ ẩn tab, vẫn phê duyệt được qua API và khoá nhầm phiếu tiêu chí quý), mở lại đường tra cứu, thêm nút sửa điểm tiêu chí vào màn báo cáo QUÝ, sửa nhãn "Tháng" → "Quý" — **không migration** |
 | 22/09/2026 | `9b49390` | KPI: bộ chọn kỳ Tháng 1–7 + Quý III + Quý IV ở `/danh-gia`, `/danh-gia-v2`, `/danh-gia/tu-cham-diem`; mặc định quý hiện hành; chế độ Quý hiện điểm quý lũy kế + bảng ba tháng; cờ `theo_dung_thang` cho 2 endpoint ĐỌC để xem lại số liệu tháng 7 (đường ghi không nhận cờ); tháng lịch sử ở trang tự chấm để CHỈ ĐỌC — **không migration** |
 | 22/09/2026 | `11791c7` | KPI: sửa điểm quý HĐLĐ 111 bỏ sót tháng tự chấm (ca 20ZZ-0531: 62,7667 → 66,3833), tiêu chí quý không còn hiện 0/30 cho 97% người dùng, tab Tạm tính/Chính thức có tác dụng với điểm KPI quý; bỏ làm tròn khi tính; bỏ bảng chi tiết từng tháng — **không migration** |
+| 29/09/2026 | `d8762c2` | KPI: **gỡ tính năng "kê khai lại tiêu chí đ cấp quý"** — thừa từ khi d/đ/e kê một lần cho cả quý; gỡ KHÔNG hồi tố (kỳ trước Q3/2026 vẫn áp) nên 0/55 lãnh đạo đổi điểm; dữ liệu 10 phiếu cũ giữ nguyên — **không migration** |
 | 29/09/2026 | `60b8932` | KPI: xem **tổng hợp phiếu Mẫu 02 toàn Chi cục** (chỉ đọc) cho CCT/PCCT/TCCB/`can_view_all_units` — trang `/phieu-tong-hop` + xuất Excel + tải bản in của mọi CC; TDV vẫn chỉ đơn vị mình; quyền duyệt không đổi — **không migration** |
 | 28/09/2026 | `67bda67` | KPI: lãnh đạo kê d/đ/e **một lần cho cả quý** (Mẫu 02B, CV 21169) từ Q3/2026 — phiếu neo ở tháng cuối quý, bỏ MIN ba tháng, chốt chặn `BIZ_008`, KHÔNG fallback về T7/T8; 0/55 lãnh đạo đổi điểm; **migration `kpi_dde_theo_quy_20260928`** (thêm 1 cột) + `ALTER TABLE danh_gia_dde OWNER TO kpi_user` chạy tay trước |
 | 28/09/2026 | `08cf400` | KPI: kê khai có NGÀY THỰC HIỆN từ 16/9/2026 tính vào quý IV (640 bản của 131 công chức); chỉ phần a/b/c đi theo mốc, điểm tháng và d/đ/e giữ nguyên; bản thiếu ngày ở lại quý gốc — **không migration** |

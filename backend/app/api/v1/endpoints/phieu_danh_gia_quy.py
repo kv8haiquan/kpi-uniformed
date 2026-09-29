@@ -213,8 +213,6 @@ async def upsert_phieu_nhap(
             uu_diem=payload.uu_diem,
             han_che=payload.han_che,
             tu_de_xuat_xep_loai=payload.tu_de_xuat_xep_loai,
-            dd_quy_ke_khai=payload.dd_quy_ke_khai,
-            dd_quy_ghi_chu=payload.dd_quy_ghi_chu,
             trang_thai=TrangThaiPhieuDanhGia.NHAP.value,
         )
         db.add(phieu)
@@ -234,8 +232,6 @@ async def upsert_phieu_nhap(
         phieu.uu_diem = payload.uu_diem
         phieu.han_che = payload.han_che
         phieu.tu_de_xuat_xep_loai = payload.tu_de_xuat_xep_loai
-        phieu.dd_quy_ke_khai = payload.dd_quy_ke_khai
-        phieu.dd_quy_ghi_chu = payload.dd_quy_ghi_chu
         # Nếu trước đó bị từ chối, khi sửa lại quay về NHAP và xóa ly do
         if phieu.trang_thai == TrangThaiPhieuDanhGia.BI_TU_CHOI.value:
             phieu.trang_thai = TrangThaiPhieuDanhGia.NHAP.value
@@ -610,9 +606,8 @@ async def phe_duyet_phieu(
     phieu.de_xuat_xep_loai = payload.de_xuat_xep_loai
     phieu.quyet_dinh_xep_loai = payload.quyet_dinh_xep_loai
     phieu.y_kien_cap_tham_quyen = payload.y_kien_cap_tham_quyen
-    # đ quý người duyệt chốt (nếu nhập). None → giữ dd_quy_ke_khai của LĐ.
-    if payload.dd_quy_phe_duyet is not None:
-        phieu.dd_quy_phe_duyet = payload.dd_quy_phe_duyet
+    # "đ quý người duyệt chốt" ĐÃ GỠ 29/09/2026 — xem UpsertPhieuQuyRequest.
+    # Cột cũ giữ nguyên giá trị để điểm quý I, II/2026 không đổi.
     phieu.trang_thai = TrangThaiPhieuDanhGia.DA_PHE_DUYET.value
     phieu.nguoi_phe_duyet_id = current_user.id
     phieu.ngay_phe_duyet = datetime.utcnow()
@@ -694,8 +689,9 @@ async def tra_lai_phieu(
     phieu.de_xuat_xep_loai = None
     phieu.quyet_dinh_xep_loai = None
     phieu.y_kien_cap_tham_quyen = None
-    # Gỡ đ quý người duyệt chốt (giữ nguyên dd_quy_ke_khai của LĐ)
-    phieu.dd_quy_phe_duyet = None
+    # KHÔNG xoá dd_quy_phe_duyet: tính năng "kê khai lại đ cấp quý" đã gỡ
+    # 29/09/2026 nên không ai nhập lại được nữa — xoá đi là mất vĩnh viễn số
+    # liệu mà điểm quý I, II/2026 đang dựa vào.
     phieu.ngay_gui_duyet = None
     phieu.nguoi_phe_duyet_id = None
     phieu.ngay_phe_duyet = None

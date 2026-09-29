@@ -482,7 +482,7 @@ export default function PhieuTongHopPage() {
               />
               {chiTiet.is_lanh_dao && chiTiet.dd_quy_ke_khai != null && (
                 <Muc
-                  nhan="Kê khai lại chỉ số đ cấp quý"
+                  nhan="Kê khai lại chỉ số đ cấp quý (số liệu cũ, đã bỏ)"
                   noiDung={`${chiTiet.dd_quy_ke_khai}%${chiTiet.dd_quy_ghi_chu ? ` — ${chiTiet.dd_quy_ghi_chu}` : ''}`}
                 />
               )}

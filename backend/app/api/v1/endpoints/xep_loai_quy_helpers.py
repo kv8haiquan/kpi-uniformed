@@ -750,10 +750,14 @@ async def tinh_diem_quy(
             dd_quy = min((v if v is not None else 1.0) for v in dd_values) if dd_values else 1.0
             e_quy = min((v if v is not None else 1.0) for v in e_values) if e_values else 1.0
 
-        # Quy định mới: LĐ được kê khai lại đ cấp quý (chỉ nâng ≥ MIN).
-        dd_quy_ke_khai = await _lay_dd_quy_ke_khai(db, cong_chuc_id, quy, nam, tam_tinh)
-        if dd_quy_ke_khai is not None:
-            dd_quy = max(dd_quy, dd_quy_ke_khai)
+            # "Kê khai lại đ cấp quý" — miếng vá cũ, ĐÃ GỠ từ Q3/2026 (quyết định
+            # 29/09). Nó sinh ra để chữa chuyện MIN ba tháng kéo cả quý xuống 50%;
+            # từ mốc `DDE_THEO_QUY_TU` không còn MIN nữa nên miếng vá thành thừa.
+            # Vẫn áp cho các kỳ TRƯỚC mốc để điểm quý I, II/2026 giữ nguyên —
+            # gỡ hồi tố sẽ làm 20ZZ-0084 tụt từ loại A xuống B.
+            dd_quy_ke_khai = await _lay_dd_quy_ke_khai(db, cong_chuc_id, quy, nam, tam_tinh)
+            if dd_quy_ke_khai is not None:
+                dd_quy = max(dd_quy, dd_quy_ke_khai)
 
         kpi_quy_ratio = (a_quy + b_quy + c_quy + d_quy + dd_quy + e_quy) / 6
         diem_kpi_quy = min(70.0, kpi_quy_ratio * 70)

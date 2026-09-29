@@ -34,6 +34,7 @@ export interface IPhieuTongHopItem {
   de_xuat_xep_loai: MaXepLoai | null;
   quyet_dinh_xep_loai: MaXepLoai | null;
   y_kien_cap_tham_quyen: string | null;
+  // SỐ LIỆU CŨ — "kê khai lại tiêu chí đ cấp quý" đã gỡ 29/09/2026, chỉ để tra cứu.
   dd_quy_ke_khai: number | null;
   dd_quy_ghi_chu: string | null;
   dd_quy_phe_duyet: number | null;

@@ -46,7 +46,8 @@ export interface PhieuDanhGiaQuy {
   quyet_dinh_xep_loai: MucXepLoai | null;
   y_kien_cap_tham_quyen: string | null;
 
-  // Kê khai lại tiêu chí đ cấp quý (chỉ LĐ) — 50/100
+  // SỐ LIỆU CŨ — tính năng "kê khai lại tiêu chí đ cấp quý" đã gỡ 29/09/2026.
+  // Không nhập mới được nữa; chỉ còn để tra cứu và để điểm quý I, II/2026 giữ nguyên.
   dd_quy_ke_khai: number | null;
   dd_quy_ghi_chu: string | null;
   dd_quy_phe_duyet: number | null;
@@ -70,9 +71,6 @@ export interface UpsertPhieuQuyRequest {
   han_che?: string | null;
   /** Mục 5: CC tự đề xuất mức xếp loại. */
   tu_de_xuat_xep_loai?: MucXepLoai | null;
-  /** đ (tổ chức triển khai) LĐ kê khai lại cấp quý: 50 hoặc 100. */
-  dd_quy_ke_khai?: number | null;
-  dd_quy_ghi_chu?: string | null;
 }
 
 export interface PheDuyetPhieuRequest {
@@ -84,8 +82,6 @@ export interface PheDuyetPhieuRequest {
   quyet_dinh_xep_loai?: MucXepLoai | null;
   /** Mục IV.2 (quý): ý kiến của cấp có thẩm quyền. */
   y_kien_cap_tham_quyen?: string | null;
-  /** đ quý người duyệt chốt (50/100) — chỉ được ≥ MIN các tháng. */
-  dd_quy_phe_duyet?: number | null;
 }
 
 export interface TuChoiPhieuRequest {

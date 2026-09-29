@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # =============================================================================
@@ -33,21 +33,11 @@ class UpsertPhieuQuyRequest(BaseModel):
         description="Mục 5: Cá nhân tự đề xuất mức xếp loại "
         "(HTXSNV | HTTNV | HTNV | KHTNV)",
     )
-    # Kê khai lại tiêu chí đ cấp quý (chỉ LĐ) — giá trị 50/100
-    dd_quy_ke_khai: Optional[int] = Field(
-        None,
-        description="đ (tổ chức triển khai) LĐ kê khai lại cấp quý: 50 hoặc 100",
-    )
-    dd_quy_ghi_chu: Optional[str] = Field(
-        None, description="Giải trình việc kê khai lại đ cấp quý"
-    )
-
-    @field_validator("dd_quy_ke_khai")
-    @classmethod
-    def _validate_dd(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v not in (50, 100):
-            raise ValueError("dd_quy_ke_khai chỉ nhận giá trị 50 hoặc 100")
-        return v
+    # ĐÃ GỠ 29/09/2026 — "kê khai lại đ cấp quý" (`dd_quy_ke_khai`,
+    # `dd_quy_ghi_chu`). Miếng vá này sinh ra để chữa chuyện MIN ba tháng kéo cả
+    # quý xuống 50%; từ Q3/2026 d/đ/e kê một lần cho cả quý nên không còn MIN,
+    # miếng vá thành thừa. Cột và dữ liệu cũ GIỮ NGUYÊN để điểm quý I, II/2026
+    # không đổi — xem `_lay_dd_quy_ke_khai` trong xep_loai_quy_helpers.py.
 
 
 class PheDuyetPhieuRequest(BaseModel):
@@ -75,17 +65,7 @@ class PheDuyetPhieuRequest(BaseModel):
         None,
         description="Mục IV.2 (quý): Ý kiến nhận xét của cấp có thẩm quyền",
     )
-    dd_quy_phe_duyet: Optional[int] = Field(
-        None,
-        description="đ quý người duyệt chốt (50/100) — chỉ được ≥ MIN các tháng",
-    )
-
-    @field_validator("dd_quy_phe_duyet")
-    @classmethod
-    def _validate_dd_pd(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v not in (50, 100):
-            raise ValueError("dd_quy_phe_duyet chỉ nhận giá trị 50 hoặc 100")
-        return v
+    # ĐÃ GỠ 29/09/2026 — `dd_quy_phe_duyet` (người duyệt chốt lại đ cấp quý).
 
 
 class TuChoiPhieuRequest(BaseModel):

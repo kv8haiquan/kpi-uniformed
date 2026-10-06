@@ -15,13 +15,25 @@
 | 6 | CSDL, sao lưu/phục hồi, dữ liệu cá nhân | `06_co_so_du_lieu_sao_luu.md` + phụ lục `06_phu_luc_tu_dien_du_lieu.md` (96 bảng) | ✅ Xong |
 | 7 | Tài khoản, phân quyền, xác thực, nhật ký, giám sát | `07_tai_khoan_phan_quyen_nhat_ky.md` | ✅ Xong |
 | 8 | Danh mục API, kết nối, tích hợp | `08_danh_muc_api.md` (555 endpoints / 8 service) | ✅ Xong |
-| 9 | Hồ sơ kiểm thử, nghiệm thu, HDSD, cập nhật phiên bản | `09_kiem_thu_van_hanh_phien_ban.md` | ✅ Xong |
+| 9 | Hồ sơ kiểm thử, nghiệm thu, HDSD, cập nhật phiên bản | `09_kiem_thu_van_hanh_phien_ban.md` + HDSD `13_huong_dan_su_dung/` + vận hành `14_cai_dat_quan_tri_van_hanh/` | ✅ Xong |
 | 10 | Đầu mối kỹ thuật | Ghi tại công văn phúc đáp | ⏳ Chờ TCCB |
 
 ## Tài liệu bổ sung
 
 - `10_HOI_DAP_BO_SUNG.md` — trả lời trực tiếp bộ câu hỏi của đoàn kiểm tra (kiến trúc, backup, PII, mật khẩu, audit, API, kiểm thử) — lập 05/08/2026, đã gồm hiện trạng sau đợt vá 31/07.
 - `api-specs/` — 8 file OpenAPI JSON (export từ từng service) + `danh_muc_endpoints.csv` (555 endpoints, mở bằng Excel).
+
+## Bổ sung đợt 2 (06/10/2026)
+
+| Yêu cầu của đoàn kiểm tra | Tài liệu |
+|---|---|
+| Phân tích yêu cầu người sử dụng | `11_phan_tich_yeu_cau_nguoi_dung.md` (lập hồi cố, có ma trận truy vết) |
+| Quy trình giám sát vận hành hệ thống | `12_quy_trinh_giam_sat_van_hanh.md` |
+| Hướng dẫn sử dụng theo nhóm người dùng | `13_huong_dan_su_dung/` (README + 8 file theo vai trò) |
+| Cài đặt, cấu hình, quản trị, vận hành hệ thống/CSDL | `14_cai_dat_quan_tri_van_hanh/` (README + 5 file) |
+| Tài liệu phân tích, thiết kế được dẫn chiếu | `15_danh_muc_tai_lieu_thiet_ke.md` (danh mục + hiện trạng + đề xuất gói nộp) |
+| Lỗi thường gặp và hướng dẫn khắc phục | `16_loi_thuong_gap_khac_phuc.md` |
+| Trả lời trực tiếp + **đính chính hồ sơ đợt 1** | `17_HOI_DAP_DOT_2.md` |
 
 ## Tài liệu nội bộ (không bàn giao nguyên trạng)
 

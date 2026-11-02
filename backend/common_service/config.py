@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # Redis (cache/queue)
     redis_url: str = "redis://localhost:6379/0"
 
+    # Sổ tay số (tệp HTML do phòng nghiệp vụ biên soạn) — xem api/endpoints/so_tay.py.
+    # Thư mục này nằm trong vùng uploads được cron sao lưu nhưng KHÔNG có
+    # location nginx nào trỏ tới → chỉ đọc được qua API có đăng nhập.
+    so_tay_dir: str = "/var/data/kpi/uploads/so-tay"
+
     # ------------------------------------------------------------------
     # Zalo OA — kênh đẩy thông báo (xem services/zalo/)
     # ------------------------------------------------------------------

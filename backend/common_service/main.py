@@ -86,12 +86,14 @@ from common_service.api.endpoints.file_storage import router as file_storage_rou
 from common_service.api.endpoints.knowledge_base import router as kb_router
 from common_service.api.endpoints.kpi_log import router as kpi_log_router
 from common_service.api.endpoints.search import router as search_router
+from common_service.api.endpoints.so_tay import router as so_tay_router
 
 app.include_router(thong_bao_router, prefix=API_PREFIX)
 app.include_router(file_storage_router, prefix=API_PREFIX)
 app.include_router(kb_router, prefix=API_PREFIX)
 app.include_router(kpi_log_router, prefix=API_PREFIX)
 app.include_router(search_router, prefix=API_PREFIX)
+app.include_router(so_tay_router, prefix=API_PREFIX)
 
 # Internal API — Module khac goi (X-Internal-Key header)
 from common_service.api.internal.thong_bao import router as thong_bao_internal_router

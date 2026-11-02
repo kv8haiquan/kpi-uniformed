@@ -120,6 +120,23 @@ export const knowledgeBaseApi = {
 };
 
 // =============================================================================
+// SỔ TAY SỐ
+// =============================================================================
+
+export const soTayApi = {
+  /** Danh sách sổ tay — GET /so-tay */
+  danhSach: () =>
+    commonAxios.get('/so-tay'),
+
+  /** Nội dung HTML của một sổ — GET /so-tay/{ma}. Sổ tay KTNB ~9 MB nên nới timeout. */
+  noiDung: (ma: string) =>
+    commonAxios.get<string>(`/so-tay/${encodeURIComponent(ma)}`, {
+      responseType: 'text',
+      timeout: 180000,
+    }),
+};
+
+// =============================================================================
 // DEFAULT EXPORT
 // =============================================================================
 
@@ -127,6 +144,7 @@ const commonService = {
   thongBaoApi,
   searchApi,
   knowledgeBaseApi,
+  soTayApi,
 };
 
 export default commonService;

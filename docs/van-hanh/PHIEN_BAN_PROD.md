@@ -7,11 +7,40 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `d8762c2` |
-| **Ngắn** | `d8762c2` |
-| **Nhánh nguồn** | `feature/kpi-bo-ke-khai-lai-dd` (fast-forward thẳng từ `ed203c9`) |
-| **Ngày ghi mốc** | 29/09/2026 15:36 |
+| **Commit** | `69a2a22` |
+| **Ngắn** | `69a2a22` |
+| **Nhánh nguồn** | `feature/common-so-tay` (fast-forward thẳng từ `9534f17`) |
+| **Ngày ghi mốc** | 02/11/2026 17:41 |
 | **Alembic** | `kpi_dde_theo_quy_20260928` — **KHÔNG migration mới** |
+
+Nội dung: **Common — Sổ tay số (chỉ xem trực tuyến).**
+
+Đăng 2 tệp HTML một-tệp của phòng nghiệp vụ cho **mọi công chức đã đăng nhập**:
+Sổ tay kiểm tra nội bộ (QĐ 459/QĐ-CHQ, kèm 19 biểu mẫu, Sổ nhật ký Đoàn — 9 MB) và
+Sổ tra cứu lỗi hải quan (TCCB, V1.0 ngày 08/10/2026). Mục "Sổ tay số" trên sidebar.
+
+- Tệp nằm ở **`/var/data/kpi/uploads/so-tay/`** (KHÔNG trong git) — cron sao lưu
+  uploads đã bao, nginx không có location nào trỏ tới. **Thay bản mới: chép đè tệp
+  cùng tên, không build, không restart.** Phiên bản/ngày đọc thẳng từ tệp.
+- Phục vụ qua `GET /api/common/v1/so-tay[/{ma}]` (bắt buộc JWT); FE lấy bằng axios →
+  blob URL cùng origin → iframe. Không đặt tĩnh được vì sổ ghi rõ "không đăng tải
+  công khai" mà JWT nằm ở localStorage — nginx không soát đăng nhập được.
+- **Không cho tải nguyên tệp** (quyết định 02/11): `frontend/src/lib/so-tay-nhung.ts`
+  chèn mã lúc hiển thị, chặn `<a download="*.html">` và ẩn 4 nút tải; biểu mẫu
+  .docx/.pdf, Xuất Excel vẫn tải được. Đồng thời ép SheetJS 0.18.5 (CVE-2023-30533,
+  CVE-2024-22363) về 0.20.3. Làm ở tầng hiển thị để bản cập nhật của TCCB không xoá mất.
+
+> **Bản mới của Sổ tay KTNB phải giữ giao kèo postMessage** `FORM_SHOW_PDF` /
+> `QD459_SHOW_PDF` — trong iframe sổ không tự mở PDF mà nhờ trang cha. Nếu tác giả
+> đổi id các nút tải, cập nhật danh sách ẩn trong `so-tay-nhung.ts`.
+
+Kiểm chứng: `test_so_tay.py` **11/11 PASS** (401, 404, chống path traversal); 2 tệp
+thật trên Chromium headless **16/16 kiểm tra đạt, 0 lỗi JS**; trên prod: API không
+token → 401, `/so-tay` → 200, `/files/so-tay/...` → 404.
+
+Ảnh hưởng dữ liệu đang chạy: **không sửa dòng nào, không migration.**
+
+### Mốc trước — `d8762c2`
 
 Nội dung: **KPI — gỡ tính năng "kê khai lại tiêu chí đ cấp quý".**
 

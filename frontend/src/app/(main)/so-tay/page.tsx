@@ -3,7 +3,7 @@
  * ================================
  * Sổ tay số — danh sách các sổ do phòng nghiệp vụ biên soạn
  * (Sổ tay kiểm tra nội bộ, Sổ tra cứu lỗi hải quan). Mở cho mọi công chức.
- * Chỉ xem trực tuyến — không có nút tải nguyên tệp (quyết định 02/11/2026).
+ * Xem trực tuyến; được tải nguyên tệp về máy bằng nút trong sổ (02/11/2026).
  */
 
 'use client';
@@ -51,7 +51,7 @@ export default function SoTayPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Sổ tay số</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Tài liệu nghiệp vụ sử dụng nội bộ — xem trực tuyến trên nền tảng, không đăng tải công khai
+            Tài liệu nghiệp vụ sử dụng nội bộ — xem trực tuyến hoặc tải về máy bằng nút tải trong sổ, không đăng tải công khai
           </p>
         </div>
 

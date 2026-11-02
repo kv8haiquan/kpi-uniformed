@@ -174,3 +174,18 @@ export const SEARCH_MODULE_LABELS: Record<SearchModule, string> = {
   PORTAL: 'Tin tức',
   COMMON: 'Kho tri thức',
 };
+
+// =============================================================================
+// SỔ TAY SỐ
+// =============================================================================
+
+export interface ISoTayItem {
+  ma: string;
+  tieu_de: string;
+  mo_ta: string;
+  /** false = máy chủ chưa có tệp (chưa chép lên) */
+  co_san: boolean;
+  dung_luong: number | null;
+  phien_ban: string | null;
+  ngay_cap_nhat: string | null;
+}

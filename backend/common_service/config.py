@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     # Redis (cache/queue)
     redis_url: str = "redis://localhost:6379/0"
 
+    # Sổ tay số (tệp HTML do phòng nghiệp vụ biên soạn) — xem api/endpoints/so_tay.py.
+    # Thư mục này nằm trong vùng uploads được cron sao lưu nhưng KHÔNG có
+    # location nginx nào trỏ tới → chỉ đọc được qua API có đăng nhập.
+    so_tay_dir: str = "/var/data/kpi/uploads/so-tay"
+
     # ------------------------------------------------------------------
     # Zalo OA — kênh đẩy thông báo (xem services/zalo/)
     # ------------------------------------------------------------------
@@ -95,6 +100,15 @@ class Settings(BaseSettings):
     zalo_tpl_nhac_hop: str = ""  # 623236 Nhắc họp không giấy
     zalo_tpl_thay_doi_hop: str = ""  # 623180 Thay đổi lịch họp
     zalo_tpl_huy_hop: str = ""  # 623182 Hủy họp không giấy
+
+    # Số ký tự tối đa của tham số `noi_dung` (tiêu đề họp rút gọn) — PHẢI bằng
+    # `maxLength` mà template ZALO_TPL_* tương ứng khai trên ZBS. 0 = template
+    # đang dùng KHÔNG khai `noi_dung` (bộ 6231xx). Đổi template thì đổi cả hai
+    # biến trong cùng lần sửa .env, rồi chạy scripts/zalo_xem_template.py
+    # --doi-chieu. Bộ mới 660796 / 660794 / 660795 khai noi_dung tối đa 200.
+    zalo_noi_dung_toi_da_nhac_hop: int = 0
+    zalo_noi_dung_toi_da_thay_doi_hop: int = 0
+    zalo_noi_dung_toi_da_huy_hop: int = 0
 
     # Phạm vi bật: danh sách `loai` trong common.thong_bao được phép gửi Zalo.
     # Giai đoạn 1 chỉ HKG. Muốn bật thêm KPI/LMS chỉ cần sửa biến môi trường.

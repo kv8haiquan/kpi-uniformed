@@ -30,6 +30,7 @@ import {
   Newspaper,
   FolderOpen,
   BookOpen,
+  BookMarked,
   Bell,
   Search,
   Settings,
@@ -175,6 +176,7 @@ function useMenuSections(): MenuSection[] {
         { label: 'Tin tức', href: '/tin-tuc', icon: Newspaper },
         { label: 'Tài liệu', href: '/tai-lieu', icon: FolderOpen },
         { label: 'Kho tri thức', href: '/kien-thuc', icon: BookOpen },
+        { label: 'Sổ tay số', href: '/so-tay', icon: BookMarked },
         // Lịch công tác đặt NGAY TRÊN Họp Không Giấy — yêu cầu mục 8.1 của
         // đề bài chuyển đổi. Hai mục dùng chung dữ liệu cuộc họp nên đi cạnh nhau.
         // Dùng chung điều kiện hiển thị với HKG vì cùng một backend.

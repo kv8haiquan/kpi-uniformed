@@ -14,8 +14,16 @@ Lý do làm vậy:
      cũng không đọc được gì.
   3. Template ít tham số thì dễ được Zalo duyệt hơn.
 
-Nếu sau này lãnh đạo muốn hiển thị tiêu đề cuộc họp, sửa ở đây là đủ — nhưng
-phải xin ý kiến Phòng CNTT trước và tạo template ZNS mới.
+ĐIỀU CHỈNH (02/11/2026, theo đề nghị của Văn phòng): tin NHẮC HỌP, THAY ĐỔI
+LỊCH HỌP và HỦY HỌP được mang thêm tham số `noi_dung` = tiêu đề cuộc họp rút
+gọn, để người nhận biết là cuộc họp nào mà không phải mở phần mềm. Các trường
+khác (địa điểm, thành phần, tài liệu) VẪN KHÔNG gửi. Giấy mời giữ nguyên.
+
+Bật/tắt `noi_dung` nằm ở .env (ZALO_NOI_DUNG_TOI_DA_*), KHÔNG cứng trong code:
+template mới có `noi_dung` phải chờ Zalo duyệt, trong lúc đó prod vẫn chạy
+template cũ không có tham số này. Giá trị 0 = template không khai `noi_dung`.
+Khi đổi ZALO_TPL_* sang template mới thì PHẢI đổi giới hạn đi kèm trong CÙNG
+lần sửa .env — lệch nhau là Zalo từ chối mọi tin.
 
 TRẠNG THÁI (14/08/2026): chuyển sang bộ 4 template ZBS mới, tất cả ENABLE, ID
 điền trong .env qua các biến ZALO_TPL_*. Bộ mới khắc phục hai hạn chế của bộ
@@ -36,6 +44,9 @@ from typing import Any, Callable, Optional
 # Giới hạn ký tự tham số `ho_ten` do template khai (xem scripts/zalo_xem_template.py)
 MAX_HO_TEN = 30
 
+# Hậu tố đánh dấu tiêu đề đã bị rút gọn
+_DAU_CAT = "…"
+
 # Thứ tự ưu tiên hiển thị mốc nhắc — dùng cho template nhắc họp gộp
 _MOC_NHAC = {
     "NHAC_HOP_24H": "trước 24 giờ",
@@ -54,6 +65,30 @@ class ThongTinGui:
     gio_bat_dau: Optional[time]
     link_url: Optional[str]
     cuoc_hop_id: Optional[Any] = None
+    # Tiêu đề cuộc họp (meeting.cuoc_hop.tieu_de) — nguồn của tham số `noi_dung`
+    tieu_de: Optional[str] = None
+
+
+def rut_gon(chuoi: Optional[str], toi_da: int) -> str:
+    """Rút gọn chuỗi về tối đa `toi_da` ký tự, KHÔNG BAO GIỜ vượt.
+
+    Vượt hạn mức template là Zalo từ chối CẢ tin, nên đây là bất biến cứng.
+    Gom khoảng trắng/xuống dòng thành một dấu cách (tiêu đề nhập tay hay dính
+    xuống dòng), cắt ở ranh giới từ nếu được, thêm "…" khi đã cắt.
+    """
+    s = " ".join((chuoi or "").split())
+    if toi_da <= 0:
+        return ""
+    if len(s) <= toi_da:
+        return s
+    if toi_da <= len(_DAU_CAT):
+        return s[:toi_da]
+    goc = s[: toi_da - len(_DAU_CAT)]
+    # Lùi về dấu cách gần nhất nếu không mất quá nửa chuỗi
+    vi_tri = goc.rfind(" ")
+    if vi_tri >= len(goc) // 2:
+        goc = goc[:vi_tri]
+    return goc.rstrip(" ,.;:-–") + _DAU_CAT
 
 
 def _them_moc(tt: ThongTinGui) -> dict[str, Any]:
@@ -84,6 +119,18 @@ class MauTin:
     thoi_gian_kieu_date: bool = True
     # Tham số riêng của từng loại (hiện chỉ `moc` của nhóm nhắc họp)
     tham_so_rieng: Optional[Callable[[ThongTinGui], dict[str, Any]]] = None
+    # Tên biến settings chứa số ký tự tối đa của `noi_dung` (tiêu đề họp rút
+    # gọn). None = loại này không bao giờ gửi `noi_dung`. Biến có giá trị 0 =
+    # template đang dùng chưa khai `noi_dung`.
+    khoa_noi_dung: Optional[str] = None
+
+    def noi_dung_toi_da(self) -> int:
+        """Số ký tự tối đa của `noi_dung` theo cấu hình hiện tại (0 = không gửi)."""
+        if not self.khoa_noi_dung:
+            return 0
+        from common_service.config import settings
+
+        return max(0, int(getattr(settings, self.khoa_noi_dung, 0) or 0))
 
     def thoi_gian(self, tt: ThongTinGui) -> str:
         """Giá trị tham số `thoi_gian`.
@@ -110,6 +157,11 @@ class MauTin:
         }
         if self.tham_so_rieng is not None:
             d.update(self.tham_so_rieng(tt))
+        toi_da = self.noi_dung_toi_da()
+        if toi_da:
+            # Tiêu đề trống thì vẫn phải gửi chuỗi khác rỗng — tham số khai
+            # "bắt buộc", gửi rỗng có thể bị từ chối.
+            d["noi_dung"] = rut_gon(tt.tieu_de, toi_da) or rut_gon("Cuộc họp", toi_da)
         if self.co_ma_hop:
             # Mã cuộc họp để nút bấm dẫn thẳng vào đúng cuộc họp thay vì trang
             # chủ. KHÔNG vi phạm chính sách "chuông cửa": đây là chuỗi định
@@ -132,6 +184,14 @@ class MauTin:
 #   623180 Thay đổi lịch họp   ho_ten, thoi_gian, ma_hop
 #   623182 Hủy họp không giấy  ho_ten, thoi_gian, ma_hop
 # Cả 4 đều ENABLE và khai `thoi_gian` kiểu STRING → gửi kèm được giờ họp.
+#
+# Bộ có `noi_dung` tối đa 200 ký tự (PENDING_REVIEW 02/11/2026 — dùng khi được
+# duyệt, đổi ZALO_TPL_* cùng ZALO_NOI_DUNG_TOI_DA_*=200):
+#   660796 Nhắc họp            ho_ten, thoi_gian, moc, noi_dung, ma_hop
+#   660794 Thay đổi lịch họp   ho_ten, thoi_gian, noi_dung, ma_hop
+#   660795 Hủy họp             ho_ten, thoi_gian, noi_dung, ma_hop
+# (657969/657971 cùng cấu trúc nhưng noi_dung chỉ 30 ký tự — 97% tiêu đề bị cắt.)
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 DANH_MUC_MAU: dict[str, MauTin] = {
     "GIAY_MOI_HOP": MauTin(
@@ -146,6 +206,7 @@ DANH_MUC_MAU: dict[str, MauTin] = {
         co_ma_hop=True,
         thoi_gian_kieu_date=False,
         tham_so_rieng=_them_moc,
+        khoa_noi_dung="zalo_noi_dung_toi_da_nhac_hop",
     ),
     "NHAC_HOP_1H": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
@@ -153,6 +214,7 @@ DANH_MUC_MAU: dict[str, MauTin] = {
         co_ma_hop=True,
         thoi_gian_kieu_date=False,
         tham_so_rieng=_them_moc,
+        khoa_noi_dung="zalo_noi_dung_toi_da_nhac_hop",
     ),
     "NHAC_HOP_30P": MauTin(
         khoa_config="zalo_tpl_nhac_hop",
@@ -160,18 +222,21 @@ DANH_MUC_MAU: dict[str, MauTin] = {
         co_ma_hop=True,
         thoi_gian_kieu_date=False,
         tham_so_rieng=_them_moc,
+        khoa_noi_dung="zalo_noi_dung_toi_da_nhac_hop",
     ),
     "THAY_DOI_HOP": MauTin(
         khoa_config="zalo_tpl_thay_doi_hop",
         mo_ta="Thay đổi lịch họp",
         co_ma_hop=True,
         thoi_gian_kieu_date=False,
+        khoa_noi_dung="zalo_noi_dung_toi_da_thay_doi_hop",
     ),
     "HUY_HOP": MauTin(
         khoa_config="zalo_tpl_huy_hop",
         mo_ta="Hủy họp",
         co_ma_hop=True,
         thoi_gian_kieu_date=False,
+        khoa_noi_dung="zalo_noi_dung_toi_da_huy_hop",
     ),
 }
 

@@ -7,11 +7,31 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `69a2a22` |
-| **Ngắn** | `69a2a22` |
-| **Nhánh nguồn** | `feature/common-so-tay` (fast-forward thẳng từ `9534f17`) |
-| **Ngày ghi mốc** | 02/11/2026 17:41 |
+| **Commit** | `c6abbaf` |
+| **Ngắn** | `c6abbaf` |
+| **Nhánh nguồn** | `feature/common-so-tay-cho-tai` (fast-forward thẳng từ `f7ee84d`) |
+| **Ngày ghi mốc** | 02/11/2026 21:48 |
 | **Alembic** | `kpi_dde_theo_quy_20260928` — **KHÔNG migration mới** |
+
+Nội dung: **Common — Sổ tay số: cho phép tải nguyên tệp về máy.**
+
+Đổi quyết định cùng ngày (02/11): người dùng được tải tệp HTML của sổ. Bỏ mã chặn
+`<a download="*.html">` và CSS ẩn 4 nút tải (`#btn-tai-sotay`, `#nk-tai`, `#dlBtn`,
+`#admBuild`); người dùng tải bằng chính các nút sẵn có trong sổ.
+`so-tay-nhung.ts` nay chỉ còn ép SheetJS 0.18.5 → 0.20.3.
+
+> **Bẫy:** chạy từ blob URL, sổ dựng tệp tải về từ **bản chụp DOM lúc nạp trang**,
+> không lấy tệp gốc trên máy chủ. Mọi thứ chèn vào HTML ở `so-tay-nhung.ts` đều đi
+> theo bản tải về — không chèn mã chỉ có nghĩa trên nền tảng.
+
+Kiểm chứng: Chromium headless — nút tải hiện ở cả hai sổ, tải được
+`So_tra_cuu_loi.html`, `So-tay-kiem-tra-noi-bo.html`, `So-nhat-ky-Doan_V2.2.html`;
+bản tải không chứa mã nền tảng, 0 lỗi JS. Trên prod: `/so-tay` → 200, API không
+token → 401, bundle mới không còn `KPI_SO_TAY_CHAN_TAI`.
+
+Ảnh hưởng dữ liệu đang chạy: **không sửa dòng nào, không migration.**
+
+### Mốc trước — `69a2a22`
 
 Nội dung: **Common — Sổ tay số (chỉ xem trực tuyến).**
 

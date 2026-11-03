@@ -25,6 +25,11 @@ lỡ gõ nhầm số của người khác thì Zalo từ chối chứ không g�
     # Chọn loại tin khác
     python scripts/zalo_gui_thu.py 0912345678 --loai HUY_HOP
 
+    # Thử template có `noi_dung` (cần ZALO_NOI_DUNG_TOI_DA_* > 0, có thể đặt
+    # bằng biến môi trường cho riêng lần chạy này thay vì sửa .env)
+    python scripts/zalo_gui_thu.py 0912345678 --loai NHAC_HOP_24H \
+        --tieu-de "Họp giao ban tháng 11/2026"
+
     # Gửi thật, CÓ TÍNH PHÍ, gửi được tới số bất kỳ
     python scripts/zalo_gui_thu.py 0912345678 --that
 
@@ -64,6 +69,11 @@ def _doi_so(argv: list[str]) -> argparse.Namespace:
     )
     p.add_argument("--ho-ten", default="Nguyễn Văn A", help="Tên hiển thị trong tin")
     p.add_argument(
+        "--tieu-de",
+        default="Họp thử nghiệm thông báo Zalo — không phải cuộc họp thật",
+        help="Tiêu đề cuộc họp giả lập (nguồn của tham số noi_dung)",
+    )
+    p.add_argument(
         "--that",
         action="store_true",
         help="Gửi THẬT (có tính phí, gửi được tới số bất kỳ). "
@@ -101,6 +111,7 @@ async def main(argv: list[str]) -> int:
         gio_bat_dau=time(14, 0),
         link_url=None,
         cuoc_hop_id=uuid.uuid4(),
+        tieu_de=a.tieu_de,
     )
     tham_so = mau.tham_so(tt)
 

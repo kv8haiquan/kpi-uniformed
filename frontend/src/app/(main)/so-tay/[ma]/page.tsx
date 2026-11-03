@@ -10,7 +10,8 @@
  * thường và giữ qua các lần mở.
  *
  * KHÔNG gắn `sandbox`: Sổ nhật ký Đoàn dùng showDirectoryPicker, Chrome cấm hộp
- * chọn tệp trong iframe sandbox. Việc chặn tải nguyên tệp do lib/so-tay-nhung.ts lo.
+ * chọn tệp trong iframe sandbox. Tải nguyên tệp sổ về máy được phép (02/11/2026) —
+ * dùng các nút tải sẵn có trong sổ.
  *
  * Giao kèo postMessage với Sổ tay KTNB: khi chạy trong iframe, sổ KHÔNG tự mở
  * PDF (trình duyệt chặn PDF lồng iframe) mà gửi lên trang cha:
@@ -47,7 +48,6 @@ export default function XemSoTayPage() {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [xemPdf, setXemPdf] = useState<IXemPdf | null>(null);
-  const [thongBao, setThongBao] = useState<string | null>(null);
 
   // Tải nội dung sổ → blob URL; thu hồi khi rời trang
   useEffect(() => {
@@ -92,8 +92,6 @@ export default function XemSoTayPage() {
       });
     } else if (d.type === 'QD459_SHOW_PDF' && laBlobNoiBo(d.blobUrl)) {
       setXemPdf({ tieuDe: 'Quyết định 459/QĐ-CHQ — Quy chế kiểm tra nội bộ', pdfUrl: d.blobUrl });
-    } else if (d.type === 'KPI_SO_TAY_CHAN_TAI') {
-      setThongBao('Sổ tay chỉ sử dụng trực tuyến trên nền tảng, không tải về máy.');
     }
   }, []);
 
@@ -101,12 +99,6 @@ export default function XemSoTayPage() {
     window.addEventListener('message', nhanThongDiep);
     return () => window.removeEventListener('message', nhanThongDiep);
   }, [nhanThongDiep]);
-
-  useEffect(() => {
-    if (!thongBao) return;
-    const t = setTimeout(() => setThongBao(null), 4000);
-    return () => clearTimeout(t);
-  }, [thongBao]);
 
   useEffect(() => {
     if (!xemPdf) return;
@@ -163,12 +155,6 @@ export default function XemSoTayPage() {
           />
         )}
       </div>
-
-      {thongBao && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
-          {thongBao}
-        </div>
-      )}
 
       {xemPdf && (
         <div

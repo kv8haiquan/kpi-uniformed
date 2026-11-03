@@ -13,6 +13,7 @@ from common_service.services.zalo.templates import (
     DANH_MUC_MAU,
     ThongTinGui,
     lay_mau,
+    rut_gon,
     so_luong_template_can_duyet,
 )
 
@@ -156,14 +157,28 @@ class TestChinhSachChuongCua:
     # địa điểm, thành phần hay tài liệu — nên vẫn đúng tinh thần "chuông cửa".
     KHOA_DUOC_PHEP = {"ho_ten", "thoi_gian", "moc", "ma_hop"}
 
-    def test_khong_co_truong_nao_ngoai_danh_sach_cho_phep(self):
+    # Ngoại lệ đã duyệt 02/11/2026 (đề nghị của Văn phòng): nhắc họp, thay
+    # đổi lịch họp và hủy họp được kèm tiêu đề rút gọn. Giấy mời thì KHÔNG.
+    LOAI_DUOC_GUI_NOI_DUNG = {
+        "NHAC_HOP_24H", "NHAC_HOP_1H", "NHAC_HOP_30P", "THAY_DOI_HOP", "HUY_HOP",
+    }
+
+    def test_khong_co_truong_nao_ngoai_danh_sach_cho_phep(self, monkeypatch):
+        _bat_noi_dung(monkeypatch, 100)
         for loai, mau in DANH_MUC_MAU.items():
             ts = mau.tham_so(
                 ThongTinGui(loai, "X", date(2026, 1, 1), time(9, 0), "/link",
-                            cuoc_hop_id="abc-123")
+                            cuoc_hop_id="abc-123", tieu_de="Họp giao ban")
             )
-            thua = set(ts.keys()) - self.KHOA_DUOC_PHEP
+            duoc_phep = set(self.KHOA_DUOC_PHEP)
+            if loai in self.LOAI_DUOC_GUI_NOI_DUNG:
+                duoc_phep.add("noi_dung")
+            thua = set(ts.keys()) - duoc_phep
             assert not thua, f"{loai} lộ thêm trường: {thua}"
+
+    def test_chi_dung_cac_loai_da_duyet_moi_co_khoa_noi_dung(self):
+        co_khoa = {k for k, m in DANH_MUC_MAU.items() if m.khoa_noi_dung}
+        assert co_khoa == self.LOAI_DUOC_GUI_NOI_DUNG
 
     def test_link_url_khong_bi_dua_vao_tham_so(self):
         """link_url chứa UUID cuộc họp — không cần và không nên gửi qua Zalo."""
@@ -244,6 +259,106 @@ class TestKhopVoiTemplateDaDuyet:
             )
             assert isinstance(ts["moc"], str) and ts["moc"]
             assert len(ts["moc"]) <= 30, f"{loai}: moc dài quá {len(ts['moc'])}"
+
+
+def _bat_noi_dung(monkeypatch, nhac_hop: int, thay_doi_hop: int | None = None,
+                  huy_hop: int | None = None):
+    from common_service.config import settings
+
+    monkeypatch.setattr(settings, "zalo_noi_dung_toi_da_nhac_hop", nhac_hop)
+    monkeypatch.setattr(
+        settings, "zalo_noi_dung_toi_da_thay_doi_hop",
+        nhac_hop if thay_doi_hop is None else thay_doi_hop,
+    )
+    monkeypatch.setattr(
+        settings, "zalo_noi_dung_toi_da_huy_hop",
+        nhac_hop if huy_hop is None else huy_hop,
+    )
+
+
+def _ts(loai: str, tieu_de):
+    return DANH_MUC_MAU[loai].tham_so(
+        ThongTinGui(loai, "X", date(2026, 1, 1), time(9, 0), "/l",
+                    cuoc_hop_id="abc", tieu_de=tieu_de)
+    )
+
+
+class TestRutGon:
+    """`noi_dung` vượt maxLength là Zalo từ chối CẢ tin → không bao giờ vượt."""
+
+    @pytest.mark.parametrize("toi_da", [1, 2, 5, 10, 30, 100])
+    @pytest.mark.parametrize("chuoi", [
+        "", "Họp", "Họp giao ban tuần 45/2026",
+        "Họp triển khai công tác kiểm tra sau thông quan " * 10,
+        "Mộtchuỗirấtdàikhôngcódấucáchnàocảđểcắtởranhgiớitừ" * 3,
+    ])
+    def test_khong_bao_gio_vuot_toi_da(self, chuoi, toi_da):
+        assert len(rut_gon(chuoi, toi_da)) <= toi_da
+
+    def test_ngan_thi_giu_nguyen(self):
+        assert rut_gon("Họp giao ban", 30) == "Họp giao ban"
+
+    def test_dai_thi_cat_o_ranh_gioi_tu_va_them_dau_cham_lung(self):
+        kq = rut_gon("Họp triển khai công tác kiểm tra sau thông quan", 30)
+        assert kq.endswith("…") and len(kq) <= 30
+        assert kq == "Họp triển khai công tác kiểm…"
+
+    def test_gom_xuong_dong_va_khoang_trang(self):
+        assert rut_gon("  Họp\n\ngiao   ban\t", 30) == "Họp giao ban"
+
+    def test_toi_da_0_tra_rong(self):
+        assert rut_gon("Họp", 0) == ""
+
+
+class TestNoiDungTheoCauHinh:
+    """Bật `noi_dung` bằng .env để code lên prod trước khi template mới được duyệt."""
+
+    def test_mac_dinh_khong_gui_noi_dung(self):
+        """Mặc định 0 → bộ tham số giữ nguyên như bộ template 6231xx đang chạy."""
+        for loai in DANH_MUC_MAU:
+            assert "noi_dung" not in _ts(loai, "Họp giao ban"), loai
+
+    @pytest.mark.parametrize("loai", [
+        "NHAC_HOP_24H", "NHAC_HOP_1H", "NHAC_HOP_30P", "THAY_DOI_HOP", "HUY_HOP",
+    ])
+    def test_bat_thi_gui_tieu_de_rut_gon(self, monkeypatch, loai):
+        _bat_noi_dung(monkeypatch, 30)
+        ts = _ts(loai, "Họp triển khai công tác kiểm tra sau thông quan")
+        assert ts["noi_dung"] == "Họp triển khai công tác kiểm…"
+
+    def test_giay_moi_khong_bao_gio_co_noi_dung(self, monkeypatch):
+        """Template thừa tham số cũng bị từ chối cả tin."""
+        _bat_noi_dung(monkeypatch, 200)
+        assert "noi_dung" not in _ts("GIAY_MOI_HOP", "Họp giao ban")
+
+    def test_ba_template_bat_doc_lap(self, monkeypatch):
+        """Ba template mới có thể được duyệt ở những thời điểm khác nhau."""
+        _bat_noi_dung(monkeypatch, 200, thay_doi_hop=0, huy_hop=200)
+        assert "noi_dung" in _ts("NHAC_HOP_1H", "Họp")
+        assert "noi_dung" not in _ts("THAY_DOI_HOP", "Họp")
+        assert "noi_dung" in _ts("HUY_HOP", "Họp")
+
+    def test_tieu_de_422_ky_tu_cat_con_200(self, monkeypatch):
+        """Tiêu đề dài nhất trên prod (90 ngày) là 422 ký tự."""
+        _bat_noi_dung(monkeypatch, 200)
+        nd = _ts("NHAC_HOP_24H", "Họp triển khai công tác " * 18)["noi_dung"]
+        assert len(nd) <= 200 and nd.endswith("…")
+
+    @pytest.mark.parametrize("tieu_de", [None, "", "   \n "])
+    def test_tieu_de_trong_van_gui_chuoi_khac_rong(self, monkeypatch, tieu_de):
+        """Tham số khai bắt buộc — gửi chuỗi rỗng có thể bị từ chối."""
+        _bat_noi_dung(monkeypatch, 30)
+        assert _ts("NHAC_HOP_24H", tieu_de)["noi_dung"] == "Cuộc họp"
+
+    def test_bo_tham_so_khop_bo_template_660794_6(self, monkeypatch):
+        _bat_noi_dung(monkeypatch, 200)
+        assert set(_ts("NHAC_HOP_24H", "Họp")) == {  # 660796
+            "ho_ten", "thoi_gian", "moc", "noi_dung", "ma_hop",
+        }
+        for loai in ("THAY_DOI_HOP", "HUY_HOP"):  # 660794 / 660795
+            assert set(_ts(loai, "Họp")) == {
+                "ho_ten", "thoi_gian", "noi_dung", "ma_hop",
+            }, loai
 
 
 class TestKhungGioGui:

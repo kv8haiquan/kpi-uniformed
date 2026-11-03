@@ -76,6 +76,8 @@ async def _doi_chieu(client: httpx.AsyncClient, token: str) -> int:
         gio_bat_dau=time(14, 0),
         link_url=None,
         cuoc_hop_id="7279683b-49fb-446d-aa48-6e66f155f314",
+        # Cố ý dài hơn mọi hạn mức để kiểm việc rút gọn `noi_dung`
+        tieu_de="Họp triển khai công tác kiểm tra sau thông quan và rà soát " * 5,
     )
 
     # Mỗi template chỉ cần kiểm 1 lần dù nhiều loại thông báo dùng chung
@@ -109,7 +111,17 @@ async def _doi_chieu(client: httpx.AsyncClient, token: str) -> int:
         kieu_that = (that.get("thoi_gian") or {}).get("type")
         lech_kieu = kieu_that and mau.thoi_gian_kieu_date != (kieu_that == "DATE")
 
-        if not thua and not thieu and not lech_kieu:
+        # Độ dài thực tế của từng tham số so với maxLength template khai —
+        # chủ yếu để bắt ZALO_NOI_DUNG_TOI_DA_* đặt lớn hơn template cho phép
+        qua_dai = {
+            k: (len(str(v)), int(that[k]["maxLength"]))
+            for k, v in code.items()
+            if k in that
+            and str(that[k].get("maxLength") or "").isdigit()
+            and len(str(v)) > int(that[k]["maxLength"])
+        }
+
+        if not thua and not thieu and not lech_kieu and not qua_dai:
             gio = "có giờ" if not mau.thoi_gian_kieu_date else "chỉ ngày"
             print(f"✅ {loai:<14} [{tid}] khớp — {sorted(code)} ({gio})")
             continue
@@ -120,6 +132,13 @@ async def _doi_chieu(client: httpx.AsyncClient, token: str) -> int:
             print(f"      code gửi thừa : {sorted(thua)} → Zalo từ chối cả tin")
         if thieu:
             print(f"      code gửi thiếu: {sorted(thieu)} → Zalo từ chối cả tin")
+        for k, (dai, toi_da) in qua_dai.items():
+            goi_y = (
+                f" → đặt {mau.khoa_noi_dung.upper()}={toi_da} trong .env"
+                if k == "noi_dung" and mau.khoa_noi_dung
+                else ""
+            )
+            print(f"      {k}: code gửi {dai} ký tự, template cho tối đa {toi_da}{goi_y}")
         if lech_kieu:
             print(
                 f"      thoi_gian: template khai {kieu_that}, code đang coi là "

@@ -70,7 +70,7 @@ TZ_VN = ZoneInfo("Asia/Ho_Chi_Minh")
 # Bước 1 — xếp hàng
 # ---------------------------------------------------------------------------
 
-# LƯU Ý: có LEFT JOIN sang meeting.cuoc_hop để lấy ngày/giờ họp cho tham số
+# LƯU Ý: có LEFT JOIN sang meeting.cuoc_hop để lấy ngày/giờ/tiêu đề họp cho tham số
 # template. Đây là join chỉ-đọc cross-schema (được phép theo CLAUDE.md).
 _SQL_QUET = text(
     """
@@ -84,7 +84,8 @@ _SQL_QUET = text(
            lk.da_dong_y,
            lk.trang_thai    AS lk_trang_thai,
            ch.ngay_hop,
-           ch.gio_bat_dau
+           ch.gio_bat_dau,
+           ch.tieu_de
     FROM common.thong_bao tb
     JOIN public.cong_chuc cc          ON cc.id = tb.nguoi_nhan_id
     LEFT JOIN common.zalo_lien_ket lk ON lk.cong_chuc_id = tb.nguoi_nhan_id
@@ -131,6 +132,7 @@ async def xep_hang(db: AsyncSession, gioi_han: int = 500) -> dict[str, int]:
             gio_bat_dau=r["gio_bat_dau"],
             link_url=r["link_url"],
             cuoc_hop_id=r["doi_tuong_id"],
+            tieu_de=r["tieu_de"],
         )
 
         ly_do: Optional[str] = None

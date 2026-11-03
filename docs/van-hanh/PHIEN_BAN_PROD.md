@@ -7,11 +7,40 @@ Cập nhật mỗi lần triển khai.
 
 | | |
 |---|---|
-| **Commit** | `c6abbaf` |
-| **Ngắn** | `c6abbaf` |
-| **Nhánh nguồn** | `feature/common-so-tay-cho-tai` (fast-forward thẳng từ `f7ee84d`) |
-| **Ngày ghi mốc** | 02/11/2026 21:48 |
+| **Commit** | `f40a02d` |
+| **Ngắn** | `f40a02d` |
+| **Nhánh nguồn** | `feature/hkg-zalo-tom-tat-hop` (rebase lên `acc3e92`, fast-forward) |
+| **Ngày ghi mốc** | 03/11/2026 20:19 |
 | **Alembic** | `kpi_dde_theo_quy_20260928` — **KHÔNG migration mới** |
+
+Nội dung: **HKG — Tin Zalo nhắc/thay đổi/hủy họp kèm tiêu đề cuộc họp.**
+
+Theo đề nghị của Văn phòng. Tham số mới `noi_dung` = `cuoc_hop.tieu_de` rút gọn
+(tối đa 200 ký tự, cắt ở ranh giới từ + "…"). Chỉ thêm tiêu đề — vẫn KHÔNG gửi
+địa điểm/thành phần/tài liệu. Giấy mời KHÔNG đổi.
+
+**Đổi `.env` prod** (bản lưu `.env.bak.20261103-tomtat`):
+
+| Biến | Cũ | Mới |
+|---|---|---|
+| `ZALO_TPL_NHAC_HOP` | 623236 | 660796 |
+| `ZALO_TPL_THAY_DOI_HOP` | 623180 | 660794 |
+| `ZALO_TPL_HUY_HOP` | 623182 | 660795 |
+| `ZALO_NOI_DUNG_TOI_DA_NHAC_HOP` / `_THAY_DOI_HOP` / `_HUY_HOP` | (chưa có) | 200 |
+
+> **Bẫy:** ID template và giới hạn `noi_dung` phải đổi CÙNG nhau. Quay lui code
+> về `acc3e92` mà quên trả `.env` về bản lưu ⇒ code cũ gửi thiếu `noi_dung` ⇒
+> Zalo từ chối mọi tin nhắc/thay đổi/hủy họp, không báo lỗi.
+
+Kiểm chứng: `test_zalo_templates` 76/76 PASS; `zalo_xem_template.py --doi-chieu`
+trên cây prod 4/4 khớp; gửi thử chế độ development tới số QTV OA cả 3 template,
+Zalo nhận 3/3; sau restart `zalo-worker` khởi động `enabled=True dry_run=False`,
+8 dịch vụ 200.
+
+Ảnh hưởng dữ liệu đang chạy: **không sửa dòng nào, không migration.** Tin đã xếp
+hàng trước 20:19 giữ template + tham số cũ (vẫn ENABLE) nên vẫn gửi được.
+
+### Mốc trước — `c6abbaf`
 
 Nội dung: **Common — Sổ tay số: cho phép tải nguyên tệp về máy.**
 
